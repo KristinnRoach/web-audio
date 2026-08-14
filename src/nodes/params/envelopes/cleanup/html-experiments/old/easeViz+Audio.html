@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SVG Easing to Web Audio</title>
+    <style>
+      body {
+        background: #1d1d1d;
+        font-family: sans-serif;
+        color: #e8f5e9;
+        padding: 20px;
+      }
+
+      .controls {
+        margin: 20px 0;
+      }
+
+      button {
+        background: #0ae448;
+        color: #1d1d1d;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin: 5px;
+        font-weight: bold;
+      }
+
+      button:hover {
+        background: #08c23d;
+      }
+
+      select {
+        background: #eee;
+        border: none;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 5px;
+      }
+
+      .info {
+        background: #333;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
+      }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomWiggle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MorphSVGPlugin.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/DrawSVGPlugin.min.js"></script>
+  </head>
+  <body>
+    <h1>SVG Easing → Web Audio Demo</h1>
+
+    <div class="controls">
+      <select id="easeSelect">
+        <option value="power1">power1</option>
+        <option value="power2">power2</option>
+        <option value="power4">power4</option>
+        <option value="circ">circ</option>
+        <option value="back">back</option>
+        <option value="bounce">bounce</option>
+      </select>
+
+      <button id="playButton">Play Audio with Easing</button>
+      <button id="stopButton">Stop</button>
+    </div>
+
+    <div class="info">
+      <h3>How it works:</h3>
+      <p>1. Select an easing function</p>
+      <p>2. Click "Play" to hear the easing curve applied to audio frequency</p>
+      <p>
+        3. The SVG path data controls a lowpass filter cutoff over 3 seconds
+      </p>
+    </div>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        gsap.registerPlugin(CustomEase);
+        gsap.registerPlugin(CustomWiggle);
+        gsap.registerPlugin(MorphSVGPlugin);
+        gsap.registerPlugin(DrawSVGPlugin);
+
+        // easeSelect.addEventListener('change', () => {
+        //   let newPath = CustomEase.getSVGData(easeSelect.value, {
+        //     width: 500,
+        //     height: 500,
+        //   });
+        //   console.log(newPath);
+        //   gsap.to('#ease', { morphSVG: newPath });
+        // });
+        //   document.querySelector('#ease').setAttribute('d', newPath);
+
+        // ease.addEventListener('click', () => {
+        //   gsap.fromTo(
+        //     '#ease',
+        //     { drawSVG: '0% 0%' }, // Start: hidden
+        //     { duration: 1, drawSVG: '0% 100%' } // End: fully drawn
+        //   );
+        // });
+
+        let audioContext;
+        let oscillator;
+        let filter;
+        let gainNode;
+        let isPlaying = false;
+
+        // Initialize Web Audio
+        function initAudio() {
+          if (!audioContext) {
+            audioContext = new (window.AudioContext ||
+              window.webkitAudioContext)();
+          }
+        }
+
+        // Convert SVG path data to audio automation values
+        function pathToAudioValues(pathData, duration = 3, sampleRate = 100) {
+          // Parse the SVG path to get coordinate points
+          const coordinates = pathData.match(/[\d.]+/g);
+          const points = [];
+
+          // Extract x,y pairs (skip the initial M command coordinates)
+          for (let i = 2; i < coordinates.length; i += 2) {
+            const x = parseFloat(coordinates[i]);
+            const y = parseFloat(coordinates[i + 1]);
+            points.push({ x, y });
+          }
+
+          // Convert to audio automation values
+          const audioValues = [];
+          const timeStep = duration / sampleRate;
+
+          for (let i = 0; i < sampleRate; i++) {
+            const time = i * timeStep;
+            const normalizedTime = time / duration; // 0 to 1
+            const svgX = normalizedTime * 500; // Scale to SVG width
+
+            // Find the corresponding Y value (linear interpolation)
+            let y = 500; // Default
+            for (let j = 0; j < points.length - 1; j++) {
+              if (svgX >= points[j].x && svgX <= points[j + 1].x) {
+                // Linear interpolation between two points
+                const ratio =
+                  (svgX - points[j].x) / (points[j + 1].x - points[j].x);
+                y = points[j].y + ratio * (points[j + 1].y - points[j].y);
+                break;
+              }
+            }
+
+            // Convert SVG Y (500 to 0) to frequency (200Hz to 2000Hz)
+            const normalizedY = 1 - y / 500; // Flip and normalize
+            const frequency = 200 + normalizedY * 1800; // 200Hz to 2000Hz
+
+            audioValues.push({
+              time: time,
+              value: frequency,
+            });
+          }
+
+          return audioValues;
+        }
+
+        // Play audio with easing automation
+        function playWithEasing() {
+          if (isPlaying) return;
+
+          initAudio();
+          isPlaying = true;
+
+          // Get the selected easing curve
+          const selectedEase = document.getElementById('easeSelect').value;
+          const svgData = CustomEase.getSVGData(selectedEase, {
+            width: 500,
+            height: 500,
+          });
+
+          console.log('SVG Data:', svgData);
+
+          // Convert to audio automation values
+          const audioValues = pathToAudioValues(svgData, 3);
+          console.log('Audio Values:', audioValues.slice(0, 10)); // Show first 10 values
+
+          // Create audio nodes
+          oscillator = audioContext.createOscillator();
+          filter = audioContext.createBiquadFilter();
+          gainNode = audioContext.createGain();
+
+          // Configure oscillator
+          oscillator.type = 'sawtooth';
+          oscillator.frequency.setValueAtTime(220, audioContext.currentTime); // A3
+
+          // Configure filter
+          filter.type = 'lowpass';
+          filter.Q.setValueAtTime(5, audioContext.currentTime); // Resonance
+
+          // Apply the easing curve to filter frequency
+          audioValues.forEach((point, index) => {
+            filter.frequency.setValueAtTime(
+              point.value,
+              audioContext.currentTime + point.time
+            );
+          });
+
+          // Configure gain (volume envelope)
+          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+          gainNode.gain.linearRampToValueAtTime(
+            0.3,
+            audioContext.currentTime + 0.1
+          );
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime + 2.5);
+          gainNode.gain.linearRampToValueAtTime(
+            0,
+            audioContext.currentTime + 3
+          );
+
+          // Connect the nodes
+          oscillator.connect(filter);
+          filter.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+
+          // Start and stop
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 3);
+
+          oscillator.onended = () => {
+            isPlaying = false;
+          };
+        }
+
+        function stopAudio() {
+          if (oscillator && isPlaying) {
+            oscillator.stop();
+            isPlaying = false;
+          }
+        }
+
+        document
+          .getElementById('playButton')
+          .addEventListener('click', playWithEasing);
+        document
+          .getElementById('stopButton')
+          .addEventListener('click', stopAudio);
+      });
+    </script>
+  </body>
+</html>

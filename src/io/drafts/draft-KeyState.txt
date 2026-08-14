@@ -1,0 +1,49 @@
+export class KeyState {
+  static #instance: KeyState;
+  #pressedKeys: Set<string> = new Set();
+  #capsLockOn: boolean = false;
+
+  private constructor() {
+    document.addEventListener('keydown', (e) => {
+      // Special handling for CapsLock
+      if (e.code === 'CapsLock') {
+        this.#capsLockOn = !this.#capsLockOn;
+        // Don't add CapsLock to pressedKeys (does not fire keyup)
+      } else {
+        this.#pressedKeys.add(e.code);
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      this.#pressedKeys.delete(e.code);
+    });
+
+    // Clean up when window loses focus
+    window.addEventListener('blur', () => {
+      this.#pressedKeys.clear();
+      // Don't clear capsLockOn state on blur
+    });
+  }
+
+  static getInstance(): KeyState {
+    if (!KeyState.#instance) {
+      KeyState.#instance = new KeyState();
+    }
+    return KeyState.#instance;
+  }
+
+  isPressed(code: string): boolean {
+    if (code === 'CapsLock') {
+      return this.#capsLockOn;
+    }
+    return this.#pressedKeys.has(code);
+  }
+
+  get pressedKeys(): Set<string> {
+    return new Set(this.#pressedKeys);
+    // CapsLock won't appear here (does not fire keyup event)
+  }
+}
+
+export const isKeyPressed = (code: string) =>
+  KeyState.getInstance().isPressed(code);

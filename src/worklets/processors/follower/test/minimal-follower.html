@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Follower test</title>
+  </head>
+  <body>
+    <input type="file" id="audio-upload" accept="audio/*" />
+    <button id="start-button">Start</button>
+
+    <script>
+      let ctx;
+      let src;
+      let osc;
+      let oscGain;
+      let follower;
+
+      document
+        .getElementById('start-button')
+        .addEventListener('click', async () => {
+          if (osc) {
+            osc.stop();
+            osc = null;
+          }
+          const fileInput = document.getElementById('audio-upload');
+          if (!fileInput.files.length) return;
+
+          const file = fileInput.files[0];
+          const arrayBuffer = await file.arrayBuffer();
+
+          // Create audio context
+          ctx = new AudioContext();
+
+          // Load the worklet processor
+          await ctx.audioWorklet.addModule('../envelope-follower-processor.js');
+
+          // Decode and create source
+          const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+          src = ctx.createBufferSource();
+          src.buffer = audioBuffer;
+          const srcGain = ctx.createGain();
+
+          // Create envelope follower node
+          follower = new AudioWorkletNode(ctx, 'envelope-follower-processor');
+
+          // Connect source -> follower
+          src.connect(follower);
+
+          // Create oscillator and gain node
+          osc = ctx.createOscillator();
+          osc.frequency.setValueAtTime(440, ctx.currentTime);
+
+          const freqScaler = ctx.createGain();
+          freqScaler.gain.setValueAtTime(1000, ctx.currentTime); // Scale envelope to 0-1000 Hz range
+
+          // Connect follower osc freq
+          follower.connect(freqScaler).connect(osc.frequency);
+
+          oscGain = ctx.createGain();
+          oscGain.gain.setValueAtTime(0, ctx.currentTime);
+          osc.connect(oscGain).connect(ctx.destination);
+
+          // Connect follower oscGain.gain
+          follower.connect(oscGain.gain);
+
+          // Monitor follower input signal
+          src.connect(srcGain).connect(ctx.destination);
+
+          // Start audio
+          osc.start();
+          src.start();
+        });
+    </script>
+  </body>
+</html>

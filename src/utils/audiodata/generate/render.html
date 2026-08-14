@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Export Waveforms</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 20px;
+      }
+      .waveform-list {
+        margin: 1em 0;
+      }
+      .waveform-item {
+        margin-bottom: 1em;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        display: flex;
+        flex-direction: column;
+      }
+      .waveform-item strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+      .waveform-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .waveform-visual {
+        margin: 10px 0;
+        border: 1px solid #eee;
+        border-radius: 3px;
+        width: fit-content;
+        height: fit-content;
+      }
+      .controls {
+        margin-bottom: 20px;
+      }
+      .controls input {
+        margin: 0 10px;
+      }
+      button {
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Export n Wavecycles of Each Waveform</h1>
+    <div class="controls">
+      <label>
+        Number of cycles:
+        <input type="number" id="numCycles" value="1" min="1" max="100" />
+      </label>
+      <button id="exportBtn">Export All Waveforms</button>
+      <button
+        id="downloadAllBtn"
+        style="margin-left: 10px; background-color: #007bff; color: white"
+        disabled
+      >
+        Download All Files
+      </button>
+    </div>
+    <div class="waveform-list" id="waveformList"></div>
+
+    <div style="margin-top: 40px; padding: 20px; border-top: 2px solid #ddd">
+      <h2>Logo Comparison</h2>
+      <div
+        style="display: flex; gap: 40px; align-items: center; flex-wrap: wrap"
+      >
+        <div>
+          <h3>Original Logo Waveform</h3>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 400 80"
+            width="400px"
+            height="80px"
+            style="border: 1px solid #ddd"
+          >
+            <path
+              d="M 50 40 L 100 40 L 200 15 L 300 65 L 350 40"
+              stroke="#000"
+              stroke-width="8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
+          </svg>
+        </div>
+        <div id="logoComparison">
+          <h3>Generated Waveform (will appear after generation)</h3>
+          <div
+            style="
+              width: 400px;
+              height: 80px;
+              border: 1px solid #ddd;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background: #f5f5f5;
+            "
+          >
+            Click "Export All Waveforms" to see comparison
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      const WIDTH = 512;
+      const HEIGHT = 512;
+
+      // Downsample samples to N points
+      function downsampleSamples(samples, targetCount) {
+        if (samples.length <= targetCount) return samples;
+        const result = [];
+        const step = samples.length / targetCount;
+        for (let i = 0; i < targetCount; i++) {
+          const idx = Math.floor(i * step);
+          result.push(samples[idx]);
+        }
+        return result;
+      }
+
+      // Simple Line Path SVG Generator
+      function createSimpleLineSVG(
+        samples,
+        width = WIDTH,
+        height = HEIGHT,
+        convertToLogo = true,
+        waveStrokeWidth = 30
+      ) {
+        if (convertToLogo) {
+          return convertToWormLogoFormat(
+            samples,
+            width,
+            height,
+            waveStrokeWidth
+          );
+        }
+
+        const step = width / (samples.length - 1);
+        const centerY = height / 2;
+        const maxValue = Math.max(...samples.map(Math.abs));
+        const scale = maxValue > 0 ? (centerY * 0.9) / maxValue : 1;
+
+        // Use one Bézier curve for every 4 points
+        let pathData = `M 0,${centerY - samples[0] * scale}`;
+        for (let i = 0; i < samples.length - 1; i += 4) {
+          const x0 = i * step;
+          const y0 = centerY - samples[i] * scale;
+          const x1 = i + 1 < samples.length ? (i + 1) * step : x0;
+          const y1 =
+            i + 1 < samples.length ? centerY - samples[i + 1] * scale : y0;
+          const x2 = i + 2 < samples.length ? (i + 2) * step : x1;
+          const y2 =
+            i + 2 < samples.length ? centerY - samples[i + 2] * scale : y1;
+          const x3 = i + 3 < samples.length ? (i + 3) * step : x2;
+          const y3 =
+            i + 3 < samples.length ? centerY - samples[i + 3] * scale : y2;
+          pathData += ` C ${x1},${y1} ${x2},${y2} ${x3},${y3}`;
+        }
+
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+            <path d="${pathData}" stroke="#000" stroke-width="25" fill="#000" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="0" y1="${centerY}" x2="${width}" y2="${centerY}"
+                  stroke="#ddd" stroke-width="25" opacity="0.5" />
+          </svg>`;
+      }
+
+      function addEyesToWaveWorm(svgContent, width = WIDTH, height = HEIGHT) {
+        // Eyes SVG path and transform from provided SVG
+        // Position above the left flat line
+        const scale = 7; // scale factor for eyes
+        const eyesX = width * 0.705; // tweak for horizontal position
+        const eyesY = height * 0.275; // tweak for vertical position
+        const eyesGroup = `<g id="group-3" transform="translate(${eyesX},${eyesY}) scale(${scale})">
+                              <g id="Page-1" fill="none" fill-rule="evenodd" stroke="currentColor" stroke-width="0.08">
+                                <g id="Dribbble-Light-Preview" fill="currentColor" transform="translate(-380 -7803)">
+                                  <g id="icons" transform="translate(56 160)">
+                                    <path id="eyes-[#90]" d="M338.165 7653.11a3.976 3.976 0 0 1-2.746-1.1 6.086 6.086 0 0 0 0-5.81c.37-.35.806-.64 1.29-.83-1.051 1.51-.481 3.66 1.17 4.44 1.609.77 3.569-.09 4.124-1.78.7 2.52-1.221 5.08-3.838 5.08m2.001-6.01c0 1-2.001 1-2.001 0 0-1.01 2.001-1.01 2.001 0m-7.258 4.91c-1.81 1.72-4.803 1.34-6.131-.78-1.318-2.09-.368-4.95 1.929-5.86-1.022 1.47-.514 3.55 1.057 4.39 1.613.85 3.669.01 4.238-1.73a3.998 3.998 0 0 1-1.093 3.98m-1.745-5.92c1 0 1 2.01 0 2.01s-1-2.01 0-2.01m7.002-3.01c-1.539 0-2.939.59-4.001 1.55-3.8-3.42-10.003-.62-10.003 4.47s6.203 7.9 10.003 4.48c3.184 2.86 8.401 1.44 9.713-2.62 1.233-3.83-1.706-7.88-5.712-7.88" style="fill: rgb(0, 0, 0);"/>
+                                  </g>
+                                </g>
+                              </g>
+                            </g>`;
+        // Insert the eyesPath just before </svg>
+        return svgContent.replace('</svg>', `${eyesGroup}</svg>`);
+      }
+
+      function convertToWormLogoFormat(
+        samples,
+        width = WIDTH,
+        height = HEIGHT,
+        waveStrokeWidth = 30,
+        addEyes = true
+      ) {
+        const centerY = height / 2;
+        const margin = width * 0.075; // 5% margin for rounded ends
+        const flatWidth = width * 0.2;
+        const waveWidth = width - 2 * (margin + flatWidth); // wave is centered between equal flat lines
+        const waveStep = waveWidth / (samples.length - 1);
+
+        // Normalize samples
+        const maxValue = Math.max(...samples.map(Math.abs));
+        const scale = maxValue > 0 ? (centerY * 0.8) / maxValue : 1;
+
+        // Start with margin before flat line
+        let pathData = `M ${margin},${centerY} L ${margin + flatWidth},${centerY}`;
+
+        // Waveform with Bézier curves
+        const clampCount = 3; // Number of last segments to clamp
+        // for (let i = 0; i < samples.length - 1; i++) {
+        //   const x1 = margin + flatWidth + i * waveStep;
+        //   let y1 = centerY - samples[i] * scale;
+        //   const x2 = margin + flatWidth + (i + 1) * waveStep;
+        //   let y2 = centerY - samples[i + 1] * scale;
+        //   const cx1 = x1 + waveStep / 2;
+        //   let cy1 = y1;
+        //   const cx2 = x2 - waveStep / 2;
+        //   let cy2 = y2;
+
+        //   // Clamp last clampCount segments to centerY if above
+        //   if (i >= samples.length - 1 - clampCount) {
+        //     if (y1 < centerY) y1 = centerY;
+        //     if (y2 < centerY) y2 = centerY;
+        //     cy1 = y1;
+        //     cy2 = y2;
+        //   }
+        //   pathData += ` C ${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`;
+        // }
+
+        for (let i = 0; i < samples.length - 1; i++) {
+          const x1 = margin + flatWidth + i * waveStep;
+          let y1 = centerY - samples[i] * scale;
+          const x2 = margin + flatWidth + (i + 1) * waveStep;
+          let y2 = centerY - samples[i + 1] * scale;
+          const cx1 = x1 + waveStep / 2;
+          let cy1 = y1;
+          const cx2 = x2 - waveStep / 2;
+          let cy2 = y2;
+
+          // Clamp last clampCount segments to centerY if above
+          if (i >= samples.length - 1 - clampCount) {
+            if (y1 < centerY) y1 = centerY;
+            if (y2 < centerY) y2 = centerY;
+            cy1 = y1;
+            cy2 = y2;
+          }
+
+          // If the segment is steep, use a straight line instead of Bézier
+          if (Math.abs(y2 - y1) > height * 0.25) {
+            pathData += ` L ${x2},${y2}`;
+          } else {
+            pathData += ` C ${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`;
+          }
+        }
+
+        // End with flat line of same length as start
+        pathData += ` L ${width - margin - flatWidth},${centerY} L ${width - margin},${centerY}`;
+
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" >
+        <path d="${pathData}" fill="none" stroke="currentColor" stroke-width="${waveStrokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+        if (addEyes) {
+          svg = addEyesToWaveWorm(svg, width, height);
+        }
+        return svg;
+      }
+
+      // Convert waveform to logo format with flat ends
+      function convertToLogoFormat(samples, width, height) {
+        const centerY = height / 2;
+        const flatWidth = width * 0.15; // % flat line on each side
+        const waveWidth = width * 0.7; // % for the actual waveform
+        const waveStep = waveWidth / samples.length;
+
+        // Find max value for normalization
+        const maxValue = Math.max(...samples.map(Math.abs));
+        const scale = maxValue > 0 ? (centerY * 0.8) / maxValue : 1;
+
+        // Start with flat line
+        let pathData = `M 0,${centerY} L ${flatWidth},${centerY}`;
+
+        // Add waveform in the middle
+        for (let i = 0; i < samples.length; i++) {
+          const x = flatWidth + i * waveStep;
+          const y = centerY - samples[i] * scale;
+          pathData += ` L ${x},${y}`;
+        }
+
+        // End with flat line
+        pathData += ` L ${width},${centerY}`;
+
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="background: white;">
+            <path d="${pathData}" stroke="#000" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>`;
+      }
+
+      // Copy SVG to clipboard
+      function copySVGToClipboard(svgString, waveformName, button) {
+        // Minify SVG string: remove line breaks, extra spaces, and comments
+        let minified = svgString
+          .replace(/\n+/g, '')
+          .replace(/>\s+</g, '><')
+          .replace(/\s{2,}/g, ' ')
+          .replace(/<!--.*?-->/g, '');
+        navigator.clipboard.writeText(minified).then(() => {
+          // Brief visual feedback
+          const originalText = button.textContent;
+          button.textContent = 'Copied!';
+          button.style.backgroundColor = '#28a745';
+          setTimeout(() => {
+            button.textContent = originalText;
+            button.style.backgroundColor = '#6c757d';
+          }, 1500);
+        });
+      }
+
+      // Sequential download function with better timing
+      function downloadFile(url, filename) {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            resolve();
+          }, 100); // Small delay to let UI update
+        });
+      }
+
+      // All supported waveforms
+      const SUPPORTED_WAVEFORMS = [
+        'sine',
+        'sawtooth',
+        'square',
+        'triangle',
+        'pulse',
+        'bandlimited-sawtooth',
+        'supersaw',
+        'warm-pad',
+        'metallic',
+        'formant',
+        'white-noise',
+        'pink-noise',
+        'brown-noise',
+        'colored-noise',
+        'random-harmonic',
+        'custom-function',
+      ];
+
+      // Custom waveforms that need special handling
+      const CUSTOM_WAVEFORMS = [
+        'pulse',
+        'bandlimited-sawtooth',
+        'supersaw',
+        'warm-pad',
+        'metallic',
+        'formant',
+        'white-noise',
+        'pink-noise',
+        'brown-noise',
+        'colored-noise',
+        'random-harmonic',
+        'custom-function',
+      ];
+
+      function isCustomLibWaveform(waveform) {
+        return CUSTOM_WAVEFORMS.includes(waveform);
+      }
+
+      // Simple PRNG for reproducible noise
+      function createPRNG(seed = Math.random() * 1000000) {
+        let rng = seed;
+        return () => {
+          rng = (rng * 9301 + 49297) % 233280;
+          return rng / 233280;
+        };
+      }
+
+      // Built-in waveform generator
+      function createPeriodicWave(audioContext, type) {
+        const harmonics = 32;
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+
+        switch (type) {
+          case 'sine':
+            imag[1] = 1;
+            break;
+          case 'square':
+            for (let n = 1; n <= harmonics; n += 2) {
+              imag[n] = 1 / n;
+            }
+            break;
+          case 'sawtooth':
+            for (let n = 1; n <= harmonics; n++) {
+              imag[n] = (n % 2 === 1 ? 1 : -1) / n;
+            }
+            break;
+          case 'triangle':
+            for (let n = 1; n <= harmonics; n += 2) {
+              imag[n] = (n % 4 === 1 ? 1 : -1) / (n * n);
+            }
+            break;
+          default:
+            imag[1] = 1; // fallback to sine
+        }
+
+        return { real, imag };
+      }
+
+      // Pulse wave generator
+      function createPulseWave(dutyCycle = 0.5, harmonics = 32) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+
+        for (let n = 1; n <= harmonics; n++) {
+          real[n] = 0;
+          imag[n] = ((2 / Math.PI) * Math.sin(n * Math.PI * dutyCycle)) / n;
+        }
+
+        return { real, imag };
+      }
+
+      // Bandlimited sawtooth generator
+      function createBandlimitedSawtooth(harmonics = 32, rolloff = 1) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+
+        for (let n = 1; n <= harmonics; n++) {
+          real[n] = 0;
+          imag[n] = (1 / n) * Math.pow(n, -rolloff + 1);
+          if (n % 2 === 0) imag[n] *= -1;
+        }
+
+        return { real, imag };
+      }
+
+      // Supersaw generator
+      function createSupersaw(voices = 7, detune = 25, harmonics = 16) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+
+        for (let voice = 0; voice < voices; voice++) {
+          const voiceDetune =
+            voice === 0
+              ? 0
+              : (voice % 2 === 1 ? 1 : -1) *
+                Math.ceil(voice / 2) *
+                (detune / Math.ceil(voices / 2));
+          const detuneRatio = Math.pow(2, voiceDetune / 1200);
+
+          for (let n = 1; n <= harmonics; n++) {
+            const harmonicFreq = n * detuneRatio;
+            if (harmonicFreq <= harmonics) {
+              const amplitude = (1 / voices) * (1 / n);
+              const targetBin = Math.floor(harmonicFreq);
+              if (targetBin > 0 && targetBin <= harmonics) {
+                imag[targetBin] += amplitude * (n % 2 === 1 ? 1 : -1);
+              }
+            }
+          }
+        }
+
+        return { real, imag };
+      }
+
+      // Warm pad generator
+      function createWarmPad(brightness = 0.3, harmonics = 64) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+
+        for (let n = 1; n <= harmonics; n++) {
+          const amplitude = (1 / n) * Math.exp(-n * (1 - brightness) * 0.1);
+          if (n % 2 === 1) {
+            imag[n] = amplitude;
+          }
+          if (n % 2 === 0 && n <= harmonics / 2) {
+            imag[n] = amplitude * 0.3;
+          }
+        }
+
+        return { real, imag };
+      }
+
+      // Metallic wave generator
+      function createMetallicWave(inharmonicity = 0.2, harmonics = 32) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+
+        for (let n = 1; n <= harmonics; n++) {
+          const inharmonicRatio = Math.sqrt(1 + inharmonicity * n * n);
+          const targetBin = Math.round(n * inharmonicRatio);
+
+          if (targetBin <= harmonics) {
+            const amplitude = 1 / (n * n);
+            real[targetBin] += amplitude * 0.3;
+            imag[targetBin] += amplitude * 0.7;
+          }
+        }
+
+        return { real, imag };
+      }
+
+      // Formant wave generator
+      function createFormantWave(
+        formantFreqs = [800, 1200, 2600],
+        formantBandwidths = [80, 120, 260],
+        fundamentalFreq = 440,
+        harmonics = 64
+      ) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+
+        for (let n = 1; n <= harmonics; n++) {
+          const harmonicFreq = n * fundamentalFreq;
+          let amplitude = 1 / n;
+
+          for (let f = 0; f < formantFreqs.length; f++) {
+            const formantFreq = formantFreqs[f];
+            const bandwidth = formantBandwidths[f] || 100;
+            const distance = Math.abs(harmonicFreq - formantFreq);
+            const formantGain = 1 / (1 + Math.pow(distance / bandwidth, 2));
+            amplitude *= 1 + formantGain * 2;
+          }
+
+          imag[n] = amplitude * (n % 2 === 1 ? 1 : -1);
+        }
+
+        return { real, imag };
+      }
+
+      // Noise generators
+      function createWhiteNoise(harmonics = 64, seed) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+        const random = createPRNG(seed);
+
+        for (let n = 1; n <= harmonics; n++) {
+          const amplitude = 1 / Math.sqrt(harmonics);
+          const phase = random() * 2 * Math.PI;
+          real[n] = amplitude * Math.cos(phase);
+          imag[n] = amplitude * Math.sin(phase);
+        }
+
+        return { real, imag };
+      }
+
+      function createPinkNoise(harmonics = 64, seed) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+        const random = createPRNG(seed);
+
+        for (let n = 1; n <= harmonics; n++) {
+          const amplitude = 1 / Math.sqrt(n * harmonics);
+          const phase = random() * 2 * Math.PI;
+          real[n] = amplitude * Math.cos(phase);
+          imag[n] = amplitude * Math.sin(phase);
+        }
+
+        return { real, imag };
+      }
+
+      function createBrownNoise(harmonics = 64, seed) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+        const random = createPRNG(seed);
+
+        for (let n = 1; n <= harmonics; n++) {
+          const amplitude = 1 / (n * Math.sqrt(harmonics));
+          const phase = random() * 2 * Math.PI;
+          real[n] = amplitude * Math.cos(phase);
+          imag[n] = amplitude * Math.sin(phase);
+        }
+
+        return { real, imag };
+      }
+
+      function createColoredNoise(slope = 0, harmonics = 64, seed) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+        const random = createPRNG(seed);
+
+        for (let n = 1; n <= harmonics; n++) {
+          const amplitude = 1 / (Math.pow(n, slope / 2) * Math.sqrt(harmonics));
+          const phase = random() * 2 * Math.PI;
+          real[n] = amplitude * Math.cos(phase);
+          imag[n] = amplitude * Math.sin(phase);
+        }
+
+        return { real, imag };
+      }
+
+      function createRandomHarmonicWave(
+        chaos = 0.5,
+        harmonicDensity = 0.7,
+        harmonics = 32,
+        seed
+      ) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+        const random = createPRNG(seed);
+
+        for (let n = 1; n <= harmonics; n++) {
+          if (random() < harmonicDensity) {
+            const baseAmplitude = 1 / n;
+            const randomFactor = 1 + (random() - 0.5) * 2 * chaos;
+            const amplitude = baseAmplitude * randomFactor;
+            const phase = random() * 2 * Math.PI;
+
+            if (random() > 0.5) {
+              real[n] = amplitude * Math.cos(phase);
+            } else {
+              imag[n] = amplitude * Math.sin(phase);
+            }
+          }
+        }
+
+        return { real, imag };
+      }
+
+      function createCustomFunctionWave(
+        waveFunction = (phase) => Math.sin(phase),
+        harmonics = 32
+      ) {
+        const real = new Float32Array(harmonics + 1);
+        const imag = new Float32Array(harmonics + 1);
+        const sampleCount = 2048;
+
+        // Sample the function
+        const samples = new Float32Array(sampleCount);
+        for (let i = 0; i < sampleCount; i++) {
+          const phase = (i / sampleCount) * 2 * Math.PI;
+          samples[i] = waveFunction(phase);
+        }
+
+        // Perform DFT to extract harmonics
+        for (let n = 1; n <= harmonics; n++) {
+          let realSum = 0;
+          let imagSum = 0;
+
+          for (let i = 0; i < sampleCount; i++) {
+            const phase = (i / sampleCount) * 2 * Math.PI * n;
+            realSum += samples[i] * Math.cos(phase);
+            imagSum += samples[i] * Math.sin(phase);
+          }
+
+          real[n] = realSum / sampleCount;
+          imag[n] = imagSum / sampleCount;
+        }
+
+        return { real, imag };
+      }
+
+      // Main waveform creation function
+      function createWave(type, options = {}) {
+        switch (type) {
+          case 'pulse':
+            return createPulseWave(options.dutyCycle, options.harmonics);
+          case 'bandlimited-sawtooth':
+            return createBandlimitedSawtooth(
+              options.harmonics,
+              options.rolloff
+            );
+          case 'supersaw':
+            return createSupersaw(
+              options.voices,
+              options.detune,
+              options.harmonics
+            );
+          case 'warm-pad':
+            return createWarmPad(options.brightness, options.harmonics);
+          case 'metallic':
+            return createMetallicWave(options.inharmonicity, options.harmonics);
+          case 'formant':
+            return createFormantWave(
+              options.formantFreqs,
+              options.formantBandwidths,
+              options.fundamentalFreq,
+              options.harmonics
+            );
+          case 'white-noise':
+            return createWhiteNoise(options.harmonics, options.seed);
+          case 'pink-noise':
+            return createPinkNoise(options.harmonics, options.seed);
+          case 'brown-noise':
+            return createBrownNoise(options.harmonics, options.seed);
+          case 'colored-noise':
+            return createColoredNoise(
+              options.slope,
+              options.harmonics,
+              options.seed
+            );
+          case 'random-harmonic':
+            return createRandomHarmonicWave(
+              options.chaos,
+              options.harmonicDensity,
+              options.harmonics,
+              options.seed
+            );
+          case 'custom-function':
+            return createCustomFunctionWave(
+              options.waveFunction,
+              options.harmonics
+            );
+          default:
+            throw new Error(`Invalid waveform type: ${type}`);
+        }
+      }
+
+      // Minimal WAV encoder (mono, 16-bit PCM)
+      function encodeWAV(samples, sampleRate) {
+        const buffer = new ArrayBuffer(44 + samples.length * 2);
+        const view = new DataView(buffer);
+
+        function writeString(view, offset, string) {
+          for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+          }
+        }
+
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + samples.length * 2, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(view, 36, 'data');
+        view.setUint32(40, samples.length * 2, true);
+
+        for (let i = 0; i < samples.length; i++) {
+          let s = Math.max(-1, Math.min(1, samples[i]));
+          view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        }
+        return new Blob([buffer], { type: 'audio/wav' });
+      }
+
+      // Render waveform to audio samples
+      function renderWaveform(
+        waveform,
+        nCycles,
+        sampleRate = 44100,
+        durationSec = 1
+      ) {
+        let waveData;
+
+        if (isCustomLibWaveform(waveform)) {
+          waveData = createWave(waveform, {});
+        } else {
+          waveData = createPeriodicWave(null, waveform);
+        }
+
+        const length = sampleRate * durationSec;
+        const samples = new Float32Array(length);
+
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          const phase = (t * nCycles * 2 * Math.PI) % (2 * Math.PI);
+          let value = 0;
+
+          // Sum up all harmonics
+          for (let n = 1; n < waveData.real.length; n++) {
+            if (waveData.real[n] !== 0 || waveData.imag[n] !== 0) {
+              value += waveData.real[n] * Math.cos(n * phase);
+              value += waveData.imag[n] * Math.sin(n * phase);
+            }
+          }
+
+          samples[i] = value * 0.5; // Scale down to prevent clipping
+        }
+
+        return samples;
+      }
+
+      function smoothSamples(samples, windowSize = 3) {
+        const smoothed = [];
+        for (let i = 0; i < samples.length; i++) {
+          let sum = 0;
+          let count = 0;
+          for (
+            let j = -Math.floor(windowSize / 2);
+            j <= Math.floor(windowSize / 2);
+            j++
+          ) {
+            if (samples[i + j] !== undefined) {
+              sum += samples[i + j];
+              count++;
+            }
+          }
+          smoothed.push(sum / count);
+        }
+        return smoothed;
+      }
+
+      // UI event handlers
+      let generatedWaveforms = [];
+
+      document.getElementById('exportBtn').onclick = async () => {
+        const nCycles = parseInt(
+          document.getElementById('numCycles').value,
+          10
+        );
+        const waveformList = document.getElementById('waveformList');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+
+        waveformList.innerHTML = '<p>Generating waveforms...</p>';
+        downloadAllBtn.disabled = true;
+        generatedWaveforms = [];
+
+        // Small delay to show loading message
+        setTimeout(() => {
+          waveformList.innerHTML = '';
+
+          for (const waveform of SUPPORTED_WAVEFORMS) {
+            try {
+              const samples = renderWaveform(waveform, nCycles);
+              const wavBlob = encodeWAV(samples, 44100);
+              const url = URL.createObjectURL(wavBlob);
+
+              // Use lower targetCount for noisy waveforms
+              let targetCount = 256;
+              if (
+                [
+                  'brown-noise',
+                  'colored-noise',
+                  'white-noise',
+                  'pink-noise',
+                ].includes(waveform)
+              ) {
+                targetCount = 26;
+              }
+
+              if (
+                [
+                  'random-harmonic',
+                  'metallic',
+                  'sawtooth',
+                  'square',
+                  'pulse',
+                  'bandlimited-sawtooth',
+                  'supersaw',
+                ].includes(waveform)
+              ) {
+                targetCount = 25;
+              }
+              const dsSamples = downsampleSamples(samples, targetCount);
+
+              const smoothedSamples = smoothSamples(dsSamples, 5);
+
+              console.log(
+                `${waveform}: original=${samples.length}, smoothed=${smoothedSamples.length}, downsampled=${dsSamples.length}`
+              );
+
+              let waveStrokeWidth = 30;
+
+              if (
+                [
+                  'brown-noise',
+                  'colored-noise',
+                  'white-noise',
+                  'pink-noise',
+                ].includes(waveform)
+              ) {
+                waveStrokeWidth = 23.9;
+              }
+
+              // Generate simple line SVG visualization
+              const waveformSVG = createSimpleLineSVG(
+                smoothedSamples,
+                undefined,
+                undefined,
+                true,
+                waveStrokeWidth
+              );
+
+              // Store for bulk download
+              generatedWaveforms.push({
+                name: `${waveform}.wav`,
+                blob: wavBlob,
+                url: url,
+                svg: waveformSVG,
+              });
+
+              // Update comparison section with first waveform (sine wave)
+              if (waveform === 'sine') {
+                document.getElementById('logoComparison').innerHTML = `
+                    <h3>Generated Sine Wave</h3>
+                    <div style="width: 1024px; height: 1024px; border: 1px solid #ddd; background: white;">
+                      ${waveformSVG}
+                    </div>
+                  `;
+              }
+
+              const div = document.createElement('div');
+              div.className = 'waveform-item';
+              div.innerHTML = `
+                  <strong>${waveform}</strong>
+                  <div class="waveform-visual">${waveformSVG}</div>
+                  <div class="waveform-controls">
+                    <audio controls src="${url}"></audio>
+                    <a href="${url}" download="${waveform}.wav">Download</a>
+                    <button class="copy-svg-btn" data-waveform="${waveform}"
+                            style="padding: 5px 10px; margin-left: 10px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                      Copy SVG
+                    </button>
+                  </div>
+                `;
+
+              // Add click handler for copy button
+              const copyBtn = div.querySelector('.copy-svg-btn');
+              copyBtn.addEventListener('click', function () {
+                const waveformData = generatedWaveforms.find(
+                  (w) => w.name === `${waveform}.wav`
+                );
+                if (waveformData) {
+                  copySVGToClipboard(waveformData.svg, waveform, this);
+                }
+              });
+
+              waveformList.appendChild(div);
+            } catch (error) {
+              console.error(`Error generating ${waveform}:`, error);
+              const div = document.createElement('div');
+              div.className = 'waveform-item';
+              div.innerHTML = `<strong>${waveform}</strong> - Error: ${error.message}`;
+              waveformList.appendChild(div);
+            }
+          }
+
+          // Enable download all button if we have waveforms
+          if (generatedWaveforms.length > 0) {
+            downloadAllBtn.disabled = false;
+          }
+        }, 10);
+      };
+
+      document.getElementById('downloadAllBtn').onclick = async () => {
+        if (generatedWaveforms.length === 0) {
+          alert('Please generate waveforms first!');
+          return;
+        }
+
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        downloadAllBtn.disabled = true;
+
+        const total = generatedWaveforms.length;
+
+        for (let i = 0; i < generatedWaveforms.length; i++) {
+          const waveform = generatedWaveforms[i];
+
+          // Update UI before download
+          downloadAllBtn.textContent = `Downloading ${i + 1}/${total}...`;
+
+          // Allow UI to update
+          await new Promise((resolve) => setTimeout(resolve, 50));
+
+          // Trigger download
+          await downloadFile(waveform.url, waveform.name);
+
+          // Pause between downloads to avoid overwhelming browser
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+
+        downloadAllBtn.disabled = false;
+        downloadAllBtn.textContent = 'Download All Files';
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,85 @@
+
+// #startLoopingEnv(
+//   audioParam: AudioParam,
+//   startTime: number,
+//   options: {
+//     baseValue: number;
+//     playbackRate: number;
+//     voiceId?: string;
+//     midiNote?: number;
+//     minValue?: number;
+//     maxValue?: number;
+//   }
+// ) {
+//   let currentStart = Math.max(this.#context.currentTime, startTime);
+
+//   if (options.voiceId !== undefined) {
+//     const initialDuration = this.#getScaledDuration(
+//       this.#data.startPointIndex,
+//       this.#data.endPointIndex,
+//       options.playbackRate,
+//       this.#timeScale
+//     );
+
+//     this.sendUpstreamMessage(`${this.envelopeType}:trigger`, {
+//       voiceId: options.voiceId,
+//       midiNote: options.midiNote || 60,
+//       duration: initialDuration,
+//       sustainEnabled: this.sustainEnabled,
+//       loopEnabled: this.loopEnabled,
+//       sustainPoint: this.sustainPoint,
+//       releasePoint: this.releasePoint,
+//       isReleased: this.#isReleased,
+//       // curveData: curve,
+//     });
+//   }
+
+//   const scheduleNext = () => {
+//     if (!this.#shouldLoop()) {
+//       if (options.voiceId !== undefined) {
+//         this.sendUpstreamMessage(`${this.envelopeType}:release:loop`, {
+//           voiceId: options.voiceId,
+//           midiNote: options.midiNote || 60,
+//         });
+//       }
+//       return;
+//     }
+
+//     const scaledDuration = this.#getScaledDuration(
+//       0,
+//       this.points.length - 1,
+//       options.playbackRate,
+//       this.#timeScale
+//     );
+
+//     const curve = this.#generateCurve(
+//       scaledDuration,
+//       this.fullDuration,
+//       options
+//     );
+
+//     // Prevent schedule overlapping
+//     currentStart = Math.max(currentStart, this.#context.currentTime + 0.001);
+//     audioParam.cancelScheduledValues(currentStart);
+
+//     audioParam.setValueCurveAtTime(curve, currentStart, scaledDuration);
+//     currentStart += scaledDuration + 0.005;
+
+//     // Schedule next iteration just before this one ends
+//     const nextCallTime =
+//       (currentStart - scaledDuration - this.#context.currentTime) * 1000 - 10;
+
+//     if (options.voiceId !== undefined) {
+//       this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
+//         voiceId: options.voiceId,
+//         midiNote: options.midiNote || 60,
+//         duration: scaledDuration,
+//         sustainEnabled: this.sustainEnabled,
+//         loopEnabled: this.loopEnabled,
+//       });
+//     }
+//     setTimeout(scheduleNext, Math.max(0, nextCallTime));
+//   };
+
+//   scheduleNext();
+// }

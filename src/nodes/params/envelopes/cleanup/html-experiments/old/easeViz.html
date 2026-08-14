@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Custom Ease Viz</title>
+
+    <style>
+      body {
+        background: #1d1d1d;
+        font-family: sans-serif;
+        color: #e8f5e9;
+      }
+
+      :root {
+        --stroke: #ccc;
+      }
+
+      .wrapper {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+      }
+
+      svg {
+        width: clamp(360px, 60vw, 600px);
+        overflow: visible;
+      }
+
+      .nav {
+        width: clamp(375px, 60vw, 600px);
+      }
+
+      line {
+        stroke: var(--stroke);
+        opacity: 0.5;
+      }
+
+      #ease {
+        stroke: #0ae448;
+        stroke-width: 4;
+      }
+
+      select {
+        margin: 10px 0 18px 0;
+        outline: none;
+        cursor: pointer;
+
+        background-color: #eee;
+
+        border-radius: 5px; /* round the border corners */
+        padding: 10px;
+
+        box-shadow: 5px 5px 20px rgba(0, 0, 0, 0.4);
+
+        font-size: 16px;
+        font-weight: bold;
+        text-align: center;
+      }
+
+      #motionPath {
+        overflow: visible;
+        height: 100%;
+        max-width: 100%;
+      }
+
+      #motionPath path {
+        stroke-width: 2;
+        stroke: gray;
+      }
+
+      #motionPath .astronaut {
+        visibility: hidden;
+      }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomEase.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomWiggle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MorphSVGPlugin.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/DrawSVGPlugin.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/CustomBounce.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MotionPathPlugin.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MotionPathHelper.min.js"></script>
+  </head>
+
+  <body>
+    <div class="wrapper">
+      <div class="nav">
+        <label for="easeSelect">Choose an Ease</label>
+        <div class="select">
+          <select id="easeSelect">
+            <option value="power1">power1</option>
+            <option value="power1.in">power1.in</option>
+            <option value="power1.inOut">power1.inOut</option>
+            <option value="power4">power4</option>
+            <option value="power4.in">power4.in</option>
+            <option value="power4.inOut">power4.inOut</option>
+            <option value="circ">circ</option>
+            <option value="circ.in">circ.in</option>
+            <option value="circ.inOut">circ.inOut</option>
+            <option value="back">back</option>
+            <option value="bounce">bounce</option>
+          </select>
+        </div>
+      </div>
+      <div class="graph">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 500 500"
+          xmlns:bx="https://boxy-svg.com"
+          width="500"
+          id="svg"
+        >
+          <path
+            id="motionPath"
+            d="M 0 500 L 500 0"
+            fill="none"
+            stroke="green"
+          />
+
+          <g id="dummy-g"></g>
+
+          <line x1="1" y1="1" x2="1" y2="500"></line>
+          <line x1="200" y1="0" x2="200" y2="500"></line>
+          <line x1="250" y1="0" x2="250" y2="500"></line>
+          <line x1="300" y1="0" x2="300" y2="500"></line>
+          <line x1="350" y1="0" x2="350" y2="500"></line>
+          <line x1="400" y1="0" x2="400" y2="500"></line>
+          <line x1="450" y1="0" x2="450" y2="500"></line>
+          <line x1="150" y1="0" x2="150" y2="500"></line>
+          <line x1="100" y1="0" x2="100" y2="500"></line>
+          <line x1="50" y1="0" x2="50" y2="500"></line>
+          <line x1="499" y1="0" x2="499" y2="500"></line>
+
+          <g
+            transform="matrix(0, 1.000003576, -0.999996483, 0, -0.000004137, 0.000002552)"
+            style="transform-origin: 250px 250px"
+          >
+            <line x1="1" y1="1" x2="1" y2="500"></line>
+            <line x1="200" y1="0" x2="200" y2="500"></line>
+            <line x1="250" y1="0" x2="250" y2="500"></line>
+            <line x1="300" y1="0" x2="300" y2="500"></line>
+            <line x1="350" y1="0" x2="350" y2="500"></line>
+            <line x1="400" y1="0" x2="400" y2="500"></line>
+            <line x1="450" y1="0" x2="450" y2="500"></line>
+            <line x1="150" y1="0" x2="150" y2="500"></line>
+            <line x1="100" y1="0" x2="100" y2="500"></line>
+            <line x1="50" y1="0" x2="50" y2="500"></line>
+            <line x1="499" y1="0" x2="499" y2="500"></line>
+          </g>
+        </svg>
+      </div>
+      <button id="startBtn">Start</button>
+    </div>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        gsap.registerPlugin(CustomEase);
+        gsap.registerPlugin(CustomWiggle);
+        gsap.registerPlugin(MorphSVGPlugin);
+        gsap.registerPlugin(DrawSVGPlugin);
+        gsap.registerPlugin(CustomBounce);
+        gsap.registerPlugin(MotionPathPlugin);
+
+        const btnEl = document.getElementById('startBtn');
+        const motionPathEl = document.getElementById('motionPath');
+        const dEl = document.querySelector('#motionPath').getAttribute('d');
+
+        let duration = 1;
+
+        let motionTween;
+        let helper;
+        let svgPath = dEl; // Declare svgPath in the correct scope
+
+        resetMotionPath();
+
+        let lastPathData = document
+          .querySelector('#motionPath')
+          .getAttribute('d');
+        setInterval(() => {
+          const currentPathData = document
+            .querySelector('#motionPath')
+            .getAttribute('d');
+          if (currentPathData !== lastPathData) {
+            console.log('Path changed:', currentPathData);
+            lastPathData = currentPathData;
+            svgPath = currentPathData;
+          }
+        }, 100);
+
+        // Audio
+        let audioContext;
+        let oscillator;
+        let filter;
+        let gainNode;
+        let isPlaying = false;
+
+        // Initialize Web Audio
+        function initAudio() {
+          if (!audioContext) {
+            audioContext = new (window.AudioContext ||
+              window.webkitAudioContext)();
+          }
+          if (audioContext.state !== 'running') audioContext.resume();
+        }
+
+        function resetMotionPath() {
+          // It is necessery to use a "dummy" <g> element for MotionPathHelper to work
+          motionTween = gsap.to('#dummy-g', {
+            motionPath: {
+              path: '#motionPath',
+              align: '#motionPath',
+              alignOrigin: [0.5, 0.5],
+            },
+          });
+          helper = MotionPathHelper.create('#dummy-g');
+        }
+
+        easeSelect.addEventListener('change', () => {
+          svgPath = CustomEase.getSVGData(easeSelect.value, {
+            width: 500,
+            height: 500,
+          });
+          console.log(svgPath);
+
+          if (motionTween) motionTween.kill();
+          if (helper) helper.kill();
+
+          motionTween = gsap.to('#motionPath', {
+            morphSVG: svgPath,
+            duration: 0.1,
+            onComplete: () => resetMotionPath(),
+          });
+        });
+
+        btnEl.addEventListener('click', () => {
+          initAudio();
+          const now = audioContext.currentTime;
+
+          const svgPath = document
+            .querySelector('#motionPath')
+            .getAttribute('d');
+
+          gsap.fromTo(
+            '#motionPath',
+            { drawSVG: '0% 0%' },
+            { duration: duration, drawSVG: '0% 100%' }
+          );
+
+          playWithEasing(svgPath, now);
+        });
+
+        // Convert SVG path data to audio automation values
+        function pathToAudioValues(
+          svgPath,
+          duration = duration,
+          sampleRate = 1000
+        ) {
+          // Parse the SVG path to get coordinate points
+          const coordinates = svgPath.match(/[\d.]+/g);
+          const points = [];
+
+          // Extract x,y pairs (skip the initial M command coordinates)
+          for (let i = 2; i < coordinates.length; i += 2) {
+            const x = parseFloat(coordinates[i]);
+            const y = parseFloat(coordinates[i + 1]);
+            points.push({ x, y });
+          }
+
+          // Convert to audio automation values
+          const audioValues = [];
+          const timeStep = duration / sampleRate;
+
+          for (let i = 0; i < sampleRate; i++) {
+            const time = i * timeStep;
+            const normalizedTime = time / duration; // 0 to 1
+            const svgX = normalizedTime * 500; // Scale to SVG width
+
+            // Find the corresponding Y value (linear interpolation)
+            let y = 500; // Default
+            for (let j = 0; j < points.length - 1; j++) {
+              if (svgX >= points[j].x && svgX <= points[j + 1].x) {
+                // Linear interpolation between two points
+                const ratio =
+                  (svgX - points[j].x) / (points[j + 1].x - points[j].x);
+                y = points[j].y + ratio * (points[j + 1].y - points[j].y);
+                break;
+              }
+            }
+
+            // Convert SVG Y (500 to 0) to frequency
+            const normalizedY = 1 - y / 500; // Flip and normalize
+            const frequency = 330 + normalizedY * 2500; // 10Hz to 3000Hz
+
+            audioValues.push({
+              time: time,
+              value: frequency,
+            });
+          }
+
+          return audioValues;
+        }
+
+        // Play audio with easing automation
+        function playWithEasing(svgPath, startTime = audioContext.currentTime) {
+          if (isPlaying) return;
+
+          initAudio();
+          isPlaying = true;
+
+          // Convert to audio automation values
+          const audioValues = pathToAudioValues(svgPath, startTime);
+          console.log('Audio Values:', audioValues.slice(0, 10)); // Show first 10 values
+
+          // Create audio nodes
+          oscillator = audioContext.createOscillator();
+          filter = audioContext.createBiquadFilter();
+          gainNode = audioContext.createGain();
+
+          // Configure oscillator
+          oscillator.type = 'sawtooth';
+          oscillator.frequency.setValueAtTime(0, startTime);
+
+          // Configure filter
+          filter.type = 'lowpass';
+          filter.Q.setValueAtTime(1, startTime);
+
+          audioValues.forEach((point, index) => {
+            filter.frequency.setValueAtTime(
+              point.value,
+              startTime + point.time
+            );
+
+            oscillator.frequency.setValueAtTime(
+              point.value,
+              startTime + point.time
+            );
+          });
+
+          // Configure gain (volume envelope)
+          gainNode.gain.setValueAtTime(0, startTime);
+          gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.01);
+          gainNode.gain.setValueAtTime(0.3, startTime + duration - 0.1);
+          gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
+
+          // Connect the nodes
+          oscillator.connect(filter);
+          filter.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+
+          // Start and stop
+          oscillator.start(startTime);
+          oscillator.stop(startTime + duration);
+
+          oscillator.onended = () => {
+            isPlaying = false;
+          };
+        }
+
+        function stopAudio() {
+          if (oscillator && isPlaying) {
+            oscillator.stop();
+            isPlaying = false;
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
+
+<!-- <svg id="svg" viewBox="-20 0 557 190">
+          <path
+            id="motionPath"
+            fill="none"
+            stroke="green"
+            d="M8,102 C15,83 58,25 131,24 206,24 233,63 259,91 292,125 328,155 377,155 464,155 497,97 504,74"
+          />
+          <g id="dummy-g"></g>
+        </svg> 
+-->

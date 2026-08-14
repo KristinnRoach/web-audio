@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Piano Pitch Detection Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .controls {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      #cutoffValue {
+        opacity: 0.5;
+      }
+      .file-drop {
+        border: 2px dashed #ccc;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 20px;
+        border-radius: 8px;
+      }
+      .file-drop.dragover {
+        border-color: #2196f3;
+        background: #f0f8ff;
+      }
+      .results {
+        max-height: 500px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .result-row {
+        display: grid;
+        grid-template-columns: 200px 120px 120px 120px 80px auto;
+        gap: 10px;
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+        align-items: center;
+        font-family: monospace;
+        font-size: 14px;
+      }
+      .result-row.header {
+        background: #f8f9fa;
+        font-weight: bold;
+        font-family: Arial, sans-serif;
+      }
+      .note-name {
+        font-weight: bold;
+      }
+      .error {
+        color: #dc3545;
+      }
+      .good {
+        color: #28a745;
+      }
+      .warning {
+        color: #ffc107;
+      }
+      button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background: #2196f3;
+        color: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #1976d2;
+      }
+      .algo-toggle {
+        background: #6c757d;
+      }
+      .algo-toggle.active {
+        background: #28a745;
+      }
+
+      /* Add to existing styles */
+      .recent-results {
+        margin-top: 30px;
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+      }
+
+      .recent-results h2 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: #495057;
+      }
+
+      .recent-results-table {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: white;
+      }
+
+      .recent-row {
+        display: grid;
+        grid-template-columns: 80px 100px 60px 50px 50px 80px 100px 80px 150px 60px;
+        gap: 10px;
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+        align-items: center;
+        font-family: monospace;
+        font-size: 12px;
+      }
+
+      .recent-row.header {
+        background: #e9ecef;
+        font-weight: bold;
+        font-family: Arial, sans-serif;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Piano Pitch Detection Test</h1>
+
+      <div class="controls">
+        <label>
+          <input type="checkbox" id="enableHPF" />
+          Enable HPF
+        </label>
+        <label>
+          HPF Cutoff:
+          <input
+            type="range"
+            id="cutoffSlider"
+            min="20"
+            max="1000"
+            value="250"
+            step="10"
+            disabled
+          />
+          <span id="cutoffValue">250</span> Hz
+        </label>
+        <button id="algoToggle" class="algo-toggle">Simple AC</button>
+        <label>
+          <input type="checkbox" id="fundamentalDetection" />
+          Fundamental Detection
+        </label>
+        <button onclick="clearResults()">Clear Results</button>
+        <button id="runButton" disabled onclick="rerunTest()">Run</button>
+      </div>
+
+      <div class="file-drop" id="fileDrop">
+        Drop MP3/WAV files here or click to select<br />
+        <small>Expected format: 1_C.mp3, 2_C#.mp3, 3_A.mp3, etc.</small>
+        <input
+          type="file"
+          id="fileInput"
+          multiple
+          accept="audio/*"
+          style="display: none"
+        />
+      </div>
+
+      <div class="results">
+        <div class="result-row header">
+          <div>File</div>
+          <div>Expected</div>
+          <div>Detected</div>
+          <div>Error (cents)</div>
+          <div>Confidence</div>
+          <div>Status</div>
+        </div>
+        <div id="resultsContainer"></div>
+      </div>
+
+      <!-- Add Recent Results section -->
+      <div class="recent-results">
+        <h2>Recent Results</h2>
+        <div class="recent-results-table">
+          <div class="recent-row header">
+            <div>Batch</div>
+            <div>Algorithm</div>
+            <div>HPF</div>
+            <div>Fund.</div>
+            <div>Files</div>
+            <div>Avg Error</div>
+            <div>Avg Confidence</div>
+            <div>Success Rate</div>
+            <div>By Octave</div>
+            <div>Time</div>
+          </div>
+          <div id="recentResultsContainer"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let useWindowed = false;
+      let currentBatch = null;
+      let batchCounter = 0;
+      let lastUploadedFiles = null; // Store last uploaded files
+
+      let sharedAudioContext = null;
+
+      function getAudioContext() {
+        if (!sharedAudioContext) {
+          sharedAudioContext = new (window.AudioContext ||
+            window.webkitAudioContext)();
+        }
+        return sharedAudioContext;
+      }
+
+      // Expected frequencies for piano notes
+      const noteFrequencies = {
+        C1: 32.7,
+        C2: 65.41,
+        C3: 130.81,
+        C4: 261.63,
+        C5: 523.25,
+        C6: 1046.5,
+        C7: 2093.0,
+        'C#1': 34.65,
+        'C#2': 69.3,
+        'C#3': 138.59,
+        'C#4': 277.18,
+        'C#5': 554.37,
+        'C#6': 1108.73,
+        'C#7': 2217.46,
+        D1: 36.71,
+        D2: 73.42,
+        D3: 146.83,
+        D4: 293.66,
+        D5: 587.33,
+        D6: 1174.66,
+        D7: 2349.32,
+        'D#1': 38.89,
+        'D#2': 77.78,
+        'D#3': 155.56,
+        'D#4': 311.13,
+        'D#5': 622.25,
+        'D#6': 1244.51,
+        'D#7': 2489.02,
+        E1: 41.2,
+        E2: 82.41,
+        E3: 164.81,
+        E4: 329.63,
+        E5: 659.25,
+        E6: 1318.51,
+        E7: 2637.02,
+        F1: 43.65,
+        F2: 87.31,
+        F3: 174.61,
+        F4: 349.23,
+        F5: 698.46,
+        F6: 1396.91,
+        F7: 2793.83,
+        'F#1': 46.25,
+        'F#2': 92.5,
+        'F#3': 185.0,
+        'F#4': 369.99,
+        'F#5': 739.99,
+        'F#6': 1479.98,
+        'F#7': 2959.96,
+        G1: 49.0,
+        G2: 98.0,
+        G3: 196.0,
+        G4: 392.0,
+        G5: 783.99,
+        G6: 1567.98,
+        G7: 3135.96,
+        'G#1': 51.91,
+        'G#2': 103.83,
+        'G#3': 207.65,
+        'G#4': 415.3,
+        'G#5': 830.61,
+        'G#6': 1661.22,
+        'G#7': 3322.44,
+        A1: 55.0,
+        A2: 110.0,
+        A3: 220.0,
+        A4: 440.0,
+        A5: 880.0,
+        A6: 1760.0,
+        A7: 3520.0,
+        'A#1': 58.27,
+        'A#2': 116.54,
+        'A#3': 233.08,
+        'A#4': 466.16,
+        'A#5': 932.33,
+        'A#6': 1864.66,
+        'A#7': 3729.31,
+        B1: 61.74,
+        B2: 123.47,
+        B3: 246.94,
+        B4: 493.88,
+        B5: 987.77,
+        B6: 1975.53,
+        B7: 3951.07,
+      };
+
+      // Setup UI
+      const cutoffSlider = document.getElementById('cutoffSlider');
+      const cutoffValue = document.getElementById('cutoffValue');
+      const algoToggle = document.getElementById('algoToggle');
+      const fileDrop = document.getElementById('fileDrop');
+      const fileInput = document.getElementById('fileInput');
+      const resultsContainer = document.getElementById('resultsContainer');
+      const fundamentalDetection = document.getElementById(
+        'fundamentalDetection'
+      );
+      const enableHPF = document.getElementById('enableHPF');
+      const runButton = document.getElementById('runButton');
+
+      cutoffSlider.addEventListener('input', () => {
+        cutoffValue.textContent = cutoffSlider.value;
+      });
+
+      // Enable/disable cutoff slider based on HPF checkbox
+      enableHPF.addEventListener('change', () => {
+        cutoffSlider.disabled = !enableHPF.checked;
+        cutoffValue.style.opacity = enableHPF.checked ? '1' : '0.5';
+      });
+
+      algoToggle.addEventListener('click', () => {
+        useWindowed = !useWindowed;
+        algoToggle.textContent = useWindowed ? 'Windowed' : 'Simple AC';
+        algoToggle.classList.toggle('active', useWindowed);
+      });
+
+      // File handling
+      fileDrop.addEventListener('click', () => fileInput.click());
+      fileDrop.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        fileDrop.classList.add('dragover');
+      });
+      fileDrop.addEventListener('dragleave', () => {
+        fileDrop.classList.remove('dragover');
+      });
+      fileDrop.addEventListener('drop', (e) => {
+        e.preventDefault();
+        fileDrop.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+      });
+      fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+      });
+
+      function rerunTest() {
+        if (lastUploadedFiles) {
+          handleFiles(lastUploadedFiles);
+        }
+      }
+
+      function clearResults() {
+        resultsContainer.innerHTML = '';
+        // Don't clear recent results - they're for comparison
+      }
+
+      // Add function to clear recent results
+      function clearRecentResults() {
+        document.getElementById('recentResultsContainer').innerHTML = '';
+        batchCounter = 0;
+      }
+
+      function parseFileName(filename) {
+        // Extract note from filename like "1_C.mp3", "2_C#.mp3", "3_A.mp3"
+        const match = filename.match(/(\d+)_([A-G]#?)\.mp3$/i);
+        if (match) {
+          const octave = match[1];
+          const note = match[2].toUpperCase();
+          return `${note}${octave}`;
+        }
+
+        // Also try to handle files without extensions or with different patterns
+        const matchNoExt = filename.match(/(\d+)_([A-G]#?)$/i);
+        if (matchNoExt) {
+          const octave = matchNoExt[1];
+          const note = matchNoExt[2].toUpperCase();
+          return `${note}${octave}`;
+        }
+
+        console.log(`Failed to parse filename: ${filename}`);
+        return null;
+      }
+
+      function centsDifference(freq1, freq2) {
+        return Math.round(1200 * Math.log2(freq1 / freq2));
+      }
+
+      function getStatusClass(centsDiff) {
+        const abs = Math.abs(centsDiff);
+        if (abs <= 10) return 'good';
+        if (abs <= 50) return 'warning';
+        return 'error';
+      }
+
+      function findFundamental(detectedFreq, expectedFreq) {
+        const tolerance = 0.05; // 5% tolerance
+        const candidates = [];
+
+        for (let harmonic = 1; harmonic <= 8; harmonic++) {
+          const fundamental = detectedFreq / harmonic;
+          let score = 0;
+
+          // Prefer candidates close to expected frequency
+          const expectedRatio =
+            Math.abs(fundamental - expectedFreq) / expectedFreq;
+          if (expectedRatio < tolerance) {
+            score += 100;
+          } else {
+            score += Math.max(0, 50 - expectedRatio * 100);
+          }
+
+          // Prefer lower harmonics
+          score += (9 - harmonic) * 5;
+
+          // Ensure reasonable frequency range
+          if (fundamental < 27 || fundamental > 4200) {
+            score = 0;
+          }
+
+          candidates.push({
+            frequency: fundamental,
+            harmonic: harmonic,
+            score: score,
+          });
+        }
+
+        const best = candidates.reduce((prev, curr) =>
+          curr.score > prev.score ? curr : prev
+        );
+        return best.frequency;
+      }
+
+      function getStatusDescription(centsDiff) {
+        const abs = Math.abs(centsDiff);
+        if (abs <= 10) return 'Perfect';
+        if (abs <= 25) return 'Good';
+        if (abs <= 50) return 'Fair';
+        return 'Poor';
+      }
+
+      function addResult(
+        filename,
+        expected,
+        detected,
+        error,
+        confidence,
+        status,
+        statusClass = ''
+      ) {
+        const container = document.getElementById('resultsContainer');
+        const row = document.createElement('div');
+        row.className = `result-row ${statusClass}`;
+        row.innerHTML = `
+          <div>${filename}</div>
+          <div class="note-name">${expected}</div>
+          <div>${detected}</div>
+          <div>${error}</div>
+          <div>${confidence}</div>
+          <div>${status}</div>
+        `;
+        container.appendChild(row);
+      }
+
+      async function handleFiles(files) {
+        // Store files for rerun functionality
+        if (files instanceof FileList) {
+          lastUploadedFiles = Array.from(files);
+        } else if (Array.isArray(files)) {
+          lastUploadedFiles = files;
+        }
+
+        // Enable run button now that we have files
+        runButton.disabled = false;
+
+        // Start new batch
+        batchCounter++;
+        currentBatch = {
+          id: batchCounter,
+          algorithm: useWindowed ? 'Windowed' : 'Simple AC',
+          hpfCutoff: parseInt(cutoffSlider.value),
+          fundamentalDetection: fundamentalDetection.checked,
+          hpfEnabled: enableHPF.checked,
+          files: files.length,
+          results: [],
+          fileResults: [], // Track individual file results with octave info
+          startTime: new Date(),
+        };
+
+        // Clear current results for new batch
+        resultsContainer.innerHTML = '';
+
+        for (const file of files) {
+          await processFile(file);
+        }
+
+        // Finalize and display batch results
+        finalizeBatch();
+      }
+
+      async function processFile(file) {
+        const expectedNote = parseFileName(file.name);
+        if (!expectedNote) {
+          addResult(
+            file.name,
+            'Unknown',
+            'N/A',
+            'N/A',
+            'N/A',
+            'Invalid filename format'
+          );
+          currentBatch.results.push({
+            success: false,
+            error: null,
+            confidence: 0,
+          });
+          currentBatch.fileResults.push({
+            filename: file.name,
+            octave: null,
+            success: false,
+          });
+          return;
+        }
+
+        const expectedFreq = noteFrequencies[expectedNote];
+        if (!expectedFreq) {
+          addResult(
+            file.name,
+            expectedNote,
+            'N/A',
+            'N/A',
+            'N/A',
+            'Unknown note'
+          );
+          currentBatch.results.push({
+            success: false,
+            error: null,
+            confidence: 0,
+          });
+          const octave = expectedNote.match(/\d+$/)?.[0];
+          currentBatch.fileResults.push({
+            filename: file.name,
+            octave: octave ? parseInt(octave) : null,
+            success: false,
+          });
+          return;
+        }
+
+        const octave = expectedNote.match(/\d+$/)?.[0];
+        const octaveNum = octave ? parseInt(octave) : null;
+
+        try {
+          const audioBuffer = await loadAudioFile(file);
+          const cutoffHz = parseInt(cutoffSlider.value);
+          const useHPF = enableHPF.checked;
+
+          const result = useWindowed
+            ? await detectPitchWindowed(audioBuffer, cutoffHz, useHPF)
+            : await detectSinglePitchAC(audioBuffer, cutoffHz, useHPF);
+
+          if (result.frequency > 0) {
+            let finalFreq = result.frequency;
+            let displayText = `${result.frequency.toFixed(1)}Hz`;
+
+            if (fundamentalDetection.checked) {
+              finalFreq = findFundamental(result.frequency, expectedFreq);
+              if (Math.abs(finalFreq - result.frequency) > 1) {
+                displayText = `${finalFreq.toFixed(1)}Hz (from ${result.frequency.toFixed(1)}Hz)`;
+              } else {
+                displayText = `${finalFreq.toFixed(1)}Hz`;
+              }
+            }
+
+            const centsDiff = centsDifference(finalFreq, expectedFreq);
+            const status = `${Math.abs(centsDiff) <= 10 ? '✓' : '✗'} ${getStatusDescription(centsDiff)}`;
+            const success = Math.abs(centsDiff) <= 50; // Consider ±50 cents as successful
+
+            addResult(
+              file.name,
+              `${expectedNote} (${expectedFreq.toFixed(1)}Hz)`,
+              displayText,
+              centsDiff.toString(),
+              result.confidence.toFixed(3),
+              status,
+              getStatusClass(centsDiff)
+            );
+
+            currentBatch.results.push({
+              success: success,
+              error: Math.abs(centsDiff),
+              confidence: result.confidence,
+            });
+            currentBatch.fileResults.push({
+              filename: file.name,
+              octave: octaveNum,
+              success: success,
+            });
+          } else {
+            addResult(
+              file.name,
+              `${expectedNote} (${expectedFreq.toFixed(1)}Hz)`,
+              'No pitch',
+              'N/A',
+              result.confidence.toFixed(3),
+              'Failed',
+              'error'
+            );
+            currentBatch.results.push({
+              success: false,
+              error: null,
+              confidence: result.confidence,
+            });
+            currentBatch.fileResults.push({
+              filename: file.name,
+              octave: octaveNum,
+              success: false,
+            });
+          }
+        } catch (error) {
+          addResult(
+            file.name,
+            expectedNote,
+            'Error',
+            'N/A',
+            'N/A',
+            error.message,
+            'error'
+          );
+          currentBatch.results.push({
+            success: false,
+            error: null,
+            confidence: 0,
+          });
+          currentBatch.fileResults.push({
+            filename: file.name,
+            octave: octaveNum,
+            success: false,
+          });
+        }
+      }
+
+      function finalizeBatch() {
+        const validResults = currentBatch.results.filter(
+          (r) => r.error !== null
+        );
+        const successfulResults = currentBatch.results.filter((r) => r.success);
+
+        const avgError =
+          validResults.length > 0
+            ? validResults.reduce((sum, r) => sum + r.error, 0) /
+              validResults.length
+            : 0;
+
+        const avgConfidence =
+          currentBatch.results.length > 0
+            ? currentBatch.results.reduce((sum, r) => sum + r.confidence, 0) /
+              currentBatch.results.length
+            : 0;
+
+        const successRate =
+          currentBatch.files > 0
+            ? (successfulResults.length / currentBatch.files) * 100
+            : 0;
+
+        const processingTime = new Date() - currentBatch.startTime;
+
+        // Calculate octave-specific success rates
+        const octaveStats = getOctaveSuccessRates();
+
+        addRecentResult(
+          `Batch ${currentBatch.id}`,
+          currentBatch.algorithm,
+          currentBatch.hpfEnabled ? `${currentBatch.hpfCutoff}Hz` : 'Off',
+          currentBatch.fundamentalDetection ? '✓' : '✗',
+          currentBatch.files,
+          validResults.length > 0 ? `${avgError.toFixed(1)}¢` : 'N/A',
+          `${avgConfidence.toFixed(3)}`,
+          `${successRate.toFixed(0)}%`,
+          octaveStats,
+          `${(processingTime / 1000).toFixed(1)}s`,
+          getSuccessRateClass(successRate)
+        );
+      }
+
+      function getOctaveSuccessRates() {
+        // Group results by octave
+        const octaveGroups = {};
+
+        currentBatch.fileResults.forEach((result) => {
+          if (result.octave !== null) {
+            if (!octaveGroups[result.octave]) {
+              octaveGroups[result.octave] = { total: 0, successful: 0 };
+            }
+            octaveGroups[result.octave].total++;
+            if (result.success) {
+              octaveGroups[result.octave].successful++;
+            }
+          }
+        });
+
+        // Create compact string showing each octave's success rate
+        const octaveRates = [];
+        for (let octave = 1; octave <= 7; octave++) {
+          if (octaveGroups[octave]) {
+            const rate = Math.round(
+              (octaveGroups[octave].successful / octaveGroups[octave].total) *
+                100
+            );
+            octaveRates.push(`${octave}:${rate}%`);
+          }
+        }
+
+        return octaveRates.length > 0 ? octaveRates.join(' ') : 'N/A';
+      }
+
+      function getSuccessRateClass(successRate) {
+        if (successRate >= 80) return 'good';
+        if (successRate >= 60) return 'warning';
+        return 'error';
+      }
+
+      function addRecentResult(
+        batch,
+        algorithm,
+        hpf,
+        fundamental,
+        files,
+        avgError,
+        avgConfidence,
+        successRate,
+        octaveStats,
+        time,
+        statusClass = ''
+      ) {
+        const container = document.getElementById('recentResultsContainer');
+        const row = document.createElement('div');
+        row.className = `recent-row ${statusClass}`;
+        row.innerHTML = `
+          <div>${batch}</div>
+          <div>${algorithm}</div>
+          <div>${hpf}</div>
+          <div>${fundamental}</div>
+          <div>${files}</div>
+          <div>${avgError}</div>
+          <div>${avgConfidence}</div>
+          <div>${successRate}</div>
+          <div>${octaveStats}</div>
+          <div>${time}</div>
+        `;
+        container.insertBefore(row, container.firstChild); // Add to top
+      }
+
+      async function loadAudioFile(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const audioContext = getAudioContext();
+        return await audioContext.decodeAudioData(arrayBuffer);
+      }
+
+      // High-pass filter
+      function highPassFilter(data, sampleRate, cutoffHz) {
+        if (cutoffHz <= 0) return data;
+
+        const filtered = new Float32Array(data.length);
+        const rc = 1 / (2 * Math.PI * cutoffHz);
+        const dt = 1 / sampleRate;
+        const alpha = rc / (rc + dt);
+
+        filtered[0] = 0;
+
+        for (let i = 1; i < data.length; i++) {
+          filtered[i] = alpha * (filtered[i - 1] + data[i] - data[i - 1]);
+        }
+
+        return filtered;
+      }
+
+      // Simple AC algorithm
+      async function detectSinglePitchAC(audioBuffer) {
+        const data = audioBuffer.getChannelData(0);
+
+        const MIN_Hz = 30;
+        const MAX_Hz = 1000; // only works below 1000Hz
+
+        const minLag = Math.floor(audioBuffer.sampleRate / MAX_Hz); //  upper bound
+        const maxLag = Math.floor(audioBuffer.sampleRate / MIN_Hz); //  lower bound
+
+        console.info('minLag', minLag, 'maxLag', maxLag);
+        console.info(audioBuffer.sampleRate);
+
+        let correlations = new Float32Array(maxLag);
+
+        const clipThreshold = 0.2;
+
+        let maxAbs = 0;
+        for (let i = 0; i < data.length; i++) {
+          const abs = Math.abs(data[i]);
+          if (abs > maxAbs) maxAbs = abs;
+        }
+
+        const clipLevel = clipThreshold * maxAbs;
+        const clipped = data.map((x) => (Math.abs(x) > clipLevel ? x : 0));
+
+        // Autocorrelation
+        for (let lag = minLag; lag < correlations.length; lag++) {
+          let sum = 0;
+          for (let i = 0; i < clipped.length - lag; i++) {
+            sum += clipped[i] * clipped[i + lag];
+          }
+          correlations[lag] = sum;
+        }
+
+        // Find peak correlation excluding short lags
+        let bestLag = minLag;
+        for (let i = minLag; i < maxLag; i++) {
+          if (correlations[i] > correlations[bestLag]) bestLag = i;
+        }
+
+        // Quadratic interpolation for sub-sample precision
+        const x = bestLag;
+        const y1 = correlations[x - 1];
+        const y2 = correlations[x];
+        const y3 = correlations[x + 1];
+
+        const denominator = 2 * (2 * y2 - y1 - y3);
+        const offset =
+          Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
+
+        // Add confidence calculation
+        const maxCorrelation = correlations[bestLag];
+        const rms = Math.sqrt(
+          data.reduce((sum, x) => sum + x * x, 0) / data.length
+        );
+        const normalizedMax = maxCorrelation / (rms * rms * data.length);
+
+        const confidence = Math.max(0, Math.min(1, normalizedMax));
+
+        return {
+          frequency: audioBuffer.sampleRate / (x + offset),
+          confidence: confidence,
+        };
+      }
+
+      // Windowed algorithm - updated to match windowed.ts
+      async function detectPitchWindowed(audioBuffer) {
+        const data = audioBuffer.getChannelData(0);
+        const sampleRate = audioBuffer.sampleRate;
+
+        // // Apply high-pass filter only if enabled
+        // const data = useHPF
+        //   ? highPassFilter(rawData, audioBuffer.sampleRate, cutoffHz)
+        //   : rawData;
+
+        // Window parameters
+        const windowSize = 4096; // ~93ms at 44.1kHz
+        const hopSize = 1024; // 75% overlap for smooth tracking
+        const numWindows = Math.floor((data.length - windowSize) / hopSize) + 1;
+
+        const pitchCandidates = [];
+
+        // Analyze each window
+        for (let w = 0; w < numWindows; w++) {
+          const start = w * hopSize;
+          const end = Math.min(start + windowSize, data.length);
+          const windowData = data.slice(start, end);
+
+          const result = analyzeWindow(windowData, sampleRate);
+          if (result.frequency > 0 && result.confidence > 0.3) {
+            // Minimum confidence threshold
+            pitchCandidates.push({
+              frequency: result.frequency,
+              confidence: result.confidence,
+              time: start / sampleRate,
+            });
+          }
+        }
+
+        if (pitchCandidates.length === 0) {
+          return { frequency: 0, confidence: 0 }; // No pitch detected
+        }
+
+        return findMostProminentFundamental(pitchCandidates);
+      }
+
+      function analyzeWindow(windowData, sampleRate) {
+        // Pad window if too short
+        if (windowData.length < 1000) {
+          return { frequency: 0, confidence: 0 };
+        }
+
+        let correlations = new Float32Array(1000);
+
+        // Center-clipping (reduced threshold for vocals)
+        const clipLevel = 0.15 * Math.max(...windowData.map(Math.abs));
+        const clipped = windowData.map((x) =>
+          Math.abs(x) > clipLevel ? x : 0
+        );
+
+        // Check if we have enough signal after clipping
+        const nonZeroSamples = clipped.filter((x) => x !== 0).length;
+        if (nonZeroSamples < windowData.length * 0.1) {
+          // Too much was clipped, use raw data
+          clipped.set(windowData);
+        }
+
+        // Autocorrelation
+        for (let lag = 20; lag < correlations.length; lag++) {
+          let sum = 0;
+          for (let i = 0; i < clipped.length - lag; i++) {
+            sum += clipped[i] * clipped[i + lag];
+          }
+          correlations[lag] = sum;
+        }
+
+        // Find peak correlation
+        const minLag = Math.floor(sampleRate / 4000); // ~4kHz upper bound (was 1kHz)
+        const maxLag = Math.floor(sampleRate / 80); // ~80Hz lower bound (unchanged)
+
+        let bestLag = minLag;
+        let maxCorr = correlations[minLag];
+
+        for (let i = minLag; i < Math.min(maxLag, correlations.length); i++) {
+          if (correlations[i] > maxCorr) {
+            bestLag = i;
+            maxCorr = correlations[i];
+          }
+        }
+
+        // Calculate confidence (peak vs average)
+        const avgCorr =
+          correlations
+            .slice(minLag, Math.min(maxLag, correlations.length))
+            .reduce((sum, val) => sum + val, 0) /
+          (Math.min(maxLag, correlations.length) - minLag);
+
+        const confidence = avgCorr > 0 ? maxCorr / avgCorr : 0;
+
+        // Quadratic interpolation for sub-sample precision
+        if (bestLag > 0 && bestLag < correlations.length - 1) {
+          const y1 = correlations[bestLag - 1];
+          const y2 = correlations[bestLag];
+          const y3 = correlations[bestLag + 1];
+
+          const denominator = 2 * (2 * y2 - y1 - y3);
+          const offset =
+            Math.abs(denominator) < 1e-10 ? 0 : (y3 - y1) / denominator;
+
+          const frequency = sampleRate / (bestLag + offset);
+          return { frequency, confidence };
+        }
+
+        return { frequency: 0, confidence: 0 };
+      }
+
+      function findMostProminentFundamental(candidates) {
+        // Group similar pitches (within 20 cents tolerance)
+        const groups = [];
+        const tolerance = 0.02; // ~20 cents
+
+        for (const candidate of candidates) {
+          let foundGroup = false;
+
+          for (const group of groups) {
+            const avgPitch =
+              group.reduce((sum, c) => sum + c.frequency, 0) / group.length;
+            const ratio = candidate.frequency / avgPitch;
+
+            // Check if within tolerance (accounting for octave errors)
+            if (
+              Math.abs(ratio - 1) < tolerance ||
+              Math.abs(ratio - 0.5) < tolerance ||
+              Math.abs(ratio - 2) < tolerance
+            ) {
+              // Normalize to same octave as group average
+              let normalizedPitch = candidate.frequency;
+              if (Math.abs(ratio - 0.5) < tolerance) normalizedPitch *= 2;
+              if (Math.abs(ratio - 2) < tolerance) normalizedPitch /= 2;
+
+              group.push({ ...candidate, frequency: normalizedPitch });
+              foundGroup = true;
+              break;
+            }
+          }
+
+          if (!foundGroup) {
+            groups.push([candidate]);
+          }
+        }
+
+        // Find group with highest total confidence
+        let bestGroup = groups[0];
+        let bestScore = 0;
+
+        for (const group of groups) {
+          const totalConfidence = group.reduce(
+            (sum, c) => sum + c.confidence,
+            0
+          );
+          const avgConfidence = totalConfidence / group.length;
+          const duration = group.length; // Number of windows
+
+          // Score = average confidence * duration (favors sustained notes)
+          const score = avgConfidence * Math.sqrt(duration);
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestGroup = group;
+          }
+        }
+
+        // Calculate final confidence
+        const avgConfidence =
+          bestGroup.reduce((sum, c) => sum + c.confidence, 0) /
+          bestGroup.length;
+
+        // Return weighted average of best group
+        const totalWeight = bestGroup.reduce((sum, c) => sum + c.confidence, 0);
+        const weightedPitch =
+          bestGroup.reduce((sum, c) => sum + c.frequency * c.confidence, 0) /
+          totalWeight;
+
+        return { frequency: weightedPitch, confidence: avgConfidence };
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,72 @@
+{
+  "name": "@kidlib/web-audio",
+  "version": "0.1.0",
+  "description": "High-level Web Audio primitives for musical instruments and tools.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KristinnRoach/web-audio.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@11.5.2",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./io": {
+      "types": "./dist/io.d.ts",
+      "import": "./dist/io.js"
+    },
+    "./components": {
+      "types": "./dist/components.d.ts",
+      "import": "./dist/components.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build:worklets": "node build-processors.js && mkdir -p dist",
+    "build": "pnpm clean && node build-processors.js && vite build",
+    "prepack": "pnpm build",
+    "watch:processors": "node watch-processors.js",
+    "watch": "mkdir -p dist && node build-processors.js && concurrently \"vitest\" \"vite build --watch\" \"pnpm watch:processors\"",
+    "clean": "rimraf dist && mkdir -p dist",
+    "clean:turbo": "rimraf .turbo",
+    "clean:all": "rimraf dist node_modules && pnpm store prune && pnpm prune",
+    "lint": "eslint . ",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "preview": "vite preview",
+    "pretest": "pnpm build:worklets",
+    "test": "vitest run",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:all": "npm run test && npm run test:browser"
+  },
+  "dependencies": {
+    "dexie": "^4.0.11",
+    "webmidi": "^3.1.13"
+  },
+  "devDependencies": {
+    "@types/audioworklet": "^0.0.72",
+    "@types/webmidi": "^2.1.0",
+    "@vitest/browser": "^3.2.4",
+    "@vitest/coverage-v8": "3.2.4",
+    "concurrently": "^9.1.2",
+    "jsdom": "^26.0.0",
+    "playwright": "^1.53.2",
+    "rimraf": "^5.0.1",
+    "typescript": "5.8.3",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.3",
+    "vitest": "^3.2.4"
+  }
+}

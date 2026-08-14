@@ -1,0 +1,690 @@
+// CustomEnvelope.ts
+
+import { EnvelopePoint, EnvelopeType } from './env-types';
+import { EnvelopeData } from './EnvelopeData';
+
+// ===== CUSTOM ENVELOPE  =====
+export class CustomEnvelope {
+  #data: EnvelopeData;
+  #context: AudioContext;
+  envelopeType: EnvelopeType;
+  #paramName: string;
+
+  #isEnabled: boolean;
+  #loopEnabled = false;
+  #syncedToPlaybackRate = false;
+
+  #timeScale = 1;
+  #logarithmic = false;
+
+  #stopLoopFn: (() => void) | null = null;
+
+  constructor(
+    context: AudioContext,
+    envelopeType: EnvelopeType,
+    initialPoints: EnvelopePoint[] = [],
+    valueRange: [number, number] = [0, 1],
+    durationSeconds = 1,
+    logarithmic = false,
+    initEnable = true
+  ) {
+    this.envelopeType = envelopeType;
+
+    switch (envelopeType) {
+      case 'amp-env':
+        this.#paramName = 'envGain';
+        break;
+      case 'pitch-env':
+        this.#paramName = 'playbackRate';
+        break;
+      case 'filter-env':
+        this.#paramName = 'lpf';
+        break;
+      case 'loop-env':
+        this.#paramName = 'loopEnd';
+        console.warn('CustomEnvelope not implemnted for type: loop-env');
+        break;
+      default:
+        console.error(
+          `CustomEnvelope not implemented for type: ${envelopeType}`
+        );
+        this.#paramName = 'default';
+        break;
+    }
+
+    this.#isEnabled = initEnable;
+
+    this.#context = context;
+    this.#logarithmic = logarithmic;
+
+    this.#data = new EnvelopeData(
+      [...initialPoints],
+      valueRange,
+      durationSeconds
+    );
+  }
+
+  // Delegate data operations to EnvelopeData // ? redundant ?
+  addPoint = (
+    time: number,
+    value: number,
+    curve?: 'linear' | 'exponential'
+  ): void => this.#data.addPoint(time, value, curve);
+
+  deletePoint = (index: number): void => this.#data.deletePoint(index);
+
+  updatePoint = (index: number, time?: number, value?: number) => {
+    this.#data.updatePoint(index, time, value);
+  };
+
+  updateStartPoint = (time?: number, value?: number) =>
+    this.#data.updateStartPoint(time, value);
+
+  updateEndPoint = (time?: number, value?: number) =>
+    this.#data.updateEndPoint(time, value);
+
+  getSVGPath = (
+    width: number | undefined,
+    height: number | undefined,
+    durationSeconds: number
+  ): string => this.#data.getSVGPath(width, height, durationSeconds);
+
+  setValueRange = (range: [number, number]): [number, number] =>
+    this.#data.setValueRange(range);
+
+  // Convenience ON/OFF methods
+  enable = () => (this.#isEnabled = true);
+  disable = () => (this.#isEnabled = false);
+
+  // Property getters
+  get data() {
+    return this.#data;
+  }
+
+  get param() {
+    return this.#paramName;
+  }
+
+  get isEnabled() {
+    return this.#isEnabled;
+  }
+
+  get points() {
+    return this.#data.points;
+  }
+
+  get fullDuration() {
+    return this.#data.durationSeconds;
+  }
+
+  get timeScale() {
+    return this.#timeScale;
+  }
+
+  get valueRange() {
+    return this.#data.valueRange;
+  }
+
+  get loopEnabled() {
+    return this.#loopEnabled;
+  }
+
+  get syncedToPlaybackRate() {
+    return this.#syncedToPlaybackRate;
+  }
+
+  get numPoints(): number {
+    return this.#data.points.length;
+  }
+
+  setSampleDuration(seconds: number) {
+    this.#data.setDurationSeconds(seconds);
+    return this;
+  }
+
+  // ===== AUDIO OPERATIONS =====
+  applyToAudioParam(
+    audioParam: AudioParam,
+    startTime: number,
+    options: {
+      baseValue: number;
+      playbackRate: number;
+      minValue?: number;
+      maxValue?: number;
+    } = { baseValue: 1, playbackRate: 1 }
+  ) {
+    this.stopLooping();
+
+    const durationSeconds = this.#syncedToPlaybackRate
+      ? this.#data.durationSeconds / options.playbackRate
+      : this.#data.durationSeconds;
+
+    if (this.#loopEnabled) {
+      this.#startLoop(audioParam, startTime, options);
+    } else {
+      this.#applyEnvelope(audioParam, startTime, durationSeconds, options);
+    }
+  }
+
+  applyReleaseToAudioParam(
+    audioParam: AudioParam,
+    startTime: number,
+    duration: number,
+    currentValue: number,
+    targetValue = 0.001
+  ) {
+    this.stopLooping();
+
+    const sustainIndex = this.#data.sustainPointIndex;
+
+    // If no sustain point, use existing release logic
+    if (sustainIndex === null) {
+      console.debug('No sustain applyRelease called');
+
+      this.#applyRelease(
+        audioParam,
+        startTime,
+        duration,
+        currentValue,
+        targetValue
+      );
+      return;
+    }
+
+    // Continue envelope from sustain point to end
+
+    // Pass the same options that were used in the original envelope
+    const options = { baseValue: 1, playbackRate: 1 }; // You may need to store these from the original call
+
+    console.debug('applyContinueFromSustain called');
+
+    this.#applyContinueFromSustain(
+      audioParam,
+      startTime,
+      sustainIndex,
+      options
+    );
+  }
+
+  #applyEnvelope(
+    audioParam: AudioParam,
+    startTime: number,
+    duration: number = this.fullDuration,
+    options: {
+      baseValue: number;
+      minValue?: number;
+      maxValue?: number;
+      playbackRate: number;
+    } = { baseValue: 1, playbackRate: 1 }
+  ) {
+    // Skip sustain if looping is enabled
+    const sustainIndex = this.#loopEnabled
+      ? null
+      : this.#data.sustainPointIndex;
+
+    // Determine actual duration - either to sustain point or full envelope
+    let envelopeDuration = duration;
+    if (sustainIndex !== null && sustainIndex < this.#data.points.length) {
+      const sustainPoint = this.#data.points[sustainIndex];
+      envelopeDuration = sustainPoint.time;
+    }
+
+    // Scale the duration by the time scale
+    const scaledDuration = duration / this.#timeScale;
+
+    const sampleRate = this.#logarithmic
+      ? scaledDuration < 1
+        ? 1000
+        : 750 // Higher rates for log curves
+      : this.#data.hasSharpTransitions
+        ? 1000
+        : scaledDuration < 1
+          ? 500
+          : 250;
+
+    const numSamples = Math.max(2, Math.floor(envelopeDuration * sampleRate));
+    const curve = new Float32Array(numSamples);
+
+    const { baseValue: base, minValue: min, maxValue: max } = options;
+
+    for (let i = 0; i < numSamples; i++) {
+      const normalizedProgress = i / (numSamples - 1);
+      const absoluteTime = normalizedProgress * envelopeDuration; // sample the full duration until sustain point (scale after)
+      //     const currentDuration = this.#syncToPlaybackRate
+      // ? this.#data.durationSeconds / options.playbackRate
+      // : this.#data.durationSeconds;
+      let value = this.#data.interpolateValueAtTime(
+        absoluteTime * options.playbackRate
+      );
+
+      if (this.#logarithmic) {
+        value = Math.pow(value, 2); // or just value * value if to aggressive
+      }
+
+      let finalValue = (base ?? 1) * value;
+
+      if (min !== undefined) finalValue = Math.max(finalValue, min);
+      if (max !== undefined) finalValue = Math.min(max, finalValue);
+
+      curve[i] = finalValue;
+    }
+
+    const safeStart = Math.max(this.#context.currentTime, startTime);
+    const curveScaledDuration = envelopeDuration / this.#timeScale;
+
+    try {
+      audioParam.cancelScheduledValues(safeStart);
+      audioParam.setValueCurveAtTime(curve, safeStart, curveScaledDuration);
+
+      // If we have a sustain point, hold the final curve value
+      if (sustainIndex !== null) {
+        const sustainValue = curve[curve.length - 1];
+        audioParam.setValueAtTime(
+          sustainValue,
+          safeStart + curveScaledDuration
+        );
+      }
+    } catch (error) {
+      console.debug('Failed to apply envelope curve due to rapid fire.');
+      try {
+        const currentValue = audioParam.value;
+        audioParam.cancelScheduledValues(safeStart);
+        audioParam.setValueAtTime(currentValue, safeStart);
+        audioParam.linearRampToValueAtTime(
+          curve[curve.length - 1],
+          safeStart + scaledDuration
+        );
+      } catch (fallbackError) {
+        try {
+          audioParam.setValueAtTime(curve[curve.length - 1], safeStart);
+        } catch {
+          // Silent fail
+        }
+      }
+    }
+  }
+
+  #applyRelease(
+    audioParam: AudioParam,
+    startTime: number,
+    duration: number,
+    currentValue: number,
+    targetValue = 0.001,
+    curve: 'linear' | 'exponential' = 'exponential'
+  ) {
+    const safeStart = Math.max(this.#context.currentTime, startTime);
+    audioParam.cancelScheduledValues(safeStart);
+    audioParam.setValueAtTime(currentValue, safeStart);
+
+    const scaledDuration = duration / this.#timeScale;
+
+    try {
+      if (curve === 'exponential' && currentValue > 0.001 && targetValue > 0) {
+        audioParam.exponentialRampToValueAtTime(
+          targetValue,
+          safeStart + scaledDuration
+        );
+      } else {
+        audioParam.linearRampToValueAtTime(
+          targetValue,
+          safeStart + scaledDuration
+        );
+      }
+    } catch (error) {
+      console.warn('Failed to apply release:', error);
+      audioParam.linearRampToValueAtTime(
+        targetValue,
+        safeStart + scaledDuration
+      );
+    }
+  }
+
+  // Simpler version using native ramp instead of curve
+  #applyContinueFromSustain(
+    audioParam: AudioParam,
+    startTime: number,
+    sustainIndex: number,
+    options: {
+      baseValue: number;
+      minValue?: number;
+      maxValue?: number;
+      playbackRate: number;
+    } = { baseValue: 1, playbackRate: 1 }
+  ) {
+    // Calculate remaining envelope duration
+    const sustainPoint = this.#data.points[sustainIndex];
+    const lastPoint = this.#data.points[this.#data.points.length - 1];
+    const remainingDuration = lastPoint.time - sustainPoint.time;
+
+    if (remainingDuration <= 0) {
+      return;
+    }
+
+    const scaledDuration = remainingDuration / this.#timeScale;
+
+    // Calculate end value from envelope
+    let endValue = this.#data.interpolateValueAtTime(
+      lastPoint.time * options.playbackRate
+    );
+
+    if (this.#logarithmic) {
+      endValue = Math.pow(endValue, 2);
+    }
+
+    const { baseValue: base, minValue: min, maxValue: max } = options;
+    let finalEndValue = (base ?? 1) * endValue;
+    if (min !== undefined) finalEndValue = Math.max(finalEndValue, min);
+    if (max !== undefined) finalEndValue = Math.min(max, finalEndValue);
+
+    const safeStart = Math.max(this.#context.currentTime, startTime);
+    const currentValue = audioParam.value;
+
+    try {
+      audioParam.cancelScheduledValues(safeStart);
+      audioParam.setValueAtTime(currentValue, safeStart);
+      audioParam.linearRampToValueAtTime(
+        finalEndValue,
+        safeStart + scaledDuration
+      );
+    } catch (error) {
+      console.warn('Failed to apply release:', error);
+    }
+  }
+
+  // ===== LOOP / TIME CONTROL =====
+
+  setTimeScale = (timeScale: number) => {
+    this.#timeScale = timeScale;
+    // New timescale is applied on next loop iteration
+    // for already looping envs
+  };
+
+  setLoopEnabled = (
+    enabled: boolean,
+    mode: 'normal' | 'ping-pong' | 'reverse' = 'normal'
+  ) => {
+    if (mode !== 'normal')
+      console.info(
+        `Only default env loop mode implemented. Other modes coming soon!`
+      );
+
+    this.#loopEnabled = enabled;
+  };
+
+  syncToPlaybackRate = (sync: boolean) => {
+    this.#syncedToPlaybackRate = sync;
+  };
+
+  #startLoop(
+    audioParam: AudioParam,
+    startTime: number,
+    options: {
+      baseValue: number;
+      playbackRate: number;
+      minValue?: number;
+      maxValue?: number;
+    } = { baseValue: 1, playbackRate: 1 }
+  ): () => void {
+    let isLooping = true;
+    let currentCycleStart = startTime;
+    let timeoutId: number | null = null;
+
+    const scheduleNext = () => {
+      if (!isLooping) return;
+
+      const baseDuration = this.#syncedToPlaybackRate
+        ? this.#data.durationSeconds / options.playbackRate
+        : this.#data.durationSeconds;
+
+      this.#applyEnvelope(
+        audioParam,
+        currentCycleStart,
+        baseDuration, // gets time scaled in applyEnvelope
+        options
+      );
+
+      const scaledDuration = baseDuration / this.#timeScale;
+
+      currentCycleStart += scaledDuration;
+      const timeUntilNext =
+        (currentCycleStart - this.#context.currentTime) * 1000;
+
+      if (timeUntilNext > 0) {
+        timeoutId = setTimeout(scheduleNext, Math.max(timeUntilNext - 50, 0));
+      } else {
+        scheduleNext();
+      }
+    };
+
+    scheduleNext();
+
+    this.#stopLoopFn = () => {
+      isLooping = false;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    return this.#stopLoopFn;
+  }
+
+  startLooping(
+    audioParam: AudioParam,
+    startTime: number,
+    options: {
+      baseValue: number;
+      playbackRate: number;
+      minValue?: number;
+      maxValue?: number;
+    } = { baseValue: 1, playbackRate: 1 }
+  ) {
+    this.stopLooping();
+    this.#startLoop(audioParam, startTime, options);
+  }
+
+  stopLooping() {
+    if (this.#stopLoopFn) {
+      this.#stopLoopFn();
+      this.#stopLoopFn = null;
+    }
+  }
+
+  // === SUSTAIN / RELEASE ===
+
+  setSustainPoint = (index: number | null) => this.#data.setSustainPoint(index);
+
+  get sustainPointIndex() {
+    return this.#data.sustainPointIndex;
+  }
+
+  get releaseTime() {
+    return (
+      this.points[this.points.length - 1].time -
+      this.points[this.sustainPointIndex ?? this.points.length - 2].time
+    );
+  }
+
+  // === UTILS ===
+
+  hasVariation(): boolean {
+    const firstValue = this.points[0]?.value ?? 0;
+    return this.points.some(
+      (point) => Math.abs(point.value - firstValue) > 0.001
+    );
+  }
+
+  // === CLEAN UP ===
+
+  dispose() {
+    this.stopLooping();
+  }
+}
+
+// #applyContinueFromSustain(
+//   audioParam: AudioParam,
+//   startTime: number,
+//   sustainIndex: number,
+//   options: {
+//     baseValue: number;
+//     minValue?: number;
+//     maxValue?: number;
+//     playbackRate: number;
+//   } = { baseValue: 1, playbackRate: 1 }
+// ) {
+//   // Calculate remaining envelope duration
+//   const sustainPoint = this.#data.points[sustainIndex];
+//   const lastPoint = this.#data.points[this.#data.points.length - 1];
+//   const remainingDuration = lastPoint.time - sustainPoint.time;
+
+//   if (remainingDuration <= 0) {
+//     return;
+//   }
+
+//   const scaledDuration = remainingDuration / this.#timeScale;
+
+//   const sampleRate = this.#logarithmic
+//     ? scaledDuration < 1
+//       ? 1000
+//       : 750
+//     : this.#data.hasSharpTransitions
+//       ? 1000
+//       : scaledDuration < 1
+//         ? 500
+//         : 250;
+
+//   const numSamples = Math.max(2, Math.floor(scaledDuration * sampleRate));
+//   const curve = new Float32Array(numSamples);
+
+//   const { baseValue: base, minValue: min, maxValue: max } = options;
+
+//   // Calculate the envelope's end value
+//   let envelopeEndValue = this.#data.interpolateValueAtTime(
+//     lastPoint.time * options.playbackRate
+//   );
+
+//   if (this.#logarithmic) {
+//     envelopeEndValue = Math.pow(envelopeEndValue, 2);
+//   }
+
+//   let finalEndValue = (base ?? 1) * envelopeEndValue;
+//   if (min !== undefined) finalEndValue = Math.max(finalEndValue, min);
+//   if (max !== undefined) finalEndValue = Math.min(max, finalEndValue);
+
+//   const safeStart = Math.max(this.#context.currentTime, startTime);
+//   const currentValue = audioParam.value;
+
+//   // Generate curve from current value to envelope end value
+//   for (let i = 0; i < numSamples; i++) {
+//     const progress = i / (numSamples - 1);
+//     curve[i] = currentValue + (finalEndValue - currentValue) * progress;
+//   }
+
+//   try {
+//     audioParam.cancelScheduledValues(safeStart);
+//     audioParam.setValueCurveAtTime(curve, safeStart, scaledDuration);
+//   } catch (error) {
+//     // Fallback to linear ramp
+//     audioParam.setValueAtTime(currentValue, safeStart);
+//     audioParam.linearRampToValueAtTime(
+//       finalEndValue,
+//       safeStart + scaledDuration
+//     );
+//   }
+// }
+
+// #applyContinueFromSustain(
+//   audioParam: AudioParam,
+//   startTime: number,
+//   sustainIndex: number,
+//   options: {
+//     baseValue: number;
+//     minValue?: number;
+//     maxValue?: number;
+//     playbackRate: number;
+//   } = { baseValue: 1, playbackRate: 1 }
+// ) {
+//   // Calculate remaining envelope duration
+//   const sustainPoint = this.#data.points[sustainIndex];
+//   const lastPoint = this.#data.points[this.#data.points.length - 1];
+//   const remainingDuration = lastPoint.time - sustainPoint.time;
+
+//   if (remainingDuration <= 0) {
+//     return;
+//   }
+
+//   const scaledDuration = remainingDuration / this.#timeScale;
+
+//   console.debug('applyContinueFromSustain', options);
+//   console.debug(
+//     'remainingDuration',
+//     remainingDuration,
+//     'sustainPoint.time',
+//     sustainPoint.time,
+//     'lastPoint.time',
+//     lastPoint.time
+//   );
+
+//   const sampleRate = this.#logarithmic
+//     ? scaledDuration < 1
+//       ? 1000
+//       : 750
+//     : this.#data.hasSharpTransitions
+//       ? 1000
+//       : scaledDuration < 1
+//         ? 500
+//         : 250;
+
+//   const numSamples = Math.max(2, Math.floor(scaledDuration * sampleRate));
+//   const curve = new Float32Array(numSamples);
+
+//   const { baseValue: base, minValue: min, maxValue: max } = options;
+
+//   // Generate curve from current value to end value
+//   const currentValue = audioParam.value;
+//   const startValue = currentValue;
+//   const endValue = curve[curve.length - 1];
+
+//   // Generate curve from sustain point to end
+//   for (let i = 0; i < numSamples; i++) {
+//     const normalizedProgress = i / (numSamples - 1);
+//     const absoluteTime =
+//       sustainPoint.time + normalizedProgress * remainingDuration;
+
+//     let value = this.#data.interpolateValueAtTime(
+//       absoluteTime * options.playbackRate
+//     );
+
+//     if (this.#logarithmic) {
+//       value = Math.pow(value, 2);
+//     }
+
+//     // Apply same scaling as #applyEnvelope
+//     let finalValue = (base ?? 1) * value;
+//     if (min !== undefined) finalValue = Math.max(finalValue, min);
+//     if (max !== undefined) finalValue = Math.min(max, finalValue);
+
+//     curve[i] = finalValue;
+//   }
+
+//   console.debug(
+//     'curve values:',
+//     curve[0],
+//     curve[curve.length - 1],
+//     'numSamples:',
+//     numSamples
+//   );
+
+//   const safeStart = Math.max(this.#context.currentTime, startTime);
+
+//   try {
+//     audioParam.cancelScheduledValues(safeStart);
+//     audioParam.setValueAtTime(currentValue, safeStart);
+//     audioParam.setValueCurveAtTime(curve, safeStart + 0.001, scaledDuration);
+//   } catch (error) {
+//     audioParam.linearRampToValueAtTime(
+//       curve[curve.length - 1],
+//       safeStart + scaledDuration
+//     );
+//   }
+// }

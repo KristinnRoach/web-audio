@@ -1,0 +1,12 @@
+
+//   const targetDistance = Math.abs(referenceValue - targetValue);
+//   const closestPeriod = this.#allowedPeriods.reduce((prev, curr) =>
+//     Math.abs(curr - targetDistance) < Math.abs(prev - targetDistance)
+//       ? curr
+//       : prev
+//   );
+
+//   return adjusting === 'loopEnd'
+//     ? referenceValue + closestPeriod
+//     : referenceValue - closestPeriod;
+// }

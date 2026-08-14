@@ -1,0 +1,25 @@
+# Logs
+logs
+*.log
+pnpm-debug.log*
+pnpm-error.log*
+
+trash
+
+.turbo
+build
+node_modules
+dist
+*.tgz
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,54 @@
+type WorkletMessage = Record<string, any>;
+
+interface WorkletParameters {
+  [key: string]: number;
+}
+
+class WorkletWrapper<TParams extends WorkletParameters = WorkletParameters> {
+  public readonly node: AudioWorkletNode;
+
+  constructor(audioContext: AudioContext, processorName: string) {
+    this.node = new AudioWorkletNode(audioContext, processorName);
+  }
+
+  // Parameter control
+  setParam<K extends keyof TParams>(name: K, value: TParams[K]): this {
+    this.node.parameters
+      .get(name as string)
+      ?.setValueAtTime(value, this.node.context.currentTime);
+    return this;
+  }
+
+  getParam<K extends keyof TParams>(name: K): AudioParam | undefined {
+    return this.node.parameters.get(name as string);
+  }
+
+  // Message passing
+  send(message: WorkletMessage): this {
+    this.node.port.postMessage(message);
+    return this;
+  }
+
+  onMessage(callback: (event: MessageEvent<WorkletMessage>) => void): this {
+    this.node.port.onmessage = callback;
+    return this;
+  }
+
+  // Audio routing
+  connect(destination: AudioNode): AudioNode;
+  connect(destination: AudioParam): AudioParam;
+  connect(destination: AudioNode | AudioParam): AudioNode | AudioParam {
+    this.node.connect(destination as any);
+    return destination;
+  }
+
+  disconnect(): this {
+    this.node.disconnect();
+    return this;
+  }
+
+  // Cleanup
+  dispose(): void {
+    this.disconnect();
+  }
+}

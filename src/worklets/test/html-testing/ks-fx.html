@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Karplus Test</title>
+  </head>
+  <body>
+    <input type="file" id="fileInput" accept="audio/*" />
+    <div id="modes">
+      <button onclick="setMode('matched')">matched</button>
+      <button onclick="setMode('1/8')">1/8</button>
+      <button onclick="setMode('1/4')">1/4</button>
+      <button onclick="setMode('1/2')">1/2</button>
+      <button onclick="setMode('1/1')">1/1</button>
+    </div>
+    <div id="controls">
+      <label
+        >Feedback:
+        <input
+          type="range"
+          id="feedback"
+          min="0"
+          max="0.95"
+          step="0.05"
+          value="0.9"
+          oninput="setFeedback(this.value)"
+      /></label>
+
+      <label
+        >Delay Multiplier:
+        <input
+          type="range"
+          id="delayMult"
+          min="1"
+          max="8"
+          step="1"
+          value="1"
+          oninput="setDelayMultiplier(this.value)"
+      /></label>
+    </div>
+    <div id="notes"></div>
+
+    <script>
+      class KarplusEffectFallback {
+        constructor(context) {
+          this.audioContext = context;
+          this.delay = new DelayNode(context, {
+            delayTime: 0.01,
+            maxDelayTime: 1.0,
+          });
+          this.feedback = new GainNode(context, { gain: 0.9 });
+          this.delay.connect(this.feedback);
+          this.feedback.connect(this.delay);
+        }
+
+        connect(dest) {
+          return this.delay.connect(dest);
+        }
+        get in() {
+          return this.delay;
+        }
+        get now() {
+          return this.audioContext.currentTime;
+        }
+
+        trigger(midiNote, timestamp = this.now, delayMultiplier = 1) {
+          const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+          const delayTime = (1 / frequency) * delayMultiplier;
+          this.delay.delayTime.setValueAtTime(delayTime, timestamp);
+        }
+
+        setFeedback(gain) {
+          this.feedback.gain.value = gain;
+        }
+      }
+
+      let audioContext,
+        karplus,
+        buffer,
+        mode = 'matched',
+        delayMultiplier = 1;
+
+      const workletCode = `
+        registerProcessor(
+          'feedback-delay-processor',
+          class extends AudioWorkletProcessor {
+            static get parameterDescriptors() {
+              return [
+                {
+                  name: 'gain',
+                  defaultValue: 0.5,
+                  minValue: 0,
+                  maxValue: 1,
+                  automationRate: 'k-rate',
+                },
+                {
+                  name: 'delayTime',
+                  defaultValue: 10,
+                  minValue: 0,
+                  maxValue: 1000,
+                  automationRate: 'k-rate',
+                },
+                {
+                  name: 'wetOnly',
+                  defaultValue: 1,
+                  minValue: 0,
+                  maxValue: 1,
+                  automationRate: 'k-rate',
+                },
+              ];
+            }
+            constructor() {
+              super();
+              this.Buffer = new Array(48000).fill(0);
+              this.ReadPtr = 0;
+              this.WritePtr = 0;
+            }
+            process(inputs, outputs, parameters) {
+              const input = inputs[0] && inputs[0][0] ? inputs[0][0] : null;
+              const output = outputs[0][0];
+              if (!output) return true;
+              
+              let delaySamples = Math.round((sampleRate * parameters.delayTime[0]) / 1000);
+              let bufferSize = this.Buffer.length;
+              
+              for (let i = 0; i < output.length; ++i) {
+                const inputSample = input ? input[i] || 0 : 0;
+                const wetSample = parameters.gain[0] * this.Buffer[this.ReadPtr];
+                output[i] = parameters.wetOnly[0] > 0.5 ? wetSample : wetSample + inputSample;
+                this.Buffer[this.WritePtr] = wetSample + inputSample;
+                this.WritePtr++;
+                if (this.WritePtr >= bufferSize) this.WritePtr = this.WritePtr - bufferSize;
+                this.ReadPtr = this.WritePtr - delaySamples;
+                if (this.ReadPtr < 0) this.ReadPtr = this.ReadPtr + bufferSize;
+              }
+              return true;
+            }
+          }
+        );`;
+
+      const notes = [
+        48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72,
+      ];
+      const noteNames = [
+        'C3',
+        'D3',
+        'E3',
+        'F3',
+        'G3',
+        'A3',
+        'B3',
+        'C4',
+        'D4',
+        'E4',
+        'F4',
+        'G4',
+        'A4',
+        'B4',
+        'C5',
+      ];
+
+      function setMode(newMode) {
+        mode = newMode;
+      }
+
+      function setFeedback(value) {
+        if (karplus) karplus.setFeedback(parseFloat(value));
+      }
+
+      function setDelayMultiplier(value) {
+        delayMultiplier = parseInt(value);
+      }
+
+      function playNote(midiNote) {
+        if (!buffer || !karplus) return;
+
+        const targetFrequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+        const delayTime = (1 / targetFrequency) * delayMultiplier;
+        console.log(
+          `MIDI ${midiNote}: freq=${targetFrequency.toFixed(2)}Hz, delay=${(delayTime * 1000).toFixed(3)}ms`
+        );
+
+        karplus.trigger(midiNote);
+
+        const playbackRate = Math.pow(2, (midiNote - 60) / 12);
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+
+        let finalPlaybackRate = playbackRate;
+
+        if (mode === 'match') {
+          buffer.duration;
+        } else if (mode === '1/8') {
+          finalPlaybackRate = playbackRate * 8;
+        } else if (mode === '1/4') {
+          finalPlaybackRate = playbackRate * 4;
+        } else if (mode === '1/2') {
+          finalPlaybackRate = playbackRate * 2;
+        } else if (mode === '1/1') {
+          finalPlaybackRate = playbackRate;
+        }
+
+        source.playbackRate.value = finalPlaybackRate;
+        source.connect(karplus.in);
+        source.start();
+      }
+
+      document
+        .getElementById('fileInput')
+        .addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          try {
+            audioContext = new AudioContext();
+            console.log('Sample rate:', audioContext.sampleRate);
+
+            const blob = new Blob([workletCode], {
+              type: 'application/javascript',
+            });
+            const workletUrl = URL.createObjectURL(blob);
+            await audioContext.audioWorklet.addModule(workletUrl);
+
+            const workletNode = new AudioWorkletNode(
+              audioContext,
+              'feedback-delay-processor'
+            );
+            workletNode.connect(audioContext.destination);
+            workletNode.parameters.get('gain').value = 0.9;
+
+            karplus = {
+              workletNode: workletNode,
+              get in() {
+                return this.workletNode;
+              },
+              get now() {
+                return audioContext.currentTime;
+              },
+              trigger(midiNote, timestamp = this.now) {
+                const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+                const delayTimeMs = (1 / frequency) * delayMultiplier * 1000;
+                this.workletNode.parameters
+                  .get('delayTime')
+                  .setValueAtTime(delayTimeMs, timestamp);
+              },
+              setFeedback(gain) {
+                this.workletNode.parameters.get('gain').value = gain;
+              },
+            };
+
+            URL.revokeObjectURL(workletUrl);
+            console.log('AudioWorklet setup complete');
+          } catch (error) {
+            console.error('AudioWorklet failed, using fallback:', error);
+            audioContext = new AudioContext();
+            karplus = new KarplusEffectFallback(audioContext);
+            karplus.connect(audioContext.destination);
+          }
+
+          const arrayBuffer = await file.arrayBuffer();
+          buffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          const notesDiv = document.getElementById('notes');
+          notesDiv.innerHTML = '';
+          notes.forEach((note, i) => {
+            const btn = document.createElement('button');
+            btn.textContent = noteNames[i];
+            btn.onclick = () => playNote(note);
+            notesDiv.appendChild(btn);
+          });
+        });
+    </script>
+  </body>
+</html>
