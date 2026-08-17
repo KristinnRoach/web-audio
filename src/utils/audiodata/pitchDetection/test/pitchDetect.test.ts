@@ -33,6 +33,14 @@ function generateSineWave(
   return data;
 }
 
+function createSeededRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+}
+
 describe('detectSinglePitchAC', () => {
   it('should detect 440Hz A4 note', async () => {
     const testSignal = generateSineWave(440, 44100, 0.2);
@@ -74,9 +82,10 @@ describe('detectSinglePitchAC', () => {
 
   it('should handle noise input with low confidence', async () => {
     const noiseSignal = new Float32Array(4410); // 0.1 second at 44.1kHz
+    const random = createSeededRandom(0xdecafbad);
     // Generate white noise
     for (let i = 0; i < noiseSignal.length; i++) {
-      noiseSignal[i] = (Math.random() - 0.5) * 2;
+      noiseSignal[i] = (random() - 0.5) * 2;
     }
     const buffer = createMockAudioBuffer(noiseSignal);
 
@@ -84,6 +93,32 @@ describe('detectSinglePitchAC', () => {
 
     expect(result.frequency).toBeGreaterThan(0);
     expect(result.confidence).toBeLessThan(0.3); // Should have low confidence for noise
+  });
+
+  it('should handle a peak at the maximum lag without NaN', async () => {
+    const signal = new Float32Array(4410);
+    const maxLag = Math.floor(44100 / 30) - 1;
+    signal[0] = 1;
+    signal[maxLag] = 1;
+    const buffer = createMockAudioBuffer(signal);
+
+    const result = await detectSinglePitchAC(buffer);
+
+    expect(Number.isFinite(result.frequency)).toBe(true);
+    expect(result.frequency).toBeGreaterThan(0);
+    expect(Number.isFinite(result.confidence)).toBe(true);
+    expect(result.confidence).toBeGreaterThanOrEqual(0);
+    expect(result.confidence).toBeLessThanOrEqual(1);
+  });
+
+  it('should return finite confidence for fully clipped input', async () => {
+    const silentSignal = new Float32Array(4410);
+    const buffer = createMockAudioBuffer(silentSignal);
+
+    const result = await detectSinglePitchAC(buffer);
+
+    expect(result.frequency).toBeGreaterThan(0);
+    expect(result.confidence).toBe(0);
   });
 
   it('should handle very short buffers', async () => {
@@ -128,9 +163,6 @@ describe('detectSinglePitchAC', () => {
     const result = await detectSinglePitchAC(buffer);
 
     expect(result.frequency).toBeGreaterThan(0);
-    // Silent input may return NaN confidence due to division by zero
-    expect(Number.isNaN(result.confidence) || result.confidence === 0).toBe(
-      true
-    );
+    expect(result.confidence).toBe(0);
   });
 });

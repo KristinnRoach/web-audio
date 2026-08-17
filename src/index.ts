@@ -57,6 +57,3 @@ export type { KeyMap } from './io/types';
 // =*=*= Constants =*=*= \\
 export { SUPPORTED_WAVEFORMS } from './utils';
 export type { SupportedWaveform } from './utils';
-
-// =*=*= Storage =*=*= \\
-// export * as samplelib from './storage/idb'; // Removed to reduce bundle size
