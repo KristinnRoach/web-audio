@@ -31,25 +31,16 @@
     "dist"
   ],
   "scripts": {
-    "build:worklets": "node build-processors.js && mkdir -p dist",
+    "build:worklets": "node build-processors.js",
     "build": "pnpm clean && node build-processors.js && vite build",
     "prepack": "pnpm build",
     "watch:processors": "node watch-processors.js",
-    "watch": "mkdir -p dist && node build-processors.js && concurrently \"vitest\" \"vite build --watch\" \"pnpm watch:processors\"",
-    "clean": "rimraf dist && mkdir -p dist",
-    "clean:turbo": "rimraf .turbo",
-    "clean:all": "rimraf dist node_modules && pnpm store prune && pnpm prune",
-    "lint": "eslint . ",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "preview": "vite preview",
-    "pretest": "pnpm build:worklets",
+    "watch": "pnpm build:worklets && concurrently \"vitest\" \"vite build --watch\" \"pnpm watch:processors\"",    "clean": "rimraf dist",
     "test": "vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "test:all": "npm run test && npm run test:browser"
+    "test:all": "pnpm test && pnpm test:browser"
   },
   "dependencies": {
     "webmidi": "^3.1.13"
