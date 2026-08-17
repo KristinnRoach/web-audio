@@ -17,6 +17,11 @@ import { inputController } from '@kidlib/web-audio/io';
 import { registerKnobElement } from '@kidlib/web-audio/components';
 
 const response = await fetch('/samples/kick.wav');
+if (!response.ok) {
+  throw new Error(
+    `Failed to fetch sample: ${response.status} ${response.statusText}`,
+  );
+}
 const sampleData = await response.arrayBuffer();
 const player = await createSamplePlayer(sampleData);
 player.play(60);

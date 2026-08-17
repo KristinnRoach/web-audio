@@ -105,7 +105,7 @@ describe('detectSinglePitchAC', () => {
     const result = await detectSinglePitchAC(buffer);
 
     expect(Number.isFinite(result.frequency)).toBe(true);
-    expect(result.frequency).toBeGreaterThan(0);
+    expect(result.frequency).toBeCloseTo(44100 / maxLag);
     expect(Number.isFinite(result.confidence)).toBe(true);
     expect(result.confidence).toBeGreaterThanOrEqual(0);
     expect(result.confidence).toBeLessThanOrEqual(1);
@@ -117,6 +117,7 @@ describe('detectSinglePitchAC', () => {
 
     const result = await detectSinglePitchAC(buffer);
 
+    expect(Number.isFinite(result.frequency)).toBe(true);
     expect(result.frequency).toBeGreaterThan(0);
     expect(result.confidence).toBe(0);
   });

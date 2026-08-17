@@ -16,7 +16,8 @@ describe('Analyze distortion in init_sample.webm', () => {
   });
 
   async function loadInitSample(): Promise<AudioBuffer> {
-    const response = await fetch('/src/assets/init_sample.webm');
+    const url = new URL('../../../../assets/init_sample.webm', import.meta.url);
+    const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     return audioBuffer;

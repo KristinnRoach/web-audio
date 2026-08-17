@@ -15,7 +15,7 @@ import { initProcessors } from '@/worklets';
  * @returns A new SamplePlayer instance
  */
 export async function createSamplePlayer(
-  buffer?: AudioBuffer | ArrayBuffer,
+  buffer: AudioBuffer | ArrayBuffer,
   polyphony: number = 16,
   context: AudioContext = getAudioContext(),
 ): Promise<SamplePlayer> {
