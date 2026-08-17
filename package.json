@@ -1,6 +1,6 @@
 {
   "name": "@kidlib/web-audio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "High-level Web Audio primitives for musical instruments and tools.",
   "license": "MIT",
   "repository": {
@@ -35,7 +35,8 @@
     "build": "pnpm clean && node build-processors.js && vite build",
     "prepack": "pnpm build",
     "watch:processors": "node watch-processors.js",
-    "watch": "pnpm build:worklets && concurrently \"vitest\" \"vite build --watch\" \"pnpm watch:processors\"",    "clean": "rimraf dist",
+    "watch": "pnpm build:worklets && concurrently \"vitest\" \"vite build --watch\" \"pnpm watch:processors\"",
+    "clean": "rimraf dist",
     "test": "vitest run",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:coverage": "vitest run --coverage",
