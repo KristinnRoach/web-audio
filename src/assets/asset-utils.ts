@@ -28,10 +28,9 @@ export async function fetchInitSampleAsAudioBuffer() {
     sampleRate: DEFAULT.audioConfig.sampleRate,
   });
 
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-  // necessary cleanup, unless we use the global
-  await audioContext.close();
-
-  return audioBuffer;
+  try {
+    return await audioContext.decodeAudioData(arrayBuffer);
+  } finally {
+    await audioContext.close();
+  }
 }
