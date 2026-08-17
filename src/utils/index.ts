@@ -35,4 +35,3 @@ export * from './code/set-utils';
 
 // Loading utils
 // export * from './load/xhr-utils';
-// export * from './loadAudio'; // todo: fix idb decoding -> then fix or reimplement this

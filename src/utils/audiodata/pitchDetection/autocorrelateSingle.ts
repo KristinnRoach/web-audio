@@ -29,7 +29,7 @@ export async function detectSinglePitchAC(
   const minLag = Math.floor(audioBuffer.sampleRate / MAX_Hz); // upper bound
   const maxLag = Math.floor(audioBuffer.sampleRate / MIN_Hz); // lower bound
 
-  let correlations = new Float32Array(maxLag);
+  const correlations = new Float32Array(maxLag);
 
   // Autocorrelation
   for (let lag = minLag; lag < correlations.length; lag++) {
@@ -48,17 +48,21 @@ export async function detectSinglePitchAC(
 
   // Quadratic interpolation for sub-sample precision
   const x = bestLag;
-  const y1 = correlations[x - 1];
-  const y2 = correlations[x];
-  const y3 = correlations[x + 1];
+  let offset = 0;
+  if (x > 0 && x < correlations.length - 1) {
+    const y1 = correlations[x - 1];
+    const y2 = correlations[x];
+    const y3 = correlations[x + 1];
 
-  const denominator = 2 * (2 * y2 - y1 - y3);
-  const offset = Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
+    const denominator = 2 * (2 * y2 - y1 - y3);
+    offset =
+      Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
+  }
 
   // Add confidence calculation
   const maxCorrelation = correlations[bestLag];
-  const rms = Math.sqrt(data.reduce((sum, x) => sum + x * x, 0) / data.length);
-  const normalizedMax = maxCorrelation / (rms * rms * data.length);
+  const energy = data.reduce((sum, x) => sum + x * x, 0);
+  const normalizedMax = energy > 0 ? maxCorrelation / energy : 0;
 
   const confidence = Math.max(0, Math.min(1, normalizedMax));
 

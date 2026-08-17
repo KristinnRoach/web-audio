@@ -75,7 +75,8 @@ describe('Analyze clipping with init_sample.webm', () => {
   // Helper to load the actual webm file
   async function loadInitSample(): Promise<AudioBuffer> {
     // Fetch the webm file
-    const response = await fetch('/src/storage/assets/init_sample.webm');
+    const url = new URL('../../../../assets/init_sample.webm', import.meta.url);
+    const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
 
     // Decode the audio

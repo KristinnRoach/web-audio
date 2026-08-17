@@ -21,7 +21,7 @@ describe('Test compression decision for init_sample', () => {
 
   async function loadInitSample(): Promise<AudioBuffer> {
     const url = new URL(
-      '../../../../storage/assets/init_sample.webm',
+      '../../../../assets/init_sample.webm',
       import.meta.url
     );
     const response = await fetch(url);
