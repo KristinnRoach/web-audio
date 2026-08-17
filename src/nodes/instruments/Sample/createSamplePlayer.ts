@@ -5,12 +5,11 @@ import { SamplePlayer } from './SamplePlayer';
 import { assert } from '@/utils';
 
 import { initProcessors } from '@/worklets';
-import { fetchInitSampleAsAudioBuffer } from '@/assets/asset-utils';
 
 /**
  * Creates a new SamplePlayer instance
  *
- * @param buffer - Optional audio buffer to use (will use default if not provided)
+ * @param buffer - Audio buffer data to use for the player
  * @param polyphony - Number of voices for polyphony (default: 16)
  * @param context - Optional AudioContext (will use global context if not provided)
  * @returns A new SamplePlayer instance
@@ -47,7 +46,9 @@ export async function createSamplePlayer(
       throw error;
     }
   } else {
-    audiobuffer = await fetchInitSampleAsAudioBuffer();
+    throw new Error(
+      'createSamplePlayer requires an AudioBuffer or ArrayBuffer. No default sample is bundled.',
+    );
   }
 
   const samplePlayer = new SamplePlayer(context, polyphony, audiobuffer);

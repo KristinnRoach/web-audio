@@ -16,7 +16,9 @@ import { createSamplePlayer } from '@kidlib/web-audio';
 import { inputController } from '@kidlib/web-audio/io';
 import { registerKnobElement } from '@kidlib/web-audio/components';
 
-const player = await createSamplePlayer();
+const response = await fetch('/samples/kick.wav');
+const sampleData = await response.arrayBuffer();
+const player = await createSamplePlayer(sampleData);
 player.play(60);
 ```
 
