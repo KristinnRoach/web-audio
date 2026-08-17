@@ -255,14 +255,14 @@ export class CustomEnvelope implements LibNode {
       let envValue = this.#data.interpolateValueAtTime(absoluteTime); // normalized [0,1]
 
       // Blend from startFromValue to envelope trajectory if specified
-      if (this.envelopeType === 'filter-env' && minLog && logRange) {
+      if (startFromValue !== undefined && i === 0) {
+        envValue = startFromValue;
+      } else if (this.envelopeType === 'filter-env' && minLog && logRange) {
         // Use precomputed log values
         envValue = Math.exp(minLog + logRange * envValue);
         // envValue = mapToRange(envValue, 0, 1, baseValue, maxValue);
       } else if (baseValue !== 1) {
         envValue = envValue * baseValue;
-      } else if (startFromValue !== undefined && i === 0) {
-        envValue = startFromValue;
       }
 
       curve[i] = clamp(envValue, minValue, maxValue);

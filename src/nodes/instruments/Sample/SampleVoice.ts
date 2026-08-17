@@ -351,7 +351,7 @@ export class SampleVoice {
     });
 
     // Apply amp, filter and pitch envelopes if enabled
-    this.applyEnvelopes(timestamp, playbackRate, midiNote);
+    this.applyEnvelopes(timestamp, playbackRate, velocity, midiNote);
 
     // Trigger effects
     this.#feedback?.trigger(midiNote, {
