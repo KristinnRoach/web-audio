@@ -91,9 +91,10 @@ describe('Preprocessor pipeline with quiet recordings', () => {
       `Gain applied: ${(processedStats.peak / originalStats.peak).toFixed(2)}x`
     );
 
-    // The peak should be close to 0.98 (our target)
+    const targetPeak =
+      DEFAULT_PRE_PROCESS_OPTIONS.normalize?.maxAmplitudePeak ?? 0.99;
     expect(processedStats.peak).toBeGreaterThan(0.9);
-    expect(processedStats.peak).toBeLessThanOrEqual(0.98);
+    expect(processedStats.peak).toBeCloseTo(targetPeak, 2);
   });
 
   it('should compare with/without compression', async () => {

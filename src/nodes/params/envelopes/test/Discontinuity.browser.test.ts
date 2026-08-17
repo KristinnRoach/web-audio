@@ -17,9 +17,12 @@ describe('CustomEnvelope Audio Discontinuity Test', () => {
     // This test specifically targets the issue described in the suggestion
     const mockAudioParam = {
       value: 0.8, // Current AudioParam value
+      minValue: 0,
+      maxValue: 1,
       setValueAtTime: vi.fn(),
       setValueCurveAtTime: vi.fn(),
       cancelScheduledValues: vi.fn(),
+      cancelAndHoldAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
     };
 
@@ -69,9 +72,12 @@ describe('CustomEnvelope Audio Discontinuity Test', () => {
   it('should demonstrate the filter envelope discontinuity issue', () => {
     const mockAudioParam = {
       value: 5000, // Current filter frequency
+      minValue: 20,
+      maxValue: 20000,
       setValueAtTime: vi.fn(),
       setValueCurveAtTime: vi.fn(),
       cancelScheduledValues: vi.fn(),
+      cancelAndHoldAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
     };
 

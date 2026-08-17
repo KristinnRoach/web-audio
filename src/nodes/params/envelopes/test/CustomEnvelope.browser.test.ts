@@ -48,7 +48,7 @@ describe('CustomEnvelope', () => {
 
     // Ensure envelope has the correct properties
     expect(envelope.envelopeType).toBe('filter-env');
-    expect(envelope.valueRange).toEqual([20, 23000]);
+    expect(envelope.envPointValueRange).toEqual([20, 23000]);
   });
 
   it('should generate a curve with logarithmic scaling', () => {
@@ -79,9 +79,12 @@ describe('CustomEnvelope', () => {
     // Create a mock AudioParam to capture the values being set
     const mockAudioParam = {
       value: 2000, // Starting value
+      minValue: 20,
+      maxValue: 23000,
       setValueAtTime: vi.fn(),
       setValueCurveAtTime: vi.fn(),
       cancelScheduledValues: vi.fn(),
+      cancelAndHoldAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
     };
 
@@ -163,9 +166,12 @@ describe('CustomEnvelope', () => {
       // Test scenario where AudioParam has a different current value than the first envelope point
       const mockAudioParam = {
         value: 5000, // Current AudioParam value (different from first envelope point)
+        minValue: 20,
+        maxValue: 20000,
         setValueAtTime: vi.fn(),
         setValueCurveAtTime: vi.fn(),
         cancelScheduledValues: vi.fn(),
+        cancelAndHoldAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
       };
 
@@ -267,9 +273,12 @@ describe('CustomEnvelope', () => {
       // Test with baseValue that would affect the curve
       const mockAudioParam = {
         value: 0.8, // Current value
+        minValue: 0,
+        maxValue: 1,
         setValueAtTime: vi.fn(),
         setValueCurveAtTime: vi.fn(),
         cancelScheduledValues: vi.fn(),
+        cancelAndHoldAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
       };
 

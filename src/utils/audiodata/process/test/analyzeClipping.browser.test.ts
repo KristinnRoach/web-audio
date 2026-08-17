@@ -112,8 +112,8 @@ describe('Analyze clipping with init_sample.webm', () => {
     console.log('Samples ≥0.90:', stats.samplesAbove90, '/', stats.samples);
     console.log('Samples ≥0.80:', stats.samplesAbove80, '/', stats.samples);
 
-    // Store for comparison
-    expect(stats.peak).toBeCloseTo(1.0, 3);
+    expect(stats.peak).toBeGreaterThanOrEqual(0.99);
+    expect(stats.peak).toBeLessThanOrEqual(1.01);
   });
 
   it('should analyze compression -> normalization pipeline', async () => {

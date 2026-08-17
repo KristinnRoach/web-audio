@@ -54,7 +54,7 @@ describe('CustomEnvelope - #continueFromPoint', () => {
         { time: 1.0, value: 0.5, curve: 'exponential' },
         { time: 1.5, value: 0, curve: 'exponential' },
       ],
-      valueRange: [0, 1],
+      pointValueRange: [0, 1],
       durationSeconds: 1.5,
       interpolateValueAtTime: vi.fn(),
       hasSharpTransitions: false,
@@ -127,9 +127,10 @@ describe('CustomEnvelope - #continueFromPoint', () => {
         playbackRate: 1,
       });
 
-      // Should not call any audio param methods
-      expect(mockAudioParam.cancelScheduledValues).not.toHaveBeenCalled();
-      expect(mockAudioParam.setValueAtTime).not.toHaveBeenCalled();
+      // Near-zero releases should pin and ramp safely without scheduling a curve.
+      expect(mockAudioParam.cancelScheduledValues).toHaveBeenCalled();
+      expect(mockAudioParam.setValueAtTime).toHaveBeenCalled();
+      expect(mockAudioParam.linearRampToValueAtTime).toHaveBeenCalled();
       expect(mockAudioParam.setValueCurveAtTime).not.toHaveBeenCalled();
     });
   });
