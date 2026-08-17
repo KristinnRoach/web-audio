@@ -5,7 +5,7 @@ export type SampleMetadata = {
   // mimeType ?? encoding format ??
 };
 
-// Todo: compare and make adaptors between IdbSample and AppSample (internal app state)
+// Todo: revisit
 export type AppSample = {
   id: string;
   isLoaded?: boolean; // todo: follow up
@@ -18,6 +18,7 @@ export type AppSample = {
   audioBuffer?: AudioBuffer; // todo: clarify requirements and simplify
   // float32arr?: Float32Array;
   // arrayBuffer?: ArrayBuffer;
+  // audioData: ArrayBuffer; // Serializable audio data
 
   url?: string;
 
@@ -27,13 +28,3 @@ export type AppSample = {
 };
 
 // type LoadedSample = AppSample & Required<Pick<AppSample, 'audioBuffer'>>;
-
-export type IdbSample = {
-  id: string; // Todo
-  url: string; // Original URL or file path
-  audioData: ArrayBuffer; // Serializable audio data
-  dateAdded: Date; // Timestamp for cache management
-  metadata: SampleMetadata;
-  isDefaultInitSample?: 0 | 1; // 0: false, 1: true. Used if no sample is provided
-  isFromDefaultLib?: 0 | 1; // If from default library provided by the app
-};

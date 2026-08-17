@@ -5,8 +5,7 @@ import { SamplePlayer } from './SamplePlayer';
 import { assert } from '@/utils';
 
 import { initProcessors } from '@/worklets';
-import { initIdb } from '@/storage/idb';
-import { fetchInitSampleAsAudioBuffer } from '@/storage/assets/asset-utils';
+import { fetchInitSampleAsAudioBuffer } from '@/assets/asset-utils';
 
 /**
  * Creates a new SamplePlayer instance
@@ -34,7 +33,6 @@ export async function createSamplePlayer(
     );
   }
 
-  // Get buffer - only initialize IndexedDB if no buffer is provided
   let audiobuffer: AudioBuffer;
   if (buffer instanceof AudioBuffer) {
     audiobuffer = buffer;
@@ -49,7 +47,6 @@ export async function createSamplePlayer(
       throw error;
     }
   } else {
-    await initIdb(); // Only initialize IndexedDB when needed
     audiobuffer = await fetchInitSampleAsAudioBuffer();
   }
 
