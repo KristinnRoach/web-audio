@@ -220,8 +220,6 @@ export class SampleVoice {
     });
 
     if (zeroCrossings?.length) {
-      this.#setZeroCrossings(zeroCrossings);
-
       this.sendToProcessor({
         type: "voice:setZeroCrossings",
         zeroCrossings,
@@ -241,14 +239,6 @@ export class SampleVoice {
     // this.#spectralFreezeWorklet.port.postMessage(
     //   freeze ? 'freeze' : 'unfreeze'
     // );
-    return this;
-  }
-
-  #setZeroCrossings(zeroCrossings: number[]): this {
-    this.sendToProcessor({
-      type: "voice:set_zero_crossings",
-      zeroCrossings,
-    });
     return this;
   }
 
