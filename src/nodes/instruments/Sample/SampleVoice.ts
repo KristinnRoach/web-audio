@@ -208,8 +208,9 @@ export class SampleVoice {
       return false;
     }
 
+    // postMessage structured-clones each channel, so no local copy needed
     const bufferData = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
-      buffer.getChannelData(i).slice(),
+      buffer.getChannelData(i),
     );
 
     this.sendToProcessor({
