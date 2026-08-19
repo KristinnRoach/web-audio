@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 import { detectSinglePitchAC } from "../";
 
 // Helper to create mock AudioBuffer

@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { CustomEnvelope } from "../CustomEnvelope";
-import { EnvelopeData } from "../EnvelopeData";
+import type { EnvelopeData } from "../EnvelopeData";
 
 // Mock dependencies
 vi.mock("../../../nodes/node-store", () => ({
@@ -15,8 +15,6 @@ vi.mock("@/events", () => ({
     sendMessage: vi.fn(),
   })),
 }));
-
-vi.mock("../EnvelopeData");
 
 describe("CustomEnvelope - #continueFromPoint", () => {
   let envelope: CustomEnvelope;
@@ -64,9 +62,7 @@ describe("CustomEnvelope - #continueFromPoint", () => {
       endPointIndex: 3,
     } as unknown as EnvelopeData;
 
-    vi.mocked(EnvelopeData).mockImplementation(() => mockEnvelopeData);
-
-    envelope = new CustomEnvelope(mockContext, "amp-env");
+    envelope = new CustomEnvelope(mockContext, "amp-env", mockEnvelopeData);
   });
 
   afterEach(() => {

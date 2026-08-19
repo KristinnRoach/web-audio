@@ -1148,8 +1148,8 @@ export class SampleVoice {
   debugDuration() {
     console.info(`
       sample duration: ${this.sampleDurationSeconds}, 
-      startPoint: ${this.getParam("startPoint")!.value}, 
-      endPoint: ${this.getParam("endPoint")!.value}, 
+      startPoint: ${this.getParam("startPoint")!.value},
+      endPoint: ${this.getParam("endPoint")!.value},
       playback duration: ${this.getPlaybackDuration()}
       `);
   }

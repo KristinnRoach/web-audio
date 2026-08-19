@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi } from "vite-plus/test";
 import { interpolate, interpolateLinearToLog, interpolateLinearToExp } from "../interpolate";
 
 describe("interpolate", () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi } from "vite-plus/test";
 import { CustomEnvelope } from "../CustomEnvelope";
 
 // Mock AudioContext to bypass compatibility issues

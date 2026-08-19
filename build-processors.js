@@ -1,28 +1,26 @@
 #!/usr/bin/env node
-import { build } from 'vite';
-import { resolve } from 'path';
-import fs from 'fs';
+import { build } from "vite";
+import { resolve } from "path";
+import { pathToFileURL } from "url";
+import fs from "fs";
 
-console.log('Building AudioWorklet processors manually...');
+export async function buildProcessors() {
+  console.log("Building AudioWorklet processors...");
 
-// Ensure the directory exists
-const outDir = 'dist/processors';
-const outputDir = resolve('./dist/processors');
+  const outDir = "dist/processors";
+  const outputDir = resolve(outDir);
 
-if (!fs.existsSync(outputDir)) {
-  console.log(`Creating directory: ${outputDir}`);
-  fs.mkdirSync(outputDir, { recursive: true });
-}
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
 
-// Build the processors
-try {
   await build({
     configFile: false,
     build: {
       lib: {
-        entry: resolve('./src/worklets/processors/index.ts'),
-        formats: ['es'],
-        fileName: 'processors',
+        entry: resolve("./src/worklets/processors/index.ts"),
+        formats: ["es"],
+        fileName: "processors",
       },
       outDir,
       emptyOutDir: true,
@@ -35,8 +33,14 @@ try {
       minifyWhitespace: false,
     },
   });
-  console.log('AudioWorklet processors built successfully');
-} catch (error) {
-  console.error('Error building AudioWorklet processors:', error);
-  process.exit(1);
+  console.log("AudioWorklet processors built successfully");
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    await buildProcessors();
+  } catch (error) {
+    console.error("Error building AudioWorklet processors:", error);
+    process.exitCode = 1;
+  }
 }

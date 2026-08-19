@@ -7,8 +7,8 @@ export class LevelMonitor {
   #outputNode: AudioNode;
   #inputAnalyser: AnalyserNode;
   #outputAnalyser: AnalyserNode;
-  #inputData: Float32Array;
-  #outputData: Float32Array;
+  #inputData: Float32Array<ArrayBuffer>;
+  #outputData: Float32Array<ArrayBuffer>;
   #monitoringInterval: number | null = null;
   #originalConnections = new Map<
     AudioNode,

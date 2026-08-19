@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
 import { preProcessAudioBuffer, DEFAULT_PRE_PROCESS_OPTIONS } from "../Preprocessor";
 
 describe("Debug >1.0 peak issue", () => {

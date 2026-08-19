@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vite-plus/test";
 
 describe("Amplitude compensation edge cases", () => {
   // Simulate the amplitude compensation logic
-  function calculateMakeupGain(rmsAmplitude, targetAmplitude = 0.3) {
+  function calculateMakeupGain(rmsAmplitude: number, targetAmplitude = 0.3) {
     let makeupGain = 1.0;
     if (rmsAmplitude < targetAmplitude) {
       // Use a minimum floor to avoid division by very small numbers
@@ -83,7 +83,7 @@ describe("Amplitude compensation edge cases", () => {
   });
 
   describe("Behavior with different floor values", () => {
-    function calculateMakeupGainWithFloor(rmsAmplitude, floor = 1e-3) {
+    function calculateMakeupGainWithFloor(rmsAmplitude: number, floor = 1e-3) {
       const targetAmplitude = 0.3;
       let makeupGain = 1.0;
       if (rmsAmplitude < targetAmplitude) {

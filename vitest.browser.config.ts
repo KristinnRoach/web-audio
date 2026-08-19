@@ -1,4 +1,7 @@
-import { defineConfig } from "vitest/config";
+/// <reference types="node" />
+
+import { defineConfig } from "vite-plus";
+import { playwright } from "vite-plus/test/browser-playwright";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
@@ -7,7 +10,11 @@ export default defineConfig({
     browser: {
       enabled: true,
       instances: [{ browser: "chromium" }], // or 'firefox', 'webkit'
-      provider: "playwright",
+      provider: playwright({
+        launchOptions: {
+          channel: "chrome",
+        },
+      }),
       headless: true, // Set to false to see the browser
     },
   },

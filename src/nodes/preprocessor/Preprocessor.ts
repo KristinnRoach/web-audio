@@ -66,19 +66,19 @@ export async function preProcessAudioBuffer(
 
   const normalize = {
     ...DEFAULT_PRE_PROCESS_OPTIONS.normalize,
-    ...(options.normalize || {}),
+    ...options.normalize,
   };
   const compress = {
     ...DEFAULT_PRE_PROCESS_OPTIONS.compress,
-    ...(options.compress || {}),
+    ...options.compress,
   };
   const trimSilence = {
     ...DEFAULT_PRE_PROCESS_OPTIONS.trimSilence,
-    ...(options.trimSilence || {}),
+    ...options.trimSilence,
   };
   const tune = {
     ...DEFAULT_PRE_PROCESS_OPTIONS.tune,
-    ...(options.tune || {}),
+    ...options.tune,
   };
   let processed = buffer;
   let results: Partial<PreProcessResults> = {};

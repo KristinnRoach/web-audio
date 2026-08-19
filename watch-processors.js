@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { watch } from "fs";
 import { exec } from "child_process";
-import path from "path";
 
 console.log("Starting worklet processor watcher...");
 
@@ -15,7 +14,7 @@ watcher.on("change", (eventType, filename) => {
     console.log(`${filename} changed, rebuilding processors...`);
 
     // Execute the build-processors.js script
-    exec("node build-processors.js", (error, stdout, stderr) => {
+    exec("vp node build-processors.js", (error, stdout, stderr) => {
       if (error) {
         console.error(`Error: ${error.message}`);
         return;
