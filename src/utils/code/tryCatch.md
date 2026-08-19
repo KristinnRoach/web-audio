@@ -16,9 +16,7 @@ if (result.error) {
 ### For Asynchronous Functions
 
 ```typescript
-const result = await tryCatch(() =>
-  fetch('/api/data').then((res) => res.json())
-);
+const result = await tryCatch(() => fetch("/api/data").then((res) => res.json()));
 if (result.error) {
   // handle error
 } else {
@@ -30,7 +28,7 @@ if (result.error) {
 
 - Optionally pass a custom error message and set `logError` to `false` to suppress console errors:
   ```typescript
-  await tryCatch(() => doSomething(), 'Custom error', false);
+  await tryCatch(() => doSomething(), "Custom error", false);
   ```
 
 ## Implementation Details
@@ -39,11 +37,7 @@ The utility uses the `isPromiseLike` function to detect promises returned from f
 
 ```typescript
 function isPromiseLike<T>(value: any): value is PromiseLike<T> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof value.then === 'function'
-  );
+  return typeof value === "object" && value !== null && typeof value.then === "function";
 }
 ```
 

@@ -18,12 +18,12 @@ Release index: envelope will continue from the release point to the end when rel
 ### 1. Basic Creation
 
 ```typescript
-import { CustomEnvelope } from '@kidlib/web-audio';
+import { CustomEnvelope } from "@kidlib/web-audio";
 
 // Create with defaults - using constructor directly
-const ampEnv = new CustomEnvelope(audioContext, 'amp-env');
-const filterEnv = new CustomEnvelope(audioContext, 'filter-env');
-const pitchEnv = new CustomEnvelope(audioContext, 'pitch-env');
+const ampEnv = new CustomEnvelope(audioContext, "amp-env");
+const filterEnv = new CustomEnvelope(audioContext, "filter-env");
+const pitchEnv = new CustomEnvelope(audioContext, "pitch-env");
 ```
 
 ### 2. Apply to AudioParam
@@ -57,12 +57,12 @@ pitchEnv.releaseEnvelope(oscillatorNode.detune, audioContext.currentTime + 2);
 ```typescript
 const ampEnv = new CustomEnvelope(
   audioContext,
-  'amp-env',
+  "amp-env",
   undefined, // sharedData
   [], // initialPoints (will use defaults)
   [0, 1], // paramValueRange
   2, // durationSeconds
-  true // initEnable
+  true, // initEnable
 );
 ```
 
@@ -73,14 +73,7 @@ const ampEnv = new CustomEnvelope(
 - **Note**: UI components handle logarithmic scaling for perceptually linear frequency control
 
 ```typescript
-const filterEnv = new CustomEnvelope(
-  audioContext,
-  'filter-env',
-  undefined,
-  [],
-  [20, 20000],
-  1.5
-);
+const filterEnv = new CustomEnvelope(audioContext, "filter-env", undefined, [], [20, 20000], 1.5);
 
 // Apply to filter frequency - values are actual Hz frequencies
 filterEnv.triggerEnvelope(filterNode.frequency, startTime, {
@@ -97,15 +90,15 @@ filterEnv.triggerEnvelope(filterNode.frequency, startTime, {
 ```typescript
 const pitchEnv = new CustomEnvelope(
   audioContext,
-  'pitch-env',
+  "pitch-env",
   undefined,
   [
-    { time: 0, value: 1.0, curve: 'exponential' }, // Start at normal pitch
-    { time: 0.1, value: 1.2, curve: 'exponential' }, // Quick rise
-    { time: 2, value: 0.8, curve: 'exponential' }, // Slow fall
+    { time: 0, value: 1.0, curve: "exponential" }, // Start at normal pitch
+    { time: 0.1, value: 1.2, curve: "exponential" }, // Quick rise
+    { time: 2, value: 0.8, curve: "exponential" }, // Slow fall
   ],
   [0.5, 1.5],
-  2
+  2,
 );
 ```
 
@@ -116,18 +109,18 @@ const pitchEnv = new CustomEnvelope(
 ```typescript
 const customEnv = new CustomEnvelope(
   audioContext,
-  'amp-env',
+  "amp-env",
   undefined, // sharedData
   [
-    { time: 0, value: 0, curve: 'exponential' }, // Start silent
-    { time: 0.01, value: 1, curve: 'exponential' }, // Fast attack
-    { time: 0.5, value: 0.8, curve: 'exponential' }, // Quick decay
-    { time: 1.5, value: 0.6, curve: 'exponential' }, // Sustain level
-    { time: 2, value: 0, curve: 'exponential' }, // Release
+    { time: 0, value: 0, curve: "exponential" }, // Start silent
+    { time: 0.01, value: 1, curve: "exponential" }, // Fast attack
+    { time: 0.5, value: 0.8, curve: "exponential" }, // Quick decay
+    { time: 1.5, value: 0.6, curve: "exponential" }, // Sustain level
+    { time: 2, value: 0, curve: "exponential" }, // Release
   ],
   [0, 1], // paramValueRange
   2, // durationSeconds
-  true // initEnable
+  true, // initEnable
 );
 
 // Set sustain and release points after creation
@@ -140,14 +133,14 @@ customEnv.setReleasePoint(3); // Release from index 3
 ```typescript
 const customRange = new CustomEnvelope(
   audioContext,
-  'filter-env',
+  "filter-env",
   undefined,
   [
-    { time: 0, value: 100, curve: 'exponential' }, // 100 Hz
-    { time: 1, value: 8000, curve: 'exponential' }, // 8000 Hz
+    { time: 0, value: 100, curve: "exponential" }, // 100 Hz
+    { time: 1, value: 8000, curve: "exponential" }, // 8000 Hz
   ],
   [100, 8000], // Custom frequency range (actual Hz values)
-  1
+  1,
 );
 ```
 
@@ -187,7 +180,7 @@ envelope.syncToPlaybackRate(true);
 
 ```typescript
 // Add point at 0.5 seconds, value 0.7
-envelope.addPoint(0.5, 0.7, 'exponential');
+envelope.addPoint(0.5, 0.7, "exponential");
 
 // Update existing point
 envelope.updatePoint(1, 0.3, 0.8); // index, time, value
@@ -210,21 +203,21 @@ envelope.setReleasePoint(3); // Point index 3
 ## Complete Example
 
 ```typescript
-import { CustomEnvelope } from '@kidlib/web-audio';
+import { CustomEnvelope } from "@kidlib/web-audio";
 
 // Create filter envelope with custom sweep
 const filterEnv = new CustomEnvelope(
   audioContext,
-  'filter-env',
+  "filter-env",
   undefined, // sharedData
   [
-    { time: 0, value: 200, curve: 'exponential' }, // Start low
-    { time: 0.1, value: 4000, curve: 'exponential' }, // Quick sweep up
-    { time: 1.8, value: 800, curve: 'exponential' }, // Slow fall
-    { time: 2, value: 400, curve: 'exponential' }, // End point
+    { time: 0, value: 200, curve: "exponential" }, // Start low
+    { time: 0.1, value: 4000, curve: "exponential" }, // Quick sweep up
+    { time: 1.8, value: 800, curve: "exponential" }, // Slow fall
+    { time: 2, value: 400, curve: "exponential" }, // End point
   ],
   [20, 20000], // paramValueRange
-  2 // durationSeconds
+  2, // durationSeconds
 );
 
 // Set sustain and release points
@@ -233,13 +226,13 @@ filterEnv.setReleasePoint(2); // Release from 800Hz
 
 // Apply to filter
 const filterNode = audioContext.createBiquadFilter();
-filterNode.type = 'lowpass';
+filterNode.type = "lowpass";
 
 // Trigger on note start
 filterEnv.triggerEnvelope(filterNode.frequency, audioContext.currentTime, {
   baseValue: 1,
   playbackRate: 1,
-  voiceId: 'voice-1', // Optional for UI sync
+  voiceId: "voice-1", // Optional for UI sync
 });
 
 // Release after 1 second

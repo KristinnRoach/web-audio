@@ -1,2 +1,2 @@
-export * from './autocorrelateSingle';
-export * from './windowed';
+export * from "./autocorrelateSingle";
+export * from "./windowed";

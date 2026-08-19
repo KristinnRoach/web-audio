@@ -11,9 +11,9 @@ export class Debouncer {
   debounce<T extends (...args: any[]) => void>(
     fn: T,
     delay: number,
-    key?: string
+    key?: string,
   ): (...args: Parameters<T>) => void {
-    const actualKey = key ?? fn.name ?? 'default';
+    const actualKey = key ?? fn.name ?? "default";
     return (...args: Parameters<T>) => {
       if (this.timers.has(actualKey)) {
         clearTimeout(this.timers.get(actualKey));
@@ -23,7 +23,7 @@ export class Debouncer {
         setTimeout(() => {
           fn(...args);
           this.timers.delete(actualKey);
-        }, delay)
+        }, delay),
       );
     };
   }

@@ -1,7 +1,7 @@
 export function normalizeAudioBuffer(
   ctx: AudioContext,
   buffer: AudioBuffer,
-  targetPeak = 0.9
+  targetPeak = 0.9,
 ): AudioBuffer {
   const numChannels = buffer.numberOfChannels;
   const length = buffer.length;

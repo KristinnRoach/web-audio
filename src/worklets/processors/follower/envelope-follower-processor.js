@@ -1,36 +1,36 @@
 // envelope-follower-processor.js
 registerProcessor(
-  'envelope-follower-processor',
+  "envelope-follower-processor",
   class extends AudioWorkletProcessor {
     static get parameterDescriptors() {
       return [
         {
-          name: 'inputGain', // linear gain (1.0 = unity)
+          name: "inputGain", // linear gain (1.0 = unity)
           defaultValue: 1,
           minValue: 0,
           maxValue: 10,
-          automationRate: 'k-rate',
+          automationRate: "k-rate",
         },
         {
-          name: 'outputGain', // linear gain (1.0 = unity)
+          name: "outputGain", // linear gain (1.0 = unity)
           defaultValue: 1.0,
           minValue: 0.0,
           maxValue: 10.0,
-          automationRate: 'k-rate',
+          automationRate: "k-rate",
         },
         {
-          name: 'attack', // seconds
+          name: "attack", // seconds
           defaultValue: 0.003,
           minValue: 0.001,
           maxValue: 1.0,
-          automationRate: 'k-rate',
+          automationRate: "k-rate",
         },
         {
-          name: 'release', // seconds
+          name: "release", // seconds
           defaultValue: 0.05,
           minValue: 0.001,
           maxValue: 5.0,
-          automationRate: 'k-rate',
+          automationRate: "k-rate",
         },
       ];
     }
@@ -41,7 +41,7 @@ registerProcessor(
       this.gateThreshold = 0.005;
       this.debugCounter = 0;
       // Signal to node that processor is initialized
-      this.port.postMessage({ type: 'initialized' });
+      this.port.postMessage({ type: "initialized" });
     }
 
     process(inputs, outputs, parameters) {
@@ -86,11 +86,9 @@ registerProcessor(
         if (inputLevel > 1e-6) {
           // Normal envelope follower when we have signal
           if (inputLevel > this.envelope) {
-            this.envelope =
-              inputLevel + (this.envelope - inputLevel) * attackCoeff;
+            this.envelope = inputLevel + (this.envelope - inputLevel) * attackCoeff;
           } else {
-            this.envelope =
-              inputLevel + (this.envelope - inputLevel) * releaseCoeff;
+            this.envelope = inputLevel + (this.envelope - inputLevel) * releaseCoeff;
           }
         } else {
           // When input is silent, just decay the envelope
@@ -110,5 +108,5 @@ registerProcessor(
 
       return true;
     }
-  }
+  },
 );

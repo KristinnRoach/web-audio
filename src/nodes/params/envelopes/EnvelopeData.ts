@@ -1,6 +1,6 @@
 // EnvelopeData.ts
-import { assert } from '@/utils';
-import { EnvelopePoint } from './env-types';
+import { assert } from "@/utils";
+import { EnvelopePoint } from "./env-types";
 
 // ===== ENVELOPE DATA - Pure data operations =====
 export class EnvelopeData {
@@ -18,12 +18,9 @@ export class EnvelopeData {
     valueRange: [number, number] = [0, 1],
     durationSeconds: number,
     sustainIdx?: number,
-    releaseIdx?: number
+    releaseIdx?: number,
   ) {
-    assert(
-      points.length >= 2,
-      'EnvelopeData needs at least two points to initialize'
-    );
+    assert(points.length >= 2, "EnvelopeData needs at least two points to initialize");
 
     this.#durationSeconds = durationSeconds;
     this.#pointValueRange = valueRange;
@@ -31,20 +28,13 @@ export class EnvelopeData {
     this.#startIdx = 0;
     this.#endIdx = points.length - 1;
 
-    this.#sustainIdx =
-      sustainIdx !== undefined && points[sustainIdx] ? sustainIdx : null;
+    this.#sustainIdx = sustainIdx !== undefined && points[sustainIdx] ? sustainIdx : null;
 
     this.#releaseIdx =
-      releaseIdx !== undefined && points[releaseIdx]
-        ? releaseIdx
-        : Math.max(0, this.#endIdx - 1);
+      releaseIdx !== undefined && points[releaseIdx] ? releaseIdx : Math.max(0, this.#endIdx - 1);
   }
 
-  addPoint(
-    time: number,
-    value: number,
-    curve: 'linear' | 'exponential' = 'exponential'
-  ) {
+  addPoint(time: number, value: number, curve: "linear" | "exponential" = "exponential") {
     const newPoint = { time, value, curve };
 
     // Prevent adding before first or after last point
@@ -55,7 +45,7 @@ export class EnvelopeData {
       if (time < firstTime || time > lastTime) {
         // ? time <= firstTime || time >= lastTime)
         console.warn(
-          `Cannot add point at time ${time}. Must be between ${firstTime} and ${lastTime}`
+          `Cannot add point at time ${time}. Must be between ${firstTime} and ${lastTime}`,
         );
         return;
       }
@@ -99,10 +89,7 @@ export class EnvelopeData {
         return;
       }
 
-      if (
-        index === this.#endIdx - 1 &&
-        newTime >= this.points[this.#endIdx].time
-      ) {
+      if (index === this.#endIdx - 1 && newTime >= this.points[this.#endIdx].time) {
         return;
       }
 
@@ -125,11 +112,7 @@ export class EnvelopeData {
   };
 
   deletePoint(index: number) {
-    if (
-      this.points.length > 2 &&
-      index > this.#startIdx &&
-      index < this.#endIdx
-    ) {
+    if (this.points.length > 2 && index > this.#startIdx && index < this.#endIdx) {
       this.points.splice(index, 1);
       this.#endIdx = this.points.length - 1;
     }
@@ -173,18 +156,10 @@ export class EnvelopeData {
 
         if (timeSeconds >= left.time && timeSeconds <= right.time) {
           const segmentDuration = right.time - left.time;
-          const t =
-            segmentDuration === 0
-              ? 0
-              : (timeSeconds - left.time) / segmentDuration;
+          const t = segmentDuration === 0 ? 0 : (timeSeconds - left.time) / segmentDuration;
 
-          if (
-            left.curve === 'exponential' &&
-            left.value > 0 &&
-            right.value > 0
-          ) {
-            interpolatedValue =
-              left.value * Math.pow(right.value / left.value, t);
+          if (left.curve === "exponential" && left.value > 0 && right.value > 0) {
+            interpolatedValue = left.value * Math.pow(right.value / left.value, t);
           } else {
             interpolatedValue = left.value + (right.value - left.value) * t;
           }
@@ -200,8 +175,7 @@ export class EnvelopeData {
   #updateSharpTransitionsFlag() {
     const threshold = 0.02 * this.#durationSeconds;
     this.#hasSharpTransitions = this.points.some(
-      (point, i) =>
-        i > 0 && Math.abs(point.time - this.points[i - 1].time) < threshold
+      (point, i) => i > 0 && Math.abs(point.time - this.points[i - 1].time) < threshold,
     );
   }
 
@@ -220,7 +194,7 @@ export class EnvelopeData {
     if (index >= 0 && index < this.points.length) {
       this.#releaseIdx = index;
     } else {
-      console.error('EnvelopeData.setReleasePoint: invalid index');
+      console.error("EnvelopeData.setReleasePoint: invalid index");
     }
   }
 

@@ -1,5 +1,5 @@
 // buffer-player-processor.ts - Simple audio buffer playback processor
-import { AudioProcessorMessage } from './types';
+import { AudioProcessorMessage } from "./types";
 
 class BufferPlayerProcessor extends AudioWorkletProcessor {
   private buffer: Float32Array[] | null = null;
@@ -19,7 +19,7 @@ class BufferPlayerProcessor extends AudioWorkletProcessor {
     const { type, payload } = event.data;
 
     switch (type) {
-      case 'loadBuffer':
+      case "loadBuffer":
         // Buffer comes as array of channels
         this.buffer = payload.buffer as Float32Array<ArrayBufferLike>[];
         this.playbackPosition = 0;
@@ -30,13 +30,13 @@ class BufferPlayerProcessor extends AudioWorkletProcessor {
           // Calculate ratio between original sample rate and AudioContext sample rate
           this.playbackRatio = this.bufferSampleRate / sampleRate;
           console.log(
-            `Buffer sample rate: ${this.bufferSampleRate}, AudioContext sample rate: ${sampleRate}, Ratio: ${this.playbackRatio}`
+            `Buffer sample rate: ${this.bufferSampleRate}, AudioContext sample rate: ${sampleRate}, Ratio: ${this.playbackRatio}`,
           );
         }
 
         if (this.buffer && this.buffer[0]) {
           this.port.postMessage({
-            type: 'bufferLoaded',
+            type: "bufferLoaded",
             payload: {
               numChannels: this.buffer.length,
               length: this.buffer[0].length || 0,
@@ -45,21 +45,21 @@ class BufferPlayerProcessor extends AudioWorkletProcessor {
         }
         break;
 
-      case 'play':
+      case "play":
         this.isPlaying = true;
         this.playbackPosition = payload?.position || 0;
         break;
 
-      case 'stop':
+      case "stop":
         this.isPlaying = false;
         this.playbackPosition = 0;
         break;
 
-      case 'pause':
+      case "pause":
         this.isPlaying = false;
         break;
 
-      case 'setVolume':
+      case "setVolume":
         this.gain = payload;
         break;
     }
@@ -68,7 +68,7 @@ class BufferPlayerProcessor extends AudioWorkletProcessor {
   process(
     _inputs: Float32Array[][],
     outputs: Float32Array[][],
-    _parameters: Record<string, Float32Array>
+    _parameters: Record<string, Float32Array>,
   ): boolean {
     // If no buffer or not playing, output silence and keep alive
     if (!this.buffer || !this.isPlaying) {
@@ -111,7 +111,7 @@ class BufferPlayerProcessor extends AudioWorkletProcessor {
             // Reset position and notify main thread
             this.playbackPosition = 0;
             this.isPlaying = false;
-            this.port.postMessage({ type: 'playbackEnded' });
+            this.port.postMessage({ type: "playbackEnded" });
           }
         }
       }
@@ -128,4 +128,4 @@ class BufferPlayerProcessor extends AudioWorkletProcessor {
 }
 
 // Register the processor
-registerProcessor('buffer-player', BufferPlayerProcessor);
+registerProcessor("buffer-player", BufferPlayerProcessor);

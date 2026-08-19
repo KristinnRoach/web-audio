@@ -1,12 +1,12 @@
 // Preprocessor.ts
-import { normalizeAudioBuffer } from '@/utils/audiodata/process/normalizeAudioBuffer';
-import { compressAudioBuffer } from '@/utils/audiodata/process/compressAudioBuffer';
-import { shouldCompress } from '@/utils/audiodata/process/shouldCompress';
-import { detectThresholdCrossing } from '@/utils/audiodata/process/detectSilence';
-import { trimAudioBuffer } from '@/utils/audiodata/process/trimBuffer';
-import { detectSinglePitchAC } from '@/utils/audiodata/pitchDetection';
-import { findClosestNote } from '@/utils';
-import { findZeroCrossingSeconds } from '@/utils';
+import { normalizeAudioBuffer } from "@/utils/audiodata/process/normalizeAudioBuffer";
+import { compressAudioBuffer } from "@/utils/audiodata/process/compressAudioBuffer";
+import { shouldCompress } from "@/utils/audiodata/process/shouldCompress";
+import { detectThresholdCrossing } from "@/utils/audiodata/process/detectSilence";
+import { trimAudioBuffer } from "@/utils/audiodata/process/trimBuffer";
+import { detectSinglePitchAC } from "@/utils/audiodata/pitchDetection";
+import { findClosestNote } from "@/utils";
+import { findZeroCrossingSeconds } from "@/utils";
 
 export type PreProcessOptions = {
   skipPreProcessing?: boolean;
@@ -86,36 +86,27 @@ export async function preProcessAudioBuffer(
   const PITCH_CONFIDENCE_THRESHOLD = 0.35;
 
   if (trimSilence?.enabled) {
-    const { start, end } = detectThresholdCrossing(
-      processed,
-      trimSilence.threshold ?? 0.01,
-    );
+    const { start, end } = detectThresholdCrossing(processed, trimSilence.threshold ?? 0.01);
     processed = trimAudioBuffer(ctx, processed, start, end, fadeInOutMs);
   }
 
   // Apply HPF first (before normalization) to avoid filter-induced clipping
   if (hpf) {
-    if ('cutoff' in hpf) {
+    if ("cutoff" in hpf) {
       processed = await applyHighPassFilter(processed, hpf.cutoff ?? 80);
-    } else if ('auto' in hpf && hpf.auto) {
+    } else if ("auto" in hpf && hpf.auto) {
       // For auto HPF, we need pitch detection first
       const tempPitch = await detectPitch(processed);
       if (tempPitch.confidence >= PITCH_CONFIDENCE_THRESHOLD) {
         const cutoffFreq =
-          tempPitch.frequency > 30 && tempPitch.frequency < 350
-            ? tempPitch.frequency
-            : 80;
+          tempPitch.frequency > 30 && tempPitch.frequency < 350 ? tempPitch.frequency : 80;
         processed = await applyHighPassFilter(processed, cutoffFreq);
       }
     }
   }
 
   if (normalize?.enabled) {
-    processed = normalizeAudioBuffer(
-      ctx,
-      processed,
-      normalize.maxAmplitudePeak,
-    );
+    processed = normalizeAudioBuffer(ctx, processed, normalize.maxAmplitudePeak);
   }
 
   if (compress?.enabled) {
@@ -152,11 +143,7 @@ export async function preProcessAudioBuffer(
     }
   }
 
-  if (
-    tune?.detectPitch ||
-    tune?.autotune ||
-    (hpf && 'auto' in hpf && hpf.auto)
-  ) {
+  if (tune?.detectPitch || tune?.autotune || (hpf && "auto" in hpf && hpf.auto)) {
     const detectedPitch = await detectPitch(processed);
     // Use target MIDI note 60 (C4) or a provided target note
     const targetMidiNote = tune?.targetMidiNote || 60;
@@ -177,26 +164,16 @@ export async function preProcessAudioBuffer(
       !results.detectedPitch?.transpositionSemitones ||
       results.detectedPitch.confidence < PITCH_CONFIDENCE_THRESHOLD
     ) {
-      console.info('Skipped autotune due to unreliable pitch detection');
-    } else if (
-      Math.abs(results.detectedPitch?.transpositionSemitones ?? 0) < 0.1
-    ) {
-      console.info('Skipped autotune - detected pitch is already C');
+      console.info("Skipped autotune due to unreliable pitch detection");
+    } else if (Math.abs(results.detectedPitch?.transpositionSemitones ?? 0) < 0.1) {
+      console.info("Skipped autotune - detected pitch is already C");
     } else {
-      processed = resampleForPitch(
-        ctx,
-        processed,
-        results.detectedPitch.transpositionSemitones,
-      );
+      processed = resampleForPitch(ctx, processed, results.detectedPitch.transpositionSemitones);
     }
   }
 
   if (normalize?.enabled) {
-    processed = normalizeAudioBuffer(
-      ctx,
-      processed,
-      normalize.maxAmplitudePeak,
-    );
+    processed = normalizeAudioBuffer(ctx, processed, normalize.maxAmplitudePeak);
   }
 
   if (getZeroCrossings) {
@@ -219,11 +196,7 @@ export async function preProcessAudioBuffer(
  * @param semitones The number of semitones to transpose (-6 to +6 recommended)
  * @returns A new audio buffer with adjusted pitch
  */
-function resampleForPitch(
-  ctx: AudioContext,
-  buffer: AudioBuffer,
-  semitones: number,
-): AudioBuffer {
+function resampleForPitch(ctx: AudioContext, buffer: AudioBuffer, semitones: number): AudioBuffer {
   // Calculate playback rate based on semitone difference
   const playbackRate = Math.pow(2, semitones / 12);
 
@@ -232,11 +205,7 @@ function resampleForPitch(
   const newLength = Math.round(oldLength / playbackRate);
 
   // Create a new buffer
-  const newBuffer = ctx.createBuffer(
-    buffer.numberOfChannels,
-    newLength,
-    buffer.sampleRate,
-  );
+  const newBuffer = ctx.createBuffer(buffer.numberOfChannels, newLength, buffer.sampleRate);
 
   // Resample each channel
   for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
@@ -253,8 +222,7 @@ function resampleForPitch(
       if (oldIndexFloor + 1 < oldLength) {
         // Linear interpolation
         newData[i] =
-          oldData[oldIndexFloor] * (1 - fraction) +
-          oldData[oldIndexFloor + 1] * fraction;
+          oldData[oldIndexFloor] * (1 - fraction) + oldData[oldIndexFloor + 1] * fraction;
       } else {
         newData[i] = oldData[oldIndexFloor];
       }
@@ -269,8 +237,7 @@ async function detectPitch(buffer: AudioBuffer, logResults = false) {
   const targetNoteInfo = findClosestNote(pitchSource.frequency);
 
   const midiFloat = 69 + 12 * Math.log2(pitchSource.frequency / 440);
-  const playbackRateMultiplier =
-    targetNoteInfo.frequency / pitchSource.frequency;
+  const playbackRateMultiplier = targetNoteInfo.frequency / pitchSource.frequency;
 
   if (logResults) {
     console.table({
@@ -289,10 +256,7 @@ async function detectPitch(buffer: AudioBuffer, logResults = false) {
   };
 }
 
-function detectedPitchToTransposition(
-  detectedMidiFloat: number,
-  targetMidiNote: number,
-) {
+function detectedPitchToTransposition(detectedMidiFloat: number, targetMidiNote: number) {
   let transposeSemitones = targetMidiNote - detectedMidiFloat;
   // Wrap to nearest octave (-6 to +6 semitones)
   while (transposeSemitones > 6) transposeSemitones -= 12;
@@ -315,7 +279,7 @@ async function applyHighPassFilter(
   const source = offlineCtx.createBufferSource();
   const filter = offlineCtx.createBiquadFilter();
 
-  filter.type = 'highpass';
+  filter.type = "highpass";
   filter.frequency.value = cutoff;
   filter.Q.value = q;
 

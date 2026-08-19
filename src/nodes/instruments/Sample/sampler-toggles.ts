@@ -1,4 +1,4 @@
-import type { SamplePlayer } from './SamplePlayer';
+import type { SamplePlayer } from "./SamplePlayer";
 
 export interface SamplerToggleDescriptor {
   label: string;
@@ -9,35 +9,34 @@ export interface SamplerToggleDescriptor {
 
 export const samplerToggles = {
   timestretch: {
-    label: 'Timestretch',
+    label: "Timestretch",
     defaultValue: false,
-    format: (enabled) => (enabled ? 'Warp' : 'RePitch'),
+    format: (enabled) => (enabled ? "Warp" : "RePitch"),
     apply: (player, enabled) => player.setTimestretchEnabled(enabled),
   },
   panDrift: {
-    label: 'Pan drift',
+    label: "Pan drift",
     defaultValue: true,
-    format: (enabled) => (enabled ? '◐' : '○'),
+    format: (enabled) => (enabled ? "◐" : "○"),
     apply: (player, enabled) => player.setPanDriftEnabled(enabled),
   },
   feedbackMode: {
-    label: 'Feedback mode',
+    label: "Feedback mode",
     defaultValue: true,
-    format: (enabled) => (enabled ? 'Poly' : 'Mono'),
-    apply: (player, enabled) =>
-      player.setFeedbackMode(enabled ? 'polyphonic' : 'monophonic'),
+    format: (enabled) => (enabled ? "Poly" : "Mono"),
+    apply: (player, enabled) => player.setFeedbackMode(enabled ? "polyphonic" : "monophonic"),
   },
   gainLFOSync: {
-    label: 'Amp LFO sync',
+    label: "Amp LFO sync",
     defaultValue: false,
-    format: (enabled) => (enabled ? 'Sync' : 'Free'),
-    apply: (player, enabled) => player.syncLFOsToNoteFreq('gain-lfo', enabled),
+    format: (enabled) => (enabled ? "Sync" : "Free"),
+    apply: (player, enabled) => player.syncLFOsToNoteFreq("gain-lfo", enabled),
   },
   pitchLFOSync: {
-    label: 'Pitch LFO sync',
+    label: "Pitch LFO sync",
     defaultValue: false,
-    format: (enabled) => (enabled ? 'Sync' : 'Free'),
-    apply: (player, enabled) => player.syncLFOsToNoteFreq('pitch-lfo', enabled),
+    format: (enabled) => (enabled ? "Sync" : "Free"),
+    apply: (player, enabled) => player.syncLFOsToNoteFreq("pitch-lfo", enabled),
   },
 } as const satisfies Record<string, SamplerToggleDescriptor>;
 

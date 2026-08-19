@@ -1,16 +1,16 @@
-import { getAudioContext } from '@/context';
-import { findWaveCycles } from '@/utils/audiodata/wavecycles/findWaveCycles';
+import { getAudioContext } from "@/context";
+import { findWaveCycles } from "@/utils/audiodata/wavecycles/findWaveCycles";
 
 export function createPitchDivideEffect(
   audioBuffer: AudioBuffer,
-  divider: number = 2
+  divider: number = 2,
 ): AudioBuffer {
   const cycles = findWaveCycles(audioBuffer);
   const ctx = getAudioContext();
   const outputBuffer = ctx.createBuffer(
     audioBuffer.numberOfChannels,
     audioBuffer.length,
-    audioBuffer.sampleRate
+    audioBuffer.sampleRate,
   );
 
   const inputData = audioBuffer.getChannelData(0);
@@ -29,9 +29,8 @@ export function createPitchDivideEffect(
         const sourceIndex =
           cycle.startSample +
           Math.floor(
-            ((s - targetCycle.startSample) /
-              (targetCycle.endSample - targetCycle.startSample)) *
-              cycleLength
+            ((s - targetCycle.startSample) / (targetCycle.endSample - targetCycle.startSample)) *
+              cycleLength,
           );
         outputData[s] = inputData[sourceIndex];
       }

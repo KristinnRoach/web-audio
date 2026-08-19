@@ -1,6 +1,6 @@
 class Distortion {
   constructor() {
-    this.limitingMode = 'hard-clipping';
+    this.limitingMode = "hard-clipping";
   }
 
   applyDrive(sample, driveAmount) {
@@ -17,18 +17,15 @@ class Distortion {
 
     let clippedSample;
     switch (this.limitingMode) {
-      case 'soft-clipping':
+      case "soft-clipping":
         clippedSample = clipThreshold * Math.tanh(sample / clipThreshold);
         break;
 
-      case 'hard-clipping':
-        clippedSample = Math.max(
-          -clipThreshold,
-          Math.min(clipThreshold, sample)
-        );
+      case "hard-clipping":
+        clippedSample = Math.max(-clipThreshold, Math.min(clipThreshold, sample));
         break;
 
-      case 'bypass':
+      case "bypass":
       default:
         clippedSample = sample;
         break;
@@ -41,8 +38,7 @@ class Distortion {
     }
 
     // Blend clean and clipped
-    const blended =
-      sample * (1 - clippingAmount) + clippedSample * clippingAmount;
+    const blended = sample * (1 - clippingAmount) + clippedSample * clippingAmount;
 
     return blended;
   }
@@ -53,30 +49,30 @@ class Distortion {
 }
 
 registerProcessor(
-  'distortion-processor',
+  "distortion-processor",
   class extends AudioWorkletProcessor {
     static get parameterDescriptors() {
       return [
         {
-          name: 'distortionDrive',
+          name: "distortionDrive",
           defaultValue: 0,
           minValue: 0,
           maxValue: 1,
-          automationRate: 'a-rate',
+          automationRate: "a-rate",
         },
         {
-          name: 'clippingAmount',
+          name: "clippingAmount",
           defaultValue: 0,
           minValue: 0,
           maxValue: 1,
-          automationRate: 'a-rate',
+          automationRate: "a-rate",
         },
         {
-          name: 'clippingThreshold',
+          name: "clippingThreshold",
           defaultValue: 0.5,
           minValue: 0,
           maxValue: 1,
-          automationRate: 'k-rate',
+          automationRate: "k-rate",
         },
       ];
     }
@@ -86,18 +82,18 @@ registerProcessor(
       this.distortion = new Distortion();
       this.setupMessageHandling();
       // Signal to node that processor is initialized
-      this.port.postMessage({ type: 'initialized' });
+      this.port.postMessage({ type: "initialized" });
     }
 
     setupMessageHandling() {
       this.port.onmessage = (event) => {
         switch (event.data.type) {
-          case 'setLimitingMode':
+          case "setLimitingMode":
             this.distortion.setLimitingMode(event.data.mode);
             break;
 
           default:
-            console.warn('distortion-processor: Unsupported message');
+            console.warn("distortion-processor: Unsupported message");
             break;
         }
       };
@@ -114,13 +110,9 @@ registerProcessor(
       // Process each sample
       for (let i = 0; i < output[0].length; ++i) {
         const distortionDrive =
-          parameters.distortionDrive[
-            Math.min(i, parameters.distortionDrive.length - 1)
-          ];
+          parameters.distortionDrive[Math.min(i, parameters.distortionDrive.length - 1)];
         const clippingAmount =
-          parameters.clippingAmount[
-            Math.min(i, parameters.clippingAmount.length - 1)
-          ];
+          parameters.clippingAmount[Math.min(i, parameters.clippingAmount.length - 1)];
 
         // Process each channel
         for (let c = 0; c < Math.min(input.length, output.length); c++) {
@@ -130,11 +122,7 @@ registerProcessor(
           sample = this.distortion.applyDrive(sample, distortionDrive);
 
           // Apply clipping blend
-          sample = this.distortion.applyClipping(
-            sample,
-            clippingAmount,
-            clipThreshold
-          );
+          sample = this.distortion.applyClipping(sample, clippingAmount, clipThreshold);
 
           // Basic output limiting
           output[c][i] = Math.max(-0.999, Math.min(0.999, sample));
@@ -143,5 +131,5 @@ registerProcessor(
 
       return true;
     }
-  }
+  },
 );

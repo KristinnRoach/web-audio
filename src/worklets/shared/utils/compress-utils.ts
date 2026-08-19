@@ -10,7 +10,7 @@
 export const hardLimit = (
   input: Float32Array,
   output: Float32Array,
-  outputRange = { min: -1, max: 1 }
+  outputRange = { min: -1, max: 1 },
 ) => {
   const { min, max } = outputRange;
 
@@ -31,7 +31,7 @@ export const compress = (
   output: Float32Array,
   threshold = 0.75,
   ratio = 4.0,
-  limiter = { enabled: true, outputRange: { min: -1, max: 1 } }
+  limiter = { enabled: true, outputRange: { min: -1, max: 1 } },
 ) => {
   const { min, max } = limiter.outputRange;
 
@@ -48,16 +48,11 @@ export const compress = (
   }
 };
 
-export const softClipSingleSample = (
-  sample: number,
-  threshold = 0.8,
-  max = 0.9
-) => {
+export const softClipSingleSample = (sample: number, threshold = 0.8, max = 0.9) => {
   if (Math.abs(sample) < threshold) return sample;
 
   const softClipped =
-    Math.sign(sample) *
-    (threshold + (1 - Math.exp(-Math.abs(sample) + threshold)));
+    Math.sign(sample) * (threshold + (1 - Math.exp(-Math.abs(sample) + threshold)));
 
   // Hard limit to prevent exceeding max
   return Math.max(-max, Math.min(max, softClipped));
@@ -84,7 +79,7 @@ export const compressSingleSample = (
   input: number,
   threshold = 0.75,
   ratio = 4.0,
-  limiter = { enabled: true, type: 'soft', outputRange: { min: -1, max: 1 } }
+  limiter = { enabled: true, type: "soft", outputRange: { min: -1, max: 1 } },
 ): number => {
   const { min, max } = limiter.outputRange;
 
@@ -94,9 +89,9 @@ export const compressSingleSample = (
   }
 
   if (limiter.enabled) {
-    if (limiter.type === 'soft') {
+    if (limiter.type === "soft") {
       x = cheapSoftClipSingleSample(x, Math.abs(max));
-    } else if (limiter.type === 'hard') {
+    } else if (limiter.type === "hard") {
       x = Math.max(min, Math.min(max, x));
     }
   }

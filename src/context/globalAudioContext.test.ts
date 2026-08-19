@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-async function loadWithSinkId(sinkId: string | { readonly type: 'none' }) {
+async function loadWithSinkId(sinkId: string | { readonly type: "none" }) {
   class FakeAudioContext {
-    state = 'running';
+    state = "running";
     sinkId = sinkId;
     audioWorklet = {};
 
@@ -15,13 +15,13 @@ async function loadWithSinkId(sinkId: string | { readonly type: 'none' }) {
     }
   }
 
-  vi.stubGlobal('window', { AudioContext: FakeAudioContext });
-  vi.stubGlobal('AudioContext', FakeAudioContext);
+  vi.stubGlobal("window", { AudioContext: FakeAudioContext });
+  vi.stubGlobal("AudioContext", FakeAudioContext);
 
-  return import('./globalAudioContext');
+  return import("./globalAudioContext");
 }
 
-describe('getCurrentOutputDeviceId', () => {
+describe("getCurrentOutputDeviceId", () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -30,15 +30,15 @@ describe('getCurrentOutputDeviceId', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns string sink ids', async () => {
-    const { getCurrentOutputDeviceId } = await loadWithSinkId('speaker-1');
+  it("returns string sink ids", async () => {
+    const { getCurrentOutputDeviceId } = await loadWithSinkId("speaker-1");
 
-    expect(getCurrentOutputDeviceId()).toBe('speaker-1');
+    expect(getCurrentOutputDeviceId()).toBe("speaker-1");
   });
 
-  it('returns no device id for AudioSinkInfo silent output', async () => {
-    const { getCurrentOutputDeviceId } = await loadWithSinkId({ type: 'none' });
+  it("returns no device id for AudioSinkInfo silent output", async () => {
+    const { getCurrentOutputDeviceId } = await loadWithSinkId({ type: "none" });
 
-    expect(getCurrentOutputDeviceId()).toBe('');
+    expect(getCurrentOutputDeviceId()).toBe("");
   });
 });

@@ -5,12 +5,12 @@ export const clamp = (
   options: {
     warn?: boolean;
     name?: string;
-  } = { warn: false }
+  } = { warn: false },
 ) => {
   if (options.warn && (value < min || value > max)) {
-    const paramName = options.name ? `(${options.name})` : '';
+    const paramName = options.name ? `(${options.name})` : "";
     console.warn(
-      `Value${paramName} ${value} is outside range [${min}, ${max}], clamping to ${value < min ? min : max}`
+      `Value${paramName} ${value} is outside range [${min}, ${max}], clamping to ${value < min ? min : max}`,
     );
   }
 
@@ -26,14 +26,14 @@ export const mapToRange = (
   options: {
     warn?: boolean;
     name?: string;
-  } = { warn: true }
+  } = { warn: true },
 ) => {
   // Check if input is out of bounds
   if (value < inMin || value > inMax) {
-    const paramName = options.name ? `(${options.name})` : '';
+    const paramName = options.name ? `(${options.name})` : "";
     if (options.warn) {
       console.warn(
-        `Input value${paramName} ${value} is outside nominal range [${inMin}, ${inMax}]`
+        `Input value${paramName} ${value} is outside nominal range [${inMin}, ${inMax}]`,
       );
     }
     // Clamp input value before mapping
@@ -47,8 +47,7 @@ export const mapToRange = (
   }
 
   // Do the mapping
-  const mapped =
-    ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin;
+  const mapped = ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin;
 
   // Ensure output is within bounds, considering that output range might be inverted
   return clamp(mapped, Math.min(outMin, outMax), Math.max(outMin, outMax));
@@ -60,7 +59,7 @@ export const range = (start: number, end: number, step = 1) => {
 
   if (start >= end) {
     console.warn(
-      `range(): start (${start}) must be less than end (${end}). Returning empty array.`
+      `range(): start (${start}) must be less than end (${end}). Returning empty array.`,
     );
     return output;
   }

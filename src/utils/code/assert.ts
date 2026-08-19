@@ -1,13 +1,7 @@
-export function assert<T>(
-  condition: any,
-  message?: string,
-  context?: T
-): asserts condition {
+export function assert<T>(condition: any, message?: string, context?: T): asserts condition {
   if (!condition) {
-    const contextStr = context ? `\nContext: ${JSON.stringify(context)}` : '';
-    throw new Error(
-      `Assertion failed${message ? `: ${message}` : ''}${contextStr}`
-    );
+    const contextStr = context ? `\nContext: ${JSON.stringify(context)}` : "";
+    throw new Error(`Assertion failed${message ? `: ${message}` : ""}${contextStr}`);
   }
 }
 

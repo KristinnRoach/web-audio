@@ -1,20 +1,20 @@
-import { WorkletConfig, DefaultWorkletConfig } from './worklet-types';
+import { WorkletConfig, DefaultWorkletConfig } from "./worklet-types";
 
 export class WorkletNode<
   TConfig extends WorkletConfig = DefaultWorkletConfig,
 > extends AudioWorkletNode {
   private _processorReady = false;
-  private _messageQueue: TConfig['message'][] = [];
+  private _messageQueue: TConfig["message"][] = [];
 
   constructor(
     audioContext: AudioContext,
     processorName: string,
-    options?: AudioWorkletNodeOptions
+    options?: AudioWorkletNodeOptions,
   ) {
     super(audioContext, processorName, options);
     // Listen for processor handshake
     this.port.onmessage = (event: MessageEvent<any>) => {
-      if (event.data && event.data.type === 'initialized') {
+      if (event.data && event.data.type === "initialized") {
         this._processorReady = true;
         // Flush queued messages
         for (const msg of this._messageQueue) {
@@ -29,10 +29,7 @@ export class WorkletNode<
     };
   }
 
-  setParam<K extends keyof TConfig['params']>(
-    name: K,
-    value: TConfig['params'][K]
-  ): this {
+  setParam<K extends keyof TConfig["params"]>(name: K, value: TConfig["params"][K]): this {
     const param = this.parameters.get(name as string);
     if (!param) {
       console.warn(`Parameter '${String(name)}' not found on worklet node`);
@@ -42,12 +39,12 @@ export class WorkletNode<
     return this;
   }
 
-  getParam<K extends keyof TConfig['params']>(name: K): AudioParam | undefined {
+  getParam<K extends keyof TConfig["params"]>(name: K): AudioParam | undefined {
     return this.parameters.get(name as string);
   }
 
   // Message passing
-  sendProcessorMessage(message: TConfig['message']): this {
+  sendProcessorMessage(message: TConfig["message"]): this {
     if (this._processorReady) {
       this.port.postMessage(message);
     } else {
@@ -56,13 +53,9 @@ export class WorkletNode<
     return this;
   }
 
-  private _onProcessorMessage?: (
-    event: MessageEvent<TConfig['message']>
-  ) => void;
+  private _onProcessorMessage?: (event: MessageEvent<TConfig["message"]>) => void;
 
-  onProcessorMessage(
-    callback: (event: MessageEvent<TConfig['message']>) => void
-  ): this {
+  onProcessorMessage(callback: (event: MessageEvent<TConfig["message"]>) => void): this {
     this._onProcessorMessage = callback;
     return this;
   }

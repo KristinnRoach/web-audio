@@ -167,13 +167,7 @@
       <div class="file-drop" id="fileDrop">
         Drop MP3/WAV files here or click to select<br />
         <small>Expected format: 1_C.mp3, 2_C#.mp3, 3_A.mp3, etc.</small>
-        <input
-          type="file"
-          id="fileInput"
-          multiple
-          accept="audio/*"
-          style="display: none"
-        />
+        <input type="file" id="fileInput" multiple accept="audio/*" style="display: none" />
       </div>
 
       <div class="results">
@@ -219,8 +213,7 @@
 
       function getAudioContext() {
         if (!sharedAudioContext) {
-          sharedAudioContext = new (window.AudioContext ||
-            window.webkitAudioContext)();
+          sharedAudioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
         return sharedAudioContext;
       }
@@ -234,13 +227,13 @@
         C5: 523.25,
         C6: 1046.5,
         C7: 2093.0,
-        'C#1': 34.65,
-        'C#2': 69.3,
-        'C#3': 138.59,
-        'C#4': 277.18,
-        'C#5': 554.37,
-        'C#6': 1108.73,
-        'C#7': 2217.46,
+        "C#1": 34.65,
+        "C#2": 69.3,
+        "C#3": 138.59,
+        "C#4": 277.18,
+        "C#5": 554.37,
+        "C#6": 1108.73,
+        "C#7": 2217.46,
         D1: 36.71,
         D2: 73.42,
         D3: 146.83,
@@ -248,13 +241,13 @@
         D5: 587.33,
         D6: 1174.66,
         D7: 2349.32,
-        'D#1': 38.89,
-        'D#2': 77.78,
-        'D#3': 155.56,
-        'D#4': 311.13,
-        'D#5': 622.25,
-        'D#6': 1244.51,
-        'D#7': 2489.02,
+        "D#1": 38.89,
+        "D#2": 77.78,
+        "D#3": 155.56,
+        "D#4": 311.13,
+        "D#5": 622.25,
+        "D#6": 1244.51,
+        "D#7": 2489.02,
         E1: 41.2,
         E2: 82.41,
         E3: 164.81,
@@ -269,13 +262,13 @@
         F5: 698.46,
         F6: 1396.91,
         F7: 2793.83,
-        'F#1': 46.25,
-        'F#2': 92.5,
-        'F#3': 185.0,
-        'F#4': 369.99,
-        'F#5': 739.99,
-        'F#6': 1479.98,
-        'F#7': 2959.96,
+        "F#1": 46.25,
+        "F#2": 92.5,
+        "F#3": 185.0,
+        "F#4": 369.99,
+        "F#5": 739.99,
+        "F#6": 1479.98,
+        "F#7": 2959.96,
         G1: 49.0,
         G2: 98.0,
         G3: 196.0,
@@ -283,13 +276,13 @@
         G5: 783.99,
         G6: 1567.98,
         G7: 3135.96,
-        'G#1': 51.91,
-        'G#2': 103.83,
-        'G#3': 207.65,
-        'G#4': 415.3,
-        'G#5': 830.61,
-        'G#6': 1661.22,
-        'G#7': 3322.44,
+        "G#1": 51.91,
+        "G#2": 103.83,
+        "G#3": 207.65,
+        "G#4": 415.3,
+        "G#5": 830.61,
+        "G#6": 1661.22,
+        "G#7": 3322.44,
         A1: 55.0,
         A2: 110.0,
         A3: 220.0,
@@ -297,13 +290,13 @@
         A5: 880.0,
         A6: 1760.0,
         A7: 3520.0,
-        'A#1': 58.27,
-        'A#2': 116.54,
-        'A#3': 233.08,
-        'A#4': 466.16,
-        'A#5': 932.33,
-        'A#6': 1864.66,
-        'A#7': 3729.31,
+        "A#1": 58.27,
+        "A#2": 116.54,
+        "A#3": 233.08,
+        "A#4": 466.16,
+        "A#5": 932.33,
+        "A#6": 1864.66,
+        "A#7": 3729.31,
         B1: 61.74,
         B2: 123.47,
         B3: 246.94,
@@ -314,49 +307,47 @@
       };
 
       // Setup UI
-      const cutoffSlider = document.getElementById('cutoffSlider');
-      const cutoffValue = document.getElementById('cutoffValue');
-      const algoToggle = document.getElementById('algoToggle');
-      const fileDrop = document.getElementById('fileDrop');
-      const fileInput = document.getElementById('fileInput');
-      const resultsContainer = document.getElementById('resultsContainer');
-      const fundamentalDetection = document.getElementById(
-        'fundamentalDetection'
-      );
-      const enableHPF = document.getElementById('enableHPF');
-      const runButton = document.getElementById('runButton');
+      const cutoffSlider = document.getElementById("cutoffSlider");
+      const cutoffValue = document.getElementById("cutoffValue");
+      const algoToggle = document.getElementById("algoToggle");
+      const fileDrop = document.getElementById("fileDrop");
+      const fileInput = document.getElementById("fileInput");
+      const resultsContainer = document.getElementById("resultsContainer");
+      const fundamentalDetection = document.getElementById("fundamentalDetection");
+      const enableHPF = document.getElementById("enableHPF");
+      const runButton = document.getElementById("runButton");
 
-      cutoffSlider.addEventListener('input', () => {
+      cutoffSlider.addEventListener("input", () => {
         cutoffValue.textContent = cutoffSlider.value;
       });
 
       // Enable/disable cutoff slider based on HPF checkbox
-      enableHPF.addEventListener('change', () => {
+      enableHPF.addEventListener("change", () => {
         cutoffSlider.disabled = !enableHPF.checked;
-        cutoffValue.style.opacity = enableHPF.checked ? '1' : '0.5';
+        cutoffValue.style.opacity = enableHPF.checked ? "1" : "0.5";
       });
 
-      algoToggle.addEventListener('click', () => {
+      algoToggle.addEventListener("click", () => {
         useWindowed = !useWindowed;
-        algoToggle.textContent = useWindowed ? 'Windowed' : 'Simple AC';
-        algoToggle.classList.toggle('active', useWindowed);
+        algoToggle.textContent = useWindowed ? "Windowed" : "Simple AC";
+        algoToggle.classList.toggle("active", useWindowed);
       });
 
       // File handling
-      fileDrop.addEventListener('click', () => fileInput.click());
-      fileDrop.addEventListener('dragover', (e) => {
+      fileDrop.addEventListener("click", () => fileInput.click());
+      fileDrop.addEventListener("dragover", (e) => {
         e.preventDefault();
-        fileDrop.classList.add('dragover');
+        fileDrop.classList.add("dragover");
       });
-      fileDrop.addEventListener('dragleave', () => {
-        fileDrop.classList.remove('dragover');
+      fileDrop.addEventListener("dragleave", () => {
+        fileDrop.classList.remove("dragover");
       });
-      fileDrop.addEventListener('drop', (e) => {
+      fileDrop.addEventListener("drop", (e) => {
         e.preventDefault();
-        fileDrop.classList.remove('dragover');
+        fileDrop.classList.remove("dragover");
         handleFiles(e.dataTransfer.files);
       });
-      fileInput.addEventListener('change', (e) => {
+      fileInput.addEventListener("change", (e) => {
         handleFiles(e.target.files);
       });
 
@@ -367,13 +358,13 @@
       }
 
       function clearResults() {
-        resultsContainer.innerHTML = '';
+        resultsContainer.innerHTML = "";
         // Don't clear recent results - they're for comparison
       }
 
       // Add function to clear recent results
       function clearRecentResults() {
-        document.getElementById('recentResultsContainer').innerHTML = '';
+        document.getElementById("recentResultsContainer").innerHTML = "";
         batchCounter = 0;
       }
 
@@ -404,9 +395,9 @@
 
       function getStatusClass(centsDiff) {
         const abs = Math.abs(centsDiff);
-        if (abs <= 10) return 'good';
-        if (abs <= 50) return 'warning';
-        return 'error';
+        if (abs <= 10) return "good";
+        if (abs <= 50) return "warning";
+        return "error";
       }
 
       function findFundamental(detectedFreq, expectedFreq) {
@@ -418,8 +409,7 @@
           let score = 0;
 
           // Prefer candidates close to expected frequency
-          const expectedRatio =
-            Math.abs(fundamental - expectedFreq) / expectedFreq;
+          const expectedRatio = Math.abs(fundamental - expectedFreq) / expectedFreq;
           if (expectedRatio < tolerance) {
             score += 100;
           } else {
@@ -441,18 +431,16 @@
           });
         }
 
-        const best = candidates.reduce((prev, curr) =>
-          curr.score > prev.score ? curr : prev
-        );
+        const best = candidates.reduce((prev, curr) => (curr.score > prev.score ? curr : prev));
         return best.frequency;
       }
 
       function getStatusDescription(centsDiff) {
         const abs = Math.abs(centsDiff);
-        if (abs <= 10) return 'Perfect';
-        if (abs <= 25) return 'Good';
-        if (abs <= 50) return 'Fair';
-        return 'Poor';
+        if (abs <= 10) return "Perfect";
+        if (abs <= 25) return "Good";
+        if (abs <= 50) return "Fair";
+        return "Poor";
       }
 
       function addResult(
@@ -462,10 +450,10 @@
         error,
         confidence,
         status,
-        statusClass = ''
+        statusClass = "",
       ) {
-        const container = document.getElementById('resultsContainer');
-        const row = document.createElement('div');
+        const container = document.getElementById("resultsContainer");
+        const row = document.createElement("div");
         row.className = `result-row ${statusClass}`;
         row.innerHTML = `
           <div>${filename}</div>
@@ -493,7 +481,7 @@
         batchCounter++;
         currentBatch = {
           id: batchCounter,
-          algorithm: useWindowed ? 'Windowed' : 'Simple AC',
+          algorithm: useWindowed ? "Windowed" : "Simple AC",
           hpfCutoff: parseInt(cutoffSlider.value),
           fundamentalDetection: fundamentalDetection.checked,
           hpfEnabled: enableHPF.checked,
@@ -504,7 +492,7 @@
         };
 
         // Clear current results for new batch
-        resultsContainer.innerHTML = '';
+        resultsContainer.innerHTML = "";
 
         for (const file of files) {
           await processFile(file);
@@ -517,14 +505,7 @@
       async function processFile(file) {
         const expectedNote = parseFileName(file.name);
         if (!expectedNote) {
-          addResult(
-            file.name,
-            'Unknown',
-            'N/A',
-            'N/A',
-            'N/A',
-            'Invalid filename format'
-          );
+          addResult(file.name, "Unknown", "N/A", "N/A", "N/A", "Invalid filename format");
           currentBatch.results.push({
             success: false,
             error: null,
@@ -540,14 +521,7 @@
 
         const expectedFreq = noteFrequencies[expectedNote];
         if (!expectedFreq) {
-          addResult(
-            file.name,
-            expectedNote,
-            'N/A',
-            'N/A',
-            'N/A',
-            'Unknown note'
-          );
+          addResult(file.name, expectedNote, "N/A", "N/A", "N/A", "Unknown note");
           currentBatch.results.push({
             success: false,
             error: null,
@@ -588,7 +562,7 @@
             }
 
             const centsDiff = centsDifference(finalFreq, expectedFreq);
-            const status = `${Math.abs(centsDiff) <= 10 ? '✓' : '✗'} ${getStatusDescription(centsDiff)}`;
+            const status = `${Math.abs(centsDiff) <= 10 ? "✓" : "✗"} ${getStatusDescription(centsDiff)}`;
             const success = Math.abs(centsDiff) <= 50; // Consider ±50 cents as successful
 
             addResult(
@@ -598,7 +572,7 @@
               centsDiff.toString(),
               result.confidence.toFixed(3),
               status,
-              getStatusClass(centsDiff)
+              getStatusClass(centsDiff),
             );
 
             currentBatch.results.push({
@@ -615,11 +589,11 @@
             addResult(
               file.name,
               `${expectedNote} (${expectedFreq.toFixed(1)}Hz)`,
-              'No pitch',
-              'N/A',
+              "No pitch",
+              "N/A",
               result.confidence.toFixed(3),
-              'Failed',
-              'error'
+              "Failed",
+              "error",
             );
             currentBatch.results.push({
               success: false,
@@ -633,15 +607,7 @@
             });
           }
         } catch (error) {
-          addResult(
-            file.name,
-            expectedNote,
-            'Error',
-            'N/A',
-            'N/A',
-            error.message,
-            'error'
-          );
+          addResult(file.name, expectedNote, "Error", "N/A", "N/A", error.message, "error");
           currentBatch.results.push({
             success: false,
             error: null,
@@ -656,15 +622,12 @@
       }
 
       function finalizeBatch() {
-        const validResults = currentBatch.results.filter(
-          (r) => r.error !== null
-        );
+        const validResults = currentBatch.results.filter((r) => r.error !== null);
         const successfulResults = currentBatch.results.filter((r) => r.success);
 
         const avgError =
           validResults.length > 0
-            ? validResults.reduce((sum, r) => sum + r.error, 0) /
-              validResults.length
+            ? validResults.reduce((sum, r) => sum + r.error, 0) / validResults.length
             : 0;
 
         const avgConfidence =
@@ -674,9 +637,7 @@
             : 0;
 
         const successRate =
-          currentBatch.files > 0
-            ? (successfulResults.length / currentBatch.files) * 100
-            : 0;
+          currentBatch.files > 0 ? (successfulResults.length / currentBatch.files) * 100 : 0;
 
         const processingTime = new Date() - currentBatch.startTime;
 
@@ -686,15 +647,15 @@
         addRecentResult(
           `Batch ${currentBatch.id}`,
           currentBatch.algorithm,
-          currentBatch.hpfEnabled ? `${currentBatch.hpfCutoff}Hz` : 'Off',
-          currentBatch.fundamentalDetection ? '✓' : '✗',
+          currentBatch.hpfEnabled ? `${currentBatch.hpfCutoff}Hz` : "Off",
+          currentBatch.fundamentalDetection ? "✓" : "✗",
           currentBatch.files,
-          validResults.length > 0 ? `${avgError.toFixed(1)}¢` : 'N/A',
+          validResults.length > 0 ? `${avgError.toFixed(1)}¢` : "N/A",
           `${avgConfidence.toFixed(3)}`,
           `${successRate.toFixed(0)}%`,
           octaveStats,
           `${(processingTime / 1000).toFixed(1)}s`,
-          getSuccessRateClass(successRate)
+          getSuccessRateClass(successRate),
         );
       }
 
@@ -719,20 +680,19 @@
         for (let octave = 1; octave <= 7; octave++) {
           if (octaveGroups[octave]) {
             const rate = Math.round(
-              (octaveGroups[octave].successful / octaveGroups[octave].total) *
-                100
+              (octaveGroups[octave].successful / octaveGroups[octave].total) * 100,
             );
             octaveRates.push(`${octave}:${rate}%`);
           }
         }
 
-        return octaveRates.length > 0 ? octaveRates.join(' ') : 'N/A';
+        return octaveRates.length > 0 ? octaveRates.join(" ") : "N/A";
       }
 
       function getSuccessRateClass(successRate) {
-        if (successRate >= 80) return 'good';
-        if (successRate >= 60) return 'warning';
-        return 'error';
+        if (successRate >= 80) return "good";
+        if (successRate >= 60) return "warning";
+        return "error";
       }
 
       function addRecentResult(
@@ -746,10 +706,10 @@
         successRate,
         octaveStats,
         time,
-        statusClass = ''
+        statusClass = "",
       ) {
-        const container = document.getElementById('recentResultsContainer');
-        const row = document.createElement('div');
+        const container = document.getElementById("recentResultsContainer");
+        const row = document.createElement("div");
         row.className = `recent-row ${statusClass}`;
         row.innerHTML = `
           <div>${batch}</div>
@@ -800,7 +760,7 @@
         const minLag = Math.floor(audioBuffer.sampleRate / MAX_Hz); //  upper bound
         const maxLag = Math.floor(audioBuffer.sampleRate / MIN_Hz); //  lower bound
 
-        console.info('minLag', minLag, 'maxLag', maxLag);
+        console.info("minLag", minLag, "maxLag", maxLag);
         console.info(audioBuffer.sampleRate);
 
         let correlations = new Float32Array(maxLag);
@@ -838,14 +798,11 @@
         const y3 = correlations[x + 1];
 
         const denominator = 2 * (2 * y2 - y1 - y3);
-        const offset =
-          Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
+        const offset = Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
 
         // Add confidence calculation
         const maxCorrelation = correlations[bestLag];
-        const rms = Math.sqrt(
-          data.reduce((sum, x) => sum + x * x, 0) / data.length
-        );
+        const rms = Math.sqrt(data.reduce((sum, x) => sum + x * x, 0) / data.length);
         const normalizedMax = maxCorrelation / (rms * rms * data.length);
 
         const confidence = Math.max(0, Math.min(1, normalizedMax));
@@ -907,9 +864,7 @@
 
         // Center-clipping (reduced threshold for vocals)
         const clipLevel = 0.15 * Math.max(...windowData.map(Math.abs));
-        const clipped = windowData.map((x) =>
-          Math.abs(x) > clipLevel ? x : 0
-        );
+        const clipped = windowData.map((x) => (Math.abs(x) > clipLevel ? x : 0));
 
         // Check if we have enough signal after clipping
         const nonZeroSamples = clipped.filter((x) => x !== 0).length;
@@ -957,8 +912,7 @@
           const y3 = correlations[bestLag + 1];
 
           const denominator = 2 * (2 * y2 - y1 - y3);
-          const offset =
-            Math.abs(denominator) < 1e-10 ? 0 : (y3 - y1) / denominator;
+          const offset = Math.abs(denominator) < 1e-10 ? 0 : (y3 - y1) / denominator;
 
           const frequency = sampleRate / (bestLag + offset);
           return { frequency, confidence };
@@ -976,8 +930,7 @@
           let foundGroup = false;
 
           for (const group of groups) {
-            const avgPitch =
-              group.reduce((sum, c) => sum + c.frequency, 0) / group.length;
+            const avgPitch = group.reduce((sum, c) => sum + c.frequency, 0) / group.length;
             const ratio = candidate.frequency / avgPitch;
 
             // Check if within tolerance (accounting for octave errors)
@@ -1007,10 +960,7 @@
         let bestScore = 0;
 
         for (const group of groups) {
-          const totalConfidence = group.reduce(
-            (sum, c) => sum + c.confidence,
-            0
-          );
+          const totalConfidence = group.reduce((sum, c) => sum + c.confidence, 0);
           const avgConfidence = totalConfidence / group.length;
           const duration = group.length; // Number of windows
 
@@ -1025,14 +975,12 @@
 
         // Calculate final confidence
         const avgConfidence =
-          bestGroup.reduce((sum, c) => sum + c.confidence, 0) /
-          bestGroup.length;
+          bestGroup.reduce((sum, c) => sum + c.confidence, 0) / bestGroup.length;
 
         // Return weighted average of best group
         const totalWeight = bestGroup.reduce((sum, c) => sum + c.confidence, 0);
         const weightedPitch =
-          bestGroup.reduce((sum, c) => sum + c.frequency * c.confidence, 0) /
-          totalWeight;
+          bestGroup.reduce((sum, c) => sum + c.frequency * c.confidence, 0) / totalWeight;
 
         return { frequency: weightedPitch, confidence: avgConfidence };
       }

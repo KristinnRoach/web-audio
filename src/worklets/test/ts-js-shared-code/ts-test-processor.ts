@@ -1,6 +1,6 @@
 // test-processor.ts - Simple sine wave oscillator processor
-import { midiToFreq, softClip, generateSineWave, advancePhase } from './utils';
-import { AudioProcessorMessage } from './types';
+import { midiToFreq, softClip, generateSineWave, advancePhase } from "./utils";
+import { AudioProcessorMessage } from "./types";
 
 class TestOscillatorProcessor extends AudioWorkletProcessor {
   // Default values
@@ -20,21 +20,21 @@ class TestOscillatorProcessor extends AudioWorkletProcessor {
     const { type, payload } = event.data;
 
     switch (type) {
-      case 'setNote':
+      case "setNote":
         this.midiNote = payload;
         this.frequency = midiToFreq(this.midiNote);
         break;
-      case 'setVolume':
+      case "setVolume":
         this.amplitude = payload;
         break;
-      case 'setDistortion':
+      case "setDistortion":
         this.distortionAmount = payload;
         break;
     }
 
     // Send confirmation back to main thread
     this.port.postMessage({
-      type: 'paramChanged',
+      type: "paramChanged",
       payload: { param: type, value: payload },
     });
   }
@@ -42,7 +42,7 @@ class TestOscillatorProcessor extends AudioWorkletProcessor {
   process(
     _inputs: Float32Array[][],
     outputs: Float32Array[][],
-    _parameters: Record<string, Float32Array>
+    _parameters: Record<string, Float32Array>,
   ): boolean {
     // Get output channel data
     const output = outputs[0];
@@ -70,4 +70,4 @@ class TestOscillatorProcessor extends AudioWorkletProcessor {
 }
 
 // Register the processor
-registerProcessor('test-oscillator', TestOscillatorProcessor);
+registerProcessor("test-oscillator", TestOscillatorProcessor);

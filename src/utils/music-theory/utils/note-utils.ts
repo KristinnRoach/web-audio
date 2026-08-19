@@ -4,13 +4,13 @@ import {
   NOTE_FREQUENCIES,
   NOTE_PERIODS,
   NOTE_NAMES_WITH_OCTAVE,
-} from '../constants';
-import { midiToFrequency, frequencyToMidi } from './core-utils';
-import type { Note } from '../types';
+} from "../constants";
+import { midiToFrequency, frequencyToMidi } from "./core-utils";
+import type { Note } from "../types";
 
 export const findClosestNote = (freq: number) => {
   const closestNoteFreq = NOTE_FREQUENCIES.reduce((closest, current) =>
-    Math.abs(current - freq) < Math.abs(closest - freq) ? current : closest
+    Math.abs(current - freq) < Math.abs(closest - freq) ? current : closest,
   );
 
   const closestMidiNote = frequencyToMidi(closestNoteFreq);
@@ -95,11 +95,11 @@ export function createNoteNameToFreqMap(): Record<string, number> {
 function addEnharmonicEquivalents(noteMap: Record<string, number>): void {
   // This function is already correct
   const enharmonicPairs = [
-    ['C#', 'Db'],
-    ['D#', 'Eb'],
-    ['F#', 'Gb'],
-    ['G#', 'Ab'],
-    ['A#', 'Bb'],
+    ["C#", "Db"],
+    ["D#", "Eb"],
+    ["F#", "Gb"],
+    ["G#", "Ab"],
+    ["A#", "Bb"],
   ];
 
   // For each octave where we have data
@@ -119,14 +119,12 @@ function addEnharmonicEquivalents(noteMap: Record<string, number>): void {
 }
 
 // Convert to array of entries, sort by value, and convert back to object
-function sortObjectByValue(
-  obj: Record<string, number>
-): Record<string, number> {
+function sortObjectByValue(obj: Record<string, number>): Record<string, number> {
   return Object.fromEntries(Object.entries(obj).sort((a, b) => a[1] - b[1]));
 }
 
 // Pre-computed maps for quick lookups
 export const noteNameToFreq = createNoteNameToFreqMap();
 export const noteNamesToPeriod = Object.fromEntries(
-  Object.entries(noteNameToFreq).map(([note, freq]) => [note, 1 / freq])
+  Object.entries(noteNameToFreq).map(([note, freq]) => [note, 1 / freq]),
 ) as Record<string, number>;

@@ -46,12 +46,12 @@
         cursor: not-allowed;
       }
 
-      input[type='range'] {
+      input[type="range"] {
         width: 300px;
         margin: 10px;
       }
 
-      input[type='file'] {
+      input[type="file"] {
         margin: 10px;
         color: #ffffff;
       }
@@ -123,14 +123,7 @@
       <h3>Pitch Control</h3>
       <label>
         Pitch Ratio:
-        <input
-          type="range"
-          id="pitchSlider"
-          min="0.25"
-          max="4"
-          step="0.01"
-          value="1"
-        />
+        <input type="range" id="pitchSlider" min="0.25" max="4" step="0.01" value="1" />
         <span class="value-display" id="pitchValue">1.00</span>
       </label>
       <br />
@@ -153,27 +146,13 @@
       <h3>Effects</h3>
       <label>
         Dry/Wet Mix:
-        <input
-          type="range"
-          id="mixSlider"
-          min="0"
-          max="1"
-          step="0.01"
-          value="1"
-        />
+        <input type="range" id="mixSlider" min="0" max="1" step="0.01" value="1" />
         <span class="value-display" id="mixValue">1.00</span>
       </label>
       <br />
       <label>
         Output Gain:
-        <input
-          type="range"
-          id="gainSlider"
-          min="0"
-          max="2"
-          step="0.01"
-          value="0.5"
-        />
+        <input type="range" id="gainSlider" min="0" max="2" step="0.01" value="0.5" />
         <span class="value-display" id="gainValue">0.50</span>
       </label>
     </div>
@@ -288,17 +267,14 @@
 
             // Create and register the AudioWorklet
             const blob = new Blob([processorCode], {
-              type: 'application/javascript',
+              type: "application/javascript",
             });
             const workletURL = URL.createObjectURL(blob);
 
             await this.audioContext.audioWorklet.addModule(workletURL);
 
             // Create worklet node
-            this.workletNode = new AudioWorkletNode(
-              this.audioContext,
-              'simple-pitch-processor'
-            );
+            this.workletNode = new AudioWorkletNode(this.audioContext, "simple-pitch-processor");
 
             // Create gain node
             this.gainNode = this.audioContext.createGain();
@@ -308,37 +284,37 @@
             this.workletNode.connect(this.gainNode);
             this.gainNode.connect(this.audioContext.destination);
 
-            this.showStatus('AudioWorklet initialized successfully', 'success');
+            this.showStatus("AudioWorklet initialized successfully", "success");
 
             URL.revokeObjectURL(workletURL);
           } catch (error) {
-            this.showStatus('Failed to initialize: ' + error.message, 'error');
+            this.showStatus("Failed to initialize: " + error.message, "error");
           }
         }
 
         setupUI() {
           // Pitch slider
-          const pitchSlider = document.getElementById('pitchSlider');
-          const pitchValue = document.getElementById('pitchValue');
-          pitchSlider.addEventListener('input', (e) => {
+          const pitchSlider = document.getElementById("pitchSlider");
+          const pitchValue = document.getElementById("pitchValue");
+          pitchSlider.addEventListener("input", (e) => {
             const value = parseFloat(e.target.value);
             pitchValue.textContent = value.toFixed(2);
             this.setPitch(value);
           });
 
           // Mix slider
-          const mixSlider = document.getElementById('mixSlider');
-          const mixValue = document.getElementById('mixValue');
-          mixSlider.addEventListener('input', (e) => {
+          const mixSlider = document.getElementById("mixSlider");
+          const mixValue = document.getElementById("mixValue");
+          mixSlider.addEventListener("input", (e) => {
             const value = parseFloat(e.target.value);
             mixValue.textContent = value.toFixed(2);
             this.setMix(value);
           });
 
           // Gain slider
-          const gainSlider = document.getElementById('gainSlider');
-          const gainValue = document.getElementById('gainValue');
-          gainSlider.addEventListener('input', (e) => {
+          const gainSlider = document.getElementById("gainSlider");
+          const gainValue = document.getElementById("gainValue");
+          gainSlider.addEventListener("input", (e) => {
             const value = parseFloat(e.target.value);
             gainValue.textContent = value.toFixed(2);
             this.setGain(value);
@@ -346,46 +322,34 @@
 
           // Buttons
           document
-            .getElementById('startMic')
-            .addEventListener('click', () => this.startMicrophone());
-          document
-            .getElementById('stopMic')
-            .addEventListener('click', () => this.stopMicrophone());
-          document
-            .getElementById('playFile')
-            .addEventListener('click', () => this.playFile());
-          document
-            .getElementById('stopFile')
-            .addEventListener('click', () => this.stopFile());
-          document
-            .getElementById('resetPitch')
-            .addEventListener('click', () => {
-              pitchSlider.value = 1;
-              pitchValue.textContent = '1.00';
-              this.setPitch(1);
-            });
+            .getElementById("startMic")
+            .addEventListener("click", () => this.startMicrophone());
+          document.getElementById("stopMic").addEventListener("click", () => this.stopMicrophone());
+          document.getElementById("playFile").addEventListener("click", () => this.playFile());
+          document.getElementById("stopFile").addEventListener("click", () => this.stopFile());
+          document.getElementById("resetPitch").addEventListener("click", () => {
+            pitchSlider.value = 1;
+            pitchValue.textContent = "1.00";
+            this.setPitch(1);
+          });
 
           // File input
-          document
-            .getElementById('audioFile')
-            .addEventListener('change', (e) => {
-              this.loadAudioFile(e.target.files[0]);
-            });
+          document.getElementById("audioFile").addEventListener("change", (e) => {
+            this.loadAudioFile(e.target.files[0]);
+          });
 
           // MIDI-style keys
-          document.querySelectorAll('.midi-key').forEach((key) => {
-            key.addEventListener('click', () => {
+          document.querySelectorAll(".midi-key").forEach((key) => {
+            key.addEventListener("click", () => {
               const ratio = parseFloat(key.dataset.ratio);
               pitchSlider.value = ratio;
               pitchValue.textContent = ratio.toFixed(3);
               this.setPitch(ratio);
 
               // Visual feedback
-              document
-                .querySelectorAll('.midi-key')
-                .forEach((k) => k.classList.remove('active'));
-              key.classList.add('active');
-              setTimeout(() => key.classList.remove('active'), 200);
+              document.querySelectorAll(".midi-key").forEach((k) => k.classList.remove("active"));
+              key.classList.add("active");
+              setTimeout(() => key.classList.remove("active"), 200);
             });
           });
         }
@@ -397,17 +361,15 @@
             this.micStream = await navigator.mediaDevices.getUserMedia({
               audio: true,
             });
-            this.sourceNode = this.audioContext.createMediaStreamSource(
-              this.micStream
-            );
+            this.sourceNode = this.audioContext.createMediaStreamSource(this.micStream);
             this.sourceNode.connect(this.workletNode);
 
-            document.getElementById('startMic').disabled = true;
-            document.getElementById('stopMic').disabled = false;
+            document.getElementById("startMic").disabled = true;
+            document.getElementById("stopMic").disabled = false;
 
-            this.showStatus('Microphone started', 'success');
+            this.showStatus("Microphone started", "success");
           } catch (error) {
-            this.showStatus('Microphone error: ' + error.message, 'error');
+            this.showStatus("Microphone error: " + error.message, "error");
           }
         }
 
@@ -421,10 +383,10 @@
             this.sourceNode = null;
           }
 
-          document.getElementById('startMic').disabled = false;
-          document.getElementById('stopMic').disabled = true;
+          document.getElementById("startMic").disabled = false;
+          document.getElementById("stopMic").disabled = true;
 
-          this.showStatus('Microphone stopped', 'success');
+          this.showStatus("Microphone stopped", "success");
         }
 
         async loadAudioFile(file) {
@@ -434,8 +396,7 @@
             if (!this.audioContext) await this.init();
 
             const arrayBuffer = await file.arrayBuffer();
-            const audioBuffer =
-              await this.audioContext.decodeAudioData(arrayBuffer);
+            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
 
             // Create audio element for playback control
             this.audioElement = new Audio();
@@ -446,24 +407,22 @@
             if (this.sourceNode) {
               this.sourceNode.disconnect();
             }
-            this.sourceNode = this.audioContext.createMediaElementSource(
-              this.audioElement
-            );
+            this.sourceNode = this.audioContext.createMediaElementSource(this.audioElement);
             this.sourceNode.connect(this.workletNode);
 
-            document.getElementById('playFile').disabled = false;
-            this.showStatus('Audio file loaded: ' + file.name, 'success');
+            document.getElementById("playFile").disabled = false;
+            this.showStatus("Audio file loaded: " + file.name, "success");
           } catch (error) {
-            this.showStatus('File load error: ' + error.message, 'error');
+            this.showStatus("File load error: " + error.message, "error");
           }
         }
 
         playFile() {
           if (this.audioElement) {
             this.audioElement.play();
-            document.getElementById('playFile').disabled = true;
-            document.getElementById('stopFile').disabled = false;
-            this.showStatus('Playing file', 'success');
+            document.getElementById("playFile").disabled = true;
+            document.getElementById("stopFile").disabled = false;
+            this.showStatus("Playing file", "success");
           }
         }
 
@@ -471,34 +430,34 @@
           if (this.audioElement) {
             this.audioElement.pause();
             this.audioElement.currentTime = 0;
-            document.getElementById('playFile').disabled = false;
-            document.getElementById('stopFile').disabled = true;
-            this.showStatus('File stopped', 'success');
+            document.getElementById("playFile").disabled = false;
+            document.getElementById("stopFile").disabled = true;
+            this.showStatus("File stopped", "success");
           }
         }
 
         setPitch(value) {
           if (this.workletNode) {
-            this.workletNode.port.postMessage({ type: 'pitch', value });
+            this.workletNode.port.postMessage({ type: "pitch", value });
           }
         }
 
         setMix(value) {
           if (this.workletNode) {
-            this.workletNode.port.postMessage({ type: 'mix', value });
+            this.workletNode.port.postMessage({ type: "mix", value });
           }
         }
 
         setGain(value) {
           if (this.workletNode) {
-            this.workletNode.port.postMessage({ type: 'gain', value });
+            this.workletNode.port.postMessage({ type: "gain", value });
           }
         }
 
-        showStatus(message, type = '') {
-          const statusEl = document.getElementById('status');
+        showStatus(message, type = "") {
+          const statusEl = document.getElementById("status");
           statusEl.textContent = message;
-          statusEl.className = 'status ' + type;
+          statusEl.className = "status " + type;
         }
       }
 
@@ -507,13 +466,13 @@
 
       // Auto-initialize on first user interaction
       document.addEventListener(
-        'click',
+        "click",
         async () => {
           if (!pitchTest.audioContext) {
             await pitchTest.init();
           }
         },
-        { once: true }
+        { once: true },
       );
     </script>
   </body>

@@ -8,7 +8,7 @@ export function compressAudioBuffer(
   buffer: AudioBuffer,
   threshold = 0.5, // Level above which compression starts
   ratio = 4, // Compression ratio (4:1 means 4dB input = 1dB output above threshold)
-  targetMakeupGain = 1 // Desired makeup gain (will be reduced if input is already loud)
+  targetMakeupGain = 1, // Desired makeup gain (will be reduced if input is already loud)
 ): AudioBuffer {
   const numChannels = buffer.numberOfChannels;
   const length = buffer.length;
@@ -30,9 +30,7 @@ export function compressAudioBuffer(
   if (inputPeak > 0) {
     // After compression, the peak will be at most: threshold + (inputPeak - threshold) / ratio
     const compressedPeak =
-      inputPeak <= threshold
-        ? inputPeak
-        : threshold + (inputPeak - threshold) / ratio;
+      inputPeak <= threshold ? inputPeak : threshold + (inputPeak - threshold) / ratio;
     // Maximum safe gain is 0.95 / compressedPeak (using 0.95 instead of 0.99 for safety margin)
     const maxSafeGain = 0.95 / compressedPeak;
     safeGain = Math.min(targetMakeupGain, maxSafeGain);
@@ -94,7 +92,7 @@ export function compressAudioBufferRMS(
     release?: number; // Release time in seconds
     makeupGain?: number; // Post-compression gain
     lookahead?: number; // Lookahead time in seconds
-  } = {}
+  } = {},
 ): AudioBuffer {
   const {
     threshold = 0.2,
@@ -162,10 +160,7 @@ export function compressAudioBufferRMS(
       if (targetGainReduction < currentGainReduction) {
         // Attack (compressor engaging)
         const attackRate = 1 / attackSamples;
-        currentGainReduction = Math.max(
-          targetGainReduction,
-          currentGainReduction - attackRate
-        );
+        currentGainReduction = Math.max(targetGainReduction, currentGainReduction - attackRate);
       } else {
         // Release (compressor releasing)
         const releaseRate = 1 / releaseSamples;

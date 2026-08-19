@@ -1,7 +1,7 @@
-import { expect, describe, it, beforeEach, afterEach } from 'vitest';
-import { normalizeAudioBuffer } from '../normalizeAudioBuffer';
+import { expect, describe, it, beforeEach, afterEach } from "vitest";
+import { normalizeAudioBuffer } from "../normalizeAudioBuffer";
 
-describe('Normalization experiments for better volume', () => {
+describe("Normalization experiments for better volume", () => {
   let audioContext: AudioContext;
 
   beforeEach(() => {
@@ -9,7 +9,7 @@ describe('Normalization experiments for better volume', () => {
   });
 
   afterEach(async () => {
-    if (audioContext && audioContext.state !== 'closed') {
+    if (audioContext && audioContext.state !== "closed") {
       await audioContext.close();
     }
     audioContext = null as any;
@@ -88,91 +88,70 @@ describe('Normalization experiments for better volume', () => {
     return buffer;
   }
 
-  it('should compare different target peaks for recorded audio', () => {
+  it("should compare different target peaks for recorded audio", () => {
     const recordedBuffer = createRealisticRecordedBuffer();
     const statsOriginal = analyzeAmplitude(recordedBuffer);
 
-    console.log('\n=== Original Recorded Audio ===');
-    console.log('Peak:', statsOriginal.peak);
-    console.log('RMS:', statsOriginal.rms);
-    console.log('95th percentile:', statsOriginal.samples95percentile);
-    console.log(
-      'Samples > 0.1:',
-      statsOriginal.samplesAbove01,
-      '/',
-      statsOriginal.samples
-    );
-    console.log(
-      'Samples > 0.5:',
-      statsOriginal.samplesAbove05,
-      '/',
-      statsOriginal.samples
-    );
+    console.log("\n=== Original Recorded Audio ===");
+    console.log("Peak:", statsOriginal.peak);
+    console.log("RMS:", statsOriginal.rms);
+    console.log("95th percentile:", statsOriginal.samples95percentile);
+    console.log("Samples > 0.1:", statsOriginal.samplesAbove01, "/", statsOriginal.samples);
+    console.log("Samples > 0.5:", statsOriginal.samplesAbove05, "/", statsOriginal.samples);
 
     // Test different target peaks
     const targets = [0.7, 0.8, 0.9, 0.95, 0.99];
 
     targets.forEach((target) => {
-      const normalized = normalizeAudioBuffer(
-        audioContext,
-        recordedBuffer,
-        target
-      );
+      const normalized = normalizeAudioBuffer(audioContext, recordedBuffer, target);
       const stats = analyzeAmplitude(normalized);
       const gain = stats.peak / statsOriginal.peak;
 
       console.log(`\n=== Target Peak: ${target} ===`);
-      console.log('Applied Gain:', gain.toFixed(2) + 'x');
-      console.log('New Peak:', stats.peak);
-      console.log('New RMS:', stats.rms);
-      console.log('New 95th percentile:', stats.samples95percentile);
-      console.log('Samples > 0.1:', stats.samplesAbove01, '/', stats.samples);
-      console.log('Samples > 0.5:', stats.samplesAbove05, '/', stats.samples);
-      console.log('RMS to Peak ratio:', (stats.rms / stats.peak).toFixed(3));
+      console.log("Applied Gain:", gain.toFixed(2) + "x");
+      console.log("New Peak:", stats.peak);
+      console.log("New RMS:", stats.rms);
+      console.log("New 95th percentile:", stats.samples95percentile);
+      console.log("Samples > 0.1:", stats.samplesAbove01, "/", stats.samples);
+      console.log("Samples > 0.5:", stats.samplesAbove05, "/", stats.samples);
+      console.log("RMS to Peak ratio:", (stats.rms / stats.peak).toFixed(3));
     });
   });
 
-  it('should test extreme normalization (target = 1.0)', () => {
+  it("should test extreme normalization (target = 1.0)", () => {
     const recordedBuffer = createRealisticRecordedBuffer();
     const statsOriginal = analyzeAmplitude(recordedBuffer);
 
     // Try maximum normalization (peak = 1.0)
     // Note: This might cause clipping in real use, but let's test it
-    const maxNormalized = normalizeAudioBuffer(
-      audioContext,
-      recordedBuffer,
-      1.0
-    );
+    const maxNormalized = normalizeAudioBuffer(audioContext, recordedBuffer, 1.0);
     const statsMax = analyzeAmplitude(maxNormalized);
 
-    console.log('\n=== Maximum Normalization Test (target = 1.0) ===');
-    console.log('Original Peak:', statsOriginal.peak);
-    console.log('Normalized Peak:', statsMax.peak);
+    console.log("\n=== Maximum Normalization Test (target = 1.0) ===");
+    console.log("Original Peak:", statsOriginal.peak);
+    console.log("Normalized Peak:", statsMax.peak);
+    console.log("Gain Applied:", (statsMax.peak / statsOriginal.peak).toFixed(2) + "x");
+    console.log("Original RMS:", statsOriginal.rms);
+    console.log("Normalized RMS:", statsMax.rms);
     console.log(
-      'Gain Applied:',
-      (statsMax.peak / statsOriginal.peak).toFixed(2) + 'x'
-    );
-    console.log('Original RMS:', statsOriginal.rms);
-    console.log('Normalized RMS:', statsMax.rms);
-    console.log(
-      'Perceived Loudness Increase (RMS ratio):',
-      (statsMax.rms / statsOriginal.rms).toFixed(2) + 'x'
+      "Perceived Loudness Increase (RMS ratio):",
+      (statsMax.rms / statsOriginal.rms).toFixed(2) + "x",
     );
 
     // Peak should be exactly 1.0
     expect(statsMax.peak).toBeCloseTo(1.0, 5);
   });
 
-  it('should analyze if current 0.9 target is sufficient', () => {
+  it("should analyze if current 0.9 target is sufficient", () => {
     // Create multiple test cases simulating different recording scenarios
     const scenarios = [
-      { name: 'Very Quiet (0.01 peak)', peak: 0.01 },
-      { name: 'Quiet (0.03 peak)', peak: 0.03 },
-      { name: 'Moderate (0.1 peak)', peak: 0.1 },
-      { name: 'Normal (0.3 peak)', peak: 0.3 },
+      { name: "Very Quiet (0.01 peak)", peak: 0.01 },
+      { name: "Quiet (0.03 peak)", peak: 0.03 },
+      { name: "Moderate (0.1 peak)", peak: 0.1 },
+      { name: "Normal (0.3 peak)", peak: 0.3 },
     ];
 
-    console.log('\n=== Analysis: Is 0.9 target sufficient? ===');
+    console.log("\n=== Analysis: Is 0.9 target sufficient? ===");
 
     scenarios.forEach((scenario) => {
       const buffer = audioContext.createBuffer(1, 44100, 44100);
@@ -194,14 +173,10 @@ describe('Normalization experiments for better volume', () => {
 
       // Check if we might be hitting gain limits
       if (gain > 50) {
-        console.log(
-          '  ⚠️ WARNING: Very high gain required - might amplify noise significantly'
-        );
+        console.log("  ⚠️ WARNING: Very high gain required - might amplify noise significantly");
       }
       if (gain > 100) {
-        console.log(
-          '  ⚠️ CRITICAL: Extreme gain - audio quality will likely suffer'
-        );
+        console.log("  ⚠️ CRITICAL: Extreme gain - audio quality will likely suffer");
       }
     });
   });

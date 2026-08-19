@@ -1,7 +1,7 @@
 // FeedbackDelay.js
 
-import { compressSingleSample } from '../../shared/utils/compress-utils';
-import { DelayBuffer } from './DelayBuffer';
+import { compressSingleSample } from "../../shared/utils/compress-utils";
+import { DelayBuffer } from "./DelayBuffer";
 
 const AUTO_GAIN_THRESHOLD = 0.8;
 const SAFETY_GAIN_COMPENSATION = 0.2;
@@ -45,7 +45,7 @@ export class FeedbackDelay {
     const omega = (2 * Math.PI * cutoffFreq) / this.sampleRate;
     const alpha = Math.max(
       0,
-      Math.min(0.99, Math.sin(omega) / (Math.sin(omega) + Math.cos(omega)))
+      Math.min(0.99, Math.sin(omega) / (Math.sin(omega) + Math.cos(omega))),
     );
 
     this.lowpassStates[channelIndex] =
@@ -61,13 +61,12 @@ export class FeedbackDelay {
     const omega = (2 * Math.PI * cutoffFreq) / this.sampleRate;
     const alpha = Math.max(
       0,
-      Math.min(0.99, Math.sin(omega) / (Math.sin(omega) + Math.cos(omega)))
+      Math.min(0.99, Math.sin(omega) / (Math.sin(omega) + Math.cos(omega))),
     );
 
     // Highpass = input - lowpass
     // This is more stable than the direct implementation
-    const lowpassOutput =
-      alpha * input + (1 - alpha) * this.highpassStates[channelIndex];
+    const lowpassOutput = alpha * input + (1 - alpha) * this.highpassStates[channelIndex];
     const highpassOutput = input - lowpassOutput;
 
     // Update state (this is actually the lowpass state)
@@ -82,7 +81,7 @@ export class FeedbackDelay {
     feedbackAmount,
     delayTime,
     lowpassFreq = 10000,
-    highpassFreq = 100
+    highpassFreq = 100,
   ) {
     if (!this.initialized) return inputSample;
 
@@ -90,11 +89,7 @@ export class FeedbackDelay {
     const delaySamples = Math.floor(this.sampleRate * delayTime);
     const delayedSample = buffer.read();
 
-    let filteredDelay = this.highpass(
-      delayedSample,
-      highpassFreq,
-      channelIndex
-    );
+    let filteredDelay = this.highpass(delayedSample, highpassFreq, channelIndex);
     filteredDelay = this.lowpass(filteredDelay, lowpassFreq, channelIndex);
 
     const feedbackSample = feedbackAmount * filteredDelay + inputSample;
@@ -104,12 +99,11 @@ export class FeedbackDelay {
     const compressedFeedback = compressSingleSample(feedbackSample, 0.5, 4.0, {
       enabled: true, // limiter enabled
       outputRange: { min: -0.99, max: 0.99 },
-      type: 'soft', // soft clip
+      type: "soft", // soft clip
     });
 
     if (this.autoGainEnabled && feedbackAmount > AUTO_GAIN_THRESHOLD) {
-      const safetyReduction =
-        1 - (feedbackAmount - AUTO_GAIN_THRESHOLD) * this.gainCompensation;
+      const safetyReduction = 1 - (feedbackAmount - AUTO_GAIN_THRESHOLD) * this.gainCompensation;
       outputSample = compressedFeedback * safetyReduction;
     }
 

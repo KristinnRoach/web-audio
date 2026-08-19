@@ -1,7 +1,7 @@
 // createEnvelope.ts
-import { CustomEnvelope } from './CustomEnvelope';
-import type { EnvelopeType, EnvelopePoint } from './env-types';
-import type { EnvelopeData } from './EnvelopeData';
+import { CustomEnvelope } from "./CustomEnvelope";
+import type { EnvelopeType, EnvelopePoint } from "./env-types";
+import type { EnvelopeData } from "./EnvelopeData";
 
 interface EnvelopeOptions {
   durationSeconds?: number;
@@ -16,7 +16,7 @@ interface EnvelopeOptions {
 export function createEnvelope(
   context: AudioContext,
   type: EnvelopeType,
-  options: EnvelopeOptions = {}
+  options: EnvelopeOptions = {},
 ): CustomEnvelope {
   const {
     durationSeconds = 2,
@@ -38,16 +38,11 @@ export function createEnvelope(
   // Use custom values or defaults
   const finalPoints = points || defaults.points;
   let finalValueRange = envPointValueRange || defaults.envPointValueRange;
-  const finalInitEnable =
-    initEnable !== undefined ? initEnable : defaults.initEnable;
+  const finalInitEnable = initEnable !== undefined ? initEnable : defaults.initEnable;
   const finalSustainIndex =
-    sustainPointIndex !== undefined
-      ? sustainPointIndex
-      : defaults.sustainPointIndex;
+    sustainPointIndex !== undefined ? sustainPointIndex : defaults.sustainPointIndex;
   const finalReleaseIndex =
-    releasePointIndex !== undefined
-      ? releasePointIndex
-      : defaults.releasePointIndex;
+    releasePointIndex !== undefined ? releasePointIndex : defaults.releasePointIndex;
 
   const envelope = new CustomEnvelope(
     context,
@@ -56,7 +51,7 @@ export function createEnvelope(
     finalPoints,
     finalValueRange,
     durationSeconds,
-    finalInitEnable
+    finalInitEnable,
   ); // Set sustain and release points
   envelope.setSustainPoint(finalSustainIndex);
   finalReleaseIndex && envelope.setReleasePoint(finalReleaseIndex);

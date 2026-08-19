@@ -11,17 +11,13 @@ declare global {
   }
 }
 
-export type ModifierKey = 'space' | 'caps' | 'meta' | 'shift' | 'ctrl' | 'alt';
+export type ModifierKey = "space" | "caps" | "meta" | "shift" | "ctrl" | "alt";
 // needed to add space and just simplified for flexibility for now by using string
 
 export type PressedModifiers = Partial<Record<ModifierKey, boolean>>;
 
 export interface InputHandler {
-  onNoteOn: (
-    midiNote: number,
-    velocity: number,
-    modifiers?: PressedModifiers
-  ) => void;
+  onNoteOn: (midiNote: number, velocity: number, modifiers?: PressedModifiers) => void;
   onNoteOff: (midiNote: number, modifiers: PressedModifiers) => void;
   onBlur: () => void;
   onModifierChange?: (modifiers: PressedModifiers) => void;

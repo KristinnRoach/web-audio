@@ -6,7 +6,7 @@ class RampController {
   static #epsilon = 1e-10;
 
   #isRamping = false;
-  #rampMethod = 'linear';
+  #rampMethod = "linear";
   #sampleRate = 48000;
   #currVal = 0;
   #targetVal = 0;
@@ -25,7 +25,7 @@ class RampController {
       return;
     }
 
-    this.#rampMethod = 'linear';
+    this.#rampMethod = "linear";
     this.#isRamping = true;
 
     this.#targetVal = targetValue;
@@ -40,7 +40,7 @@ class RampController {
       return;
     }
 
-    this.#rampMethod = 'exponential';
+    this.#rampMethod = "exponential";
     this.#isRamping = true;
 
     if (Math.abs(this.#currVal) < RampController.#epsilon) {
@@ -51,10 +51,7 @@ class RampController {
     this.#targetVal = targetValue;
     this.#rampSamples = Math.floor(rampTimeSeconds * this.#sampleRate);
     this.#currSample = 0;
-    this.#multiplier = Math.pow(
-      targetValue / this.#currVal,
-      1 / this.#rampSamples
-    );
+    this.#multiplier = Math.pow(targetValue / this.#currVal, 1 / this.#rampSamples);
   }
 
   getNextValue() {
@@ -62,10 +59,10 @@ class RampController {
 
     if (this.#currSample < this.#rampSamples) {
       switch (this.#rampMethod) {
-        case 'linear':
+        case "linear":
           this.#currVal += this.#increment;
           break;
-        case 'exponential':
+        case "exponential":
           this.#currVal *= this.#multiplier;
           break;
       }

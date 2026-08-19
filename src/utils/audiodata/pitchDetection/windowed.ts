@@ -8,7 +8,7 @@ const MAX_Hz = 4000;
 const MIN_Hz = 80;
 
 export async function detectPitchWindowed(
-  audioBuffer: AudioBuffer
+  audioBuffer: AudioBuffer,
 ): Promise<{ frequency: number; confidence: number }> {
   const data = audioBuffer.getChannelData(0);
   const sampleRate = audioBuffer.sampleRate;
@@ -46,7 +46,7 @@ export async function detectPitchWindowed(
 
 function analyzeWindow(
   windowData: Float32Array,
-  sampleRate: number
+  sampleRate: number,
 ): { frequency: number; confidence: number } {
   // Pad window if too short
   if (windowData.length < 1000) {
@@ -129,8 +129,7 @@ function findMostProminentFundamental(candidates: PitchCandidate[]): {
     let foundGroup = false;
 
     for (const group of groups) {
-      const avgPitch =
-        group.reduce((sum, c) => sum + c.frequency, 0) / group.length;
+      const avgPitch = group.reduce((sum, c) => sum + c.frequency, 0) / group.length;
       const ratio = candidate.frequency / avgPitch;
 
       // Check if within tolerance (accounting for octave errors)
@@ -173,14 +172,12 @@ function findMostProminentFundamental(candidates: PitchCandidate[]): {
     }
   }
   // Calculate final confidence
-  const avgConfidence =
-    bestGroup.reduce((sum, c) => sum + c.confidence, 0) / bestGroup.length;
+  const avgConfidence = bestGroup.reduce((sum, c) => sum + c.confidence, 0) / bestGroup.length;
 
   // Return weighted average of best group
   const totalWeight = bestGroup.reduce((sum, c) => sum + c.confidence, 0);
   const weightedPitch =
-    bestGroup.reduce((sum, c) => sum + c.frequency * c.confidence, 0) /
-    totalWeight;
+    bestGroup.reduce((sum, c) => sum + c.frequency * c.confidence, 0) / totalWeight;
 
   return { frequency: weightedPitch, confidence: avgConfidence };
 }

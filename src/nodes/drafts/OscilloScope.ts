@@ -18,13 +18,13 @@ export class Oscilloscope {
     this.node.smoothingTimeConstant = 0.2;
 
     this.canvas = canvas;
-    let canctx = this.canvas.getContext('2d');
+    let canctx = this.canvas.getContext("2d");
     if (!canctx) throw new Error(`canvas.getContext returns null`);
 
     this.canvasCtx = canctx;
     this.canvasCtx.lineWidth = 1;
-    this.canvasCtx.strokeStyle = 'rgb(20,200,120)';
-    this.canvasCtx.fillStyle = 'rgba(0, 0, 0, 0)';
+    this.canvasCtx.strokeStyle = "rgb(20,200,120)";
+    this.canvasCtx.fillStyle = "rgba(0, 0, 0, 0)";
 
     this.run();
   }
@@ -125,5 +125,5 @@ export class Oscilloscope {
 export const createOscilloscope = (
   ctx: AudioContext,
   input: AudioNode,
-  canvas: HTMLCanvasElement
+  canvas: HTMLCanvasElement,
 ) => new Oscilloscope(ctx, input, canvas);

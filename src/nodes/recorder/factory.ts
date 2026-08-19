@@ -1,5 +1,5 @@
-import { Recorder } from './Recorder';
-import { getAudioContext } from '@/context';
+import { Recorder } from "./Recorder";
+import { getAudioContext } from "@/context";
 
 /**
  * Creates and initializes a new audio recorder

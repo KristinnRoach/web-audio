@@ -27,7 +27,7 @@ export class LevelMonitor {
     context: AudioContext,
     inputNode: AudioNode,
     outputNode: AudioNode,
-    fftSize: number = 1024
+    fftSize: number = 1024,
   ) {
     this.#context = context;
     this.#inputNode = inputNode;
@@ -55,7 +55,7 @@ export class LevelMonitor {
   start(
     intervalMs: number = 1000,
     callback?: (levels: LevelData) => void,
-    logOutput: boolean = false
+    logOutput: boolean = false,
   ): this {
     // Stop any existing monitoring
     this.stop();
@@ -153,11 +153,7 @@ export class LevelMonitor {
       // 4. Reconnect to original destinations
       for (const connection of outputConnections) {
         if (connection.node instanceof AudioNode) {
-          this.#outputAnalyser.connect(
-            connection.node,
-            connection.output,
-            connection.input
-          );
+          this.#outputAnalyser.connect(connection.node, connection.output, connection.input);
         } else if (connection.node instanceof AudioParam) {
           this.#outputAnalyser.connect(connection.node, connection.output);
         }
@@ -166,7 +162,7 @@ export class LevelMonitor {
       // Store splitter for cleanup
       this.#splitterNode = inputSplitter;
     } catch (error) {
-      console.error('Error setting up level monitoring:', error);
+      console.error("Error setting up level monitoring:", error);
     }
   }
 
@@ -174,7 +170,7 @@ export class LevelMonitor {
    * Helper to get all connections from a node (simplified)
    */
   #getNodeConnections(
-    node: AudioNode
+    node: AudioNode,
   ): { node: AudioNode | AudioParam; output?: number; input?: number }[] {
     // This is a placeholder - Web Audio API doesn't provide a way to inspect connections
     // In a real implementation, you'd need to track connections manually
@@ -209,18 +205,12 @@ export class LevelMonitor {
         }
 
         // Restore original connections
-        const outputConnections = this.#originalConnections.get(
-          this.#outputNode
-        );
+        const outputConnections = this.#originalConnections.get(this.#outputNode);
         if (outputConnections) {
           this.#outputNode.disconnect();
           for (const connection of outputConnections) {
             if (connection.node instanceof AudioNode) {
-              this.#outputNode.connect(
-                connection.node,
-                connection.output,
-                connection.input
-              );
+              this.#outputNode.connect(connection.node, connection.output, connection.input);
             } else if (connection.node instanceof AudioParam) {
               this.#outputNode.connect(connection.node, connection.output);
             }
@@ -229,7 +219,7 @@ export class LevelMonitor {
 
         this.#originalConnections.clear();
       } catch (error) {
-        console.error('Error removing level monitoring:', error);
+        console.error("Error removing level monitoring:", error);
       }
     }
   }
@@ -242,7 +232,7 @@ export class LevelMonitor {
       `Audio Levels:
        Input:  RMS ${levels.input.rmsDB.toFixed(1)} dB | Peak ${levels.input.peakDB.toFixed(1)} dB
        Output: RMS ${levels.output.rmsDB.toFixed(1)} dB | Peak ${levels.output.peakDB.toFixed(1)} dB
-       Gain Change: ${levels.gainChangeDB > 0 ? '+' : ''}${levels.gainChangeDB.toFixed(1)} dB`
+       Gain Change: ${levels.gainChangeDB > 0 ? "+" : ""}${levels.gainChangeDB.toFixed(1)} dB`,
     );
   }
 

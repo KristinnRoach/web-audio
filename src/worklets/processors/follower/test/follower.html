@@ -27,7 +27,7 @@
         min-width: 100px;
         font-weight: bold;
       }
-      .slider-group input[type='range'] {
+      .slider-group input[type="range"] {
         flex: 1;
         margin: 0 10px;
       }
@@ -54,53 +54,25 @@
 
       <div class="slider-group">
         <label for="attack-slider">Attack:</label>
-        <input
-          type="range"
-          id="attack-slider"
-          min="0.001"
-          max="1"
-          step="0.001"
-          value="0.003"
-        />
+        <input type="range" id="attack-slider" min="0.001" max="1" step="0.001" value="0.003" />
         <span id="attack-value">0.003s</span>
       </div>
 
       <div class="slider-group">
         <label for="release-slider">Release:</label>
-        <input
-          type="range"
-          id="release-slider"
-          min="0.001"
-          max="5"
-          step="0.001"
-          value="0.05"
-        />
+        <input type="range" id="release-slider" min="0.001" max="5" step="0.001" value="0.05" />
         <span id="release-value">0.050s</span>
       </div>
 
       <div class="slider-group">
         <label for="input-gain-slider">Input Gain:</label>
-        <input
-          type="range"
-          id="input-gain-slider"
-          min="0"
-          max="10"
-          step="0.1"
-          value="1"
-        />
+        <input type="range" id="input-gain-slider" min="0" max="10" step="0.1" value="1" />
         <span id="input-gain-value">1.0x</span>
       </div>
 
       <div class="slider-group">
         <label for="output-gain-slider">Output Gain:</label>
-        <input
-          type="range"
-          id="output-gain-slider"
-          min="0"
-          max="10"
-          step="0.1"
-          value="1"
-        />
+        <input type="range" id="output-gain-slider" min="0" max="10" step="0.1" value="1" />
         <span id="output-gain-value">1.0x</span>
       </div>
     </div>
@@ -113,157 +85,149 @@
       let follower;
 
       // Update slider value displays
-      function updateSliderDisplay(slider, valueSpan, suffix = '') {
+      function updateSliderDisplay(slider, valueSpan, suffix = "") {
         const value = parseFloat(slider.value);
         valueSpan.textContent = value.toFixed(3) + suffix;
       }
 
       // Set up slider event listeners
-      document.addEventListener('DOMContentLoaded', () => {
-        const attackSlider = document.getElementById('attack-slider');
-        const releaseSlider = document.getElementById('release-slider');
-        const inputGainSlider = document.getElementById('input-gain-slider');
-        const outputGainSlider = document.getElementById('output-gain-slider');
+      document.addEventListener("DOMContentLoaded", () => {
+        const attackSlider = document.getElementById("attack-slider");
+        const releaseSlider = document.getElementById("release-slider");
+        const inputGainSlider = document.getElementById("input-gain-slider");
+        const outputGainSlider = document.getElementById("output-gain-slider");
 
-        const attackValue = document.getElementById('attack-value');
-        const releaseValue = document.getElementById('release-value');
-        const inputGainValue = document.getElementById('input-gain-value');
-        const outputGainValue = document.getElementById('output-gain-value');
+        const attackValue = document.getElementById("attack-value");
+        const releaseValue = document.getElementById("release-value");
+        const inputGainValue = document.getElementById("input-gain-value");
+        const outputGainValue = document.getElementById("output-gain-value");
 
         // Attack slider
-        attackSlider.addEventListener('input', () => {
-          updateSliderDisplay(attackSlider, attackValue, 's');
+        attackSlider.addEventListener("input", () => {
+          updateSliderDisplay(attackSlider, attackValue, "s");
           if (follower) {
             follower.parameters
-              .get('attack')
+              .get("attack")
               .setValueAtTime(parseFloat(attackSlider.value), ctx.currentTime);
           }
         });
 
         // Release slider
-        releaseSlider.addEventListener('input', () => {
-          updateSliderDisplay(releaseSlider, releaseValue, 's');
+        releaseSlider.addEventListener("input", () => {
+          updateSliderDisplay(releaseSlider, releaseValue, "s");
           if (follower) {
             follower.parameters
-              .get('release')
+              .get("release")
               .setValueAtTime(parseFloat(releaseSlider.value), ctx.currentTime);
           }
         });
 
         // Input gain slider
-        inputGainSlider.addEventListener('input', () => {
-          updateSliderDisplay(inputGainSlider, inputGainValue, 'x');
+        inputGainSlider.addEventListener("input", () => {
+          updateSliderDisplay(inputGainSlider, inputGainValue, "x");
           if (follower) {
             follower.parameters
-              .get('inputGain')
-              .setValueAtTime(
-                parseFloat(inputGainSlider.value),
-                ctx.currentTime
-              );
+              .get("inputGain")
+              .setValueAtTime(parseFloat(inputGainSlider.value), ctx.currentTime);
           }
         });
 
         // Output gain slider
-        outputGainSlider.addEventListener('input', () => {
-          updateSliderDisplay(outputGainSlider, outputGainValue, 'x');
+        outputGainSlider.addEventListener("input", () => {
+          updateSliderDisplay(outputGainSlider, outputGainValue, "x");
           if (follower) {
             follower.parameters
-              .get('outputGain')
-              .setValueAtTime(
-                parseFloat(outputGainSlider.value),
-                ctx.currentTime
-              );
+              .get("outputGain")
+              .setValueAtTime(parseFloat(outputGainSlider.value), ctx.currentTime);
           }
         });
 
         // Initialize displays
-        updateSliderDisplay(attackSlider, attackValue, 's');
-        updateSliderDisplay(releaseSlider, releaseValue, 's');
-        updateSliderDisplay(inputGainSlider, inputGainValue, 'x');
-        updateSliderDisplay(outputGainSlider, outputGainValue, 'x');
+        updateSliderDisplay(attackSlider, attackValue, "s");
+        updateSliderDisplay(releaseSlider, releaseValue, "s");
+        updateSliderDisplay(inputGainSlider, inputGainValue, "x");
+        updateSliderDisplay(outputGainSlider, outputGainValue, "x");
       });
 
-      document
-        .getElementById('start-button')
-        .addEventListener('click', async () => {
-          if (osc) {
-            osc.stop();
-            osc = null;
-          }
-          const fileInput = document.getElementById('audio-upload');
-          if (!fileInput.files.length) return;
+      document.getElementById("start-button").addEventListener("click", async () => {
+        if (osc) {
+          osc.stop();
+          osc = null;
+        }
+        const fileInput = document.getElementById("audio-upload");
+        if (!fileInput.files.length) return;
 
-          const file = fileInput.files[0];
-          const arrayBuffer = await file.arrayBuffer();
+        const file = fileInput.files[0];
+        const arrayBuffer = await file.arrayBuffer();
 
-          // Create audio context
-          ctx = new AudioContext();
+        // Create audio context
+        ctx = new AudioContext();
 
-          // Load the worklet processor
-          await ctx.audioWorklet.addModule('../envelope-follower-processor.js');
+        // Load the worklet processor
+        await ctx.audioWorklet.addModule("../envelope-follower-processor.js");
 
-          // Decode and create source
-          const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-          src = ctx.createBufferSource();
-          src.buffer = audioBuffer;
-          const srcGain = ctx.createGain();
+        // Decode and create source
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        src = ctx.createBufferSource();
+        src.buffer = audioBuffer;
+        const srcGain = ctx.createGain();
 
-          // Create envelope follower node with initial parameter values
-          follower = new AudioWorkletNode(ctx, 'envelope-follower-processor');
+        // Create envelope follower node with initial parameter values
+        follower = new AudioWorkletNode(ctx, "envelope-follower-processor");
 
-          // Set initial parameter values from sliders
-          follower.parameters
-            .get('attack')
-            .setValueAtTime(
-              parseFloat(document.getElementById('attack-slider').value),
-              ctx.currentTime
-            );
-          follower.parameters
-            .get('release')
-            .setValueAtTime(
-              parseFloat(document.getElementById('release-slider').value),
-              ctx.currentTime
-            );
-          follower.parameters
-            .get('inputGain')
-            .setValueAtTime(
-              parseFloat(document.getElementById('input-gain-slider').value),
-              ctx.currentTime
-            );
-          follower.parameters
-            .get('outputGain')
-            .setValueAtTime(
-              parseFloat(document.getElementById('output-gain-slider').value),
-              ctx.currentTime
-            );
+        // Set initial parameter values from sliders
+        follower.parameters
+          .get("attack")
+          .setValueAtTime(
+            parseFloat(document.getElementById("attack-slider").value),
+            ctx.currentTime,
+          );
+        follower.parameters
+          .get("release")
+          .setValueAtTime(
+            parseFloat(document.getElementById("release-slider").value),
+            ctx.currentTime,
+          );
+        follower.parameters
+          .get("inputGain")
+          .setValueAtTime(
+            parseFloat(document.getElementById("input-gain-slider").value),
+            ctx.currentTime,
+          );
+        follower.parameters
+          .get("outputGain")
+          .setValueAtTime(
+            parseFloat(document.getElementById("output-gain-slider").value),
+            ctx.currentTime,
+          );
 
-          // Connect source -> follower
-          src.connect(follower);
+        // Connect source -> follower
+        src.connect(follower);
 
-          // Create oscillator and gain node
-          osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(440, ctx.currentTime);
+        // Create oscillator and gain node
+        osc = ctx.createOscillator();
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
 
-          const freqScaler = ctx.createGain();
-          freqScaler.gain.setValueAtTime(1000, ctx.currentTime); // Scale envelope to 0-1000 Hz range
+        const freqScaler = ctx.createGain();
+        freqScaler.gain.setValueAtTime(1000, ctx.currentTime); // Scale envelope to 0-1000 Hz range
 
-          // Connect follower osc freq
-          follower.connect(freqScaler).connect(osc.frequency);
+        // Connect follower osc freq
+        follower.connect(freqScaler).connect(osc.frequency);
 
-          oscGain = ctx.createGain();
-          oscGain.gain.setValueAtTime(0, ctx.currentTime);
-          osc.connect(oscGain).connect(ctx.destination);
+        oscGain = ctx.createGain();
+        oscGain.gain.setValueAtTime(0, ctx.currentTime);
+        osc.connect(oscGain).connect(ctx.destination);
 
-          // Connect follower oscGain.gain
-          follower.connect(oscGain.gain);
+        // Connect follower oscGain.gain
+        follower.connect(oscGain.gain);
 
-          // Monitor follower input signal
-          src.connect(srcGain).connect(ctx.destination);
+        // Monitor follower input signal
+        src.connect(srcGain).connect(ctx.destination);
 
-          // Start audio
-          osc.start();
-          src.start();
-        });
+        // Start audio
+        osc.start();
+        src.start();
+      });
     </script>
   </body>
 </html>

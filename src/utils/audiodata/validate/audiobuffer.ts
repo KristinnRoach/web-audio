@@ -1,6 +1,6 @@
 export function isValidAudioBuffer(
   buffer: AudioBuffer | null | undefined,
-  logInfo = false
+  logInfo = false,
 ): boolean {
   if (buffer === null || buffer === undefined) {
     return false;
@@ -13,23 +13,20 @@ export function isValidAudioBuffer(
 
   if (buffer.duration < minDuration) {
     console.warn(
-      `Audio duration is too short: ${buffer.duration} seconds. Must be longer than ${minDuration} seconds`
+      `Audio duration is too short: ${buffer.duration} seconds. Must be longer than ${minDuration} seconds`,
     );
     return false;
   }
 
   if (buffer.duration > maxDuration) {
     console.warn(
-      `Audio duration is too long: ${buffer.duration} seconds. Must be shorter than ${maxDuration} seconds`
+      `Audio duration is too long: ${buffer.duration} seconds. Must be shorter than ${maxDuration} seconds`,
     );
     return false;
   }
 
-  if (
-    buffer.numberOfChannels < minChannels ||
-    buffer.numberOfChannels > maxChannels
-  ) {
-    console.warn('Invalid number of audio channels.');
+  if (buffer.numberOfChannels < minChannels || buffer.numberOfChannels > maxChannels) {
+    console.warn("Invalid number of audio channels.");
     return false;
   }
 
@@ -82,7 +79,7 @@ export function isValidAudioBuffer(
     `);
     }
   } else {
-    console.warn('Invalid Buffer: No non-zero data.');
+    console.warn("Invalid Buffer: No non-zero data.");
   }
 
   return hasNonZeroData;

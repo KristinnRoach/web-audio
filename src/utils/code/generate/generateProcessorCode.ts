@@ -6,42 +6,39 @@ export function generateProcessorCode(
     state?: Record<string, unknown>;
     constructorCode?: Function;
     messageHandler?: Function;
-  } = {}
+  } = {},
 ): string {
-  if (typeof processFunc !== 'function') {
-    throw new Error('Process function must be a function');
+  if (typeof processFunc !== "function") {
+    throw new Error("Process function must be a function");
   }
 
   const paramsJSON = JSON.stringify(params);
 
   let funcBody = processFunc.toString();
-  funcBody = funcBody.substring(
-    funcBody.indexOf('{') + 1,
-    funcBody.lastIndexOf('}')
-  );
+  funcBody = funcBody.substring(funcBody.indexOf("{") + 1, funcBody.lastIndexOf("}"));
 
   // State initialization for constructor
   const stateInit = options.state
     ? Object.entries(options.state)
         .map(([key, value]) => `this.${key} = ${JSON.stringify(value)};`)
-        .join('\n          ')
-    : '';
+        .join("\n          ")
+    : "";
 
   const extraConstructorCode = options.constructorCode
     ? options.constructorCode
         .toString()
         .substring(
-          options.constructorCode.toString().indexOf('{') + 1,
-          options.constructorCode.toString().lastIndexOf('}')
+          options.constructorCode.toString().indexOf("{") + 1,
+          options.constructorCode.toString().lastIndexOf("}"),
         )
-    : '';
+    : "";
 
   let messageHandler;
   if (options.messageHandler) {
     const handlerStr = options.messageHandler.toString();
     const handlerBody = handlerStr.substring(
-      handlerStr.indexOf('{') + 1,
-      handlerStr.lastIndexOf('}')
+      handlerStr.indexOf("{") + 1,
+      handlerStr.lastIndexOf("}"),
     );
 
     messageHandler = `this.port.onmessage = (event) => {

@@ -1,15 +1,15 @@
-import { defineConfig } from 'vitest/config';
-import { fileURLToPath } from 'node:url';
+import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
-    environment: 'node', // ? jsdom ? // Creates an isolated test environment
+    environment: "node", // ? jsdom ? // Creates an isolated test environment
     globals: true,
-    include: ['src/**/*.test.ts'],
-    exclude: ['**/*.browser.test.ts', 'node_modules/**'],
+    include: ["src/**/*.test.ts"],
+    exclude: ["**/*.browser.test.ts", "node_modules/**"],
 
     coverage: {
-      reporter: ['text', 'html'],
+      reporter: ["text", "html"],
     },
 
     testTimeout: 10000,
@@ -17,7 +17,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
 });

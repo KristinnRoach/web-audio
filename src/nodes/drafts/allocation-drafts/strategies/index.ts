@@ -1,2 +1,2 @@
-export { RoundRobin } from './RoundRobin';
-export * from './LRU';
+export { RoundRobin } from "./RoundRobin";
+export * from "./LRU";
