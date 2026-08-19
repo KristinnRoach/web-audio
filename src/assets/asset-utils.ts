@@ -1,5 +1,5 @@
-import initSampleUrl from './init_sample.webm?url';
-import { DEFAULT } from '@/constants';
+import initSampleUrl from "./init_sample.webm?url";
+import { DEFAULT } from "@/constants";
 
 export async function fetchInitSample() {
   const response = await fetch(initSampleUrl);
@@ -23,8 +23,7 @@ export async function fetchInitSampleAsAudioBuffer() {
     throw new Error(`Failed to fetch init sample: ${response.statusText}`);
   }
   const arrayBuffer = await response.arrayBuffer();
-  const audioContext = new (window.AudioContext ||
-    (window as any).webkitAudioContext)({
+  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
     sampleRate: DEFAULT.audioConfig.sampleRate,
   });
 

@@ -1,4 +1,4 @@
-import { NodeID } from '@/nodes/node-store';
+import { NodeID } from "@/nodes/node-store";
 
 export interface Message {
   readonly type: string;
@@ -9,24 +9,19 @@ export interface Message {
 export type MessageHandler<T> = (data: T) => void;
 
 export interface MessageBus<T extends Message> {
-  sendMessage(type: T['type'], data: Omit<T, 'type' | 'senderId'>): void;
-  onMessage<K extends T['type']>(
-    type: K,
-    handler: MessageHandler<T>
-  ): () => void;
+  sendMessage(type: T["type"], data: Omit<T, "type" | "senderId">): void;
+  onMessage<K extends T["type"]>(type: K, handler: MessageHandler<T>): () => void;
 
   forwardFrom(
     source: {
       onMessage: (type: string, handler: MessageHandler<T>) => () => void;
     },
     messageTypes: string[],
-    transform?: (msg: T) => any
+    transform?: (msg: T) => any,
   ): () => void;
 }
 
-export function createMessageBus<T extends Message>(
-  senderId: NodeID
-): MessageBus<T> {
+export function createMessageBus<T extends Message>(senderId: NodeID): MessageBus<T> {
   const handlers = new Map<string, Set<MessageHandler<T>>>();
 
   return {
@@ -61,7 +56,7 @@ export function createMessageBus<T extends Message>(
           if (transformedMsg !== null) {
             this.sendMessage(transformedMsg.type, transformedMsg);
           }
-        })
+        }),
       );
 
       return () => cleanupFns.forEach((fn) => fn());

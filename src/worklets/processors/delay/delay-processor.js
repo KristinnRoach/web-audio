@@ -1,10 +1,10 @@
 // delay-processor.js
 
-import { DelayBuffer } from './DelayBuffer';
-import { compressSingleSample } from '../../shared/utils/compress-utils';
+import { DelayBuffer } from "./DelayBuffer";
+import { compressSingleSample } from "../../shared/utils/compress-utils";
 
 const DEFAULT_DELAY_CONFIG = {
-  CHARACTER: ['filtered'], // 'clean' | 'bitCrushed' | 'filtered' or combo
+  CHARACTER: ["filtered"], // 'clean' | 'bitCrushed' | 'filtered' or combo
 
   // Smoothing factor for delay time interpolation
   SMOOTHING_FACTOR: {
@@ -30,23 +30,23 @@ const DEFAULT_CHARACTER_CONFIG = {
 };
 
 registerProcessor(
-  'delay-processor',
+  "delay-processor",
   class extends AudioWorkletProcessor {
     static get parameterDescriptors() {
       return [
         {
-          name: 'delayTime',
+          name: "delayTime",
           defaultValue: 0.5,
           minValue: 0.001,
           maxValue: 2,
-          automationRate: 'k-rate',
+          automationRate: "k-rate",
         },
         {
-          name: 'feedbackAmount',
+          name: "feedbackAmount",
           defaultValue: 0.0,
           minValue: 0,
           maxValue: 0.99,
-          automationRate: 'k-rate',
+          automationRate: "k-rate",
         },
       ];
     }
@@ -68,34 +68,30 @@ registerProcessor(
       this._lastBpQ = -1;
 
       // lofi mode settings
-      this.lofiBits = DEFAULT_CHARACTER_CONFIG['bitCrushed'].bits;
-      this.lofiDownsample = DEFAULT_CHARACTER_CONFIG['bitCrushed'].downsample;
+      this.lofiBits = DEFAULT_CHARACTER_CONFIG["bitCrushed"].bits;
+      this.lofiDownsample = DEFAULT_CHARACTER_CONFIG["bitCrushed"].downsample;
       this._lofiSampleHold = [];
       this._lofiSampleCount = [];
 
       this.initialized = false;
 
       this.port.onmessage = (event) => {
-        if (
-          event.data &&
-          event.data.type === 'setCharacter' &&
-          Array.isArray(event.data.modes)
-        ) {
+        if (event.data && event.data.type === "setCharacter" && Array.isArray(event.data.modes)) {
           this.characterModes = [...event.data.modes];
         }
         if (
           event.data &&
-          event.data.type === 'setBandpassFreq' &&
-          typeof event.data.hz === 'number'
+          event.data.type === "setBandpassFreq" &&
+          typeof event.data.hz === "number"
         ) {
           this.setBandpassFreq(event.data.hz);
         }
-        if (event.data && event.data.type === 'trigger') {
+        if (event.data && event.data.type === "trigger") {
           // Placeholder for any trigger-related functionality
         }
       };
       // Signal to node that processor is initialized
-      this.port.postMessage({ type: 'initialized' });
+      this.port.postMessage({ type: "initialized" });
     }
 
     setBandpassFreq(hz) {
@@ -202,12 +198,7 @@ registerProcessor(
       }
 
       // Validate that channels have actual sample data
-      if (
-        !input[0] ||
-        !output[0] ||
-        input[0].length === 0 ||
-        output[0].length === 0
-      ) {
+      if (!input[0] || !output[0] || input[0].length === 0 || output[0].length === 0) {
         return true;
       }
 
@@ -242,19 +233,17 @@ registerProcessor(
           const intDelay = Math.floor(smoothedDelay);
           const frac = smoothedDelay - intDelay;
           // Calculate read positions
-          const readPtrA =
-            (buf.writePtr - intDelay + buf.buffer.length) % buf.buffer.length;
-          const readPtrB =
-            (readPtrA - 1 + buf.buffer.length) % buf.buffer.length;
+          const readPtrA = (buf.writePtr - intDelay + buf.buffer.length) % buf.buffer.length;
+          const readPtrB = (readPtrA - 1 + buf.buffer.length) % buf.buffer.length;
           const sampleA = buf.buffer[readPtrA];
           const sampleB = buf.buffer[readPtrB];
           let delayed = sampleA * (1 - frac) + sampleB * frac;
 
           // Character mode processing (can combine modes, order matters)
           for (const mode of this.characterModes) {
-            if (mode === 'bitCrushed') {
+            if (mode === "bitCrushed") {
               delayed = this._processLoFi(delayed, c);
-            } else if (mode === 'filtered') {
+            } else if (mode === "filtered") {
               delayed = this._processBandpass(delayed, c);
             }
             // other modes can be added here
@@ -263,16 +252,15 @@ registerProcessor(
           // Apply soft limiting to output
           output[c][i] = compressSingleSample(delayed, 0.75, 4.0, {
             enabled: true,
-            type: 'soft',
+            type: "soft",
             outputRange: { min: -0.9, max: 0.9 },
           });
-          const inputSample =
-            input[c] && input[c][i] !== undefined ? input[c][i] : 0;
+          const inputSample = input[c] && input[c][i] !== undefined ? input[c][i] : 0;
           buf.write(inputSample + delayed * feedbackAmount);
           buf.updatePointers(intDelay); // Use integer part for pointer update
         }
       }
       return true;
     }
-  }
+  },
 );

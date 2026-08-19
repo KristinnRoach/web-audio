@@ -9,16 +9,11 @@ export function generateTestBuffer(
   options: {
     duration?: number; // Duration in seconds
     frequency?: number; // Frequency in Hz
-    type?: 'sine' | 'square' | 'sawtooth' | 'white-noise';
+    type?: "sine" | "square" | "sawtooth" | "white-noise";
     channels?: number; // Number of channels
-  } = {}
+  } = {},
 ): AudioBuffer {
-  const {
-    duration = 1,
-    frequency = 440,
-    type = 'sine',
-    channels = 1,
-  } = options;
+  const { duration = 1, frequency = 440, type = "sine", channels = 1 } = options;
 
   const sampleRate = context.sampleRate;
   const length = duration * sampleRate;
@@ -29,13 +24,13 @@ export function generateTestBuffer(
     for (let i = 0; i < length; i++) {
       const t = i / sampleRate;
       switch (type) {
-        case 'square':
+        case "square":
           data[i] = Math.sign(Math.sin(2 * Math.PI * frequency * t));
           break;
-        case 'sawtooth':
+        case "sawtooth":
           data[i] = 2 * ((frequency * t) % 1) - 1;
           break;
-        case 'white-noise':
+        case "white-noise":
           data[i] = Math.random() * 2 - 1;
           break;
         default: // sine

@@ -10,7 +10,7 @@ const clipThresholds = {
 
 export async function detectSinglePitchAC(
   audioBuffer: AudioBuffer,
-  noiseReduction: keyof typeof clipThresholds = 'medium'
+  noiseReduction: keyof typeof clipThresholds = "medium",
 ) {
   const rawData = audioBuffer.getChannelData(0);
   const clipThreshold = clipThresholds[noiseReduction];
@@ -55,8 +55,7 @@ export async function detectSinglePitchAC(
     const y3 = correlations[x + 1];
 
     const denominator = 2 * (2 * y2 - y1 - y3);
-    offset =
-      Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
+    offset = Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
   }
 
   // Add confidence calculation

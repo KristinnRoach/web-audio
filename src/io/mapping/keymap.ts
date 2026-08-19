@@ -1,4 +1,4 @@
-import { KeyMap } from '../types';
+import { KeyMap } from "../types";
 
 /**
  * Default keyboard-to-MIDI note mapping for audio input.
@@ -66,7 +66,7 @@ export function generateKeymap(config: {
 }): KeyMap {
   const { baseNote, scale } = config;
   if (scale.length === 0) {
-    throw new RangeError('scale must contain at least one interval');
+    throw new RangeError("scale must contain at least one interval");
   }
 
   // prettier-ignore
@@ -119,9 +119,9 @@ export const chromaticKeymap = generateKeymap({
   scale: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 });
 
-export type KeymapKey = 'piano' | 'major' | 'minor' | 'pentatonic' | 'chromatic';
+export type KeymapKey = "piano" | "major" | "minor" | "pentatonic" | "chromatic";
 
-export const DEFAULT_KEYMAP_KEY: KeymapKey = 'major';
+export const DEFAULT_KEYMAP_KEY: KeymapKey = "major";
 
 export const keymaps: Record<KeymapKey, KeyMap> = {
   piano: defaultKeymap,

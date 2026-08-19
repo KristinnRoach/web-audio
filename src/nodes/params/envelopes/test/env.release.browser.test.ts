@@ -1,24 +1,22 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CustomEnvelope } from '../CustomEnvelope';
-import { EnvelopeData } from '../EnvelopeData';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
+import { CustomEnvelope } from "../CustomEnvelope";
+import type { EnvelopeData } from "../EnvelopeData";
 
 // Mock dependencies
-vi.mock('../../../nodes/node-store', () => ({
-  createNodeId: vi.fn(() => 'test-node-id'),
+vi.mock("../../../nodes/node-store", () => ({
+  createNodeId: vi.fn(() => "test-node-id"),
   deleteNodeId: vi.fn(),
-  registerNode: vi.fn(() => 'test-node-id'),
+  registerNode: vi.fn(() => "test-node-id"),
 }));
 
-vi.mock('@/events', () => ({
+vi.mock("@/events", () => ({
   createMessageBus: vi.fn(() => ({
     onMessage: vi.fn(),
     sendMessage: vi.fn(),
   })),
 }));
 
-vi.mock('../EnvelopeData');
-
-describe('CustomEnvelope - #continueFromPoint', () => {
+describe("CustomEnvelope - #continueFromPoint", () => {
   let envelope: CustomEnvelope;
   let mockContext: AudioContext;
   let mockAudioParam: AudioParam;
@@ -49,10 +47,10 @@ describe('CustomEnvelope - #continueFromPoint', () => {
     // Mock EnvelopeData
     mockEnvelopeData = {
       points: [
-        { time: 0, value: 0, curve: 'exponential' },
-        { time: 0.5, value: 1, curve: 'exponential' },
-        { time: 1.0, value: 0.5, curve: 'exponential' },
-        { time: 1.5, value: 0, curve: 'exponential' },
+        { time: 0, value: 0, curve: "exponential" },
+        { time: 0.5, value: 1, curve: "exponential" },
+        { time: 1.0, value: 0.5, curve: "exponential" },
+        { time: 1.5, value: 0, curve: "exponential" },
       ],
       pointValueRange: [0, 1],
       durationSeconds: 1.5,
@@ -64,17 +62,15 @@ describe('CustomEnvelope - #continueFromPoint', () => {
       endPointIndex: 3,
     } as unknown as EnvelopeData;
 
-    vi.mocked(EnvelopeData).mockImplementation(() => mockEnvelopeData);
-
-    envelope = new CustomEnvelope(mockContext, 'amp-env');
+    envelope = new CustomEnvelope(mockContext, "amp-env", mockEnvelopeData);
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('normal operation', () => {
-    it('should apply release curve successfully', () => {
+  describe("normal operation", () => {
+    it("should apply release curve successfully", () => {
       // Setup interpolation values
       vi.mocked(mockEnvelopeData.interpolateValueAtTime)
         .mockReturnValueOnce(0.5) // start value
@@ -84,7 +80,7 @@ describe('CustomEnvelope - #continueFromPoint', () => {
       envelope.releaseEnvelope(mockAudioParam, 1.0, {
         baseValue: 1,
         playbackRate: 1,
-        voiceId: 'test-voice',
+        voiceId: "test-voice",
       });
 
       expect(mockAudioParam.cancelScheduledValues).toHaveBeenCalledWith(1.0);
@@ -92,20 +88,20 @@ describe('CustomEnvelope - #continueFromPoint', () => {
       expect(mockAudioParam.setValueCurveAtTime).toHaveBeenCalled();
     });
 
-    it('should send release message with correct data', () => {
-      const sendMessageSpy = vi.spyOn(envelope, 'sendUpstreamMessage');
+    it("should send release message with correct data", () => {
+      const sendMessageSpy = vi.spyOn(envelope, "sendUpstreamMessage");
 
       vi.mocked(mockEnvelopeData.interpolateValueAtTime).mockReturnValue(0.5);
 
       envelope.releaseEnvelope(mockAudioParam, 1.0, {
         baseValue: 1,
         playbackRate: 1,
-        voiceId: 'test-voice',
+        voiceId: "test-voice",
         midiNote: 64,
       });
 
-      expect(sendMessageSpy).toHaveBeenCalledWith('amp-env:release', {
-        voiceId: 'test-voice',
+      expect(sendMessageSpy).toHaveBeenCalledWith("amp-env:release", {
+        voiceId: "test-voice",
         midiNote: 64,
         releasePoint: {
           time: expect.any(Number),
@@ -117,8 +113,8 @@ describe('CustomEnvelope - #continueFromPoint', () => {
     });
   });
 
-  describe('edge cases with high timeScale', () => {
-    it('should return early when scaled remaining duration is zero or negative', () => {
+  describe("edge cases with high timeScale", () => {
+    it("should return early when scaled remaining duration is zero or negative", () => {
       // Set very high time scale to make duration effectively zero
       envelope.setTimeScale(10000);
 
@@ -135,8 +131,8 @@ describe('CustomEnvelope - #continueFromPoint', () => {
     });
   });
 
-  describe('safe start time calculation', () => {
-    it('should use current time when start time is in the past', () => {
+  describe("safe start time calculation", () => {
+    it("should use current time when start time is in the past", () => {
       // Now this will work
       (mockContext as any).currentTime = 2.0;
 

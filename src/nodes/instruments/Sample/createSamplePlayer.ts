@@ -1,10 +1,10 @@
 // createSamplePlayer.ts
 
-import { getAudioContext, ensureAudioCtx } from '@/context';
-import { SamplePlayer } from './SamplePlayer';
-import { assert } from '@/utils';
+import { getAudioContext, ensureAudioCtx } from "@/context";
+import { SamplePlayer } from "./SamplePlayer";
+import { assert } from "@/utils";
 
-import { initProcessors } from '@/worklets';
+import { initProcessors } from "@/worklets";
 
 /**
  * Creates a new SamplePlayer instance
@@ -20,15 +20,15 @@ export async function createSamplePlayer(
   context: AudioContext = getAudioContext(),
 ): Promise<SamplePlayer> {
   await ensureAudioCtx();
-  assert(context, 'Audio context is not available');
+  assert(context, "Audio context is not available");
 
   const workletResult = await initProcessors(context); // Ensure worklets are registered
 
   if (!workletResult.success) {
     // AudioWorklet is not supported on this browser
     throw new Error(
-      'AudioWorklet is required but not supported on this browser. ' +
-        'Please use a modern desktop browser (Chrome, Firefox, Edge) or update your mobile browser.',
+      "AudioWorklet is required but not supported on this browser. " +
+        "Please use a modern desktop browser (Chrome, Firefox, Edge) or update your mobile browser.",
     );
   }
 
@@ -39,15 +39,12 @@ export async function createSamplePlayer(
     try {
       audiobuffer = await context.decodeAudioData(buffer);
     } catch (error) {
-      console.error(
-        'Failed to decode sample audiodata when creating SamplePlayer:',
-        error,
-      );
+      console.error("Failed to decode sample audiodata when creating SamplePlayer:", error);
       throw error;
     }
   } else {
     throw new Error(
-      'createSamplePlayer requires an AudioBuffer or ArrayBuffer. No default sample is bundled.',
+      "createSamplePlayer requires an AudioBuffer or ArrayBuffer. No default sample is bundled.",
     );
   }
 

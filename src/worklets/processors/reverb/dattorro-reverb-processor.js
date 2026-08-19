@@ -13,18 +13,18 @@ CONNECTION WITH THE SOFTWARE OR THE DISTRIBUTION OF THE SOFTWARE.
 class DattorroReverb extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      ['preDelay', 0, 0, sampleRate - 1, 'k-rate'],
-      ['bandwidth', 0.9999, 0, 1, 'k-rate'],
-      ['inputDiffusion1', 0.75, 0, 1, 'k-rate'],
-      ['inputDiffusion2', 0.625, 0, 1, 'k-rate'],
-      ['decay', 0.5, 0, 1, 'k-rate'],
-      ['decayDiffusion1', 0.7, 0, 0.999999, 'k-rate'],
-      ['decayDiffusion2', 0.5, 0, 0.999999, 'k-rate'],
-      ['damping', 0.005, 0, 1, 'k-rate'],
-      ['excursionRate', 0.5, 0, 2, 'k-rate'],
-      ['excursionDepth', 0.7, 0, 2, 'k-rate'],
-      ['wet', 0.3, 0, 1, 'k-rate'],
-      ['dry', 0.6, 0, 1, 'k-rate'],
+      ["preDelay", 0, 0, sampleRate - 1, "k-rate"],
+      ["bandwidth", 0.9999, 0, 1, "k-rate"],
+      ["inputDiffusion1", 0.75, 0, 1, "k-rate"],
+      ["inputDiffusion2", 0.625, 0, 1, "k-rate"],
+      ["decay", 0.5, 0, 1, "k-rate"],
+      ["decayDiffusion1", 0.7, 0, 0.999999, "k-rate"],
+      ["decayDiffusion2", 0.5, 0, 0.999999, "k-rate"],
+      ["damping", 0.005, 0, 1, "k-rate"],
+      ["excursionRate", 0.5, 0, 2, "k-rate"],
+      ["excursionDepth", 0.7, 0, 2, "k-rate"],
+      ["wet", 0.3, 0, 1, "k-rate"],
+      ["dry", 0.6, 0, 1, "k-rate"],
     ].map(
       (x) =>
         new Object({
@@ -33,7 +33,7 @@ class DattorroReverb extends AudioWorkletProcessor {
           minValue: x[2],
           maxValue: x[3],
           automationRate: x[4],
-        })
+        }),
     );
   }
 
@@ -51,23 +51,21 @@ class DattorroReverb extends AudioWorkletProcessor {
 
     const SHORT_DELAY_SCALE = 0.5; // KIDD Add: set to 1 to restore original
     [
-      0.004771345, 0.003595309, 0.012734787, 0.009307483, 0.022579886,
-      0.149625349, 0.060481839, 0.1249958, 0.030509727, 0.141695508,
-      0.089244313, 0.106280031,
+      0.004771345, 0.003595309, 0.012734787, 0.009307483, 0.022579886, 0.149625349, 0.060481839,
+      0.1249958, 0.030509727, 0.141695508, 0.089244313, 0.106280031,
     ]
       .map((x) => x * SHORT_DELAY_SCALE)
       .forEach((x) => this.makeDelay(x));
 
     this._taps = Int16Array.from(
       [
-        0.008937872, 0.099929438, 0.064278754, 0.067067639, 0.066866033,
-        0.006283391, 0.035818689, 0.011861161, 0.121870905, 0.041262054,
-        0.08981553, 0.070931756, 0.011256342, 0.004065724,
+        0.008937872, 0.099929438, 0.064278754, 0.067067639, 0.066866033, 0.006283391, 0.035818689,
+        0.011861161, 0.121870905, 0.041262054, 0.08981553, 0.070931756, 0.011256342, 0.004065724,
       ],
-      (x) => Math.round(x * sampleRate)
+      (x) => Math.round(x * sampleRate),
     );
     // Signal to node that processor is initialized
-    this.port.postMessage({ type: 'initialized' });
+    this.port.postMessage({ type: "initialized" });
   }
 
   makeDelay(length) {
@@ -137,16 +135,14 @@ class DattorroReverb extends AudioWorkletProcessor {
     // write to predelay and dry output
     if (inputs[0].length == 2) {
       for (let i = 127; i >= 0; i--) {
-        this._preDelay[this._pDWrite + i] =
-          (inputs[0][0][i] + inputs[0][1][i]) * 0.5;
+        this._preDelay[this._pDWrite + i] = (inputs[0][0][i] + inputs[0][1][i]) * 0.5;
 
         outputs[0][0][i] = inputs[0][0][i] * dr;
         outputs[0][1][i] = inputs[0][1][i] * dr;
       }
     } else if (inputs[0].length > 0) {
       this._preDelay.set(inputs[0][0], this._pDWrite);
-      for (let i = 127; i >= 0; i--)
-        outputs[0][0][i] = outputs[0][1][i] = inputs[0][0][i] * dr;
+      for (let i = 127; i >= 0; i--) outputs[0][0][i] = outputs[0][1][i] = inputs[0][0][i] * dr;
     } else {
       this._preDelay.set(new Float32Array(128), this._pDWrite);
     }
@@ -158,25 +154,13 @@ class DattorroReverb extends AudioWorkletProcessor {
 
       this._lp1 +=
         bw *
-        (this._preDelay[
-          (this._pDLength + this._pDWrite - pd + i) % this._pDLength
-        ] -
-          this._lp1);
+        (this._preDelay[(this._pDLength + this._pDWrite - pd + i) % this._pDLength] - this._lp1);
 
       // pre-tank
       let pre = this.writeDelay(0, this._lp1 - fi * this.readDelay(0));
-      pre = this.writeDelay(
-        1,
-        fi * (pre - this.readDelay(1)) + this.readDelay(0)
-      );
-      pre = this.writeDelay(
-        2,
-        fi * pre + this.readDelay(1) - si * this.readDelay(2)
-      );
-      pre = this.writeDelay(
-        3,
-        si * (pre - this.readDelay(3)) + this.readDelay(2)
-      );
+      pre = this.writeDelay(1, fi * (pre - this.readDelay(1)) + this.readDelay(0));
+      pre = this.writeDelay(2, fi * pre + this.readDelay(1) - si * this.readDelay(2));
+      pre = this.writeDelay(3, si * (pre - this.readDelay(3)) + this.readDelay(2));
 
       let split = si * pre + this.readDelay(3);
 
@@ -188,17 +172,14 @@ class DattorroReverb extends AudioWorkletProcessor {
       // left loop
       let temp = this.writeDelay(
         4,
-        split + dc * this.readDelay(11) + ft * this.readDelayCAt(4, exc)
+        split + dc * this.readDelay(11) + ft * this.readDelayCAt(4, exc),
       ); // tank diffuse 1
       this.writeDelay(5, this.readDelayCAt(4, exc) - ft * temp); // long delay 1
       this._lp2 += dp * (this.readDelay(5) - this._lp2); // damp 1
       temp = this.writeDelay(6, dc * this._lp2 - st * this.readDelay(6)); // tank diffuse 2
       this.writeDelay(7, this.readDelay(6) + st * temp); // long delay 2
       // right loop
-      temp = this.writeDelay(
-        8,
-        split + dc * this.readDelay(7) + ft * this.readDelayCAt(8, exc2)
-      ); // tank diffuse 3
+      temp = this.writeDelay(8, split + dc * this.readDelay(7) + ft * this.readDelayCAt(8, exc2)); // tank diffuse 3
       this.writeDelay(9, this.readDelayCAt(8, exc2) - ft * temp); // long delay 3
       this._lp3 += dp * (this.readDelay(9) - this._lp3); // damp 2
       temp = this.writeDelay(10, dc * this._lp3 - st * this.readDelay(10)); // tank diffuse 4
@@ -246,4 +227,4 @@ class DattorroReverb extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('dattorro-reverb-processor', DattorroReverb);
+registerProcessor("dattorro-reverb-processor", DattorroReverb);

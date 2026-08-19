@@ -5,7 +5,7 @@ const DEFAULT_THRESHOLD = 0.0001;
 /** Returns a sorted array of zero crossing time point in seconds */
 export function findZeroCrossingSeconds(
   audioBuffer: AudioBuffer,
-  threshold: number = DEFAULT_THRESHOLD
+  threshold: number = DEFAULT_THRESHOLD,
 ): number[] {
   const channel = audioBuffer.getChannelData(0); // Always use the first channel (left if stereo)
   const sampleRate = audioBuffer.sampleRate;
@@ -29,7 +29,7 @@ export function findZeroCrossingSeconds(
 /** Returns a sorted array of zero crossing sample indices */
 export function findZeroCrossingSamples(
   audioBuffer: AudioBuffer,
-  threshold: number = DEFAULT_THRESHOLD
+  threshold: number = DEFAULT_THRESHOLD,
 ): number[] {
   const channel = audioBuffer.getChannelData(0);
   const zeroCrossings: number[] = [];
@@ -51,15 +51,15 @@ export function findZeroCrossingSamples(
 // TODO: Use binary search version
 export function snapToNearestZeroCrossing(
   currTimeSec: number, // Seconds from start of audio buffer
-  zeroCrossings: number[]
+  zeroCrossings: number[],
 ): number {
   if (zeroCrossings.length === 0) {
-    console.warn('No zero crossings found');
+    console.warn("No zero crossings found");
     return currTimeSec;
   }
 
   return zeroCrossings.reduce((prev, curr) =>
-    Math.abs(curr - currTimeSec) < Math.abs(prev - currTimeSec) ? curr : prev
+    Math.abs(curr - currTimeSec) < Math.abs(prev - currTimeSec) ? curr : prev,
   );
 }
 

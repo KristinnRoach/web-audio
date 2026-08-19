@@ -1,0 +1,6 @@
+# Revisions listed here are formatting-only and are skipped by git blame.
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Apply Oxfmt formatting baseline (Vite+ tooling migration)
+5cc6fb129ffafa71226f00d7a7c32362d5ca8827

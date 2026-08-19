@@ -1,5 +1,5 @@
 // Empty import to import the Keyboard interface from input/types
-import {} from '../../io/types';
+import {} from "../../io/types";
 
 type AudioEnvironment = {
   readonly cancelAndHoldSupported: boolean;
@@ -13,30 +13,25 @@ class Environment {
 
   constructor() {
     try {
-      if (
-        typeof window === 'undefined' ||
-        typeof AudioContext === 'undefined'
-      ) {
+      if (typeof window === "undefined" || typeof AudioContext === "undefined") {
         console.error(`Environment util: Window or AudioContext is undefined`);
         return;
       }
 
       // Audio capabilities
-      const AudioContextConstructor =
-        window.AudioContext || (window as any).webkitAudioContext;
+      const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioContextConstructor();
       const param = ctx.createGain().gain;
 
       // Keyboard capabilities
-      const hasKeyboardAPI =
-        typeof navigator !== 'undefined' && 'keyboard' in navigator;
+      const hasKeyboardAPI = typeof navigator !== "undefined" && "keyboard" in navigator;
       const hasModifierState =
-        typeof KeyboardEvent !== 'undefined' &&
-        typeof KeyboardEvent.prototype.getModifierState === 'function';
+        typeof KeyboardEvent !== "undefined" &&
+        typeof KeyboardEvent.prototype.getModifierState === "function";
 
       this.#capabilities = {
-        cancelAndHoldSupported: typeof param.cancelAndHoldAtTime === 'function',
-        workletSupported: typeof ctx.audioWorklet === 'object',
+        cancelAndHoldSupported: typeof param.cancelAndHoldAtTime === "function",
+        workletSupported: typeof ctx.audioWorklet === "object",
         keyboardAPISupported: hasKeyboardAPI,
         modifierStateSupported: hasModifierState,
       };
@@ -62,11 +57,7 @@ class Environment {
 export const environment = new Environment();
 
 // Convenience getters
-export const isCancelAndHoldSupported = () =>
-  !!environment?.capabilities?.cancelAndHoldSupported;
-export const isWorkletSupported = () =>
-  !!environment?.capabilities?.workletSupported;
-export const isKeyboardAPISupported = () =>
-  !!environment?.capabilities?.keyboardAPISupported;
-export const isModifierStateSupported = () =>
-  !!environment?.capabilities?.modifierStateSupported;
+export const isCancelAndHoldSupported = () => !!environment?.capabilities?.cancelAndHoldSupported;
+export const isWorkletSupported = () => !!environment?.capabilities?.workletSupported;
+export const isKeyboardAPISupported = () => !!environment?.capabilities?.keyboardAPISupported;
+export const isModifierStateSupported = () => !!environment?.capabilities?.modifierStateSupported;

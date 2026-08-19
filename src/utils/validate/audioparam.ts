@@ -1,4 +1,4 @@
-import { isCancelAndHoldSupported } from './environment';
+import { isCancelAndHoldSupported } from "./environment";
 
 /**
  * Chromium workaround: cancelAndHoldAtTime on a partially-rendered
@@ -10,11 +10,7 @@ import { isCancelAndHoldSupported } from './environment';
  * cancelling reverts param.value to its pre-curve value. Pass holdValue
  * explicitly whenever the caller knows the intended value.
  */
-export function cancelAndPinParamValue(
-  param: AudioParam,
-  timestamp: number,
-  holdValue?: number
-) {
+export function cancelAndPinParamValue(param: AudioParam, timestamp: number, holdValue?: number) {
   const value = holdValue ?? param.value; // read before cancel
   param.cancelScheduledValues(timestamp);
   param.setValueAtTime(value, timestamp);
@@ -23,7 +19,7 @@ export function cancelAndPinParamValue(
 export function cancelScheduledParamValues(
   param: AudioParam | AudioParam[],
   timestamp: number,
-  holdValue?: number
+  holdValue?: number,
 ) {
   const paramsToProcess = Array.isArray(param) ? param : [param];
 
@@ -32,10 +28,7 @@ export function cancelScheduledParamValues(
       p.cancelAndHoldAtTime(timestamp);
     } else {
       p.cancelScheduledValues(timestamp);
-      p.setValueAtTime(
-        holdValue !== undefined ? holdValue : p.value,
-        timestamp
-      );
+      p.setValueAtTime(holdValue !== undefined ? holdValue : p.value, timestamp);
     }
   });
 }

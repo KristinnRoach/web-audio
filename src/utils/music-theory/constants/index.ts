@@ -1,8 +1,8 @@
-import * as Notes from './notes';
-import * as Scales from './scales';
-import * as Midi from './midi';
+import * as Notes from "./notes";
+import * as Scales from "./scales";
+import * as Midi from "./midi";
 
-import { generateNoteFrequencies } from '../utils/core-utils';
+import { generateNoteFrequencies } from "../utils/core-utils";
 
 // Generate frequency and period data
 const FREQUENCIES = generateNoteFrequencies(0, 9);

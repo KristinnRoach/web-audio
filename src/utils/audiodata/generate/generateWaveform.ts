@@ -7,46 +7,39 @@
 
 /** Custom Audiolib waveform */
 const CUSTOM_WAVEFORMS = [
-  'pulse',
-  'bandlimited-sawtooth',
-  'supersaw',
-  'warm-pad',
-  'metallic',
-  'formant',
-  'white-noise',
-  'pink-noise',
-  'brown-noise',
-  'colored-noise',
-  'random-harmonic',
-  'custom-function',
+  "pulse",
+  "bandlimited-sawtooth",
+  "supersaw",
+  "warm-pad",
+  "metallic",
+  "formant",
+  "white-noise",
+  "pink-noise",
+  "brown-noise",
+  "colored-noise",
+  "random-harmonic",
+  "custom-function",
 ] as const;
 
 export type CustomLibWaveform = (typeof CUSTOM_WAVEFORMS)[number];
 
 /** Union type of all supported waveforms */
-export type SupportedWaveform =
-  | 'sine'
-  | 'sawtooth'
-  | 'square'
-  | 'triangle'
-  | CustomLibWaveform;
+export type SupportedWaveform = "sine" | "sawtooth" | "square" | "triangle" | CustomLibWaveform;
 
 /** All supported oscillator waveforms */
 export const SUPPORTED_WAVEFORMS: readonly SupportedWaveform[] = [
   // Default web audio waveforms
-  'sine',
-  'sawtooth',
-  'square',
-  'triangle',
+  "sine",
+  "sawtooth",
+  "square",
+  "triangle",
 
   // Custom audiolib waveforms
   ...CUSTOM_WAVEFORMS,
 ] as const;
 
 /** Typeguard for Audiolib's custom waveforms */
-export function isCustomLibWaveform(
-  waveform: string
-): waveform is CustomLibWaveform {
+export function isCustomLibWaveform(waveform: string): waveform is CustomLibWaveform {
   return CUSTOM_WAVEFORMS.includes(waveform as CustomLibWaveform);
 }
 /**
@@ -99,77 +92,77 @@ export interface WaveformOptions {
 export function createWave(
   audioContext: AudioContext,
   type: CustomLibWaveform,
-  options: WaveformOptions = {}
+  options: WaveformOptions = {},
 ): PeriodicWave {
   switch (type) {
-    case 'pulse':
+    case "pulse":
       return createPulseWave(audioContext, {
         dutyCycle: options.dutyCycle,
         harmonics: options.harmonics,
       });
-    case 'bandlimited-sawtooth':
+    case "bandlimited-sawtooth":
       return createBandlimitedSawtooth(audioContext, {
         harmonics: options.harmonics,
         rolloff: options.rolloff,
       });
-    case 'supersaw':
+    case "supersaw":
       return createSupersaw(audioContext, {
         voices: options.voices,
         detune: options.detune,
         harmonics: options.harmonics,
       });
-    case 'warm-pad':
+    case "warm-pad":
       return createWarmPad(audioContext, {
         brightness: options.brightness,
         harmonics: options.harmonics,
       });
-    case 'metallic':
+    case "metallic":
       return createMetallicWave(audioContext, {
         inharmonicity: options.inharmonicity,
         harmonics: options.harmonics,
       });
-    case 'formant':
+    case "formant":
       return createFormantWave(audioContext, {
         formantFreqs: options.formantFreqs,
         formantBandwidths: options.formantBandwidths,
         fundamentalFreq: options.fundamentalFreq,
         harmonics: options.harmonics,
       });
-    case 'white-noise':
+    case "white-noise":
       return createWhiteNoise(audioContext, {
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case 'pink-noise':
+    case "pink-noise":
       return createPinkNoise(audioContext, {
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case 'brown-noise':
+    case "brown-noise":
       return createBrownNoise(audioContext, {
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case 'colored-noise':
+    case "colored-noise":
       return createColoredNoise(audioContext, {
         slope: options.slope,
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case 'random-harmonic':
+    case "random-harmonic":
       return createRandomHarmonicWave(audioContext, {
         chaos: options.chaos,
         harmonicDensity: options.harmonicDensity,
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case 'custom-function':
+    case "custom-function":
       return createWaveFromFunction(
         audioContext,
         options.waveFunction || ((phase) => Math.sin(phase)),
         {
           harmonics: options.harmonics,
-        }
+        },
       );
     default:
       throw new Error(`Invalid waveform type: ${type}`);
@@ -189,7 +182,7 @@ export function createPulseWave(
   options: {
     dutyCycle?: number;
     harmonics?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { dutyCycle = 0.5, harmonics = 32 } = options;
   const real = new Float32Array(harmonics + 1);
@@ -220,7 +213,7 @@ export function createBandlimitedSawtooth(
   options: {
     harmonics?: number;
     rolloff?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { harmonics = 32, rolloff = 1 } = options;
   const real = new Float32Array(harmonics + 1);
@@ -253,7 +246,7 @@ export function createSupersaw(
     voices?: number;
     detune?: number;
     harmonics?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { voices = 7, detune = 25, harmonics = 16 } = options;
   const real = new Float32Array(harmonics + 1);
@@ -264,9 +257,7 @@ export function createSupersaw(
     const voiceDetune =
       voice === 0
         ? 0
-        : (voice % 2 === 1 ? 1 : -1) *
-          Math.ceil(voice / 2) *
-          (detune / Math.ceil(voices / 2));
+        : (voice % 2 === 1 ? 1 : -1) * Math.ceil(voice / 2) * (detune / Math.ceil(voices / 2));
 
     const detuneRatio = Math.pow(2, voiceDetune / 1200);
 
@@ -297,7 +288,7 @@ export function createWarmPad(
   options: {
     brightness?: number;
     harmonics?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { brightness = 0.3, harmonics = 64 } = options;
   const real = new Float32Array(harmonics + 1);
@@ -336,7 +327,7 @@ export function createMetallicWave(
   options: {
     inharmonicity?: number;
     harmonics?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { inharmonicity = 0.2, harmonics = 32 } = options;
   const real = new Float32Array(harmonics + 1);
@@ -378,7 +369,7 @@ export function createFormantWave(
     formantBandwidths?: number[];
     fundamentalFreq?: number;
     harmonics?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const {
     formantFreqs = [800, 1200, 2600],
@@ -425,7 +416,7 @@ export function createWaveFromFunction(
   waveFunction: (phase: number) => number,
   options: {
     harmonics?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { harmonics = 32 } = options;
   const real = new Float32Array(harmonics + 1);
@@ -473,7 +464,7 @@ export function createWhiteNoise(
   options: {
     harmonics?: number;
     seed?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { harmonics = 64, seed } = options;
   const real = new Float32Array(harmonics + 1);
@@ -513,7 +504,7 @@ export function createPinkNoise(
   options: {
     harmonics?: number;
     seed?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { harmonics = 64, seed } = options;
   const real = new Float32Array(harmonics + 1);
@@ -553,7 +544,7 @@ export function createBrownNoise(
   options: {
     harmonics?: number;
     seed?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { harmonics = 64, seed } = options;
   const real = new Float32Array(harmonics + 1);
@@ -595,7 +586,7 @@ export function createColoredNoise(
     harmonics?: number;
     seed?: number;
     slope?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { slope = 0, harmonics = 64, seed } = options;
   const real = new Float32Array(harmonics + 1);
@@ -639,7 +630,7 @@ export function createRandomHarmonicWave(
     seed?: number;
     chaos?: number;
     harmonicDensity?: number;
-  } = {}
+  } = {},
 ): PeriodicWave {
   const { chaos = 0.5, harmonicDensity = 0.7, harmonics = 32, seed } = options;
   const real = new Float32Array(harmonics + 1);

@@ -1,8 +1,8 @@
 /** INSTRUMENTS */
-export { SamplePlayer } from './Sample/SamplePlayer';
+export { SamplePlayer } from "./Sample/SamplePlayer";
 
 /** FACTORIES */
-export { createSamplePlayer } from './Sample/createSamplePlayer';
+export { createSamplePlayer } from "./Sample/createSamplePlayer";
 
 /** VOICES */
-export { SampleVoice } from './Sample/SampleVoice';
+export { SampleVoice } from "./Sample/SampleVoice";

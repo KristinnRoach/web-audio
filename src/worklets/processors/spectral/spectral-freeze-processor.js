@@ -19,24 +19,18 @@ class SpectralFreezeProcessor extends AudioWorkletProcessor {
     this._frameWindowed = new Float32Array(this.fftSize);
 
     // Check if FFT library is available
-    console.log(
-      '[SpectralFreeze] Constructor - fft available:',
-      typeof fft !== 'undefined',
-    );
-    console.log(
-      '[SpectralFreeze] Constructor - ifft available:',
-      typeof ifft !== 'undefined',
-    );
+    console.log("[SpectralFreeze] Constructor - fft available:", typeof fft !== "undefined");
+    console.log("[SpectralFreeze] Constructor - ifft available:", typeof ifft !== "undefined");
 
     this.port.onmessage = (event) => {
-      if (event.data === 'freeze') {
+      if (event.data === "freeze") {
         this.isFrozen = true;
         this.outputReadPos = this.hopSize; // Force refill on first freeze
         console.log(
-          '[SpectralFreeze] Freeze activated, spectrum available:',
+          "[SpectralFreeze] Freeze activated, spectrum available:",
           !!this.frozenSpectrum,
         );
-      } else if (event.data === 'unfreeze') {
+      } else if (event.data === "unfreeze") {
         this.isFrozen = false;
       }
     };
@@ -110,7 +104,7 @@ class SpectralFreezeProcessor extends AudioWorkletProcessor {
             //   );
             // }
           } catch (error) {
-            console.error('[SpectralFreeze] FFT error:', error);
+            console.error("[SpectralFreeze] FFT error:", error);
           }
         }
       }
@@ -146,13 +140,12 @@ class SpectralFreezeProcessor extends AudioWorkletProcessor {
 
             // Add reconstructed frame
             for (let k = 0; k < reconstructed.length; k++) {
-              this.outputBuffer[k] =
-                (this.outputBuffer[k] || 0) + reconstructed[k];
+              this.outputBuffer[k] = (this.outputBuffer[k] || 0) + reconstructed[k];
             }
 
             this.outputReadPos = 0;
           } catch (error) {
-            console.error('[SpectralFreeze] IFFT error:', error);
+            console.error("[SpectralFreeze] IFFT error:", error);
           }
         }
 
@@ -172,7 +165,7 @@ class SpectralFreezeProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('spectral-freeze-processor', SpectralFreezeProcessor);
+registerProcessor("spectral-freeze-processor", SpectralFreezeProcessor);
 
 // export class SpectralFreezeProcessor extends AudioWorkletProcessor {
 //   constructor() {

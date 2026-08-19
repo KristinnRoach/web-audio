@@ -1,9 +1,9 @@
-import { LibNode } from '@/nodes/LibNode';
-import { unregisterNode, registerNode } from '@/nodes/node-store';
+import { LibNode } from "@/nodes/LibNode";
+import { unregisterNode, registerNode } from "@/nodes/node-store";
 
 export class AudioParamController implements LibNode {
   readonly nodeId: NodeID;
-  readonly nodeType = 'audio-param-controller';
+  readonly nodeType = "audio-param-controller";
   #context: AudioContext;
   #constantSignal: ConstantSourceNode;
   #targets: Array<{ param: AudioParam; scaler?: GainNode }> = [];
@@ -15,17 +15,14 @@ export class AudioParamController implements LibNode {
 
   constructor(
     context: BaseAudioContext,
-    initialValue: number = AudioParamController.MIN_EXPONENTIAL_RAMP_VALUE
+    initialValue: number = AudioParamController.MIN_EXPONENTIAL_RAMP_VALUE,
   ) {
     this.#context = context as AudioContext;
     this.nodeId = registerNode(this.nodeType, this);
 
     this.#constantSignal = context.createConstantSource();
 
-    this.#constantSignal.offset.setValueAtTime(
-      initialValue,
-      context.currentTime
-    );
+    this.#constantSignal.offset.setValueAtTime(initialValue, context.currentTime);
 
     this.#value = initialValue;
     this.#constantSignal.start();
@@ -49,8 +46,8 @@ export class AudioParamController implements LibNode {
   ramp(
     targetValue: number,
     duration: number,
-    method: 'exponential' | 'linear' = 'exponential',
-    cancelScheduled = true
+    method: "exponential" | "linear" = "exponential",
+    cancelScheduled = true,
   ): this {
     const now = this.#context.currentTime;
 
@@ -60,11 +57,8 @@ export class AudioParamController implements LibNode {
     const currentValue = this.param.value;
     this.param.setValueAtTime(currentValue, now);
 
-    if (method === 'exponential') {
-      const safeValue = Math.max(
-        targetValue,
-        AudioParamController.MIN_EXPONENTIAL_RAMP_VALUE
-      );
+    if (method === "exponential") {
+      const safeValue = Math.max(targetValue, AudioParamController.MIN_EXPONENTIAL_RAMP_VALUE);
       this.param.exponentialRampToValueAtTime(safeValue, now + duration);
       this.#value = safeValue;
     } else {
@@ -109,8 +103,8 @@ export class AudioParamController implements LibNode {
   dispose(): void {
     this.#initialized = false;
     try {
-      this.#constantSignal.stop(); 
-      this.#constantSignal.disconnect(); 
+      this.#constantSignal.stop();
+      this.#constantSignal.disconnect();
       this.#targets.forEach(({ scaler }) => scaler && scaler.disconnect());
     } catch {}
     unregisterNode(this.nodeId);

@@ -17,7 +17,7 @@ export class ValueSnapper {
     if (this.allowedValues.length === 0) return target;
 
     return this.allowedValues.reduce((prev, curr) =>
-      Math.abs(curr - target) < Math.abs(prev - target) ? curr : prev
+      Math.abs(curr - target) < Math.abs(prev - target) ? curr : prev,
     );
   }
 
@@ -26,9 +26,7 @@ export class ValueSnapper {
 
     // Find closest musical period
     const closestPeriod = this.allowedPeriods.reduce((prev, curr) =>
-      Math.abs(curr - periodToSnap) < Math.abs(prev - periodToSnap)
-        ? curr
-        : prev
+      Math.abs(curr - periodToSnap) < Math.abs(prev - periodToSnap) ? curr : prev,
     );
 
     return closestPeriod;

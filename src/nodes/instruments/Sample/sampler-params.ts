@@ -2,7 +2,7 @@
 // UI-agnostic metadata (range, default, taper, formatting) plus an apply()
 // mapping a normalized-or-natural knob value onto the player. Lets any
 // frontend render controls without hardcoding per-param knowledge.
-import type { SamplePlayer } from './SamplePlayer';
+import type { SamplePlayer } from "./SamplePlayer";
 
 export interface SamplerParamDescriptor {
   label: string;
@@ -24,7 +24,7 @@ export function isValidSamplerParamValue(
   value: unknown,
 ): value is number {
   return (
-    typeof value === 'number' &&
+    typeof value === "number" &&
     Number.isFinite(value) &&
     value >= descriptor.min &&
     value <= descriptor.max &&
@@ -45,21 +45,21 @@ function defineSamplerParams<K extends string>(
 
 export const samplerParams = defineSamplerParams({
   volume: {
-    label: 'Volume',
+    label: "Volume",
     min: 0,
     max: 1,
     defaultValue: 0.75,
     apply: (p, v) => p.setVolume(v),
   },
   dryWet: {
-    label: 'Dry/Wet',
+    label: "Dry/Wet",
     min: 0,
     max: 1,
     defaultValue: 0.5,
     apply: (p, v) => p.setDryWetMix({ dry: 1 - v, wet: v }),
   },
   glide: {
-    label: 'Glide',
+    label: "Glide",
     min: 0,
     max: 1,
     defaultValue: 0,
@@ -68,7 +68,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setGlideTime(v),
   },
   tempo: {
-    label: 'Tempo',
+    label: "Tempo",
     min: 20,
     max: 300,
     defaultValue: 120,
@@ -79,7 +79,7 @@ export const samplerParams = defineSamplerParams({
 
   // Filters
   lowpassFilter: {
-    label: 'LPF',
+    label: "LPF",
     min: 40,
     max: 20000,
     defaultValue: 20000,
@@ -88,7 +88,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setLpfCutoff(v),
   },
   highpassFilter: {
-    label: 'HPF',
+    label: "HPF",
     min: 20,
     max: 20000,
     defaultValue: 40,
@@ -99,7 +99,7 @@ export const samplerParams = defineSamplerParams({
 
   // Feedback
   feedback: {
-    label: 'Feedback',
+    label: "Feedback",
     min: 0,
     max: 1,
     defaultValue: 0,
@@ -109,7 +109,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setFeedbackAmount(v),
   },
   feedbackPitch: {
-    label: 'FB-Pitch',
+    label: "FB-Pitch",
     min: 0.25,
     max: 4,
     defaultValue: 1,
@@ -118,7 +118,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setFeedbackPitchScale(v),
   },
   feedbackDecay: {
-    label: 'FB-Decay',
+    label: "FB-Decay",
     min: 0.01,
     max: 1,
     defaultValue: 0.75,
@@ -126,7 +126,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setFeedbackDecay(v),
   },
   feedbackLpf: {
-    label: 'FB-LPF',
+    label: "FB-LPF",
     min: 400,
     max: 16000,
     defaultValue: 10000,
@@ -137,7 +137,7 @@ export const samplerParams = defineSamplerParams({
 
   // Dirt
   distortion: {
-    label: 'Distortion',
+    label: "Distortion",
     min: 0,
     max: 1,
     defaultValue: 0,
@@ -145,54 +145,54 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.outputBus.setDistortionMacro(v),
   },
   drive: {
-    label: 'Drive',
+    label: "Drive",
     min: 0,
     max: 1,
     defaultValue: 0,
     apply: (p, v) => p.outputBus.setDrive(v),
   },
   clipping: {
-    label: 'Clipping',
+    label: "Clipping",
     min: 0,
     max: 1,
     defaultValue: 0,
     apply: (p, v) => p.outputBus.setClippingMacro(v),
   },
   amMod: {
-    label: 'AM',
+    label: "AM",
     min: 0,
     max: 1,
     defaultValue: 0,
-    apply: (p, v) => p.setModulationAmount('AM', v),
+    apply: (p, v) => p.setModulationAmount("AM", v),
   },
 
   // Sends / space
   reverbSend: {
-    label: 'Reverb Send',
+    label: "Reverb Send",
     min: 0,
     max: 1,
     defaultValue: 0,
     format: pct,
-    apply: (p, v) => p.sendToFx('reverb', v),
+    apply: (p, v) => p.sendToFx("reverb", v),
   },
   reverbSize: {
-    label: 'Reverb Size',
+    label: "Reverb Size",
     min: 0,
     max: 1,
     defaultValue: 0.7,
     apply: (p, v) => p.setReverbAmount(v),
   },
   delaySend: {
-    label: 'Delay Send',
+    label: "Delay Send",
     min: 0,
     max: 1,
     defaultValue: 0,
     curve: 2,
     format: pct,
-    apply: (p, v) => p.sendToFx('delay', v),
+    apply: (p, v) => p.sendToFx("delay", v),
   },
   delayTime: {
-    label: 'Delay Time',
+    label: "Delay Time",
     min: 0.005,
     max: 1.5,
     defaultValue: 0.1,
@@ -201,7 +201,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.outputBus.setDelayTime(v),
   },
   delayFeedback: {
-    label: 'Delay Feedback',
+    label: "Delay Feedback",
     min: 0,
     max: 1,
     defaultValue: 0.25,
@@ -212,7 +212,7 @@ export const samplerParams = defineSamplerParams({
 
   // LFOs (rate knobs are normalized 0..1 -> Hz)
   gainLFORate: {
-    label: 'Amp LFO Rate',
+    label: "Amp LFO Rate",
     min: 0,
     max: 1,
     defaultValue: 0.1,
@@ -220,7 +220,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.gainLFO?.setFrequency(v * 100 + 0.1),
   },
   gainLFODepth: {
-    label: 'Amp LFO Depth',
+    label: "Amp LFO Depth",
     min: 0,
     max: 1,
     defaultValue: 0,
@@ -228,7 +228,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.gainLFO?.setDepth(v),
   },
   pitchLFORate: {
-    label: 'Pitch LFO Rate',
+    label: "Pitch LFO Rate",
     min: 0,
     max: 1,
     defaultValue: 0.01,
@@ -236,7 +236,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.pitchLFO?.setFrequency(v * 100 + 0.1),
   },
   pitchLFODepth: {
-    label: 'Pitch LFO Depth',
+    label: "Pitch LFO Depth",
     min: 0,
     max: 1,
     defaultValue: 0,
@@ -247,7 +247,7 @@ export const samplerParams = defineSamplerParams({
   // Trim / loop. Normalized 0..1 as a fraction of the loaded sample's duration:
   // apply() converts to seconds, so the control range never depends on the sample.
   trimStart: {
-    label: 'Start',
+    label: "Start",
     min: 0,
     max: 1,
     defaultValue: 0,
@@ -256,7 +256,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setSampleStartPoint(v * p.sampleDuration),
   },
   trimEnd: {
-    label: 'End',
+    label: "End",
     min: 0,
     max: 1,
     defaultValue: 1,
@@ -265,7 +265,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setSampleEndPoint(v * p.sampleDuration),
   },
   loopStart: {
-    label: 'Loop Start',
+    label: "Loop Start",
     min: 0,
     max: 1,
     defaultValue: 0,
@@ -274,7 +274,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setLoopStart(v * p.sampleDuration),
   },
   loopDuration: {
-    label: 'Loop Length',
+    label: "Loop Length",
     min: 0,
     max: 1,
     defaultValue: 1,
@@ -287,7 +287,7 @@ export const samplerParams = defineSamplerParams({
   },
   // Todo: Decide whether all params should be returned or just those requested by app (add param?)
   loopEnd: {
-    label: 'Loop End',
+    label: "Loop End",
     min: 0,
     max: 1,
     defaultValue: 1,
@@ -296,7 +296,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },
   loopRampDuration: {
-    label: 'Loop Ramp',
+    label: "Loop Ramp",
     min: 0.001,
     max: 1,
     defaultValue: 0.5,
@@ -304,7 +304,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setLoopRampDuration(v),
   },
   loopDurationDrift: {
-    label: 'Loop Drift',
+    label: "Loop Drift",
     min: 0,
     max: 1,
     defaultValue: 0.3,
@@ -314,7 +314,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setLoopDurationDriftAmount(v),
   },
   keytrackLoop: {
-    label: 'KeyTrack',
+    label: "KeyTrack",
     min: 0,
     max: 1,
     defaultValue: 0,

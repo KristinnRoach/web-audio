@@ -7,10 +7,9 @@
     "type": "git",
     "url": "git+https://github.com/KristinnRoach/web-audio.git"
   },
-  "publishConfig": {
-    "access": "public"
-  },
-  "packageManager": "pnpm@11.5.2",
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -27,37 +26,41 @@
       "import": "./dist/components.js"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build:worklets": "node build-processors.js",
-    "build": "pnpm clean && node build-processors.js && vite build",
-    "prepack": "pnpm build",
-    "watch:processors": "node watch-processors.js",
-    "watch": "pnpm build:worklets && concurrently \"vitest\" \"vite build --watch\" \"pnpm watch:processors\"",
+    "build:worklets": "vp node build-processors.js",
+    "build": "vp run clean && vp build",
+    "prepack": "vp run build",
+    "watch:processors": "vp node watch-processors.js",
+    "watch": "concurrently \"vp test watch\" \"vp build --watch\" \"vp run watch:processors\"",
     "clean": "rimraf dist",
-    "test": "vitest run",
-    "test:browser": "vitest run --config vitest.browser.config.ts",
-    "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest",
-    "test:all": "pnpm test && pnpm test:browser"
+    "test": "vp test run",
+    "test:browser": "vp test run --config vitest.browser.config.ts",
+    "test:coverage": "vp test run --coverage",
+    "test:watch": "vp test",
+    "test:all": "vp run test && vp run test:browser",
+    "prepare": "vp config"
   },
   "dependencies": {
     "webmidi": "^3.1.13"
   },
   "devDependencies": {
     "@types/audioworklet": "^0.0.72",
+    "@types/node": "^24.13.3",
     "@types/webmidi": "^2.1.0",
-    "@vitest/browser": "^3.2.4",
-    "@vitest/coverage-v8": "3.2.4",
+    "@vitest/browser-playwright": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "concurrently": "^9.1.2",
     "jsdom": "^26.0.0",
     "playwright": "^1.53.2",
     "rimraf": "^5.0.1",
     "typescript": "5.8.3",
-    "vite": "^6.0.0",
+    "vite": "catalog:",
     "vite-plugin-dts": "^4.5.3",
-    "vitest": "^3.2.4"
-  }
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
+  },
+  "packageManager": "pnpm@11.5.2"
 }

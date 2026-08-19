@@ -1,4 +1,4 @@
-import { WorkletNode } from './WorkletNode';
+import { WorkletNode } from "./WorkletNode";
 
 export type { WorkletNode };
 
@@ -29,8 +29,8 @@ export type DistortionParams = {
 };
 
 export type DistortionMsg = {
-  type: 'setLimitingMode';
-  mode: 'soft-clipping' | 'hard-clipping';
+  type: "setLimitingMode";
+  mode: "soft-clipping" | "hard-clipping";
 };
 
 export type DistortionConfig = {
@@ -50,16 +50,16 @@ export type FbDelayParams = {
 
 export type FbDelayMsg =
   | {
-      type: 'setAutoGain';
+      type: "setAutoGain";
       enabled: boolean;
       amount: number;
     }
   | {
-      type: 'triggerDecay';
+      type: "triggerDecay";
       baseFeedbackAmount: number;
     }
   | {
-      type: 'stopDecay';
+      type: "stopDecay";
     };
 export type FbDelayConfig = {
   params: FbDelayParams;
@@ -75,13 +75,13 @@ export type DelayParams = {
   feedbackAmount: number;
 };
 
-export type DelayCharacter = 'clean' | 'bitCrushed' | 'filtered';
+export type DelayCharacter = "clean" | "bitCrushed" | "filtered";
 export type SetDelayCharacterMsg = {
-  type: 'setCharacter';
+  type: "setCharacter";
   modes: DelayCharacter[];
 };
 export type TriggerDelayMsg = {
-  type: 'trigger';
+  type: "trigger";
 };
 
 export type DelayMsg = SetDelayCharacterMsg | TriggerDelayMsg;
@@ -113,12 +113,12 @@ export type DattorroReverbParams = {
 
 export type DattorroReverbMsg =
   | {
-      type: 'setPreset';
-      preset: 'room' | 'church' | 'freeze' | 'ether' | 'default';
+      type: "setPreset";
+      preset: "room" | "church" | "freeze" | "ether" | "default";
       rampTime?: number;
     }
-  | { type: 'setDiffusionMacro'; value: number }
-  | { type: 'setAmountMacro'; amount: number };
+  | { type: "setDiffusionMacro"; value: number }
+  | { type: "setAmountMacro"; amount: number };
 
 export type DattorroReverbConfig = {
   params: DattorroReverbParams;
@@ -127,7 +127,7 @@ export type DattorroReverbConfig = {
 
 export type DattorroReverbWorklet = WorkletNode<DattorroReverbConfig>;
 
-/* Example for multi msg support: 
+/* Example for multi msg support:
 export type DistortionMsg = 
   | { type: 'setAutoGain'; enabled: boolean; amount: number; }
   | { type: 'setSomethingElse'; something: number; };

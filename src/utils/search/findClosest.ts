@@ -9,12 +9,12 @@
 export function findClosestIdx<T>(
   sortedArray: T[],
   target: number,
-  direction: 'left' | 'right' | 'any' = 'any',
+  direction: "left" | "right" | "any" = "any",
   getValue: (item: T) => number = (x) => x as unknown as number,
-  getDistance: (a: number, b: number) => number = (a, b) => Math.abs(a - b)
+  getDistance: (a: number, b: number) => number = (a, b) => Math.abs(a - b),
 ): number {
   if (sortedArray.length === 0) {
-    throw new Error('Array cannot be empty');
+    throw new Error("Array cannot be empty");
   }
 
   if (sortedArray.length === 1) {
@@ -47,8 +47,8 @@ export function findClosestIdx<T>(
   }
 
   // If direction is specified, return the closest value to the left or right
-  if (direction === 'left') return left;
-  if (direction === 'right') return right;
+  if (direction === "left") return left;
+  if (direction === "right") return right;
 
   // Else compare the two closest candidates
   const leftDistance = getDistance(getValue(sortedArray[left]), targetValue);
@@ -68,16 +68,10 @@ export function findClosestIdx<T>(
 export function findClosest<T>(
   sortedArray: T[],
   target: number,
-  direction: 'left' | 'right' | 'any' = 'any',
+  direction: "left" | "right" | "any" = "any",
   getValue: (item: T) => number = (x) => x as unknown as number,
-  getDistance: (a: number, b: number) => number = (a, b) => Math.abs(a - b)
+  getDistance: (a: number, b: number) => number = (a, b) => Math.abs(a - b),
 ): T {
-  const index = findClosestIdx(
-    sortedArray,
-    target,
-    direction,
-    getValue,
-    getDistance
-  );
+  const index = findClosestIdx(sortedArray, target, direction, getValue, getDistance);
   return sortedArray[index];
 }

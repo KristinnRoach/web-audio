@@ -1,15 +1,15 @@
-import { ILibAudioNode } from '../LibAudioNode';
-import { NodeType } from '@/nodes/LibNode';
-import { getAudioContext } from '@/context';
-import { registerNode, NodeID, unregisterNode } from '@/nodes/node-store';
+import { ILibAudioNode } from "../LibAudioNode";
+import { NodeType } from "@/nodes/LibNode";
+import { getAudioContext } from "@/context";
+import { registerNode, NodeID, unregisterNode } from "@/nodes/node-store";
 
-import { mapToRange, clamp } from '@/utils';
+import { mapToRange, clamp } from "@/utils";
 
 type DattorroReverbPresetKey = keyof typeof DattorroReverb.PRESETS;
 
 export class DattorroReverb implements ILibAudioNode {
   readonly nodeId: NodeID;
-  readonly nodeType: NodeType = 'dattorro-reverb';
+  readonly nodeType: NodeType = "dattorro-reverb";
   #initialized = false;
   #context: AudioContext;
 
@@ -17,7 +17,7 @@ export class DattorroReverb implements ILibAudioNode {
   #incoming = new Set<NodeID>();
 
   #reverb: AudioWorkletNode;
-  #currentPreset: DattorroReverbPresetKey = 'default';
+  #currentPreset: DattorroReverbPresetKey = "default";
 
   static readonly PRESETS = {
     // currently omitting 'wet' param
@@ -93,20 +93,20 @@ export class DattorroReverb implements ILibAudioNode {
     this.nodeId = registerNode(this.nodeType, this);
     this.#context = context;
 
-    this.#reverb = new AudioWorkletNode(context, 'dattorro-reverb-processor', {
+    this.#reverb = new AudioWorkletNode(context, "dattorro-reverb-processor", {
       outputChannelCount: [2], // NOTE: Currently ONLY supports stereo output
     });
 
-    this.setParam('dry', 0); // Only using wet! (consider removing dry from processor)
+    this.setParam("dry", 0); // Only using wet! (consider removing dry from processor)
 
     this.setAmountMacro(0.01);
   }
 
   connect(destination: ILibAudioNode | AudioNode): void {
-    const target = 'input' in destination ? destination.input : destination;
+    const target = "input" in destination ? destination.input : destination;
     this.#reverb.connect(target as AudioNode);
 
-    if ('nodeId' in destination) {
+    if ("nodeId" in destination) {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
@@ -114,9 +114,9 @@ export class DattorroReverb implements ILibAudioNode {
 
   disconnect(destination?: ILibAudioNode | AudioNode): void {
     if (destination) {
-      const target = 'input' in destination ? destination.input : destination;
+      const target = "input" in destination ? destination.input : destination;
       this.#reverb.disconnect(target as AudioNode);
-      if ('nodeId' in destination) {
+      if ("nodeId" in destination) {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }
@@ -144,12 +144,12 @@ export class DattorroReverb implements ILibAudioNode {
     }
 
     // Handle macro parameters
-    if (name === 'size') {
+    if (name === "size") {
       this.setAmountMacro(value);
       return;
     }
 
-    if (name === 'diffusion') {
+    if (name === "diffusion") {
       this.setDiffusionMacro(value);
       return;
     }
@@ -160,12 +160,11 @@ export class DattorroReverb implements ILibAudioNode {
 
   getAudioParam(name: string): AudioParam | null {
     // Handle macro parameters
-    if (name === 'diffusion') {
+    if (name === "diffusion") {
       // Return a mock AudioParam-like object for consistency
       return {
         value: this.getDiffusionMacroValue(),
-        setValueAtTime: (value: number, time: number) =>
-          this.setDiffusionMacro(value),
+        setValueAtTime: (value: number, time: number) => this.setDiffusionMacro(value),
       } as any;
     }
 
@@ -174,7 +173,7 @@ export class DattorroReverb implements ILibAudioNode {
 
   setAmountMacro(amount: number) {
     if (amount < 0 || amount > 1) {
-      console.warn('Reverb amount must be 0-1 range');
+      console.warn("Reverb amount must be 0-1 range");
       return;
     }
 
@@ -194,16 +193,16 @@ export class DattorroReverb implements ILibAudioNode {
     // console.table({ decay, excRate, excDepth, damping, preLPF, diffusion });
 
     this.setDiffusionMacro(diffusion);
-    this.getAudioParam('decay')?.setTargetAtTime(decay, this.now, 0.1);
-    this.setParam('excursionRate', excRate);
-    this.setParam('excursionDepth', excDepth);
-    this.setParam('damping', damping);
-    this.setParam('bandwidth', preLPF);
+    this.getAudioParam("decay")?.setTargetAtTime(decay, this.now, 0.1);
+    this.setParam("excursionRate", excRate);
+    this.setParam("excursionDepth", excDepth);
+    this.setParam("damping", damping);
+    this.setParam("bandwidth", preLPF);
   }
 
   setPreset(
-    preset: 'room' | 'church' | 'freeze' | 'ether' | 'default' = 'default',
-    rampTime = 0.5
+    preset: "room" | "church" | "freeze" | "ether" | "default" = "default",
+    rampTime = 0.5,
   ): void {
     this.#currentPreset = preset;
     const values = DattorroReverb.PRESETS[preset];
@@ -219,7 +218,7 @@ export class DattorroReverb implements ILibAudioNode {
     });
   }
 
-  /** 
+  /**
     DIFFUSION PARAMETER (0.0 - 1.0, default: 0.7)
     Controls reverb density and scatter. Higher = more complex tail.
 
@@ -236,15 +235,15 @@ export class DattorroReverb implements ILibAudioNode {
     const ft = Math.min(0.7, Math.max(0.1, value * 0.6));
     const st = Math.max(0.2, value * 0.4);
 
-    this.setParam('inputDiffusion1', fi);
-    this.setParam('inputDiffusion2', si);
-    this.setParam('decayDiffusion1', ft);
-    this.setParam('decayDiffusion2', st);
+    this.setParam("inputDiffusion1", fi);
+    this.setParam("inputDiffusion2", si);
+    this.setParam("decayDiffusion1", ft);
+    this.setParam("decayDiffusion2", st);
   }
 
   getDiffusionMacroValue(): number {
     // Return approximate macro value based on current inputDiffusion1
-    const fi = this.getAudioParam('inputDiffusion1')?.value ?? 0.75;
+    const fi = this.getAudioParam("inputDiffusion1")?.value ?? 0.75;
     return (fi - 0.1) / (0.75 - 0.1); // Reverse the mapping
   }
 

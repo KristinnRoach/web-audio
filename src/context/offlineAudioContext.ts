@@ -1,5 +1,5 @@
 // offlineAudioContext.ts
-import { DEFAULT } from '@/constants';
+import { DEFAULT } from "@/constants";
 
 const offlineInstances = new Map<string, OfflineAudioContext>();
 
@@ -13,13 +13,11 @@ function generateContextKey(config: OfflineContextConfig): string {
   return `${config.length}-${config.numberOfChannels || 2}-${config.sampleRate || DEFAULT.audioConfig.sampleRate}`;
 }
 
-export function getOfflineAudioContext(
-  config: OfflineContextConfig
-): OfflineAudioContext {
+export function getOfflineAudioContext(config: OfflineContextConfig): OfflineAudioContext {
   if (!config.length || config.length <= 0) {
     throw new Error(
-      'Length is required, e.g. buffer size (samples), or (duration (seconds) * sample rate)',
-      { cause: config }
+      "Length is required, e.g. buffer size (samples), or (duration (seconds) * sample rate)",
+      { cause: config },
     );
   }
 

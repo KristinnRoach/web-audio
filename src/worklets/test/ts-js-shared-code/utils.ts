@@ -28,11 +28,7 @@ export function generateSineWave(phase: number, amplitude: number): number {
 }
 
 // Function to advance oscillator phase
-export function advancePhase(
-  currentPhase: number,
-  frequency: number,
-  sampleRate: number
-): number {
+export function advancePhase(currentPhase: number, frequency: number, sampleRate: number): number {
   // Calculate phase increment for a full sine wave cycle
   let newPhase = currentPhase + frequency / sampleRate;
 

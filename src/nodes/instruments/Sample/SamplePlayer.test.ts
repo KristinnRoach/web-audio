@@ -1,12 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { SamplePlayer } from './SamplePlayer';
+import { describe, expect, it, vi } from "vite-plus/test";
+import type { SamplePlayer } from "./SamplePlayer";
 
-describe('SamplePlayer.applyParams', () => {
-  it('applies only valid parameter values', async () => {
-    vi.stubGlobal('window', {});
-    vi.stubGlobal('AudioContext', class {});
-    vi.stubGlobal('AudioWorkletNode', class {});
-    const { SamplePlayer } = await import('./SamplePlayer');
+describe("SamplePlayer.applyParams", () => {
+  it("applies only valid parameter values", async () => {
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("AudioContext", class {});
+    vi.stubGlobal("AudioWorkletNode", class {});
+    const { SamplePlayer } = await import("./SamplePlayer");
     const player = {
       setVolume: vi.fn(),
       setGlideTime: vi.fn(),

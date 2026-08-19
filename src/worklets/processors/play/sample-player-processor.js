@@ -1,5 +1,5 @@
-import { findClosest } from '../../../utils/search/findClosest';
-import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
+import { findClosest } from "../../../utils/search/findClosest";
+import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from "./sample-player-paramdescriptors.ts";
 
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== PARAMETER DESCRIPTORS =====
@@ -47,7 +47,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Initialize all playback state
     this.#resetState();
     // Signal to node that processor is initialized
-    this.port.postMessage({ type: 'initialized' });
+    this.port.postMessage({ type: "initialized" });
   }
 
   // ===== MESSAGE HANDLING =====
@@ -66,12 +66,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = event.data;
 
     switch (type) {
-      case 'voice:reset':
+      case "voice:reset":
         this.#resetState();
-        this.port.postMessage({ type: 'voice:reset' });
+        this.port.postMessage({ type: "voice:reset" });
         break;
 
-      case 'voice:setBuffer':
+      case "voice:setBuffer":
         this.#resetState();
         this.zeroCrossings = [];
         this.minZeroCrossing = 0;
@@ -80,37 +80,34 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.buffer = buffer;
 
         this.port.postMessage({
-          type: 'voice:loaded',
+          type: "voice:loaded",
           durationSeconds,
           time: currentTime,
         });
         break;
 
-      case 'transpose':
+      case "transpose":
         // Convert semitones to playback-rate scalar
         this.transpositionPlaybackrate = Math.pow(2, semitones / 12);
 
         this.port.postMessage({
-          type: 'voice:transposed',
+          type: "voice:transposed",
           semitones,
           time: currentTime,
         });
         break;
 
-      case 'voice:setZeroCrossings':
-        this.zeroCrossings = (zeroCrossings || []).map(
-          (timeSec) => timeSec * sampleRate,
-        );
+      case "voice:setZeroCrossings":
+        this.zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * sampleRate);
 
         // Set min/max zero crossings for parameter constraints
         if (this.zeroCrossings.length > 0) {
           this.minZeroCrossing = this.zeroCrossings[0];
-          this.maxZeroCrossing =
-            this.zeroCrossings[this.zeroCrossings.length - 1];
+          this.maxZeroCrossing = this.zeroCrossings[this.zeroCrossings.length - 1];
         }
         break;
 
-      case 'voice:start':
+      case "voice:start":
         this.isReleasing = false;
         this.isPlaying = true;
         this.loopCount = 0;
@@ -119,39 +116,39 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.playbackPosition = 0;
 
         this.port.postMessage({
-          type: 'voice:started',
+          type: "voice:started",
           time: timestamp || currentTime,
         });
         break;
 
-      case 'voice:release':
+      case "voice:release":
         this.isReleasing = true;
 
         this.port.postMessage({
-          type: 'voice:releasing',
+          type: "voice:releasing",
           time: currentTime,
         });
         break;
 
-      case 'voice:stop':
+      case "voice:stop":
         this.#stop();
         break;
 
-      case 'setLoopEnabled':
+      case "setLoopEnabled":
         this.loopEnabled = value;
 
         this.port.postMessage({
-          type: 'loop:enabled',
+          type: "loop:enabled",
           enabled: value,
         });
         break;
 
-      case 'setPanDriftEnabled':
+      case "setPanDriftEnabled":
         this.panDriftEnabled = value;
         break;
 
-      case 'voice:setPlaybackDirection': {
-        const reverse = playbackDirection === 'reverse';
+      case "voice:setPlaybackDirection": {
+        const reverse = playbackDirection === "reverse";
 
         // Reverse interpolation reads ~1 sample behind forward at the same
         // position; shift so the emitted value stays continuous across the flip.
@@ -161,30 +158,30 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.reversePlayback = reverse;
 
         this.port.postMessage({
-          type: 'voice:playbackDirectionChange',
+          type: "voice:playbackDirectionChange",
           playbackDirection,
         });
         break;
       }
 
-      case 'voice:usePlaybackPosition':
+      case "voice:usePlaybackPosition":
         this.usePlaybackPosition = value;
         break;
 
-      case 'syncLoopToTempo':
+      case "syncLoopToTempo":
         this.syncLoopToTempo = value;
 
         this.port.postMessage({
-          type: 'loop:syncToTempo',
+          type: "loop:syncToTempo",
           enabled: value,
         });
         break;
 
-      case 'setKeytrackLoopAmount':
+      case "setKeytrackLoopAmount":
         this.keytrackLoopAmount = Math.max(0, Math.min(1, value));
         break;
 
-      case 'setPreserveDuration':
+      case "setPreserveDuration":
         this.durationPreservation.enabled = Boolean(value);
         this.#resetDurationPreservation(this.playbackPosition);
         break;
@@ -228,7 +225,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isPlaying = false;
     this.isReleasing = false;
     this.playbackPosition = 0;
-    this.port.postMessage({ type: 'voice:stopped' });
+    this.port.postMessage({ type: "voice:stopped" });
   }
 
   // Arm click compensation for a loop-wrap discontinuity between the sample
@@ -246,20 +243,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   #clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-  #clampZeroCrossing = (value) =>
-    this.#clamp(value, this.minZeroCrossing, this.maxZeroCrossing);
+  #clampZeroCrossing = (value) => this.#clamp(value, this.minZeroCrossing, this.maxZeroCrossing);
 
-  #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
+  #findNearestZeroCrossing(position, direction = "any", maxDistance = null) {
     if (!this.zeroCrossings || this.zeroCrossings.length === 0) {
       return position;
     }
 
     const closestValue = findClosest(this.zeroCrossings, position, direction);
 
-    if (
-      maxDistance !== null &&
-      Math.abs(closestValue - position) > maxDistance
-    ) {
+    if (maxDistance !== null && Math.abs(closestValue - position) > maxDistance) {
       // If maxDistance specified and closest is too far, use original position
       return position;
     }
@@ -402,8 +395,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         ? Math.min(bufferLength, params.endPointSamples)
         : bufferLength;
 
-    const snappedStart = this.#findNearestZeroCrossing(start, 'right'); // Snap forward
-    const snappedEnd = this.#findNearestZeroCrossing(end, 'left'); // Snap backward
+    const snappedStart = this.#findNearestZeroCrossing(start, "right"); // Snap forward
+    const snappedEnd = this.#findNearestZeroCrossing(end, "left"); // Snap backward
 
     return {
       startSamples: snappedStart,
@@ -421,34 +414,21 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @param {number} playbackRate - Current playback rate
    * @returns {Object} - Effective loop start and end positions with drift applied
    */
-  #calculateLoopRange(
-    params,
-    playbackRange,
-    driftAmount = 0,
-    tempo = 120,
-    playbackRate = 1,
-  ) {
+  #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
     const lpStart = params.loopStartSamples;
     const lpEnd = params.loopEndSamples;
 
     // Default to playback range if loop points are not set
-    let calcLoopStart =
-      lpStart < lpEnd && lpStart >= 0 ? lpStart : playbackRange.startSamples;
+    let calcLoopStart = lpStart < lpEnd && lpStart >= 0 ? lpStart : playbackRange.startSamples;
 
     let calcLoopEnd =
-      lpEnd > lpStart && lpEnd <= playbackRange.endSamples
-        ? lpEnd
-        : playbackRange.endSamples;
+      lpEnd > lpStart && lpEnd <= playbackRange.endSamples ? lpEnd : playbackRange.endSamples;
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
     // Apply tempo quantization if enabled
     if (this.syncLoopToTempo) {
-      const quantizedDuration = this.#quantizeLoopDuration(
-        baseDuration,
-        tempo,
-        playbackRate,
-      );
+      const quantizedDuration = this.#quantizeLoopDuration(baseDuration, tempo, playbackRate);
 
       calcLoopEnd = calcLoopStart + quantizedDuration;
       // Ensure we don't exceed playback range
@@ -481,7 +461,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration)
     if (baseDuration > this.PITCH_PRESERVATION_THRESHOLD) {
-      calcLoopStart = this.#findNearestZeroCrossing(calcLoopStart, 'right');
+      calcLoopStart = this.#findNearestZeroCrossing(calcLoopStart, "right");
     }
 
     // Apply drift to loop end position
@@ -491,20 +471,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // For short loops (audio-rate), update drift less frequently
         const updateInterval =
           baseDuration <= this.PITCH_PRESERVATION_THRESHOLD
-            ? Math.max(
-                1,
-                Math.floor(this.PITCH_PRESERVATION_THRESHOLD / baseDuration),
-              )
+            ? Math.max(1, Math.floor(this.PITCH_PRESERVATION_THRESHOLD / baseDuration))
             : 1;
 
-        const shouldUpdateDrift =
-          this.driftUpdateCounter % updateInterval === 0;
+        const shouldUpdateDrift = this.driftUpdateCounter % updateInterval === 0;
 
         if (shouldUpdateDrift) {
-          this.currentLoopDrift = this.#generateLoopDrift(
-            driftAmount,
-            baseDuration,
-          );
+          this.currentLoopDrift = this.#generateLoopDrift(driftAmount, baseDuration);
 
           if (this.panDriftEnabled && driftAmount > 0 && this.loopCount > 0) {
             const panDriftAmountScalar = 0.0001;
@@ -526,10 +499,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // Ceiling is the keytracked end when it already reaches past the audio,
       // otherwise drift would pull the silence-padded tail back in.
       const maxLoopEnd = Math.max(playbackRange.endSamples, calcLoopEnd);
-      calcLoopEnd = Math.max(
-        calcLoopStart + minLoopDuration,
-        Math.min(maxLoopEnd, driftedLoopEnd),
-      );
+      calcLoopEnd = Math.max(calcLoopStart + minLoopDuration, Math.min(maxLoopEnd, driftedLoopEnd));
     } else {
       // Ensure pan drift is set to zero if no loopDrift applied
       this.currentPanDrift = 0;
@@ -543,10 +513,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       baseDuration > this.PITCH_PRESERVATION_THRESHOLD &&
       calcLoopEnd <= playbackRange.endSamples
     ) {
-      calcLoopEnd = Math.max(
-        calcLoopStart + 1,
-        this.#findNearestZeroCrossing(calcLoopEnd, 'left'),
-      );
+      calcLoopEnd = Math.max(calcLoopStart + 1, this.#findNearestZeroCrossing(calcLoopEnd, "left"));
     }
 
     const loopDuration = calcLoopEnd - calcLoopStart;
@@ -559,9 +526,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 
   #getSafeParam(paramArray, index, isConstant) {
-    return isConstant
-      ? paramArray[0]
-      : paramArray[Math.min(index, paramArray.length - 1)];
+    return isConstant ? paramArray[0] : paramArray[Math.min(index, paramArray.length - 1)];
   }
 
   #getConstantFlags(parameters) {
@@ -587,8 +552,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return (
       this.durationPreservation.enabled &&
       Boolean(this.zeroCrossings?.length) &&
-      (!this.loopEnabled ||
-        loopRange.loopDurationSamples > this.PITCH_PRESERVATION_THRESHOLD)
+      (!this.loopEnabled || loopRange.loopDurationSamples > this.PITCH_PRESERVATION_THRESHOLD)
     );
   }
 
@@ -597,42 +561,25 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     if (!this.#isDurationPreservationActive(loopRange)) return null;
 
-    if (
-      Math.abs(this.playbackPosition - state.timelinePosition) >
-      state.maxDriftSamples
-    ) {
+    if (Math.abs(this.playbackPosition - state.timelinePosition) > state.maxDriftSamples) {
       state.resetPending = true;
     }
 
     if (!state.resetPending) return null;
 
-    const direction = playbackRate < 0 ? 'left' : 'right';
-    const outgoingZero = this.#findNearestZeroCrossing(
-      this.playbackPosition,
-      direction,
-    );
+    const direction = playbackRate < 0 ? "left" : "right";
+    const outgoingZero = this.#findNearestZeroCrossing(this.playbackPosition, direction);
 
-    if (
-      Math.abs(outgoingZero - this.playbackPosition) > Math.abs(playbackRate)
-    ) {
+    if (Math.abs(outgoingZero - this.playbackPosition) > Math.abs(playbackRate)) {
       return null;
     }
 
     this.playbackPosition = outgoingZero;
     state.resetPending = false;
-    return this.#findNearestZeroCrossing(
-      state.timelinePosition,
-      'any',
-      state.maxDriftSamples,
-    );
+    return this.#findNearestZeroCrossing(state.timelinePosition, "any", state.maxDriftSamples);
   }
 
-  #advanceDurationPreservingPlayback(
-    playbackRate,
-    resetTarget,
-    loopRange,
-    canWrapLoop,
-  ) {
+  #advanceDurationPreservingPlayback(playbackRate, resetTarget, loopRange, canWrapLoop) {
     const state = this.durationPreservation;
 
     this.playbackPosition =
@@ -641,11 +588,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (this.#isDurationPreservationActive(loopRange)) {
       state.timelinePosition += playbackRate < 0 ? -1 : 1;
 
-      if (
-        canWrapLoop &&
-        playbackRate >= 0 &&
-        state.timelinePosition >= loopRange.loopEndSamples
-      ) {
+      if (canWrapLoop && playbackRate >= 0 && state.timelinePosition >= loopRange.loopEndSamples) {
         state.timelinePosition = loopRange.loopStartSamples;
       } else if (
         canWrapLoop &&
@@ -687,9 +630,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       } else if (baseDuration < longThreshold) {
         // Medium loops: linear scaling from 10% to 100%
         const scaleFactor =
-          0.1 +
-          (0.9 * (baseDuration - shortThreshold)) /
-            (longThreshold - shortThreshold);
+          0.1 + (0.9 * (baseDuration - shortThreshold)) / (longThreshold - shortThreshold);
         effectiveDriftAmount *= scaleFactor;
       }
       // Long loops: use full drift amount (no scaling)
@@ -720,10 +661,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
 
     // Skip if we already analyzed this exact loop range
-    if (
-      loopStart === this.lastAnalyzedLoopStart &&
-      loopEnd === this.lastAnalyzedLoopEnd
-    ) {
+    if (loopStart === this.lastAnalyzedLoopStart && loopEnd === this.lastAnalyzedLoopEnd) {
       return this.loopAmplitudeGain;
     }
 
@@ -787,8 +725,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const playbackRange = this.#calculatePlaybackRange(positionParams);
 
     // Playback advances at rate * transposition, so loop-length math must use both
-    const effectivePlaybackRate =
-      parameters.playbackRate[0] * this.transpositionPlaybackrate;
+    const effectivePlaybackRate = parameters.playbackRate[0] * this.transpositionPlaybackrate;
 
     const tempo = parameters.tempo[0];
 
@@ -807,8 +744,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     );
 
     const velocityGain =
-      this.#midiVelocityToGain(parameters.velocity[0]) *
-      this.velocitySensitivity;
+      this.#midiVelocityToGain(parameters.velocity[0]) * this.velocitySensitivity;
 
     // EXPERIMENTAL: Apply pan drift if enabled
     const basePan = parameters.pan[0];
@@ -821,14 +757,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (output instanceof Float32Array) {
       // Case 1: output is a single Float32Array (mono output - legacy)
       outputChannels = [output];
-    } else if (
-      Array.isArray(output) &&
-      output.every((ch) => ch instanceof Float32Array)
-    ) {
+    } else if (Array.isArray(output) && output.every((ch) => ch instanceof Float32Array)) {
       // Case 2: output is array of Float32Arrays (stereo/multi-channel output)
       outputChannels = output;
     } else {
-      console.error('Unexpected output structure:', {
+      console.error("Unexpected output structure:", {
         outputType: typeof output,
         isArray: Array.isArray(output),
         constructor: output?.constructor?.name,
@@ -860,38 +793,22 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     for (let sample = 0; sample < outputChannels[0].length; sample++) {
       // Use getSafeParam for a-rate params
-      const envelopeGain = this.#getSafeParam(
-        parameters.envGain,
-        sample,
-        isConstant.envGain,
-      );
+      const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
 
-      const baseRate = this.#getSafeParam(
-        parameters.playbackRate,
-        sample,
-        isConstant.playbackRate,
-      );
+      const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
 
-      const effectiveRate = this.reversePlayback
-        ? -Math.abs(baseRate)
-        : Math.abs(baseRate);
+      const effectiveRate = this.reversePlayback ? -Math.abs(baseRate) : Math.abs(baseRate);
       const playbackStep = effectiveRate * this.transpositionPlaybackrate;
 
       // Handle looping
-      const canWrapLoop =
-        this.loopEnabled && this.loopCount < parameters.maxLoopCount[0];
+      const canWrapLoop = this.loopEnabled && this.loopCount < parameters.maxLoopCount[0];
       if (canWrapLoop) {
-        if (
-          !this.reversePlayback &&
-          this.playbackPosition >= loopRange.loopEndSamples
-        ) {
+        if (!this.reversePlayback && this.playbackPosition >= loopRange.loopEndSamples) {
           // Get the actual samples we're transitioning between
           // In the silent tail the buffer still holds audio we aren't outputting,
           // so the sample we actually just emitted is 0.
           this.#smoothLoopWrap(
-            silencePadTail
-              ? 0
-              : this.buffer[0][Math.floor(this.playbackPosition - 1)] || 0,
+            silencePadTail ? 0 : this.buffer[0][Math.floor(this.playbackPosition - 1)] || 0,
             this.buffer[0][Math.floor(loopRange.loopStartSamples)] || 0,
           );
 
@@ -902,17 +819,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           this.nextDriftGenerated = false;
         }
         // Reverse playback
-        else if (
-          this.reversePlayback &&
-          this.playbackPosition <= loopRange.loopStartSamples
-        ) {
+        else if (this.reversePlayback && this.playbackPosition <= loopRange.loopStartSamples) {
           // Mirror of the forward wrap: last emitted sample sits at the loop
           // start, the next pass begins at the loop end (0 in the silent tail).
           this.#smoothLoopWrap(
             this.buffer[0][Math.floor(loopRange.loopStartSamples)] || 0,
-            silencePadTail
-              ? 0
-              : this.buffer[0][Math.floor(loopRange.loopEndSamples) - 1] || 0,
+            silencePadTail ? 0 : this.buffer[0][Math.floor(loopRange.loopEndSamples) - 1] || 0,
           );
 
           // Wrap to the loop end exactly so reverse travel matches forward
@@ -926,10 +838,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         }
       }
 
-      const durationResetTarget = this.#prepareDurationPreservingSample(
-        playbackStep,
-        loopRange,
-      );
+      const durationResetTarget = this.#prepareDurationPreservingSample(playbackStep, loopRange);
 
       // Check for end of playback range (forward & reversed)
       // Don't stop if we're looping and within the playback range
@@ -948,10 +857,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.playbackPosition >= loopRange.loopStartSamples &&
         this.playbackPosition <= loopRange.loopEndSamples;
 
-      if (
-        (shouldStopForward || shouldStopReverse) &&
-        !(this.loopEnabled && isWithinLoop)
-      ) {
+      if ((shouldStopForward || shouldStopReverse) && !(this.loopEnabled && isWithinLoop)) {
         this.#stop();
         return true;
       }
@@ -972,16 +878,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // Pre-calculate interpolation positions outside channel loop
       let nextPosition, interpWeight;
       if (this.reversePlayback) {
-        nextPosition = Math.max(
-          currentPosition - 1,
-          playbackRange.startSamples,
-        );
+        nextPosition = Math.max(currentPosition - 1, playbackRange.startSamples);
         interpWeight = 1 - positionOffset; // Reverse: weight toward previous sample
       } else {
-        nextPosition = Math.min(
-          currentPosition + 1,
-          playbackRange.endSamples - 1,
-        );
+        nextPosition = Math.min(currentPosition + 1, playbackRange.endSamples - 1);
         interpWeight = positionOffset; // Forward: weight toward next sample
       }
 
@@ -1004,8 +904,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // Linear interpolation between current and next positions
         const currentSample = bufferChannel[currentPosition] || 0;
         const nextSample = bufferChannel[nextPosition] || 0;
-        let interpolatedSample =
-          currentSample + interpWeight * (nextSample - currentSample);
+        let interpolatedSample = currentSample + interpWeight * (nextSample - currentSample);
 
         // Original click compensation (still active)
         if (this.applyClickCompensation) {
@@ -1023,12 +922,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         }
 
         const finalSample =
-          interpolatedSample *
-          velocityGain *
-          envelopeGain *
-          masterGain *
-          amplitudeGain *
-          tailGain;
+          interpolatedSample * velocityGain * envelopeGain * masterGain * amplitudeGain * tailGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;
@@ -1059,11 +953,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // Send position updates if requested
     if (this.usePlaybackPosition) {
-      const normalizedPosition = this.#samplesToNormalized(
-        this.playbackPosition,
-      );
+      const normalizedPosition = this.#samplesToNormalized(this.playbackPosition);
       this.port.postMessage({
-        type: 'voice:position',
+        type: "voice:position",
         position: normalizedPosition,
       });
     }
@@ -1072,4 +964,4 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('sample-player-processor', SamplePlayerProcessor);
+registerProcessor("sample-player-processor", SamplePlayerProcessor);
