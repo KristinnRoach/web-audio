@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # ubuntu-24.04 ships Google Chrome preinstalled, which the browser tests
+    # launch via `channel: "chrome"` - no Playwright browser download needed.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VP_GIT_HOOKS: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: corepack enable
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Format, lint, typecheck
+        run: pnpm exec vp check
+
+      - name: Unit tests
+        run: pnpm exec vp test run
+
+      - name: Browser tests
+        run: pnpm exec vp test run --config vitest.browser.config.ts
+
+      - name: Build
+        run: pnpm run build
