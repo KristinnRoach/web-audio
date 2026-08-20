@@ -444,7 +444,13 @@ export class SamplePlayer implements ILibInstrumentNode {
         if (buffer instanceof ArrayBuffer) {
           // decodeAudioData detaches its input; copy so callers can safely
           // reuse/re-pass the same ArrayBuffer (e.g. re-selecting a cached sample).
-          buffer = await this.context.decodeAudioData(buffer.slice(0));
+          try {
+            buffer = await this.context.decodeAudioData(buffer.slice(0));
+          } catch (error) {
+            if (index === 0) throw error;
+            console.warn(`Failed to decode layer ${index}; skipping`, error);
+            continue;
+          }
         }
 
         if (!isValidAudioBuffer(buffer)) {
@@ -526,7 +532,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.setScale(defaultScaleOptions);
 
       await loadedPromise;
-      return layers;
+      return [...layers];
     } finally {
       unsubscribe?.();
       this.#isLoading = false;
