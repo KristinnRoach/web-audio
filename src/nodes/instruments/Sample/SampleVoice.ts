@@ -199,24 +199,39 @@ export class SampleVoice {
   };
 
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
+    return this.loadLayers([buffer], zeroCrossings);
+  }
+
+  /**
+   * Replace the whole layer set. Layers are summed at one shared playhead, so
+   * layer 0 is the authority for duration and all range math; the rest only
+   * add samples. A layer at the wrong sample rate is dropped on its own,
+   * leaving the others playable.
+   */
+  async loadLayers(buffers: AudioBuffer[], zeroCrossings?: number[]): Promise<boolean> {
     this.#state = VoiceState.NOT_READY;
 
-    if (buffer.sampleRate !== this.context.sampleRate) {
-      console.warn(
-        `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
-      );
-      return false;
-    }
+    const usable = buffers.filter((buffer) => {
+      if (buffer.sampleRate !== this.context.sampleRate) {
+        console.warn(
+          `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
+        );
+        return false;
+      }
+      return true;
+    });
+
+    if (!usable.length) return false;
 
     // postMessage structured-clones each channel, so no local copy needed
-    const bufferData = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
-      buffer.getChannelData(i),
+    const layers = usable.map((buffer) =>
+      Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)),
     );
 
     this.sendToProcessor({
-      type: "voice:setBuffer",
-      buffer: bufferData,
-      durationSeconds: buffer.duration,
+      type: "voice:setLayers",
+      layers,
+      durationSeconds: usable[0].duration,
     });
 
     if (zeroCrossings?.length) {
