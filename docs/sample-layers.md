@@ -18,12 +18,12 @@ PoC: `SamplePlayer` plays up to 4 buffers simultaneously through one `Instrument
 - **`MAX_LAYERS = 4`** — the number that keeps fixed `layerGain0..3` descriptors viable later.
 - **Preprocessing runs per layer.** Independent `trimSilence` aligns each layer to its own first non-silence, so attacks line up.
 - **`layerGain = 1/L`**, its own factor in the processor (not `masterGain`, see above). Correct for coherent layers, 3dB conservative otherwise.
-- **No automated test.** Testing strategy is undefined and the API is still moving; verification is manual e2e via a linked consuming app. The one bug a test would have caught (layer 1's load resetting layer 0) is instead correct by construction: one message replaces all slots and resets state once.
+- **Automated coverage is deferred to [#7](https://github.com/KristinnRoach/web-audio/issues/7).** The testing architecture needs a maintainable AudioWorklet/browser harness before adding tests likely to be refactored with this first-draft API. The implementation was successfully tested manually in the locally linked consuming web app, currently the package's only real consumer and the main requirement for this PR.
 
 ## Deferred
 
 - **Per-layer detune.** A shared playhead cannot express it, so octave layers aren't available. Not the point of the feature, but a likely follow-up. Cheapest route: bake it at load by offline-resampling the layer by `2^(semitones/12)` via `getOfflineAudioContext` (~20 lines) — a load-time property, not a live param. The alternative, a position per layer, is the rewrite. The mixing loop is already shaped for it: `pos` is hoisted outside an explicit per-layer loop, so it becomes `pos[l]`.
-- **Zero crossings are layer 0's only.** Loop-boundary snapping is therefore wrong for layers 1+ — expect clicks there; the existing crossfade and `loopClickCompensation` are all that cover it. Intersecting crossing sets is usually empty.
+- **Layered loop smoothing is deferred to [#6](https://github.com/KristinnRoach/web-audio/issues/6).** Zero crossings are layer 0's only, and loop compensation currently measures layer 0/channel 0 rather than the mixed signal. Intersecting crossing sets is usually empty.
 - **`#analyzeLoopAmplitude` measures layer 0**, but makeup gain should reflect the RMS of the sum, and RMS-of-sum ≠ sum-of-RMS for correlated layers.
 - **Params and `cropSample` act on layer 0** (`sampleDuration`, `audiobuffer`, start/end/loop macros). Deliberate — revisit once the per-layer UI question is real.
 - **Per-layer user gain / modulation** — needs the fixed `layerGain0..3` descriptors.

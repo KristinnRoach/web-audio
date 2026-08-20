@@ -473,22 +473,17 @@ export class SamplePlayer implements ILibInstrumentNode {
         );
       }
 
-      this.releaseAll(0);
-      this.transposeSemitones = 0;
-      this.#isLoaded = false;
-      this.#audiobuffer = null;
-      this.#layers = [];
-
       const layers: AudioBuffer[] = [];
+      let newZeroCrossings: number[] = [];
+
       for (const [index, buffer] of decoded.entries()) {
         if (!this.#preprocessAudio) {
           layers.push(buffer);
           continue;
         }
 
-        // Preprocessed per layer, so each one is trimmed to its own first
-        // non-silence and the attacks line up. Zero crossings only mean
-        // anything for the layer the playhead ranges are measured against.
+        // Preprocess each layer (re-pitch, trim, normalize, etc.).
+        // Zero crossings are only used for the authority layer.
         const processed: PreProcessResults = await preProcessAudioBuffer(
           this.context,
           buffer,
@@ -497,13 +492,18 @@ export class SamplePlayer implements ILibInstrumentNode {
         layers.push(processed.audiobuffer);
 
         if (index === 0 && this.#useZeroCrossings && processed.zeroCrossings) {
-          this.#zeroCrossings = processed.zeroCrossings;
+          newZeroCrossings = processed.zeroCrossings;
         }
       }
 
+      // Clear and release only if all preprocessing succeeds.
+      this.releaseAll(0);
+      this.transposeSemitones = 0;
+      this.#isLoaded = false;
       this.#layers = layers;
       this.#audiobuffer = layers[0];
       this.#bufferDuration = layers[0].duration;
+      this.#zeroCrossings = newZeroCrossings;
 
       const loadedPromise = new Promise<void>((resolve) => {
         unsubscribe = this.voicePool.onMessage("sample:loaded", () => {
@@ -511,7 +511,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         });
       });
 
-      this.voicePool.setLayers(layers, this.#zeroCrossings);
+      this.voicePool.setLayers(layers, newZeroCrossings);
       this.#resetMacros();
 
       const defaultScaleOptions = {
@@ -1325,7 +1325,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /** All loaded layers. Index 0 is the authority layer (=== `audiobuffer`). */
   get layers(): readonly AudioBuffer[] {
-    return this.#layers;
+    return [...this.#layers];
   }
 
   /* === CLEANUP === */
@@ -1359,6 +1359,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       // Reset state variables
       this.#bufferDuration = 0;
+      this.#audiobuffer = null;
       this.#layers = [];
       this.#initialized = false;
       this.#isLoaded = false;
