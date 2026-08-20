@@ -19,12 +19,6 @@ async function getBrowserAudio(): Promise<MediaStream> {
   return audioOnly;
 }
 
-import {
-  preProcessAudioBuffer,
-  PreProcessOptions,
-  PreProcessResults,
-} from "@/nodes/preprocessor/Preprocessor";
-
 export const AudioRecorderState = {
   IDLE: "IDLE",
   ARMED: "ARMED",
@@ -45,8 +39,6 @@ export type RecorderOptions = {
   autoStop: boolean;
   stopThreshold: number;
   silenceTimeoutMs: number;
-  preprocess: boolean;
-  preprocessOptions: object;
 };
 
 export type RecorderInput =
@@ -65,8 +57,6 @@ export const DEFAULT_RECORDER_OPTIONS: RecorderOptions = {
   autoStop: false,
   stopThreshold: -40, // todo: guard ensuring stopTreshold < startTreshold
   silenceTimeoutMs: 1000,
-  preprocess: false, // SamplePlayer handles preprocessing
-  preprocessOptions: {}, // use default options
 };
 
 export class Recorder implements LibNode {
@@ -344,7 +334,6 @@ export class Recorder implements LibNode {
   }
 
   async stop(): Promise<AudioBuffer> {
-    // TODO: return PreProcessResults
     if (!this.#recorder) throw new Error("Recorder not initialized");
 
     if (this.#state === AudioRecorderState.ARMED) {
@@ -359,27 +348,11 @@ export class Recorder implements LibNode {
     this.#cleanupMonitoring();
 
     const blob = await this.#stopRecording();
-    let buffer = await this.#blobToAudioBuffer(blob);
-    let preprocessResults: PreProcessResults;
-
-    if (this.#config?.preprocess) {
-      preprocessResults = await preProcessAudioBuffer(
-        this.#context,
-        buffer,
-        this.#config.preprocessOptions,
-      );
-
-      buffer = preprocessResults.audiobuffer;
-    }
+    const buffer = await this.#blobToAudioBuffer(blob);
 
     if (this.#destination) {
-      // Auto load sample. If we preprocessed above, tell the destination to skip
-      // its own pass so the buffer isn't normalized/compressed/autotuned twice.
-      await this.#destination.loadSample(
-        buffer,
-        undefined,
-        this.#config?.preprocess ? { skipPreProcessing: true } : undefined,
-      );
+      // Auto load sample. The destination owns preprocessing.
+      await this.#destination.loadSample(buffer);
     }
 
     this.#state = AudioRecorderState.STOPPED;
