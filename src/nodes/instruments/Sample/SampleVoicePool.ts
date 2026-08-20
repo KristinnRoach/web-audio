@@ -197,10 +197,6 @@ export class SampleVoicePool implements LibNode {
     );
   }
 
-  setBuffer(buffer: AudioBuffer, zeroCrossings?: number[]) {
-    return this.setLayers([buffer], zeroCrossings);
-  }
-
   setLayers(buffers: AudioBuffer[], zeroCrossings?: number[]) {
     // Reset loaded voices tracking for new buffer set
     this.#loaded.clear();
