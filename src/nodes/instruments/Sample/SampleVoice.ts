@@ -206,7 +206,7 @@ export class SampleVoice {
    * Replace the whole layer set. Layers are summed at one shared playhead, so
    * layer 0 is the authority for duration and all range math; the rest only
    * add samples. A layer at the wrong sample rate is dropped on its own,
-   * leaving the others playable.
+   * leaving the others playable, except layer 0: losing it fails the load.
    */
   async loadLayers(buffers: AudioBuffer[], zeroCrossings?: number[]): Promise<boolean> {
     this.#state = VoiceState.NOT_READY;
@@ -221,7 +221,14 @@ export class SampleVoice {
       return true;
     });
 
-    if (!usable.length) return false;
+    // Layer 0 is the authority for duration and loop range, so if it was
+    // dropped the remaining layers would silently play to the wrong ranges.
+    if (!usable.length || usable[0] !== buffers[0]) {
+      console.error(
+        "SampleVoice.loadLayers: layer 0 is unusable, nothing loaded. Layer 0 sets duration and loop range for all layers.",
+      );
+      return false;
+    }
 
     // postMessage structured-clones each channel, so no local copy needed
     const layers = usable.map((buffer) =>
