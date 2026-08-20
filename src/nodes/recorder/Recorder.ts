@@ -373,8 +373,13 @@ export class Recorder implements LibNode {
     }
 
     if (this.#destination) {
-      // Auto load sample
-      await this.#destination.loadSample(buffer);
+      // Auto load sample. If we preprocessed above, tell the destination to skip
+      // its own pass so the buffer isn't normalized/compressed/autotuned twice.
+      await this.#destination.loadSample(
+        buffer,
+        undefined,
+        this.#config?.preprocess ? { skipPreProcessing: true } : undefined,
+      );
     }
 
     this.#state = AudioRecorderState.STOPPED;
