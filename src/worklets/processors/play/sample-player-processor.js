@@ -60,7 +60,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       timestamp,
       durationSeconds,
       zeroCrossings,
-      semitones,
       allowedPeriods,
       playbackDirection,
     } = event.data;
@@ -82,17 +81,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.port.postMessage({
           type: "voice:loaded",
           durationSeconds,
-          time: currentTime,
-        });
-        break;
-
-      case "transpose":
-        // Convert semitones to playback-rate scalar
-        this.transpositionPlaybackrate = Math.pow(2, semitones / 12);
-
-        this.port.postMessage({
-          type: "voice:transposed",
-          semitones,
           time: currentTime,
         });
         break;
@@ -194,7 +182,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isPlaying = false;
     this.isReleasing = false;
     this.loopEnabled = false;
-    this.transpositionPlaybackrate = 1;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
     this.reversePlayback = false;
@@ -724,8 +711,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     const playbackRange = this.#calculatePlaybackRange(positionParams);
 
-    // Playback advances at rate * transposition, so loop-length math must use both
-    const effectivePlaybackRate = parameters.playbackRate[0] * this.transpositionPlaybackrate;
+    // Loop-length math needs the rate playback actually advances at
+    const effectivePlaybackRate = parameters.playbackRate[0];
 
     const tempo = parameters.tempo[0];
 
@@ -797,8 +784,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
 
-      const effectiveRate = this.reversePlayback ? -Math.abs(baseRate) : Math.abs(baseRate);
-      const playbackStep = effectiveRate * this.transpositionPlaybackrate;
+      const playbackStep = this.reversePlayback ? -Math.abs(baseRate) : Math.abs(baseRate);
 
       // Handle looping
       const canWrapLoop = this.loopEnabled && this.loopCount < parameters.maxLoopCount[0];
