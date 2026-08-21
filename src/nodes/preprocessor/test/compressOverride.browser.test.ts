@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
-import { preProcessAudioBuffer } from "../Preprocessor";
+import { preProcessAudioBuffer, type PreProcessOptions } from "../Preprocessor";
 
 describe("Preprocessor explicit compression settings", () => {
   let ctx: AudioContext;
@@ -44,7 +44,7 @@ describe("Preprocessor explicit compression settings", () => {
     getZeroCrossings: false,
   };
 
-  async function peakWith(compress: { enabled: boolean; threshold?: number; ratio?: number }) {
+  async function peakWith(compress: NonNullable<PreProcessOptions["compress"]>) {
     const { audiobuffer } = await preProcessAudioBuffer(ctx, steadySine(), {
       ...baseOptions,
       compress,
@@ -61,5 +61,9 @@ describe("Preprocessor explicit compression settings", () => {
     expect(auto).toBeCloseTo(off, 4);
     // Explicit settings apply regardless: 0.2 + (peak - 0.2) / 8
     expect(manual).toBeCloseTo(0.2 + (off - 0.2) / 8, 3);
+
+    // Any one of the three counts as manual; the other two fall back to defaults
+    const gainOnly = await peakWith({ enabled: true, makeupGain: 1 });
+    expect(gainOnly).toBeCloseTo(0.5 + (off - 0.5) / 2, 3);
   });
 });
