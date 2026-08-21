@@ -110,29 +110,22 @@ export async function preProcessAudioBuffer(
   }
 
   if (compress?.enabled) {
-    // Smart compression: check if audio needs it
-    const compressionAnalysis = shouldCompress(processed);
+    // Explicit settings compress unconditionally; otherwise the analysis decides
+    // (suggestedSettings is undefined when the audio doesn't need compression)
+    const hasManualSettings =
+      compress.threshold !== undefined ||
+      compress.ratio !== undefined ||
+      compress.makeupGain !== undefined;
 
-    if (compressionAnalysis.shouldCompress) {
-      // Only use manual overrides if explicitly provided (not from defaults)
-      const hasManualSettings =
-        compress.threshold !== undefined ||
-        compress.ratio !== undefined ||
-        compress.makeupGain !== undefined;
-
-      let settings;
-      if (hasManualSettings && compress.threshold !== undefined) {
-        // User explicitly provided settings, use them
-        settings = {
+    const settings = hasManualSettings
+      ? {
           threshold: compress.threshold ?? 0.5,
           ratio: compress.ratio ?? 2,
           makeupGain: compress.makeupGain ?? 1.0,
-        };
-      } else {
-        // Use smart suggested settings from analysis
-        settings = compressionAnalysis.suggestedSettings!;
-      }
+        }
+      : shouldCompress(processed).suggestedSettings;
 
+    if (settings) {
       processed = compressAudioBuffer(
         ctx,
         processed,
