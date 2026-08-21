@@ -199,24 +199,46 @@ export class SampleVoice {
   };
 
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
+    return this.loadLayers([buffer], zeroCrossings);
+  }
+
+  /**
+   * Replace the whole layer set. Layers are summed at one shared playhead, so
+   * layer 0 is the authority for duration and all range math; the rest only
+   * add samples. A layer at the wrong sample rate is dropped on its own,
+   * leaving the others playable, except layer 0: losing it fails the load.
+   */
+  async loadLayers(buffers: AudioBuffer[], zeroCrossings?: number[]): Promise<boolean> {
     this.#state = VoiceState.NOT_READY;
 
-    if (buffer.sampleRate !== this.context.sampleRate) {
-      console.warn(
-        `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
+    const usable = buffers.filter((buffer) => {
+      if (buffer.sampleRate !== this.context.sampleRate) {
+        console.warn(
+          `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
+        );
+        return false;
+      }
+      return true;
+    });
+
+    // Layer 0 is the authority for duration and loop range, so if it was
+    // dropped the remaining layers would silently play to the wrong ranges.
+    if (!usable.length || usable[0] !== buffers[0]) {
+      console.error(
+        "SampleVoice.loadLayers: layer 0 is unusable, nothing loaded. Layer 0 sets duration and loop range for all layers.",
       );
       return false;
     }
 
     // postMessage structured-clones each channel, so no local copy needed
-    const bufferData = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
-      buffer.getChannelData(i),
+    const layers = usable.map((buffer) =>
+      Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)),
     );
 
     this.sendToProcessor({
-      type: "voice:setBuffer",
-      buffer: bufferData,
-      durationSeconds: buffer.duration,
+      type: "voice:setLayers",
+      layers,
+      durationSeconds: usable[0].duration,
     });
 
     if (zeroCrossings?.length) {

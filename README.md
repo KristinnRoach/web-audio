@@ -27,3 +27,5 @@ player.play(60);
 
 UI elements such as `KnobElement` are available only from the optional
 `@kidlib/web-audio/components` entry point.
+
+### Live demo app: [Hljóð-Smali](https://kristinnroach.github.io/hljod-smali)

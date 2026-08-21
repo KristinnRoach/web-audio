@@ -52,6 +52,8 @@ export class SamplePlayer implements ILibInstrumentNode {
   #incoming = new Set<NodeID>();
 
   #audiobuffer: AudioBuffer | null = null;
+  #layers: AudioBuffer[] = [];
+  static readonly MAX_LAYERS = 4;
   #bufferDuration: number = 0;
 
   #loopEnabled = false;
@@ -399,11 +401,30 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #isLoading = false;
 
+  /**
+   * Load a single sample. Equivalent to `loadLayers([buffer])`: any previously
+   * loaded extra layers are cleared.
+   */
   async loadSample(
     buffer: AudioBuffer | ArrayBuffer,
     modSampleRate?: number,
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer | null> {
+    const loaded = await this.loadLayers([buffer], modSampleRate, preprocessOptions);
+    return loaded?.[0] ?? null;
+  }
+
+  /**
+   * Replace the whole layer set. Layers are summed inside the voice worklet at
+   * one shared playhead, so they play in unison and layer 0 is the authority
+   * for duration, loop points, start/end and zero crossings. Layers shorter
+   * than layer 0 fall silent at their own end; longer ones are truncated.
+   */
+  async loadLayers(
+    buffers: (AudioBuffer | ArrayBuffer)[],
+    modSampleRate?: number,
+    preprocessOptions?: Partial<PreProcessOptions>,
+  ): Promise<AudioBuffer[] | null> {
     if (this.#isLoading) {
       throw new Error("A sample load is already in progress");
     }
@@ -411,22 +432,46 @@ export class SamplePlayer implements ILibInstrumentNode {
     let unsubscribe: (() => void) | undefined;
 
     try {
-      if (buffer instanceof ArrayBuffer) {
-        // decodeAudioData detaches its input; copy so callers can safely
-        // reuse/re-pass the same ArrayBuffer (e.g. re-selecting a cached sample).
-        buffer = await this.context.decodeAudioData(buffer.slice(0));
+      if (buffers.length > SamplePlayer.MAX_LAYERS) {
+        console.warn(`Ignoring layers past ${SamplePlayer.MAX_LAYERS}; got ${buffers.length}`);
+        buffers = buffers.slice(0, SamplePlayer.MAX_LAYERS);
       }
 
-      if (!isValidAudioBuffer(buffer)) {
-        console.error("Invalid AudioBuffer provided to loadSample");
-        return null;
+      const decoded: AudioBuffer[] = [];
+      for (const [index, input] of buffers.entries()) {
+        let buffer = input;
+
+        if (buffer instanceof ArrayBuffer) {
+          // decodeAudioData detaches its input; copy so callers can safely
+          // reuse/re-pass the same ArrayBuffer (e.g. re-selecting a cached sample).
+          try {
+            buffer = await this.context.decodeAudioData(buffer.slice(0));
+          } catch (error) {
+            if (index === 0) throw error;
+            console.warn(`Failed to decode layer ${index}; skipping`, error);
+            continue;
+          }
+        }
+
+        if (!isValidAudioBuffer(buffer)) {
+          console.error(`Invalid AudioBuffer provided for layer ${index}`);
+          if (index === 0) return null;
+          continue;
+        }
+
+        if (buffer.sampleRate !== this.context.sampleRate) {
+          // Layer 0 is the authority, so a mismatch there is fatal as before.
+          // Extra layers are dropped individually and the rest still play.
+          const message = `Sample rate mismatch: layer ${index} rate ${buffer.sampleRate}, context rate ${this.context.sampleRate}`;
+          if (index === 0) throw new RangeError(message);
+          console.warn(message);
+          continue;
+        }
+
+        decoded.push(buffer);
       }
 
-      if (buffer.sampleRate !== this.context.sampleRate) {
-        throw new RangeError(
-          `Sample rate mismatch: buffer rate ${buffer.sampleRate}, context rate ${this.context.sampleRate}`,
-        );
-      }
+      if (!decoded.length) return null;
 
       if (modSampleRate && this.context.sampleRate !== modSampleRate) {
         console.warn(
@@ -434,24 +479,37 @@ export class SamplePlayer implements ILibInstrumentNode {
         );
       }
 
-      this.releaseAll(0);
-      this.transposeSemitones = 0;
-      this.#isLoaded = false;
-      this.#audiobuffer = null;
+      const layers: AudioBuffer[] = [];
+      let newZeroCrossings: number[] = [];
 
-      let processed: PreProcessResults | undefined;
+      for (const [index, buffer] of decoded.entries()) {
+        if (!this.#preprocessAudio) {
+          layers.push(buffer);
+          continue;
+        }
 
-      if (this.#preprocessAudio) {
-        processed = await preProcessAudioBuffer(this.context, buffer, preprocessOptions);
-        buffer = processed.audiobuffer;
+        // Preprocess each layer (re-pitch, trim, normalize, etc.).
+        // Zero crossings are only used for the authority layer.
+        const processed: PreProcessResults = await preProcessAudioBuffer(
+          this.context,
+          buffer,
+          preprocessOptions,
+        );
+        layers.push(processed.audiobuffer);
 
-        if (this.#useZeroCrossings && processed.zeroCrossings) {
-          this.#zeroCrossings = processed.zeroCrossings;
+        if (index === 0 && this.#useZeroCrossings && processed.zeroCrossings) {
+          newZeroCrossings = processed.zeroCrossings;
         }
       }
 
-      this.#audiobuffer = buffer;
-      this.#bufferDuration = buffer.duration;
+      // Clear and release only if all preprocessing succeeds.
+      this.releaseAll(0);
+      this.transposeSemitones = 0;
+      this.#isLoaded = false;
+      this.#layers = layers;
+      this.#audiobuffer = layers[0];
+      this.#bufferDuration = layers[0].duration;
+      this.#zeroCrossings = newZeroCrossings;
 
       const loadedPromise = new Promise<void>((resolve) => {
         unsubscribe = this.voicePool.onMessage("sample:loaded", () => {
@@ -459,7 +517,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         });
       });
 
-      this.voicePool.setBuffer(buffer, this.#zeroCrossings);
+      this.voicePool.setLayers(layers, newZeroCrossings);
       this.#resetMacros();
 
       const defaultScaleOptions = {
@@ -474,7 +532,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.setScale(defaultScaleOptions);
 
       await loadedPromise;
-      return buffer;
+      return [...layers];
     } finally {
       unsubscribe?.();
       this.#isLoading = false;
@@ -1271,6 +1329,11 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#audiobuffer;
   }
 
+  /** All loaded layers. Index 0 is the authority layer (=== `audiobuffer`). */
+  get layers(): readonly AudioBuffer[] {
+    return [...this.#layers];
+  }
+
   /* === CLEANUP === */
 
   dispose(): void {
@@ -1302,6 +1365,8 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       // Reset state variables
       this.#bufferDuration = 0;
+      this.#audiobuffer = null;
+      this.#layers = [];
       this.#initialized = false;
       this.#isLoaded = false;
       this.#zeroCrossings = [];
