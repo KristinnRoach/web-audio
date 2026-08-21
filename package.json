@@ -30,6 +30,9 @@
     "access": "public"
   },
   "scripts": {
+    "changeset": "vp exec changeset",
+    "bump": "vp exec changeset version",
+    "release": "vp check && vp run test:all && vp exec changeset publish",
     "build:worklets": "vp node build-processors.js",
     "build": "vp run clean && vp build",
     "prepack": "vp run build",
@@ -44,12 +47,12 @@
     "prepare": "vp config"
   },
   "dependencies": {
-    "webmidi": "^3.1.13"
+    "webmidi": "^3.1.16"
   },
   "devDependencies": {
+    "@changesets/cli": "3.0.1",
     "@types/audioworklet": "^0.0.72",
     "@types/node": "^24.13.3",
-    "@types/webmidi": "^2.1.0",
     "@vitest/browser-playwright": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "concurrently": "^9.1.2",
