@@ -42,7 +42,7 @@ export type NodeType =
 export type Destination = ILibAudioNode | AudioNode | AudioParam;
 
 export interface SampleLoader {
-  loadSample(...args: TODO[]): Promise<TODO>;
+  loadSample(buffer: AudioBuffer | ArrayBuffer): Promise<AudioBuffer | null>;
 }
 
 // Base interface for all nodes

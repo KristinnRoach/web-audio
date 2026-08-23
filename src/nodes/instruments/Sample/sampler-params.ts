@@ -325,4 +325,7 @@ export const samplerParams = defineSamplerParams({
 
 export type SamplerParamKey = keyof typeof samplerParams;
 export type SamplerParamValues = Record<SamplerParamKey, number>;
-export type SamplerParamPatch = Partial<SamplerParamValues>;
+export type SamplerParams = Partial<SamplerParamValues>;
+
+/** @deprecated Renamed to {@link SamplerParams}. Removed in the next minor. */
+export type SamplerParamPatch = SamplerParams;

@@ -19,7 +19,7 @@ import { MacroParam, NormalizeOptions } from "@/nodes/params";
 import {
   isValidSamplerParamValue,
   samplerParams,
-  type SamplerParamPatch,
+  type SamplerParams,
   type SamplerParamKey,
   type SamplerParamDescriptor,
 } from "./sampler-params";
@@ -977,7 +977,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  applyParams(params: SamplerParamPatch): this {
+  applyParams(params: SamplerParams): this {
     Object.entries(params).forEach(([key, value]) => {
       const descriptor = samplerParams[key as SamplerParamKey] as
         | SamplerParamDescriptor
