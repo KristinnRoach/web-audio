@@ -89,6 +89,21 @@ describe("interpolateLinearToGeometric", () => {
     expect(belowFloor).toBeCloseTo(Math.sqrt(0.0001), 6);
   });
 
+  test("extreme output ranges do not overflow to Infinity", () => {
+    // outMax / outMin would be Infinity here, so the ratio form breaks
+    const result = interpolateLinearToGeometric(0.5, {
+      inputRange: { min: 0, max: 1 },
+      outputRange: { min: 1e-320, max: 1 },
+      blend: 1,
+    });
+
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeGreaterThan(0);
+    expect(result).toBeLessThan(1);
+    // Geometric mean of the endpoints, to within subnormal log precision
+    expect(Math.log10(result)).toBeCloseTo(-160, 3);
+  });
+
   test("should handle audio-typical frequency ranges correctly", () => {
     const options = {
       inputRange: { min: 0, max: 1 },

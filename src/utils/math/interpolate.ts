@@ -159,7 +159,11 @@ export function interpolateLinearToGeometric(
   }
 
   const linear = outputRange.min + t * (outputRange.max - outputRange.min);
-  const geometric = outputRange.min * Math.pow(outputRange.max / outputRange.min, t);
+
+  // Equivalent to outMin * (outMax / outMin) ** t, but computed in log space so a
+  // subnormal outMin cannot overflow the ratio to Infinity.
+  const logMin = Math.log(outputRange.min);
+  const geometric = Math.exp(logMin + t * (Math.log(outputRange.max) - logMin));
 
   // Blend: 0=linear, 1=geometric
   return (1 - b) * linear + b * geometric;
