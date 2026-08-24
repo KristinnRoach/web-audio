@@ -62,7 +62,7 @@ export function isValidAudioBuffer(
       }
 
       if (hasNonZeroData) break;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

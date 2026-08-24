@@ -87,17 +87,27 @@ export function interpolate(
 }
 
 /**
- * Interpolates a value from linear to logarithmic scaling.
+ * Interpolates a value from linear (arithmetic) to geometric scaling.
+ *
+ * Geometric mapping is `outMin * (outMax / outMin) ** t`: equal steps in the input
+ * produce equal *ratios* in the output, and the midpoint is the geometric mean of the
+ * endpoints rather than the arithmetic mean. This is the curve wanted for frequency,
+ * gain and other perceptually ratio-based controls.
+ *
+ * The mapping is independent of any logarithm base -- base 10, base 2 and base e all
+ * cancel out of the expression above and produce identical results -- which is why this
+ * takes no base option. "Logarithmic" and "exponential" are both used for this same
+ * curve in audio (a log-taper potentiometer rises exponentially), so the unambiguous
+ * term is used here instead.
+ *
+ * Note this warps the *output spacing*. To ease the input and keep a linear output, use
+ * `interpolate`.
  *
  * @param value - Input value to interpolate.
  * @param options - Configuration object containing all parameters.
  * @param options.inputRange - Input domain {min, max}.
- * @param options.outputRange - Output range {min, max} (min must be > 0 for logarithmic interpolation).
- * @param options.blend - Blend between linear (0) and log (1) mapping (default 1).
- * @param options.logBase - Kind of logarithm: 'dB' | 'natural' | 'Hz' (default 'dB').
- *   - 'dB': log base 10 (common for audio/sliders)
- *   - 'natural': natural log (base e)
- *   - 'Hz': log base 2 (useful for musical frequency scaling)
+ * @param options.outputRange - Output range {min, max} (min must be > 0 for geometric interpolation).
+ * @param options.blend - Blend between linear (0) and geometric (1) mapping (default 1).
  * @param options.curve - Power curve adjustment: 'linear' | 'smooth' | 'steep' | 'gentle' | number (default 'linear').
  *   - 'linear': No curve adjustment (power = 1)
  *   - 'smooth': Gentle curve (power = 2)
@@ -106,24 +116,25 @@ export function interpolate(
  *   - number: Custom power value (1 = linear, >1 = more resolution at high end)
  * @returns Interpolated value.
  */
-export function interpolateLinearToLog(
+export function interpolateLinearToGeometric(
   value: number,
   options: {
     inputRange: { min: number; max: number };
     outputRange: { min: number; max: number };
     blend?: number;
-    logBase?: "dB" | "natural" | "Hz";
     curve?: "linear" | "smooth" | "steep" | "gentle" | number;
   },
 ): number {
-  const { inputRange, outputRange, blend = 1, logBase = "dB", curve = "linear" } = options;
+  const { inputRange, outputRange, blend = 1, curve = "linear" } = options;
 
   if (value > inputRange.max || value < inputRange.min) {
-    console.warn("interpolateLinearToLog: Value outside of input range, will be clamped");
+    console.warn("interpolateLinearToGeometric: Value outside of input range, will be clamped");
   }
 
   if (outputRange.min <= 0) {
-    console.warn("interpolateLinearToLog: Output min must be > 0 for logarithmic interpolation");
+    console.warn(
+      "interpolateLinearToGeometric: Output min must be > 0 for geometric interpolation",
+    );
   }
 
   // Clamp value and blend within bounds
@@ -147,88 +158,18 @@ export function interpolateLinearToLog(
     t = Math.pow(t, 1 / power);
   }
 
-  // Map logBase flag to actual number
-  const base = logBase === "dB" ? 10 : logBase === "natural" ? Math.E : logBase === "Hz" ? 2 : 10;
+  // Endpoints are returned as-is, for any blend. Neither the log round trip below
+  // (exp(log(0.1)) !== 0.1) nor the weighted sum is guaranteed to reproduce them.
+  if (t === 0) return outputRange.min;
+  if (t === 1) return outputRange.max;
 
-  // Linear interpolation
   const linear = outputRange.min + t * (outputRange.max - outputRange.min);
 
-  // Logarithmic interpolation
-  const logMin = Math.log(Math.max(0.001, outputRange.min)) / Math.log(base);
-  const logMax = Math.log(outputRange.max) / Math.log(base);
-  const logValue = Math.pow(base, logMin + t * (logMax - logMin));
+  // Equivalent to outMin * (outMax / outMin) ** t, but computed in log space so a
+  // subnormal outMin cannot overflow the ratio to Infinity.
+  const logMin = Math.log(outputRange.min);
+  const geometric = Math.exp(logMin + t * (Math.log(outputRange.max) - logMin));
 
-  // Blend: 0=linear, 1=log
-  return (1 - b) * linear + b * logValue;
-}
-
-/**
- * Interpolates a value from linear to exponential scaling.
- *
- * @param value - Input value to interpolate.
- * @param options - Configuration object containing all parameters.
- * @param options.inputRange - Input domain {min, max}.
- * @param options.outputRange - Output range {min, max} (min must be > 0 for exponential interpolation).
- * @param options.blend - Blend between linear (0) and exponential (1) mapping (default 1).
- * @param options.logBase - 'dB' | 'natural' | 'Hz' (default 'dB').
- * @param options.curve - Power curve adjustment: 'linear' | 'smooth' | 'steep' | 'gentle' | number (default 'linear').
- *   - 'linear': No curve adjustment (power = 1)
- *   - 'smooth': Gentle curve (power = 2)
- *   - 'steep': More aggressive curve (power = 3)
- *   - 'gentle': Very gentle curve (power = 1.5)
- *   - number: Custom power value (1 = linear, >1 = more resolution at high end)
- */
-export function interpolateLinearToExp(
-  value: number,
-  options: {
-    inputRange: { min: number; max: number };
-    outputRange: { min: number; max: number };
-    blend?: number;
-    logBase?: "dB" | "natural" | "Hz";
-    curve?: "linear" | "smooth" | "steep" | "gentle" | number;
-  },
-): number {
-  const { inputRange, outputRange, blend = 1, logBase = "dB", curve = "linear" } = options;
-
-  if (value > inputRange.max || value < inputRange.min) {
-    console.warn("interpolateLinearToExp: Value outside of input range, will be clamped");
-  }
-
-  if (outputRange.min <= 0) {
-    console.warn("interpolateLinearToExp: Output min must be > 0 for exponential interpolation");
-  }
-
-  // Clamp inputs
-  const v = Math.max(inputRange.min, Math.min(value, inputRange.max));
-  let t = (v - inputRange.min) / (inputRange.max - inputRange.min); // normalized position in [0, 1]
-  const b = Math.max(0, Math.min(blend, 1));
-
-  // Apply power curve adjustment
-  const power =
-    typeof curve === "number"
-      ? curve
-      : curve === "smooth"
-        ? 2
-        : curve === "steep"
-          ? 3
-          : curve === "gentle"
-            ? 1.5
-            : 1;
-
-  if (power !== 1) {
-    t = Math.pow(t, 1 / power);
-  }
-
-  const base = logBase === "dB" ? 10 : logBase === "natural" ? Math.E : logBase === "Hz" ? 2 : 10;
-
-  // Linear interpolation
-  const linear = outputRange.min + t * (outputRange.max - outputRange.min);
-
-  // Exponential interpolation
-  // For exponential, we want small input values to produce small output values
-  // and large input values to produce large output values with accelerating growth
-  const expValue = outputRange.min * Math.pow(outputRange.max / outputRange.min, t);
-
-  // Blend: 0=linear, 1=exponential
-  return (1 - b) * linear + b * expValue;
+  // Blend: 0=linear, 1=geometric
+  return (1 - b) * linear + b * geometric;
 }

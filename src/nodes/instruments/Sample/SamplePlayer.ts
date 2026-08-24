@@ -239,7 +239,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   /* === MESSAGES === */
 
   #setupMessageHandling(): this {
-    this.voicePool.onMessage("sample:loaded", (msg: Message) => {
+    this.voicePool.onMessage("sample:loaded", () => {
       this.#isLoaded = true;
     });
 
@@ -302,7 +302,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #connectVoicesToMacros(): this {
     const voices = this.voicePool.allVoices;
 
-    voices.forEach((voice, index) => {
+    voices.forEach((voice) => {
       const loopStartParam = voice.getParam("loopStart");
       const loopEndParam = voice.getParam("loopEnd");
 

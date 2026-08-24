@@ -70,8 +70,8 @@ export class ValueSnapper {
   setAllowedPeriods(
     periods: number[],
     normalize: NormalizeOptions | false,
-    snapToZeroCrossings: number[] | false = false,
-    direction: "left" | "right" | "any" = "any",
+    _snapToZeroCrossings: number[] | false = false,
+    _direction: "left" | "right" | "any" = "any",
   ) {
     let values = normalize ? (normalizeRange([...periods], normalize) as number[]) : periods;
 

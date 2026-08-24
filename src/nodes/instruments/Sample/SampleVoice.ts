@@ -9,7 +9,7 @@ import {
   assert,
   clamp,
   cancelAndPinParamValue,
-  interpolateLinearToExp,
+  interpolateLinearToGeometric,
   mapToRange,
   midiToPlaybackRate,
 } from "@/utils";
@@ -1135,17 +1135,16 @@ export class SampleVoice {
       return this;
     }
 
-    const NEAR_ZERO_FOR_LOG = 0.0001;
+    const NEAR_ZERO_FOR_GEOMETRIC = 0.0001; // outputRange.min must be > 0
     const MAX_LOOP_DRIFT = 1; // todo: use audio param's maxValue
 
-    const interpolated = interpolateLinearToExp(amount, {
+    const interpolated = interpolateLinearToGeometric(amount, {
       inputRange: { min: 0, max: 1 },
       outputRange: {
-        min: NEAR_ZERO_FOR_LOG,
+        min: NEAR_ZERO_FOR_GEOMETRIC,
         max: MAX_LOOP_DRIFT,
       },
-      blend: 1, // blend: 0.5 = 50% exponential, 50% linear
-      logBase: "dB",
+      blend: 1, // blend: 0.5 = 50% geometric, 50% linear
       curve: "linear",
     });
     this.setParam("loopDurationDriftAmount", interpolated, this.now);

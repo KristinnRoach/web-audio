@@ -1,10 +1,4 @@
-import {
-  NOTE_NAMES,
-  ROOT_NOTES,
-  NOTE_FREQUENCIES,
-  NOTE_PERIODS,
-  NOTE_NAMES_WITH_OCTAVE,
-} from "../constants";
+import { NOTE_NAMES, ROOT_NOTES, NOTE_FREQUENCIES, NOTE_NAMES_WITH_OCTAVE } from "../constants";
 import { midiToFrequency, frequencyToMidi } from "./core-utils";
 import type { Note } from "../types";
 

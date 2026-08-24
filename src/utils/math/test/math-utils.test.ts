@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach, afterEach } from "vite-plus/test";
+import { describe, test, expect } from "vite-plus/test";
 import { clamp, mapToRange } from "../math-utils";
 
 describe("clamp", () => {

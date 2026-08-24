@@ -70,7 +70,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       timestamp,
       durationSeconds,
       zeroCrossings,
-      allowedPeriods,
       playbackDirection,
     } = event.data;
 

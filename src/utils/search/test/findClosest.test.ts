@@ -14,7 +14,7 @@ describe("findClosest", () => {
     return Array.from({ length: count }, (_, i) => i * 2); // [0, 2, 4, 6, 8, ...]
   };
 
-  const generateSortedObjects = (count: number) => {
+  const _generateSortedObjects = (count: number) => {
     return Array.from({ length: count }, (_, i) => ({
       id: i,
       value: i * 3.5 + Math.random() * 0.1, // Slight randomness to test floating point

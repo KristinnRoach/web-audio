@@ -1,4 +1,4 @@
-const voicePool = {
+const _voicePool = {
   available: new Set(),
   playing: new Set(),
   releasing: new Set(),
