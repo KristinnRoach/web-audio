@@ -132,7 +132,7 @@ export async function decodeAudioData(
 
 export function releaseGlobalAudioContext(): void {
   if (globalAudioContext) {
-    globalAudioContext
+    void globalAudioContext
       .close()
       .catch((err) => {
         console.warn("[GlobalAudioContext] close() failed", err);

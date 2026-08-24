@@ -205,7 +205,7 @@ export class Recorder implements LibNode {
       destination: this.#destination,
     });
 
-    this.#setupAudioMonitoring();
+    void this.#setupAudioMonitoring();
   }
 
   #startRecordingImmediate(): void {
@@ -216,7 +216,7 @@ export class Recorder implements LibNode {
     this.sendMessage("record:start", { destination: this.#destination });
 
     if (this.#config?.autoStop) {
-      this.#setupAudioMonitoring();
+      void this.#setupAudioMonitoring();
     }
   }
 

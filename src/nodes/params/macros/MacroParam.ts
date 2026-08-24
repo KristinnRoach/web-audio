@@ -178,7 +178,7 @@ export class MacroParam {
     snapToZeroCrossings: number[] | false;
     normalize: NormalizeOptions | false;
   }): number[] {
-    const { rootNote, scale, tuningOffset = 0, lowestOctave = 0, highestOctave = 8 } = options;
+    const { rootNote, scale, tuningOffset, lowestOctave, highestOctave } = options;
 
     const scalePattern = Array.isArray(scale) ? scale : SCALE_PATTERNS[scale];
 
@@ -250,10 +250,6 @@ export class MacroParam {
     return this.onMessage("value:changed", callback);
   }
 
-  #sendValueChangedMessage(value: number): void {
-    this.#messages.sendMessage("value:changed", { value });
-  }
-
   // Message bus methods
   onMessage(type: string, handler: MessageHandler<Message>): () => void {
     return this.#messages.onMessage(type, handler);
@@ -267,29 +263,6 @@ export class MacroParam {
     this.#controller.dispose();
     // Clean up other resources
   }
-
-  #debugProcessedValue = (
-    targetValue: number,
-    constant: number,
-    targetPeriod: number,
-    quantizedPeriod: number,
-    result: number,
-  ) => {
-    console.debug(
-      "adjusting param: ",
-      this.#paramType,
-      "targetValue",
-      targetValue,
-      "constant",
-      constant,
-      "targetPeriod",
-      targetPeriod,
-      "quantizedPeriod",
-      quantizedPeriod,
-      "result",
-      result,
-    );
-  };
 
   // Stub methods for interface compliance
   connect(target: AudioParam, nodeType: NodeType, scaleFactor?: number): this {

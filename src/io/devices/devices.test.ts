@@ -18,16 +18,26 @@ describe("Device Access Utils", () => {
   ] as MediaDeviceInfo[];
 
   const mockStream = { getTracks: () => [] } as unknown as MediaStream;
+  const getUserMediaMock = vi.fn();
+  const enumerateDevicesMock = vi.fn();
+  const addEventListenerMock = vi.fn();
+  const removeEventListenerMock = vi.fn();
+  const requestMIDIAccessMock = vi.fn();
 
   beforeEach(() => {
+    getUserMediaMock.mockReset().mockResolvedValue(mockStream);
+    enumerateDevicesMock.mockReset().mockResolvedValue(mockDevices);
+    addEventListenerMock.mockReset();
+    removeEventListenerMock.mockReset();
+    requestMIDIAccessMock.mockReset();
     vi.stubGlobal("navigator", {
       mediaDevices: {
-        getUserMedia: vi.fn().mockResolvedValue(mockStream),
-        enumerateDevices: vi.fn().mockResolvedValue(mockDevices),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
+        getUserMedia: getUserMediaMock,
+        enumerateDevices: enumerateDevicesMock,
+        addEventListener: addEventListenerMock,
+        removeEventListener: removeEventListenerMock,
       },
-      requestMIDIAccess: vi.fn(),
+      requestMIDIAccess: requestMIDIAccessMock,
     });
   });
 
@@ -48,9 +58,7 @@ describe("Device Access Utils", () => {
 
     it("handles enumeration errors gracefully", async () => {
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      vi.mocked(navigator.mediaDevices.enumerateDevices).mockRejectedValue(
-        new Error("Permission denied"),
-      );
+      enumerateDevicesMock.mockRejectedValue(new Error("Permission denied"));
       const devices = await getDevices();
       expect(devices).toEqual([]);
       consoleSpy.mockRestore();
@@ -61,7 +69,7 @@ describe("Device Access Utils", () => {
     it("gets microphone access", async () => {
       const stream = await getMicrophone();
       expect(stream).toBe(mockStream);
-      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith(
+      expect(getUserMediaMock).toHaveBeenCalledWith(
         expect.objectContaining({
           audio: expect.any(Object),
         }),
@@ -72,7 +80,7 @@ describe("Device Access Utils", () => {
       const stream = await getMicrophone(undefined, "input-123");
 
       expect(stream).toBe(mockStream);
-      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      expect(getUserMediaMock).toHaveBeenCalledWith({
         audio: {
           echoCancellation: false,
           noiseSuppression: true,
@@ -87,14 +95,12 @@ describe("Device Access Utils", () => {
       const overconstrained = Object.assign(new Error("unavailable"), {
         name: "OverconstrainedError",
       });
-      vi.mocked(navigator.mediaDevices.getUserMedia)
-        .mockRejectedValueOnce(overconstrained)
-        .mockResolvedValueOnce(mockStream);
+      getUserMediaMock.mockRejectedValueOnce(overconstrained).mockResolvedValueOnce(mockStream);
 
       const stream = await getMicrophone(undefined, "gone-device");
 
       expect(stream).toBe(mockStream);
-      expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith({
+      expect(getUserMediaMock).toHaveBeenLastCalledWith({
         audio: {
           echoCancellation: false,
           noiseSuppression: true,
@@ -108,7 +114,7 @@ describe("Device Access Utils", () => {
       const denied = Object.assign(new Error("denied"), {
         name: "NotAllowedError",
       });
-      vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(denied);
+      getUserMediaMock.mockRejectedValue(denied);
 
       await expect(getMicrophone(undefined, "input-123")).rejects.toThrow("denied");
     });
@@ -116,7 +122,7 @@ describe("Device Access Utils", () => {
     it("gets camera access", async () => {
       const stream = await getCamera();
       expect(stream).toBe(mockStream);
-      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      expect(getUserMediaMock).toHaveBeenCalledWith({
         video: {
           width: 1280,
           height: 720,
@@ -137,9 +143,7 @@ describe("Device Access Utils", () => {
         inputs: new Map(),
         outputs: new Map(),
       };
-      vi.mocked(navigator.requestMIDIAccess).mockResolvedValue(
-        mockMIDIAccess as unknown as MIDIAccess,
-      );
+      requestMIDIAccessMock.mockResolvedValue(mockMIDIAccess as unknown as MIDIAccess);
 
       const midiAccess = await getMIDIAccess();
       expect(midiAccess).toBe(mockMIDIAccess);
@@ -167,16 +171,10 @@ describe("Device Access Utils", () => {
       const callback = vi.fn();
       const cleanup = onDeviceChange(callback);
 
-      expect(navigator.mediaDevices.addEventListener).toHaveBeenCalledWith(
-        "devicechange",
-        callback,
-      );
+      expect(addEventListenerMock).toHaveBeenCalledWith("devicechange", callback);
 
       cleanup();
-      expect(navigator.mediaDevices.removeEventListener).toHaveBeenCalledWith(
-        "devicechange",
-        callback,
-      );
+      expect(removeEventListenerMock).toHaveBeenCalledWith("devicechange", callback);
     });
   });
 });

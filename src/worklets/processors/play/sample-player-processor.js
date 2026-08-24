@@ -245,10 +245,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
   }
 
-  #clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
-  #clampZeroCrossing = (value) => this.#clamp(value, this.minZeroCrossing, this.maxZeroCrossing);
-
   #findNearestZeroCrossing(position, direction = "any", maxDistance = null) {
     if (!this.zeroCrossings || this.zeroCrossings.length === 0) {
       return position;
@@ -267,16 +263,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== CONVERSION UTILITIES =====
 
   /**
-   * Convert normalized position (0-1) to sample index
-   * @param {number} normalizedPosition - Position as 0-1 value
-   * @returns {number} - Sample index
-   */
-  #normalizedToSamples(normalizedPosition) {
-    if (!this.buffer || !this.buffer[0]) return 0;
-    return normalizedPosition * this.buffer[0].length;
-  }
-
-  /**
    * Convert sample index to normalized position (0-1)
    * @param {number} sampleIndex - Sample index
    * @returns {number} - Normalized position 0-1
@@ -293,14 +279,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    */
   #midiVelocityToGain(midiVelocity) {
     return Math.max(0, Math.min(1, midiVelocity / 127));
-  }
-
-  /**
-   * Get buffer duration in seconds
-   * @returns {number} - Buffer duration in seconds
-   */
-  #getBufferDurationSeconds() {
-    return (this.buffer?.[0]?.length || 0) / sampleRate;
   }
 
   /**

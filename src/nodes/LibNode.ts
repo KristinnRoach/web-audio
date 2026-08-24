@@ -29,15 +29,16 @@ type NativeAudioNode =
   | "AudioBufferSourceNode"
   | "DynamicsCompressorNode";
 
-// Union of all types
-export type NodeType =
+type KnownNodeType =
   | NativeAudioNode
   | BaseNodeType
   | InstrumentType
   | VoiceType
   | ContainerType
-  | string
   | CustomFxType;
+
+// Keep known values discoverable while allowing extensions to register custom node types.
+export type NodeType = KnownNodeType | (string & Record<never, never>);
 
 export type Destination = ILibAudioNode | AudioNode | AudioParam;
 

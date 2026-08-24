@@ -7,11 +7,15 @@ describe("SamplePlayer.applyParams", () => {
     vi.stubGlobal("AudioContext", class {});
     vi.stubGlobal("AudioWorkletNode", class {});
     const { SamplePlayer } = await import("./SamplePlayer");
+    const setVolume = vi.fn();
+    const setGlideTime = vi.fn();
+    const setTempo = vi.fn();
+    const setFeedbackPitchScale = vi.fn();
     const player = {
-      setVolume: vi.fn(),
-      setGlideTime: vi.fn(),
-      setTempo: vi.fn(),
-      setFeedbackPitchScale: vi.fn(),
+      setVolume,
+      setGlideTime,
+      setTempo,
+      setFeedbackPitchScale,
     } as unknown as SamplePlayer;
 
     SamplePlayer.prototype.applyParams.call(player, {
@@ -22,9 +26,9 @@ describe("SamplePlayer.applyParams", () => {
       feedbackPitch: 0.3,
     } as never);
 
-    expect(player.setVolume).toHaveBeenCalledWith(0.75);
-    expect(player.setGlideTime).toHaveBeenCalledWith(0.2);
-    expect(player.setTempo).not.toHaveBeenCalled();
-    expect(player.setFeedbackPitchScale).not.toHaveBeenCalled();
+    expect(setVolume).toHaveBeenCalledWith(0.75);
+    expect(setGlideTime).toHaveBeenCalledWith(0.2);
+    expect(setTempo).not.toHaveBeenCalled();
+    expect(setFeedbackPitchScale).not.toHaveBeenCalled();
   });
 });

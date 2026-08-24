@@ -6,7 +6,7 @@ export async function loadSound(context: BaseAudioContext, url: string): Promise
 
     request.onload = function () {
       // Asynchronously decode the audio file data
-      context.decodeAudioData(request.response, function (buffer) {
+      void context.decodeAudioData(request.response, function (buffer) {
         if (!buffer) {
           console.log("error decoding file data:", url);
           return;

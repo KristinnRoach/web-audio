@@ -51,7 +51,7 @@ export class AudioParamController implements LibNode {
   ): this {
     const now = this.#context.currentTime;
 
-    cancelScheduled && this.param.cancelScheduledValues(now); // cancelScheduledParamValues(this.param, now);
+    if (cancelScheduled) this.param.cancelScheduledValues(now);
 
     // TESTING: Preventing unexpected jumps by explicitly setting the current value at the current time
     const currentValue = this.param.value;
@@ -70,7 +70,7 @@ export class AudioParamController implements LibNode {
   }
 
   setValue(value: number, timestamp = this.now, cancelScheduled = true): this {
-    cancelScheduled && this.param.cancelScheduledValues(timestamp); // cancelScheduledParamValues(this.param, timestamp);
+    if (cancelScheduled) this.param.cancelScheduledValues(timestamp);
     this.param.setValueAtTime(value, timestamp); // + 0.00001 ?
     this.#value = value;
     return this;
