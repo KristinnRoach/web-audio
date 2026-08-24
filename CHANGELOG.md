@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.1.5
+
+### Patch Changes
+
+- 92c5602: Improve geometric interpolation stability and preserve exact endpoint values.
+
 ## 0.1.4
 
 ### Patch Changes
