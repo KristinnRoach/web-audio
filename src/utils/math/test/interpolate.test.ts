@@ -89,6 +89,21 @@ describe("interpolateLinearToGeometric", () => {
     expect(belowFloor).toBeCloseTo(Math.sqrt(0.0001), 6);
   });
 
+  test("endpoints are returned exactly", () => {
+    for (const outputRange of [
+      { min: 0.1, max: 1 },
+      { min: 20, max: 20000 },
+      { min: 1, max: 1000 },
+      { min: 0.0001, max: 1 },
+    ]) {
+      const options = { inputRange: { min: 0, max: 1 }, outputRange, blend: 1 };
+
+      // Exact equality, not toBeCloseTo: a log round trip drifts off the endpoints
+      expect(interpolateLinearToGeometric(0, options)).toBe(outputRange.min);
+      expect(interpolateLinearToGeometric(1, options)).toBe(outputRange.max);
+    }
+  });
+
   test("extreme output ranges do not overflow to Infinity", () => {
     // outMax / outMin would be Infinity here, so the ratio form breaks
     const result = interpolateLinearToGeometric(0.5, {
