@@ -54,7 +54,7 @@ export function createEnvelope(
     finalInitEnable,
   ); // Set sustain and release points
   envelope.setSustainPoint(finalSustainIndex);
-  finalReleaseIndex && envelope.setReleasePoint(finalReleaseIndex);
+  if (finalReleaseIndex) envelope.setReleasePoint(finalReleaseIndex);
 
   return envelope;
 }

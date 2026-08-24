@@ -165,7 +165,7 @@ export function createWave(
         },
       );
     default:
-      throw new Error(`Invalid waveform type: ${type}`);
+      throw new Error("Invalid waveform type");
   }
 }
 

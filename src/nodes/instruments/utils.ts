@@ -6,11 +6,11 @@ const PlaybackRateSemiToneIntervals: Record<string, number> = {
   "4": 1.2599210498948732,
   "5": 1.3348398541700344,
   "6": 1.4142135623730951,
-  "7": 1.4983070768766819,
+  "7": 1.498307076876682,
   "8": 1.5874010519681994,
   "9": 1.681792830507429,
   "10": 1.7817974362806785,
-  "11": 1.8877486253633863,
+  "11": 1.8877486253633864,
 };
 
 export const PlaybackRateSemiToneIntervalsInverse: Record<string, number> = {
@@ -21,11 +21,11 @@ export const PlaybackRateSemiToneIntervalsInverse: Record<string, number> = {
   "1.2599210498948732": 4,
   "1.3348398541700344": 5,
   "1.4142135623730951": 6,
-  "1.4983070768766819": 7,
+  "1.498307076876682": 7,
   "1.5874010519681994": 8,
   "1.681792830507429": 9,
   "1.7817974362806785": 10,
-  "1.8877486253633863": 11,
+  "1.8877486253633864": 11,
 };
 
 export const PlaybackRateSemiToneIntervalsKeys = Object.keys(PlaybackRateSemiToneIntervals).map(

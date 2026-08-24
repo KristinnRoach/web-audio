@@ -1,6 +1,6 @@
 import { createScale, offsetPeriodsBySemitones } from "@/utils/music-theory/utils/scale-utils";
 import type { NormalizeOptions } from "@/nodes/params/param-types";
-import { findClosest, findClosestNote, Note, ROOT_NOTES } from "@/utils";
+import { findClosest, ROOT_NOTES } from "@/utils";
 
 const normalizeRange = (
   values: number | number[],
@@ -114,19 +114,6 @@ export class ValueSnapper {
     this.#prevIndex = this.#allowedPeriods.length - 1;
 
     return this.#allowedPeriods;
-  }
-
-  #debugPeriods(beforeSnap: number[], afterSnap: number[], normalized: number[]) {
-    const beforeNoteInfo: Note[] = [];
-    beforeSnap.forEach((period) => {
-      beforeNoteInfo.push(findClosestNote(1 / period));
-    });
-    const afterNoteInfo: Note[] = [];
-    afterSnap.forEach((period) => {
-      afterNoteInfo.push(findClosestNote(1 / period));
-    });
-
-    console.info({ BEFORE: beforeNoteInfo, AFTER: afterNoteInfo, normalized });
   }
 
   snapToValue(

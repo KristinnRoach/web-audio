@@ -282,8 +282,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       case "loopEnd":
         return this.#macroLoopEnd.audioParam;
       default:
-        const unreachable: never = paramName;
-        throw new Error(`Unknown macro parameter: ${unreachable}`);
+        throw new Error("Unknown macro parameter");
     }
   }
 
@@ -294,8 +293,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       case "loopEnd":
         return this.#macroLoopEnd;
       default:
-        const unreachable: never = paramName;
-        throw new Error(`Unknown macro parameter: ${unreachable}`);
+        throw new Error("Unknown macro parameter");
     }
   }
 
@@ -351,7 +349,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.#gainLFO?.storeCurrentValues();
       } else {
         const storedVals = this.#gainLFO?.getStoredValues();
-        storedVals && this.#gainLFO?.setFrequency(storedVals.rate);
+        if (storedVals) this.#gainLFO?.setFrequency(storedVals.rate);
       }
 
       this.#syncGainLFOToMidiNote = enabled;
@@ -361,7 +359,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.#pitchLFO?.storeCurrentValues();
       } else {
         const storedVals = this.#pitchLFO?.getStoredValues();
-        storedVals && this.#pitchLFO?.setFrequency(storedVals.rate);
+        if (storedVals) this.#pitchLFO?.setFrequency(storedVals.rate);
       }
 
       this.#syncPitchLFOToMidiNote = enabled;
@@ -615,9 +613,10 @@ export class SamplePlayer implements ILibInstrumentNode {
       return null;
     }
 
-    this.#syncGainLFOToMidiNote && this.#gainLFO?.setMusicalNote(transposedMidiNote);
-    this.#syncPitchLFOToMidiNote &&
+    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(transposedMidiNote);
+    if (this.#syncPitchLFOToMidiNote) {
       this.#pitchLFO?.setMusicalNote(transposedMidiNote, { divisor: 4 });
+    }
 
     this.outBus.noteOn(transposedMidiNote, safeVelocity, 0, glideTime);
 

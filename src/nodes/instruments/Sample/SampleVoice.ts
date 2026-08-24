@@ -194,10 +194,6 @@ export class SampleVoice {
     this.#setupEnvelopeMessageHandling();
   }
 
-  #logAvailableParams = () => {
-    console.table("Available worklet params:", Array.from(this.#playerWorklet.parameters.keys()));
-  };
-
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
     return this.loadLayers([buffer], zeroCrossings);
   }
@@ -274,13 +270,7 @@ export class SampleVoice {
     secondsFromNow?: number;
     glide?: { prevMidiNote: number; glideTime?: number };
   }): MidiValue | null {
-    const {
-      midiNote = 60,
-      velocity = 100,
-      secondsFromNow = 0,
-    } = {
-      ...options,
-    };
+    const { midiNote, velocity, secondsFromNow = 0 } = options;
 
     const timestamp = this.now + secondsFromNow;
 
@@ -319,7 +309,7 @@ export class SampleVoice {
     // Only apply glide if pitch is enabled and glide is requested
     if (!this.#pitchDisabled && options.glide && scaledGlideTime > 0) {
       const rateParam = this.getParam("playbackRate")!;
-      prevRate > 0 && rateParam.setValueAtTime(prevRate, timestamp);
+      if (prevRate > 0) rateParam.setValueAtTime(prevRate, timestamp);
 
       this.getParam("playbackRate")!.setTargetAtTime(playbackRate, timestamp, scaledGlideTime);
     } else {
@@ -803,7 +793,7 @@ export class SampleVoice {
     } else if (destination instanceof AudioNode) {
       this.out.connect(destination, output, input);
     } else {
-      console.warn(`SampleVoice: Unsupported destination: ${destination}`);
+      console.warn("SampleVoice: Unsupported destination", destination);
     }
     return destination;
   }

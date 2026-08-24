@@ -11,7 +11,7 @@ console.log("Watching for changes in worklet processors...");
 
 watcher.on("change", (eventType, filename) => {
   if (filename) {
-    console.log(`${filename} changed, rebuilding processors...`);
+    console.log(`${filename.toString()} changed, rebuilding processors...`);
 
     // Execute the build-processors.js script
     exec("vp node build-processors.js", (error, stdout, stderr) => {

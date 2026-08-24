@@ -28,7 +28,7 @@ export class HarmonicFeedback implements ILibAudioNode {
   #MAX_FB = 0.999;
   #MIN_DECAY = 0.15;
   #MAX_DECAY = 1;
-  #MIN_DELAY_TIME = 0.00012656238799684144; // B8 natural (H) in seconds
+  #MIN_DELAY_TIME = 0.00012656238799684143; // B8 natural (H) in seconds
   #MAX_DELAY_TIME = 2;
 
   constructor(context: AudioContext = getAudioContext()) {
