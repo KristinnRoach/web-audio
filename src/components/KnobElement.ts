@@ -217,7 +217,7 @@ export class KnobElement extends HTMLElement {
 
       try {
         return JSON.parse(value);
-      } catch (e) {
+      } catch {
         console.warn(`KnobElement: Invalid ${attr} JSON:`, value);
         return undefined;
       }

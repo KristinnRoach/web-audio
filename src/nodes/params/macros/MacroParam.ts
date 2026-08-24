@@ -297,7 +297,7 @@ export class MacroParam {
     return this;
   }
 
-  disconnect(target?: AudioParam): void {
+  disconnect(_target?: AudioParam): void {
     throw new Error("Not implemented");
   }
 }

@@ -170,7 +170,7 @@ export class LevelMonitor {
    * Helper to get all connections from a node (simplified)
    */
   #getNodeConnections(
-    node: AudioNode,
+    _node: AudioNode,
   ): { node: AudioNode | AudioParam; output?: number; input?: number }[] {
     // This is a placeholder - Web Audio API doesn't provide a way to inspect connections
     // In a real implementation, you'd need to track connections manually

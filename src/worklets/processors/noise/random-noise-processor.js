@@ -20,7 +20,7 @@ class RandomNoiseProcessor extends AudioWorkletProcessor {
     return frequency / (frequency + sampleRate / (2 * Math.PI));
   }
 
-  process(inputs, outputs, parameters) {
+  process(inputs, outputs, _parameters) {
     const output = outputs[0];
     output.forEach((channel) => {
       for (let i = 0; i < channel.length; i++) {

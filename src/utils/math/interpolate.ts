@@ -188,7 +188,8 @@ export function interpolateLinearToExp(
     curve?: "linear" | "smooth" | "steep" | "gentle" | number;
   },
 ): number {
-  const { inputRange, outputRange, blend = 1, logBase = "dB", curve = "linear" } = options;
+  // logBase is accepted but unused: the exponential branch below is base-independent
+  const { inputRange, outputRange, blend = 1, curve = "linear" } = options;
 
   if (value > inputRange.max || value < inputRange.min) {
     console.warn("interpolateLinearToExp: Value outside of input range, will be clamped");
@@ -218,8 +219,6 @@ export function interpolateLinearToExp(
   if (power !== 1) {
     t = Math.pow(t, 1 / power);
   }
-
-  const base = logBase === "dB" ? 10 : logBase === "natural" ? Math.E : logBase === "Hz" ? 2 : 10;
 
   // Linear interpolation
   const linear = outputRange.min + t * (outputRange.max - outputRange.min);

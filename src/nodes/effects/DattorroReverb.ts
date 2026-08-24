@@ -3,7 +3,7 @@ import { NodeType } from "@/nodes/LibNode";
 import { getAudioContext } from "@/context";
 import { registerNode, NodeID, unregisterNode } from "@/nodes/node-store";
 
-import { mapToRange, clamp } from "@/utils";
+import { mapToRange } from "@/utils";
 
 type DattorroReverbPresetKey = keyof typeof DattorroReverb.PRESETS;
 
@@ -164,7 +164,7 @@ export class DattorroReverb implements ILibAudioNode {
       // Return a mock AudioParam-like object for consistency
       return {
         value: this.getDiffusionMacroValue(),
-        setValueAtTime: (value: number, time: number) => this.setDiffusionMacro(value),
+        setValueAtTime: (value: number, _time: number) => this.setDiffusionMacro(value),
       } as any;
     }
 

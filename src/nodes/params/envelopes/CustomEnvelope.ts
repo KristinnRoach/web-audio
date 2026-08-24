@@ -6,13 +6,7 @@ import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events"
 import { EnvelopePoint, EnvelopeType } from "./env-types";
 import { EnvelopeData } from "./EnvelopeData";
 import { LibNode } from "@/nodes/LibNode";
-import {
-  assert,
-  cancelAndPinParamValue,
-  cancelScheduledParamValues,
-  clamp,
-  mapToRange,
-} from "@/utils";
+import { assert, cancelAndPinParamValue, cancelScheduledParamValues, clamp } from "@/utils";
 
 // ===== CUSTOM ENVELOPE  =====
 export class CustomEnvelope implements LibNode {
@@ -394,7 +388,7 @@ export class CustomEnvelope implements LibNode {
           scaledDuration * 1000 + 100,
         ); // Small buffer to ensure completion
       }
-    } catch (error) {
+    } catch {
       console.debug("Failed to apply envelope curve due to rapid fire.");
       try {
         cancelScheduledParamValues(audioParam, safeStart);
@@ -410,7 +404,7 @@ export class CustomEnvelope implements LibNode {
             scaledDuration * 1000 + 100,
           );
         }
-      } catch (fallbackError) {
+      } catch {
         try {
           audioParam.setValueAtTime(curve[curve.length - 1], safeStart);
           this.#activeEnvelope = null; // Clear immediately for instant set
@@ -540,7 +534,7 @@ export class CustomEnvelope implements LibNode {
 
           try {
             audioParam.setValueCurveAtTime(cachedCurve, phase, safeCurveDuration);
-          } catch (error) {
+          } catch {
             // Curve overlap, advance phase
             debugOverlapCount++;
             if (debugOverlapCount >= 100) {
@@ -807,7 +801,7 @@ export class CustomEnvelope implements LibNode {
       adjustedCurve[0] = currentValue;
 
       audioParam.setValueCurveAtTime(adjustedCurve, safeStart + 0.001, scaledRemainingDuration);
-    } catch (error) {
+    } catch {
       // Silent fallback - this is expected behavior for rapid envelope changes
 
       try {
@@ -895,7 +889,7 @@ export class CustomEnvelope implements LibNode {
 
         audioParam.setValueCurveAtTime(curve, currentTime, scaledRemainingDuration);
       }
-    } catch (error) {
+    } catch {
       // Silent fallback for rapid changes
       console.debug("Dynamic sustain reschedule failed, envelope will continue normally");
     }

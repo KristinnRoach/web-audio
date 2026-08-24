@@ -37,7 +37,7 @@ class Environment {
       };
 
       ctx.close().catch(console.error);
-    } catch (error) {
+    } catch {
       // Fallback for test environment
       this.#capabilities = {
         cancelAndHoldSupported: false,
