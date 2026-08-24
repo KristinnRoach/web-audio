@@ -59,30 +59,34 @@ describe("interpolateLinearToLog", () => {
     expect(blended).toBeCloseTo((linear + logarithmic) / 2, 0); // average of both
   });
 
-  test("different log bases should work correctly", () => {
+  test("log interpolation is geometric across the range", () => {
     const options = {
       inputRange: { min: 0, max: 1 },
       outputRange: { min: 1, max: 1000 },
       blend: 1,
     };
 
-    const dB = interpolateLinearToLog(0.5, { ...options, logBase: "dB" });
-    const hz = interpolateLinearToLog(0.5, { ...options, logBase: "Hz" });
-    const natural = interpolateLinearToLog(0.5, {
-      ...options,
-      logBase: "natural",
+    // outMin * (outMax / outMin) ** t
+    expect(interpolateLinearToLog(0.25, options)).toBeCloseTo(5.623413252, 6);
+    expect(interpolateLinearToLog(0.5, options)).toBeCloseTo(31.6227766, 6);
+    expect(interpolateLinearToLog(0.75, options)).toBeCloseTo(177.827941, 6);
+
+    // Equal input steps produce equal output ratios
+    const a = interpolateLinearToLog(0.25, options);
+    const b = interpolateLinearToLog(0.5, options);
+    const c = interpolateLinearToLog(0.75, options);
+    expect(b / a).toBeCloseTo(c / b, 6);
+  });
+
+  test("log interpolation floors output min at 0.001", () => {
+    const belowFloor = interpolateLinearToLog(0.5, {
+      inputRange: { min: 0, max: 1 },
+      outputRange: { min: 0.0001, max: 1 },
+      blend: 1,
     });
 
-    // All should be valid logarithmic interpolations (closer to geometric mean)
-    expect(dB).toBeGreaterThan(1);
-    expect(dB).toBeLessThan(1000);
-    expect(dB).toBeLessThan(500); // should be less than linear midpoint
-
-    expect(hz).toBeGreaterThan(1);
-    expect(hz).toBeLessThan(1000);
-
-    expect(natural).toBeGreaterThan(1);
-    expect(natural).toBeLessThan(1000);
+    // Floored to 0.001, so the midpoint is sqrt(0.001 * 1), not sqrt(0.0001 * 1)
+    expect(belowFloor).toBeCloseTo(Math.sqrt(0.001), 6);
   });
 
   test("curve adjustment should modify the input scaling", () => {
@@ -120,7 +124,6 @@ describe("interpolateLinearToExp", () => {
       inputRange: { min: 0, max: 1 },
       outputRange: { min: 20, max: 20000 }, // typical audio frequency range
       blend: 1,
-      logBase: "Hz" as const,
     };
 
     const lowFreq = interpolateLinearToExp(0.1, options);

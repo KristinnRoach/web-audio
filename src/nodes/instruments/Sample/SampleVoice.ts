@@ -1145,7 +1145,6 @@ export class SampleVoice {
         max: MAX_LOOP_DRIFT,
       },
       blend: 1, // blend: 0.5 = 50% exponential, 50% linear
-      logBase: "dB",
       curve: "linear",
     });
     this.setParam("loopDurationDriftAmount", interpolated, this.now);

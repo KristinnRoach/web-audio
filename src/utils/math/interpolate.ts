@@ -89,15 +89,15 @@ export function interpolate(
 /**
  * Interpolates a value from linear to logarithmic scaling.
  *
+ * The mapping is geometric: `outMin * (outMax / outMin) ** t`. This is independent of
+ * the logarithm base -- base 10, base 2 and base e all cancel out and produce identical
+ * results -- so no base option is offered.
+ *
  * @param value - Input value to interpolate.
  * @param options - Configuration object containing all parameters.
  * @param options.inputRange - Input domain {min, max}.
  * @param options.outputRange - Output range {min, max} (min must be > 0 for logarithmic interpolation).
  * @param options.blend - Blend between linear (0) and log (1) mapping (default 1).
- * @param options.logBase - Kind of logarithm: 'dB' | 'natural' | 'Hz' (default 'dB').
- *   - 'dB': log base 10 (common for audio/sliders)
- *   - 'natural': natural log (base e)
- *   - 'Hz': log base 2 (useful for musical frequency scaling)
  * @param options.curve - Power curve adjustment: 'linear' | 'smooth' | 'steep' | 'gentle' | number (default 'linear').
  *   - 'linear': No curve adjustment (power = 1)
  *   - 'smooth': Gentle curve (power = 2)
@@ -112,11 +112,10 @@ export function interpolateLinearToLog(
     inputRange: { min: number; max: number };
     outputRange: { min: number; max: number };
     blend?: number;
-    logBase?: "dB" | "natural" | "Hz";
     curve?: "linear" | "smooth" | "steep" | "gentle" | number;
   },
 ): number {
-  const { inputRange, outputRange, blend = 1, logBase = "dB", curve = "linear" } = options;
+  const { inputRange, outputRange, blend = 1, curve = "linear" } = options;
 
   if (value > inputRange.max || value < inputRange.min) {
     console.warn("interpolateLinearToLog: Value outside of input range, will be clamped");
@@ -147,16 +146,13 @@ export function interpolateLinearToLog(
     t = Math.pow(t, 1 / power);
   }
 
-  // Map logBase flag to actual number
-  const base = logBase === "dB" ? 10 : logBase === "natural" ? Math.E : logBase === "Hz" ? 2 : 10;
-
   // Linear interpolation
   const linear = outputRange.min + t * (outputRange.max - outputRange.min);
 
-  // Logarithmic interpolation
-  const logMin = Math.log(Math.max(0.001, outputRange.min)) / Math.log(base);
-  const logMax = Math.log(outputRange.max) / Math.log(base);
-  const logValue = Math.pow(base, logMin + t * (logMax - logMin));
+  // Logarithmic (geometric) interpolation. Output min is floored at 0.001, so ranges
+  // starting below that are compressed -- see interpolateLinearToExp for an unfloored variant.
+  const logMin = Math.max(0.001, outputRange.min);
+  const logValue = logMin * Math.pow(outputRange.max / logMin, t);
 
   // Blend: 0=linear, 1=log
   return (1 - b) * linear + b * logValue;
@@ -165,12 +161,15 @@ export function interpolateLinearToLog(
 /**
  * Interpolates a value from linear to exponential scaling.
  *
+ * The mapping is geometric: `outMin * (outMax / outMin) ** t`. This is independent of
+ * the logarithm base -- base 10, base 2 and base e all cancel out and produce identical
+ * results -- so no base option is offered.
+ *
  * @param value - Input value to interpolate.
  * @param options - Configuration object containing all parameters.
  * @param options.inputRange - Input domain {min, max}.
  * @param options.outputRange - Output range {min, max} (min must be > 0 for exponential interpolation).
  * @param options.blend - Blend between linear (0) and exponential (1) mapping (default 1).
- * @param options.logBase - 'dB' | 'natural' | 'Hz' (default 'dB').
  * @param options.curve - Power curve adjustment: 'linear' | 'smooth' | 'steep' | 'gentle' | number (default 'linear').
  *   - 'linear': No curve adjustment (power = 1)
  *   - 'smooth': Gentle curve (power = 2)
@@ -184,11 +183,9 @@ export function interpolateLinearToExp(
     inputRange: { min: number; max: number };
     outputRange: { min: number; max: number };
     blend?: number;
-    logBase?: "dB" | "natural" | "Hz";
     curve?: "linear" | "smooth" | "steep" | "gentle" | number;
   },
 ): number {
-  // logBase is accepted but unused: the exponential branch below is base-independent
   const { inputRange, outputRange, blend = 1, curve = "linear" } = options;
 
   if (value > inputRange.max || value < inputRange.min) {
