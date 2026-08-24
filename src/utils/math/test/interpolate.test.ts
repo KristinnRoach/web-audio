@@ -95,12 +95,16 @@ describe("interpolateLinearToGeometric", () => {
       { min: 20, max: 20000 },
       { min: 1, max: 1000 },
       { min: 0.0001, max: 1 },
+      { min: Number.MIN_VALUE, max: 1 },
     ]) {
-      const options = { inputRange: { min: 0, max: 1 }, outputRange, blend: 1 };
+      // Exact equality, not toBeCloseTo: a log round trip drifts off the endpoints,
+      // and a partial blend can underflow the weighted sum
+      for (const blend of [0, 0.5, 1]) {
+        const options = { inputRange: { min: 0, max: 1 }, outputRange, blend };
 
-      // Exact equality, not toBeCloseTo: a log round trip drifts off the endpoints
-      expect(interpolateLinearToGeometric(0, options)).toBe(outputRange.min);
-      expect(interpolateLinearToGeometric(1, options)).toBe(outputRange.max);
+        expect(interpolateLinearToGeometric(0, options)).toBe(outputRange.min);
+        expect(interpolateLinearToGeometric(1, options)).toBe(outputRange.max);
+      }
     }
   });
 

@@ -158,18 +158,17 @@ export function interpolateLinearToGeometric(
     t = Math.pow(t, 1 / power);
   }
 
+  // Endpoints are returned as-is, for any blend. Neither the log round trip below
+  // (exp(log(0.1)) !== 0.1) nor the weighted sum is guaranteed to reproduce them.
+  if (t === 0) return outputRange.min;
+  if (t === 1) return outputRange.max;
+
   const linear = outputRange.min + t * (outputRange.max - outputRange.min);
 
   // Equivalent to outMin * (outMax / outMin) ** t, but computed in log space so a
-  // subnormal outMin cannot overflow the ratio to Infinity. Endpoints are returned
-  // as-is because the log round trip is not exact (exp(log(0.1)) !== 0.1).
+  // subnormal outMin cannot overflow the ratio to Infinity.
   const logMin = Math.log(outputRange.min);
-  const geometric =
-    t === 0
-      ? outputRange.min
-      : t === 1
-        ? outputRange.max
-        : Math.exp(logMin + t * (Math.log(outputRange.max) - logMin));
+  const geometric = Math.exp(logMin + t * (Math.log(outputRange.max) - logMin));
 
   // Blend: 0=linear, 1=geometric
   return (1 - b) * linear + b * geometric;
