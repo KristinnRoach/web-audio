@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.1.6
+
+### Patch Changes
+
+- 1a06820: Add slider ARIA semantics, keyboard controls, and toggleable Shift-drag fine control to `KnobElement`.
+
 ## 0.1.5
 
 ### Patch Changes
