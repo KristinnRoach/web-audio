@@ -70,6 +70,52 @@ describe("KnobElement init", () => {
     document.dispatchEvent(new MouseEvent("mouseup"));
 
     expect(knob.getValue()).toBeGreaterThan(25);
+    expect(Number(knob.getAttribute("aria-valuenow"))).toBe(knob.getValue());
+  });
+
+  it("ends an active drag when disabled", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "100",
+      "default-value": "25",
+    });
+    document.body.appendChild(knob);
+    knob.dispatchEvent(new MouseEvent("mousedown", { clientY: 100 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 90 }));
+    const valueBeforeDisable = knob.getValue();
+
+    knob.setDisabled(true);
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 80 }));
+    knob.setDisabled(false);
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 70 }));
+
+    expect(knob.getValue()).toBe(valueBeforeDisable);
+  });
+
+  it("reports double-click resets as user changes", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "100",
+      "default-value": "25",
+    });
+    document.body.appendChild(knob);
+    knob.setValue(50);
+    let source: string | undefined;
+    knob.addEventListener("knob-change", (event) => (source = event.detail.source));
+    const mouseDown = new MouseEvent("mousedown");
+    const mouseUp = new MouseEvent("mouseup");
+    const now = vi.spyOn(Date, "now").mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
+
+    try {
+      knob.dispatchEvent(mouseDown);
+      document.dispatchEvent(mouseUp);
+      knob.dispatchEvent(mouseDown);
+
+      expect(knob.getValue()).toBe(25);
+      expect(source).toBe("user");
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("uses normal dragging when pointer lock is rejected", async () => {
@@ -120,5 +166,135 @@ describe("KnobElement init", () => {
         Reflect.deleteProperty(document, "pointerLockElement");
       }
     }
+  });
+
+  it("uses finer drag sensitivity when Shift is held at drag start", () => {
+    const drag = (shiftKey: boolean) => {
+      const knob = createKnob({
+        "min-value": "0",
+        "max-value": "100",
+        "default-value": "50",
+        "snap-increment": "0",
+      });
+      document.body.appendChild(knob);
+      knob.dispatchEvent(new MouseEvent("mousedown", { clientY: 100, shiftKey }));
+      document.dispatchEvent(new MouseEvent("mousemove", { clientY: 90, shiftKey }));
+      document.dispatchEvent(new MouseEvent("mouseup"));
+      return knob.getValue() - 50;
+    };
+
+    expect(drag(true)).toBeLessThan(drag(false) / 5);
+  });
+
+  it("switches drag sensitivity when Shift changes during a drag", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "100",
+      "default-value": "50",
+      "snap-increment": "0",
+    });
+    document.body.appendChild(knob);
+    knob.dispatchEvent(new MouseEvent("mousedown", { clientY: 100 }));
+
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 90 }));
+    const normalChange = knob.getValue() - 50;
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 80, shiftKey: true }));
+    const fineChange = knob.getValue() - 50 - normalChange;
+    document.dispatchEvent(new MouseEvent("mouseup"));
+
+    expect(fineChange).toBeLessThan(normalChange / 5);
+  });
+});
+
+describe("KnobElement keyboard controls", () => {
+  it("exposes slider semantics and updates by snap increment as a user change", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "10",
+      "default-value": "5",
+      "snap-increment": "2",
+    });
+    document.body.appendChild(knob);
+    let source: string | undefined;
+    const bubbled = vi.fn();
+    knob.addEventListener("knob-change", (event) => (source = event.detail.source));
+    document.body.addEventListener("keydown", bubbled);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "ArrowRight",
+      bubbles: true,
+      cancelable: true,
+    });
+    knob.dispatchEvent(event);
+
+    expect(knob.getValue()).toBe(8);
+    expect(source).toBe("user");
+    expect(event.defaultPrevented).toBe(true);
+    expect(bubbled).not.toHaveBeenCalled();
+    expect(knob.getAttribute("role")).toBe("slider");
+    expect(knob.getAttribute("aria-valuemin")).toBe("0");
+    expect(knob.getAttribute("aria-valuemax")).toBe("10");
+    expect(knob.getAttribute("aria-valuenow")).toBe("8");
+    expect(knob.tabIndex).toBe(0);
+    document.body.removeEventListener("keydown", bubbled);
+  });
+
+  it("moves to adjacent allowed values", () => {
+    const knob = createKnob({
+      "allowed-values": "[0, 5, 20]",
+      "default-value": "5",
+    });
+    document.body.appendChild(knob);
+
+    knob.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
+    expect(knob.getValue()).toBe(20);
+
+    knob.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+    expect(knob.getValue()).toBe(5);
+  });
+
+  it("uses one percent of the range when no positive snap increment is configured", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "10",
+      "default-value": "5",
+      "snap-increment": "0",
+    });
+    document.body.appendChild(knob);
+
+    knob.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
+
+    expect(knob.getValue()).toBe(4.9);
+  });
+
+  it("supports Home and End", () => {
+    const knob = createKnob({
+      "min-value": "-10",
+      "max-value": "10",
+      "default-value": "0",
+    });
+    document.body.appendChild(knob);
+
+    knob.dispatchEvent(new KeyboardEvent("keydown", { key: "End" }));
+    expect(knob.getValue()).toBe(10);
+
+    knob.dispatchEvent(new KeyboardEvent("keydown", { key: "Home" }));
+    expect(knob.getValue()).toBe(-10);
+  });
+
+  it("is not focusable or keyboard-adjustable while disabled", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "10",
+      "default-value": "5",
+      disabled: "",
+    });
+    document.body.appendChild(knob);
+
+    knob.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+
+    expect(knob.getValue()).toBe(5);
+    expect(knob.tabIndex).toBe(-1);
+    expect(knob.getAttribute("aria-disabled")).toBe("true");
   });
 });

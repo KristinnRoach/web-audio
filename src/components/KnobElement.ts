@@ -96,11 +96,13 @@ export class KnobElement extends HTMLElement {
     this.createUtilityFunctions();
     this.render();
     this.updateColorFromAttribute();
+    this.updateAccessibility();
 
     // Initialize before wiring interactions. ?? (not ||) honors a default of 0.
     this.setValue(this.config.defaultValue ?? this.config.minValue);
 
     this.createDraggable();
+    this.addEventListener("keydown", this.handleKeyDown);
   }
 
   disconnectedCallback(): void {
@@ -195,6 +197,11 @@ export class KnobElement extends HTMLElement {
       knob-element:active {
         cursor: grabbing;
       }
+
+      knob-element:focus-visible {
+        outline: 1px solid rgb(255 255 255 / 45%);
+        outline-offset: 4px;
+      }
     `;
 
     document.head.appendChild(styleElement);
@@ -272,6 +279,16 @@ export class KnobElement extends HTMLElement {
     };
 
     this.updateDimensions();
+    this.updateAccessibility();
+  }
+
+  private updateAccessibility(): void {
+    this.setAttribute("role", "slider");
+    this.setAttribute("aria-valuemin", String(this.config.minValue));
+    this.setAttribute("aria-valuemax", String(this.config.maxValue));
+    this.setAttribute("aria-valuenow", String(this.currentValue));
+    this.setAttribute("aria-disabled", String(Boolean(this.config.disabled)));
+    this.tabIndex = this.config.disabled ? -1 : 0;
   }
 
   private updateDimensions(): void {
@@ -308,6 +325,8 @@ export class KnobElement extends HTMLElement {
   }
 
   private cleanup(): void {
+    this.removeEventListener("keydown", this.handleKeyDown);
+
     if (this.dragHandlers) {
       this.removeEventListener("mousedown", this.dragHandlers.start);
       this.removeEventListener("touchstart", this.dragHandlers.start);
@@ -400,19 +419,57 @@ export class KnobElement extends HTMLElement {
   private lastClickTime = 0;
   private readonly DOUBLE_CLICK_THRESHOLD = 300;
 
-  // TODO(audiolib): Add keyboard controls and slider ARIA semantics in the planned accessibility pass.
+  private handleKeyDown = (event: KeyboardEvent): void => {
+    if (this.config.disabled) return;
+
+    const direction =
+      event.key === "ArrowUp" || event.key === "ArrowRight"
+        ? 1
+        : event.key === "ArrowDown" || event.key === "ArrowLeft"
+          ? -1
+          : 0;
+
+    let nextValue: number;
+    if (event.key === "Home") {
+      nextValue = this.config.minValue;
+    } else if (event.key === "End") {
+      nextValue = this.config.maxValue;
+    } else if (direction && this.config.allowedValues?.length) {
+      const values = this.config.allowedValues;
+      nextValue =
+        direction > 0
+          ? (values.find((value) => value > this.currentValue) ?? values[values.length - 1])
+          : ([...values].reverse().find((value) => value < this.currentValue) ?? values[0]);
+    } else if (direction) {
+      const range = this.config.maxValue - this.config.minValue;
+      const hasSnapIncrement = this.hasAttribute("snap-increment") && this.config.snapIncrement > 0;
+      const increment = hasSnapIncrement ? this.config.snapIncrement : range * 0.01;
+      const value = this.currentValue + direction * increment;
+      nextValue = hasSnapIncrement ? this.applySnapping(value) : value;
+    } else {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.updateValue(nextValue, "user");
+  };
+
   private createDraggable(): void {
     const pointerLockSupported =
       "pointerLockElement" in document && "requestPointerLock" in HTMLElement.prototype;
 
     let isDragging = false;
     let startY = 0;
+    let lastY = 0;
     let startRotation = 0;
     let totalDeltaY = 0;
     let isUsingPointerLock = false;
+    let isFineControl = false;
 
     const requestPointerLockOrUseDragFallback = (event: MouseEvent) => {
       startY = event.clientY;
+      lastY = startY;
       isUsingPointerLock = document.pointerLockElement === this;
 
       if (!pointerLockSupported || document.pointerLockElement) return;
@@ -436,7 +493,7 @@ export class KnobElement extends HTMLElement {
 
       // Check for double-click BEFORE starting drag or pointer lock
       if (timeDiff < this.DOUBLE_CLICK_THRESHOLD && timeDiff > 0) {
-        this.resetToDefault();
+        this.updateValue(this.config.defaultValue, "user");
         return; // Exit early, don't start dragging
       }
 
@@ -445,11 +502,13 @@ export class KnobElement extends HTMLElement {
       isDragging = true;
       startRotation = this.currentRotation;
       totalDeltaY = 0;
+      isFineControl = "shiftKey" in e && e.shiftKey;
 
       const isTouchEvent = "touches" in e;
 
       if (isTouchEvent) {
         startY = e.touches[0].clientY;
+        lastY = startY;
         isUsingPointerLock = false;
       } else {
         requestPointerLockOrUseDragFallback(e as MouseEvent);
@@ -458,9 +517,22 @@ export class KnobElement extends HTMLElement {
 
     const handleMove = (e: MouseEvent | TouchEvent) => {
       if (!isDragging) return;
+      if (this.config.disabled) {
+        handleEnd();
+        return;
+      }
+
+      const currentY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      const fineControl = "shiftKey" in e && e.shiftKey;
+      if (fineControl !== isFineControl) {
+        isFineControl = fineControl;
+        startRotation = this.currentRotation;
+        startY = lastY;
+        totalDeltaY = 0;
+      }
 
       let deltaY: number;
-      const sensitivity = 2.0;
+      const sensitivity = isFineControl ? 0.2 : 2.0;
 
       if (isUsingPointerLock && document.pointerLockElement) {
         // Use movementY for pointer lock (more precise)
@@ -468,9 +540,9 @@ export class KnobElement extends HTMLElement {
         deltaY = -totalDeltaY * sensitivity;
       } else {
         // Use clientY for touch and fallback mouse
-        const currentY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
         deltaY = (startY - currentY) * sensitivity;
       }
+      lastY = currentY;
 
       const newRotation = startRotation + deltaY;
       const clampedRotation = KnobElement.clamp(
@@ -483,6 +555,7 @@ export class KnobElement extends HTMLElement {
       const snappedValue = this.applySnapping(rawValue);
 
       this.currentValue = snappedValue;
+      this.setAttribute("aria-valuenow", String(this.currentValue));
 
       if (snappedValue !== rawValue) {
         this.currentRotation = this.valueToRotation(snappedValue);
@@ -495,7 +568,7 @@ export class KnobElement extends HTMLElement {
       e.preventDefault();
     };
 
-    const handleEnd = () => {
+    function handleEnd(): void {
       isDragging = false;
 
       if (isUsingPointerLock && document.pointerLockElement) {
@@ -503,7 +576,7 @@ export class KnobElement extends HTMLElement {
       }
 
       isUsingPointerLock = false;
-    };
+    }
 
     // Store references for cleanup
     this.dragHandlers = {
@@ -574,6 +647,10 @@ export class KnobElement extends HTMLElement {
 
   // Public API
   public setValue(value: number): void {
+    this.updateValue(value, "programmatic");
+  }
+
+  private updateValue(value: number, source: "user" | "programmatic"): void {
     // todo: animate?: boolean
     if (!this.valueToRotation || !this.pathElement) return;
 
@@ -582,7 +659,8 @@ export class KnobElement extends HTMLElement {
     this.currentRotation = this.valueToRotation(this.currentValue);
 
     this.updateBorder();
-    this.dispatchChangeEvent();
+    this.setAttribute("aria-valuenow", String(this.currentValue));
+    this.dispatchChangeEvent(source);
   }
 
   /**
