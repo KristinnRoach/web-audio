@@ -70,6 +70,33 @@ describe("KnobElement init", () => {
     document.dispatchEvent(new MouseEvent("mouseup"));
 
     expect(knob.getValue()).toBeGreaterThan(25);
+    expect(Number(knob.getAttribute("aria-valuenow"))).toBe(knob.getValue());
+  });
+
+  it("reports double-click resets as user changes", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "100",
+      "default-value": "25",
+    });
+    document.body.appendChild(knob);
+    knob.setValue(50);
+    let source: string | undefined;
+    knob.addEventListener("knob-change", (event) => (source = event.detail.source));
+    const mouseDown = new MouseEvent("mousedown");
+    const mouseUp = new MouseEvent("mouseup");
+    const now = vi.spyOn(Date, "now").mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
+
+    try {
+      knob.dispatchEvent(mouseDown);
+      document.dispatchEvent(mouseUp);
+      knob.dispatchEvent(mouseDown);
+
+      expect(knob.getValue()).toBe(25);
+      expect(source).toBe("user");
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("uses normal dragging when pointer lock is rejected", async () => {

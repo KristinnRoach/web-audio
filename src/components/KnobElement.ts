@@ -493,7 +493,7 @@ export class KnobElement extends HTMLElement {
 
       // Check for double-click BEFORE starting drag or pointer lock
       if (timeDiff < this.DOUBLE_CLICK_THRESHOLD && timeDiff > 0) {
-        this.resetToDefault();
+        this.updateValue(this.config.defaultValue, "user");
         return; // Exit early, don't start dragging
       }
 
@@ -551,6 +551,7 @@ export class KnobElement extends HTMLElement {
       const snappedValue = this.applySnapping(rawValue);
 
       this.currentValue = snappedValue;
+      this.setAttribute("aria-valuenow", String(this.currentValue));
 
       if (snappedValue !== rawValue) {
         this.currentRotation = this.valueToRotation(snappedValue);
