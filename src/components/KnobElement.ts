@@ -517,6 +517,10 @@ export class KnobElement extends HTMLElement {
 
     const handleMove = (e: MouseEvent | TouchEvent) => {
       if (!isDragging) return;
+      if (this.config.disabled) {
+        handleEnd();
+        return;
+      }
 
       const currentY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
       const fineControl = "shiftKey" in e && e.shiftKey;
@@ -564,7 +568,7 @@ export class KnobElement extends HTMLElement {
       e.preventDefault();
     };
 
-    const handleEnd = () => {
+    function handleEnd(): void {
       isDragging = false;
 
       if (isUsingPointerLock && document.pointerLockElement) {
@@ -572,7 +576,7 @@ export class KnobElement extends HTMLElement {
       }
 
       isUsingPointerLock = false;
-    };
+    }
 
     // Store references for cleanup
     this.dragHandlers = {

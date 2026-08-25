@@ -73,6 +73,25 @@ describe("KnobElement init", () => {
     expect(Number(knob.getAttribute("aria-valuenow"))).toBe(knob.getValue());
   });
 
+  it("ends an active drag when disabled", () => {
+    const knob = createKnob({
+      "min-value": "0",
+      "max-value": "100",
+      "default-value": "25",
+    });
+    document.body.appendChild(knob);
+    knob.dispatchEvent(new MouseEvent("mousedown", { clientY: 100 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 90 }));
+    const valueBeforeDisable = knob.getValue();
+
+    knob.setDisabled(true);
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 80 }));
+    knob.setDisabled(false);
+    document.dispatchEvent(new MouseEvent("mousemove", { clientY: 70 }));
+
+    expect(knob.getValue()).toBe(valueBeforeDisable);
+  });
+
   it("reports double-click resets as user changes", () => {
     const knob = createKnob({
       "min-value": "0",
