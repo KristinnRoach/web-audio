@@ -2,8 +2,8 @@
 "@kidlib/web-audio": minor
 ---
 
-Replace `SamplePlayer.enablePitch()`/`disablePitch()` with `setPitchEnabled(enabled)`.
+Breaking:
 
-Breaking: removes the `samplerToggles` export and the `SamplerToggleKey` /
-`SamplerToggleDescriptor` types. It held display strings and glyphs that no code in
-this package consumed; apps call the setters directly instead.
+- `SamplePlayer.enablePitch()` / `disablePitch()` → `setPitchEnabled(enabled: boolean)`.
+- Removed the `samplerToggles` export and the `SamplerToggleKey` / `SamplerToggleDescriptor`
+  types. Call the player setters directly; labels and glyphs belong in the app.
