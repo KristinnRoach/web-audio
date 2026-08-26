@@ -1049,8 +1049,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === PITCH === */
 
-  enablePitch = () => this.voicePool.allVoices.forEach((v) => v.enablePitch());
-  disablePitch = () => this.voicePool.allVoices.forEach((v) => v.disablePitch());
+  setPitchEnabled(enabled: boolean): this {
+    this.voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
+    return this;
+  }
 
   /* === ENVELOPES === */
 

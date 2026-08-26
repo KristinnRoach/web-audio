@@ -35,11 +35,6 @@ export type {
   SamplerParams,
   SamplerParamPatch,
 } from "./nodes/instruments/Sample/sampler-params";
-export { samplerToggles } from "./nodes/instruments/Sample/sampler-toggles";
-export type {
-  SamplerToggleKey,
-  SamplerToggleDescriptor,
-} from "./nodes/instruments/Sample/sampler-toggles";
 
 // =*=*= Keyboard mapping =*=*= \\
 export { defaultKeymap, generateKeymap, keymaps, DEFAULT_KEYMAP_KEY } from "./io/mapping/keymap";
