@@ -1,5 +1,15 @@
 # @kidlib/web-audio
 
+## 0.2.0
+
+### Minor Changes
+
+- a6230a4: Breaking:
+
+  - `SamplePlayer.enablePitch()` / `disablePitch()` → `setPitchEnabled(enabled: boolean)`.
+  - Removed the `samplerToggles` export and the `SamplerToggleKey` / `SamplerToggleDescriptor`
+    types. Call the player setters directly; labels and glyphs belong in the app.
+
 ## 0.1.6
 
 ### Patch Changes
