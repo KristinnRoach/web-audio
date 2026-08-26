@@ -25,3 +25,4 @@ dist
 *.sw?
 
 .vitest-attachments/
+AGENTS.md
