@@ -905,8 +905,14 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (loopPoint === "end" && loopEnd === this.loopEnd) return this;
 
     const targetLoopDuration = loopEnd - loopStart;
+    const shortestLoopDuration = Math.max(
+      this.MIN_LOOP_DURATION_SECONDS,
+      Math.min(this.loopEnd - this.loopStart, targetLoopDuration),
+    );
+    const audioRateThreshold = this.#macroLoopStart.longestPeriod || shortestLoopDuration;
+    const audioRateOctaves = Math.max(0, Math.log2(audioRateThreshold / shortestLoopDuration));
     const RAMP_SENSITIVITY = 1;
-    const scaledRampTime = rampDuration * RAMP_SENSITIVITY;
+    const scaledRampTime = rampDuration * (1 + audioRateOctaves * RAMP_SENSITIVITY);
 
     if (loopPoint === "start" && loopStart !== this.loopStart) {
       // handle tempo loop sync for loop start
