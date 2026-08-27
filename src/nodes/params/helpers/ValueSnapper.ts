@@ -159,16 +159,13 @@ export class ValueSnapper {
 
     if (targetPeriod === prevPeriod) return targetPeriod;
 
-    const direction = targetPeriod > prevPeriod ? "right" : "left";
-    // console.debug('PERIOD', direction);
-
-    // TODO: Test current direction based approach VS 'findClosest'
-    const quantized = findClosest(allowedPeriods, targetPeriod, direction);
+    const quantized = findClosest(allowedPeriods, targetPeriod);
 
     this.#prevIndex = this.#allowedPeriods.indexOf(quantized);
 
     // let quantized = targetPeriod;
     // let idx = this.#prevIndex;
+    // const direction = targetPeriod > prevPeriod ? "right" : "left";
     // if (direction === 'right') {
     //   if (targetPeriod < this.#allowedPeriods[idx + 1]) return prevPeriod;
 
