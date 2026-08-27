@@ -662,14 +662,14 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   /**
-   * Sets the grid both loop macros snap to, using the loaded sample's zero
+   * Sets the periods both loop macros snap to, using the loaded sample's zero
    * crossings. Called on every sample load, so it must run after the buffer.
    */
   setScale(options: {
     rootNote: keyof typeof ROOT_NOTES;
     /** Custom pattern as semitone offsets from the root. */
     scale: number[];
-    /** Detunes the whole snap grid, in semitones. Positive is up. */
+    /** Shifts every allowed period by this many semitones. Positive is up. */
     tuningOffset: number;
     highestOctave: number;
     lowestOctave: number;
@@ -686,7 +686,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  /** Transposes playback to the new root and rebuilds both loop macro grids. */
+  /** Transposes playback to the new root and rebuilds both loop macros' periods. */
   setRootNote(note: keyof typeof ROOT_NOTES) {
     const rootNoteNumber = ROOT_NOTES[note];
 

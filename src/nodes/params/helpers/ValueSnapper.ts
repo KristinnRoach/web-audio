@@ -26,9 +26,12 @@ const normalizeRange = (
 };
 
 /**
- * Quantizes param values against two independent grids: allowed values
- * (`snapToValue`) and allowed periods in seconds (`snapToMusicalPeriod`).
- * Both grids are kept sorted ascending; callers set whichever they need.
+ * Quantizes param values against two independent sets: allowed values
+ * (`snapToValue`) and allowed periods (`snapToMusicalPeriod`). Both are
+ * kept sorted ascending; callers set whichever they need.
+ *
+ * Periods are in seconds unless a `normalize` option was given, in which
+ * case they are stored, and must be queried, in the normalized range.
  */
 export class ValueSnapper {
   #allowedValues: number[] = [];
@@ -47,13 +50,13 @@ export class ValueSnapper {
   };
 
   /**
-   * Builds the period grid from a scale, one entry per scale note per octave.
+   * Builds the allowed periods from a scale, one per scale note per octave.
    * @returns the resulting allowed periods, sorted ascending.
    */
   setScale(
     rootNote: keyof typeof ROOT_NOTES,
     scalePattern: readonly number[] | number[],
-    /** Detunes the whole snap grid, in semitones. Positive is up. */
+    /** Shifts every allowed period by this many semitones. Positive is up. */
     tuningOffset: number = 0,
     lowestOctave: number = 0,
     highestOctave: number = 6,
@@ -83,7 +86,7 @@ export class ValueSnapper {
     return this.setAllowedPeriods(periodsInSeconds, normalize, snapToZeroCrossings);
   }
 
-  /** Rebuilds the grid on a new root, keeping the last `setScale` options. */
+  /** Rebuilds the allowed periods on a new root, keeping the last `setScale` options. */
   setRootNote(rootNote: keyof typeof ROOT_NOTES) {
     const { tuningOffset, lowestOctave, highestOctave, normalize, snapToZeroCrossings } =
       this.#scaleOptions;
@@ -100,7 +103,7 @@ export class ValueSnapper {
   }
 
   /**
-   * Sets the period grid directly, in seconds.
+   * Sets the allowed periods, in seconds before `normalize` is applied.
    * `snapToZeroCrossings` is accepted but not yet used.
    */
   setAllowedPeriods(
@@ -150,8 +153,8 @@ export class ValueSnapper {
   }
 
   /**
-   * Snaps a period (in seconds) to the closest allowed period. Periods longer
-   * than the grid pass through unchanged; shorter ones clamp to the shortest.
+   * Snaps a period to the closest allowed period. Periods longer than the
+   * longest allowed pass through unchanged; shorter ones clamp to the shortest.
    * Snapping to nearest means a target that stays on the same side of the
    * midpoint returns the same period, so no glide is triggered.
    */
@@ -167,7 +170,7 @@ export class ValueSnapper {
     return findClosest(allowedPeriods, targetPeriod);
   }
 
-  /** Sets the value grid, independent of the period grid. */
+  /** Sets the allowed values, independent of the allowed periods. */
   setAllowedValues(values: number[], normalize: NormalizeOptions | false) {
     const finalValues = normalize ? normalizeRange(values, normalize) : values;
     this.#allowedValues = [...(finalValues as number[])].sort((a, b) => a - b);

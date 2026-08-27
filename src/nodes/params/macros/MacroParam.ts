@@ -170,14 +170,14 @@ export class MacroParam {
   }
 
   /**
-   * Sets the period grid this param snaps to.
-   * @returns the resulting allowed periods in seconds, sorted ascending.
+   * Sets the periods this param snaps to.
+   * @returns the resulting allowed periods, sorted ascending.
    */
   setScale(options: {
     rootNote: keyof typeof ROOT_NOTES;
     /** Scale name, or a custom pattern as semitone offsets from the root. */
     scale: keyof typeof SCALE_PATTERNS | number[];
-    /** Detunes the whole snap grid, in semitones. Positive is up. */
+    /** Shifts every allowed period by this many semitones. Positive is up. */
     tuningOffset: number;
     highestOctave: number;
     lowestOctave: number;
@@ -224,7 +224,7 @@ export class MacroParam {
     return this.#snapper.rootNote;
   }
 
-  /** Rebuilds the grid on a new root, keeping the last `setScale` options. */
+  /** Rebuilds the allowed periods on a new root, keeping the last `setScale` options. */
   setRootNote(rootNote: keyof typeof ROOT_NOTES) {
     this.#snapper.setRootNote(rootNote);
   }
