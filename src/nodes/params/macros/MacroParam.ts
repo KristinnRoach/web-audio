@@ -169,9 +169,15 @@ export class MacroParam {
     return this.#snapper.setAllowedPeriods(periods, normalize, snapToZeroCrossings);
   }
 
+  /**
+   * Sets the periods this param snaps to.
+   * @returns the resulting allowed periods, sorted ascending.
+   */
   setScale(options: {
     rootNote: keyof typeof ROOT_NOTES;
+    /** Scale name, or a custom pattern as semitone offsets from the root. */
     scale: keyof typeof SCALE_PATTERNS | number[];
+    /** Shifts every allowed period by this many semitones. Positive is up. */
     tuningOffset: number;
     highestOctave: number;
     lowestOctave: number;
@@ -218,6 +224,7 @@ export class MacroParam {
     return this.#snapper.rootNote;
   }
 
+  /** Rebuilds the allowed periods on a new root, keeping the last `setScale` options. */
   setRootNote(rootNote: keyof typeof ROOT_NOTES) {
     this.#snapper.setRootNote(rootNote);
   }
