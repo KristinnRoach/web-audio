@@ -32,10 +32,20 @@ export class ValueSnapper {
   #currentRootNote: keyof typeof ROOT_NOTES = "C";
   #currentScalePattern: number[] = [];
 
+  // Preserved across setRootNote
+  #scaleOptions = {
+    tuningOffset: 0,
+    lowestOctave: 0,
+    highestOctave: 6,
+    normalize: false as NormalizeOptions | false,
+    snapToZeroCrossings: false as number[] | false,
+  };
+
   setScale(
     rootNote: keyof typeof ROOT_NOTES,
     scalePattern: readonly number[] | number[],
-    tuningOffset: number = 0, // in semitones
+    /** Detunes the whole snap grid, in semitones. Positive is up. */
+    tuningOffset: number = 0,
     lowestOctave: number = 0,
     highestOctave: number = 6,
     normalize: NormalizeOptions | false,
@@ -48,20 +58,35 @@ export class ValueSnapper {
     let periodsInSeconds = scale.periodsInSec.sort((a, b) => a - b);
 
     if (tuningOffset !== 0) {
-      periodsInSeconds = offsetPeriodsBySemitones(
-        periodsInSeconds,
-        -tuningOffset, // Offset by MINUS the current tuning
-      );
+      periodsInSeconds = offsetPeriodsBySemitones(periodsInSeconds, tuningOffset);
     }
 
     this.#currentRootNote = rootNote;
     this.#currentScalePattern = pattern;
+    this.#scaleOptions = {
+      tuningOffset,
+      lowestOctave,
+      highestOctave,
+      normalize,
+      snapToZeroCrossings,
+    };
 
     return this.setAllowedPeriods(periodsInSeconds, normalize, snapToZeroCrossings);
   }
 
   setRootNote(rootNote: keyof typeof ROOT_NOTES) {
-    this.setScale(rootNote, this.#currentScalePattern, 0, 0, 6, false, false);
+    const { tuningOffset, lowestOctave, highestOctave, normalize, snapToZeroCrossings } =
+      this.#scaleOptions;
+
+    return this.setScale(
+      rootNote,
+      this.#currentScalePattern,
+      tuningOffset,
+      lowestOctave,
+      highestOctave,
+      normalize,
+      snapToZeroCrossings,
+    );
   }
 
   // snapToZeroCrossings is accepted but not yet used

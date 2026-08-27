@@ -664,6 +664,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setScale(options: {
     rootNote: keyof typeof ROOT_NOTES;
     scale: number[];
+    /** Detunes the whole snap grid, in semitones. Positive is up. */
     tuningOffset: number;
     highestOctave: number;
     lowestOctave: number;

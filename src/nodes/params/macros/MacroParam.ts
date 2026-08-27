@@ -172,6 +172,7 @@ export class MacroParam {
   setScale(options: {
     rootNote: keyof typeof ROOT_NOTES;
     scale: keyof typeof SCALE_PATTERNS | number[];
+    /** Detunes the whole snap grid, in semitones. Positive is up. */
     tuningOffset: number;
     highestOctave: number;
     lowestOctave: number;
