@@ -2,6 +2,7 @@ import { createScale, offsetPeriodsBySemitones } from "@/utils/music-theory/util
 import type { NormalizeOptions } from "@/nodes/params/param-types";
 import { findClosest, ROOT_NOTES } from "@/utils";
 
+/** Clamps to the `from` range, then maps linearly onto the `to` range. */
 const normalizeRange = (
   values: number | number[],
   options: NormalizeOptions,
@@ -24,7 +25,11 @@ const normalizeRange = (
   }
 };
 
-// Value processor for snapping/quantization
+/**
+ * Quantizes param values against two independent grids: allowed values
+ * (`snapToValue`) and allowed periods in seconds (`snapToMusicalPeriod`).
+ * Both grids are kept sorted ascending; callers set whichever they need.
+ */
 export class ValueSnapper {
   #allowedValues: number[] = [];
   #allowedPeriods: number[] = [];
@@ -41,6 +46,10 @@ export class ValueSnapper {
     snapToZeroCrossings: false as number[] | false,
   };
 
+  /**
+   * Builds the period grid from a scale, one entry per scale note per octave.
+   * @returns the resulting allowed periods, sorted ascending.
+   */
   setScale(
     rootNote: keyof typeof ROOT_NOTES,
     scalePattern: readonly number[] | number[],
@@ -74,6 +83,7 @@ export class ValueSnapper {
     return this.setAllowedPeriods(periodsInSeconds, normalize, snapToZeroCrossings);
   }
 
+  /** Rebuilds the grid on a new root, keeping the last `setScale` options. */
   setRootNote(rootNote: keyof typeof ROOT_NOTES) {
     const { tuningOffset, lowestOctave, highestOctave, normalize, snapToZeroCrossings } =
       this.#scaleOptions;
@@ -89,7 +99,10 @@ export class ValueSnapper {
     );
   }
 
-  // snapToZeroCrossings is accepted but not yet used
+  /**
+   * Sets the period grid directly, in seconds.
+   * `snapToZeroCrossings` is accepted but not yet used.
+   */
   setAllowedPeriods(
     periods: number[],
     normalize: NormalizeOptions | false,
@@ -102,6 +115,12 @@ export class ValueSnapper {
     return this.#allowedPeriods;
   }
 
+  /**
+   * Snaps to the closest allowed value. With no `tolerance`, always snaps.
+   * With a `tolerance`, snaps only within it, otherwise moves `tolerance`
+   * toward the closest value instead of jumping to it.
+   * Returns `target` unchanged when no values are set.
+   */
   snapToValue(
     target: number,
     allowedValues = this.#allowedValues,
@@ -130,6 +149,12 @@ export class ValueSnapper {
     return target + directionToClosest * tolerance;
   }
 
+  /**
+   * Snaps a period (in seconds) to the closest allowed period. Periods longer
+   * than the grid pass through unchanged; shorter ones clamp to the shortest.
+   * Snapping to nearest means a target that stays on the same side of the
+   * midpoint returns the same period, so no glide is triggered.
+   */
   snapToMusicalPeriod(targetPeriod: number, allowedPeriods = this.#allowedPeriods): number {
     if (allowedPeriods.length === 0) return targetPeriod;
 
@@ -142,6 +167,7 @@ export class ValueSnapper {
     return findClosest(allowedPeriods, targetPeriod);
   }
 
+  /** Sets the value grid, independent of the period grid. */
   setAllowedValues(values: number[], normalize: NormalizeOptions | false) {
     const finalValues = normalize ? normalizeRange(values, normalize) : values;
     this.#allowedValues = [...(finalValues as number[])].sort((a, b) => a - b);
