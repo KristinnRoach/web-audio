@@ -26,3 +26,4 @@ dist
 
 .vitest-attachments/
 AGENTS.md
+.claude
