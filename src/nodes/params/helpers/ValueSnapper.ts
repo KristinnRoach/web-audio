@@ -28,12 +28,9 @@ const normalizeRange = (
 export class ValueSnapper {
   #allowedValues: number[] = [];
   #allowedPeriods: number[] = [];
-  #prevIndex = 0;
 
   #currentRootNote: keyof typeof ROOT_NOTES = "C";
   #currentScalePattern: number[] = [];
-
-  paramType: string | null = null;
 
   setScale(
     rootNote: keyof typeof ROOT_NOTES,
@@ -67,51 +64,15 @@ export class ValueSnapper {
     this.setScale(rootNote, this.#currentScalePattern, 0, 0, 6, false, false);
   }
 
+  // snapToZeroCrossings is accepted but not yet used
   setAllowedPeriods(
     periods: number[],
     normalize: NormalizeOptions | false,
     _snapToZeroCrossings: number[] | false = false,
-    _direction: "left" | "right" | "any" = "any",
   ) {
-    let values = normalize ? (normalizeRange([...periods], normalize) as number[]) : periods;
+    const values = normalize ? (normalizeRange([...periods], normalize) as number[]) : periods;
 
-    // Keep original periods for musical calculations
-    // let values = [...periods];
-
-    // if (snapToZeroCrossings && snapToZeroCrossings.length) {
-    //   // Pre-compute the optimal values and store them as the allowedPeriods
-
-    //   console.log('Zero Crossings: ', snapToZeroCrossings);
-    //   console.log('Before snapping: ', periods);
-
-    //   values = values.map((v) => {
-    //     const tolerance = v < 0.01 ? v * 0.01 : v * 0.1; // 1% for periods < 10ms (~16 cents max), 10% for longer
-    //     const snapped = this.snapToValue(
-    //       v,
-    //       snapToZeroCrossings,
-    //       tolerance,
-    //       direction
-    //     );
-
-    //     const correctionFactor = 0.99; // For some reason ALMOST always better results
-    //     return snapped * correctionFactor;
-    //   });
-
-    //   console.log('After snapping: ', values);
-    // }
-
-    // // NOW normalize the snapped periods for 0-1 range
-    // const normalized = normalize
-    //   ? (normalizeRange(values, normalize) as number[])
-    //   : values;
-
-    // console.log('Normalized: ', normalized);
-
-    // this.#debugPeriods(periods, values, normalized);
-
-    this.#allowedPeriods = [...(values as number[])].sort((a, b) => a - b);
-
-    this.#prevIndex = this.#allowedPeriods.length - 1;
+    this.#allowedPeriods = [...values].sort((a, b) => a - b);
 
     return this.#allowedPeriods;
   }
@@ -138,57 +99,28 @@ export class ValueSnapper {
       return findClosest(validValues, target, preferDirection);
     }
 
-    // Fallback: move partially toward closest zero crossing
-    if (tolerance !== undefined) {
-      const closest = findClosest(allowedValues, target, preferDirection);
-      const directionToClosest = Math.sign(closest - target); // -1 or 1
-      return target + directionToClosest * tolerance;
-    }
-
-    return target;
+    // Fallback: move partially toward closest allowed value
+    const closest = findClosest(allowedValues, target, preferDirection);
+    const directionToClosest = Math.sign(closest - target); // -1 or 1
+    return target + directionToClosest * tolerance;
   }
 
   snapToMusicalPeriod(targetPeriod: number, allowedPeriods = this.#allowedPeriods): number {
     if (allowedPeriods.length === 0) return targetPeriod;
-    if (targetPeriod > this.longestPeriod) return targetPeriod;
-    if (targetPeriod <= this.shortestPeriod) return this.shortestPeriod;
 
-    // Find closest musical period to the target duration
+    const shortest = allowedPeriods[0];
+    const longest = allowedPeriods[allowedPeriods.length - 1];
 
-    const prevPeriod = this.#allowedPeriods[this.#prevIndex];
+    if (targetPeriod > longest) return targetPeriod;
+    if (targetPeriod <= shortest) return shortest;
 
-    if (targetPeriod === prevPeriod) return targetPeriod;
-
-    const quantized = findClosest(allowedPeriods, targetPeriod);
-
-    this.#prevIndex = this.#allowedPeriods.indexOf(quantized);
-
-    // let quantized = targetPeriod;
-    // let idx = this.#prevIndex;
-    // const direction = targetPeriod > prevPeriod ? "right" : "left";
-    // if (direction === 'right') {
-    //   if (targetPeriod < this.#allowedPeriods[idx + 1]) return prevPeriod;
-
-    //   while (this.#allowedPeriods[idx] < targetPeriod) idx++;
-    //   quantized = this.#allowedPeriods[idx];
-    // }
-    // if (direction === 'left') {
-    //   if (targetPeriod > this.#allowedPeriods[idx - 1]) return prevPeriod;
-
-    //   while (this.#allowedPeriods[idx] > targetPeriod) idx--;
-    //   quantized = this.#allowedPeriods[idx];
-    // }
-
-    // this.#prevIndex = idx;
-
-    return quantized;
+    return findClosest(allowedPeriods, targetPeriod);
   }
 
   setAllowedValues(values: number[], normalize: NormalizeOptions | false) {
     const finalValues = normalize ? normalizeRange(values, normalize) : values;
     this.#allowedValues = [...(finalValues as number[])].sort((a, b) => a - b);
 
-    // console.log('Allowed Values: ', values);
     return this.#allowedValues;
   }
 
@@ -221,28 +153,3 @@ export class ValueSnapper {
     return this.#allowedPeriods.length > 0;
   }
 }
-
-// const C = {
-//   0: 0.06116,
-//   3: 0.007645,
-//   4: 0.003822,
-//   5: 0.001911,
-//   6: 0.000956,
-//   7: 0.000478,
-//   8: 0.000239,
-// };
-
-// // let directionToUse: 'left' | 'right' | 'any' = 'any';
-// // let preferredDirection: 'left' | 'right' | 'any' = 'any';
-// // if (this.paramType === 'loopEnd') preferredDirection = 'left';
-// // if (this.paramType === 'loopStart') preferredDirection = 'right';
-
-// values = values.map((v) => {
-//   // let tolerance = 0;
-//   // if (v <= C[0]) tolerance = v * 0.1;
-//   // if (v <= C[3]) tolerance = v * 0.001;
-//   // if (v <= C[4]) tolerance = v * 0.0007;
-//   // if (v <= C[5]) tolerance = v * 0.0005;
-//   // if (v <= C[6]) tolerance = v * 0.0002;
-//   // if (v <= C[7]) tolerance = v * 0.0001;
-//   // if (v <= C[8]) tolerance = v * 0.00005;
