@@ -337,10 +337,11 @@ export class CustomEnvelope implements LibNode {
       return;
     }
 
+    // Auto-release for held notes with no explicit note-off.
+    // Skipped while sustaining or looping - both hold indefinitely until released.
     setTimeout(() => {
-      if (this.sustainEnabled || this.#isReleased) return;
+      if (this.sustainEnabled || this.#loopEnabled || this.#isReleased) return;
 
-      // Auto-release if releaseEnvelope is not called manually and sustain is not enabled
       this.#isReleased = true;
 
       if (options.voiceId !== undefined) {
@@ -877,7 +878,7 @@ export class CustomEnvelope implements LibNode {
     this.#data.setSustainPoint(index);
 
     // Handle dynamic sustain - reschedule if envelope is currently active
-    if (this.#activeEnvelope && !this.#loopEnabled && !this.#isReleased) {
+    if (this.#activeEnvelope && !this.#isReleased) {
       this.#rescheduleForSustain();
     }
   };
@@ -955,6 +956,7 @@ export class CustomEnvelope implements LibNode {
       : this.baseReleaseDuration / this.#timeScale;
   }
 
+  /** Loop overrides sustain: a looping envelope never holds at the sustain point. */
   get sustainEnabled() {
     return this.sustainPoint !== null && !this.loopEnabled;
   }
