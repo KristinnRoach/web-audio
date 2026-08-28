@@ -905,8 +905,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (loopPoint === "end" && loopEnd === this.loopEnd) return this;
 
     const targetLoopDuration = loopEnd - loopStart;
-    const RAMP_SENSITIVITY = 1;
-    const scaledRampTime = rampDuration * RAMP_SENSITIVITY;
 
     if (loopPoint === "start" && loopStart !== this.loopStart) {
       // handle tempo loop sync for loop start
@@ -920,7 +918,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         loopStart = loopEnd - this.MIN_LOOP_DURATION_SECONDS;
       }
 
-      this.#macroLoopStart.ramp(loopStart, scaledRampTime, loopEnd);
+      this.#macroLoopStart.ramp(loopStart, rampDuration, loopEnd);
     } else if (loopPoint === "end" && loopEnd !== this.loopEnd) {
       // handle tempo loop sync for loop end
       if (this.#loopTempoSync) {
@@ -933,7 +931,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         loopEnd = loopStart + this.MIN_LOOP_DURATION_SECONDS;
       }
 
-      this.#macroLoopEnd.ramp(loopEnd, scaledRampTime, loopStart);
+      this.#macroLoopEnd.ramp(loopEnd, rampDuration, loopStart);
     }
 
     this.sendUpstreamMessage("loop-points:updated", {
