@@ -25,6 +25,28 @@ const mockEnvelopeData = new EnvelopeData(
 );
 
 describe("CustomEnvelope", () => {
+  it("round-trips point value range with envelope state", () => {
+    const envelope = new CustomEnvelope(
+      mockAudioContext,
+      "amp-env",
+      new EnvelopeData(
+        [
+          { time: 0, value: 0 },
+          { time: 1, value: 1 },
+        ],
+        [0, 1],
+        1,
+      ),
+    );
+    const state = envelope.getState();
+    state.shape.valueRange = [-1, 2];
+
+    envelope.applyState(state);
+
+    expect(envelope.getState().shape.valueRange).toEqual([-1, 2]);
+    expect(envelope.envPointValueRange).toEqual([-1, 2]);
+  });
+
   it("should generate a curve with correct initial value", () => {
     const envelope = new CustomEnvelope(
       mockAudioContext,

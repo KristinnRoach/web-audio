@@ -46,6 +46,7 @@ function cloneEnvelopeState(state: EnvelopeState): EnvelopeState {
     shape: {
       ...state.shape,
       points: state.shape.points.map((point) => ({ ...point })),
+      valueRange: [...state.shape.valueRange],
     },
   };
 }
@@ -61,6 +62,10 @@ function validateEnvelopeState(state: EnvelopeState): void {
     state?.shape?.kind !== "points" ||
     !Array.isArray(points) ||
     points.length < 2 ||
+    !Array.isArray(state.shape.valueRange) ||
+    state.shape.valueRange.length !== 2 ||
+    !state.shape.valueRange.every(Number.isFinite) ||
+    state.shape.valueRange[0] >= state.shape.valueRange[1] ||
     points.some(
       (point, index) =>
         !Number.isFinite(point.time) ||

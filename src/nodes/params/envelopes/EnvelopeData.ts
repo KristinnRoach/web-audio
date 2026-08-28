@@ -135,8 +135,14 @@ export class EnvelopeData {
   }
 
   /** @internal */
-  replacePoints(points: EnvelopePoint[], sustainIndex: number | null, releaseIndex: number) {
+  replacePoints(
+    points: EnvelopePoint[],
+    valueRange: [number, number],
+    sustainIndex: number | null,
+    releaseIndex: number,
+  ) {
     this.points = points.map((point) => ({ ...point }));
+    this.#pointValueRange = [...valueRange];
     this.#startIdx = 0;
     this.#endIdx = points.length - 1;
     this.#sustainIdx = sustainIndex;

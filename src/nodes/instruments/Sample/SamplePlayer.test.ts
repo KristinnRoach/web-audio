@@ -13,6 +13,7 @@ const state: EnvelopeState = {
       { time: 0, value: 0, curve: "linear" },
       { time: 1, value: 1, curve: "exponential" },
     ],
+    valueRange: [0, 1],
     sustainIndex: null,
     releaseIndex: 1,
   },
@@ -58,9 +59,13 @@ describe("SamplePlayer envelope state", () => {
     const { SamplePlayer } = await import("./SamplePlayer");
     const applyEnvelopeState = vi.fn();
     const sendUpstreamMessage = vi.fn();
-    const input = {
+    const input: EnvelopeState = {
       ...state,
-      shape: { ...state.shape, points: state.shape.points.map((point) => ({ ...point })) },
+      shape: {
+        ...state.shape,
+        points: state.shape.points.map((point) => ({ ...point })),
+        valueRange: [...state.shape.valueRange],
+      },
     };
     const envelope = { getState: () => state };
     const voices = [
@@ -78,9 +83,11 @@ describe("SamplePlayer envelope state", () => {
 
     player.applyEnvelopeState("amp-env", input);
     input.shape.points[0].value = 99;
+    input.shape.valueRange[0] = 99;
 
     expect(applyEnvelopeState).toHaveBeenCalledTimes(2);
     expect(player.getEnvelopeState("amp-env").shape.points[0].value).toBe(0);
+    expect(player.getEnvelopeState("amp-env").shape.valueRange).toEqual([0, 1]);
     expect(sendUpstreamMessage).toHaveBeenCalledOnce();
     expect(sendUpstreamMessage).toHaveBeenCalledWith("envelope:changed", {
       envelopeType: "amp-env",
@@ -103,6 +110,12 @@ describe("SamplePlayer envelope state", () => {
     expect(() => player.applyEnvelopeState("amp-env", { ...state, timeScale: 0 })).toThrowError(
       "Invalid envelope state",
     );
+    expect(() =>
+      player.applyEnvelopeState("amp-env", {
+        ...state,
+        shape: { ...state.shape, valueRange: [1, 0] },
+      }),
+    ).toThrowError("Invalid envelope state");
     expect(applyToAllVoices).not.toHaveBeenCalled();
   });
 });

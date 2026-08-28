@@ -165,6 +165,7 @@ export class CustomEnvelope implements LibNode {
       shape: {
         kind: "points",
         points: this.points.map((point) => ({ ...point })),
+        valueRange: [this.#data.pointValueRange[0], this.#data.pointValueRange[1]],
         sustainIndex: this.sustainPointIndex,
         releaseIndex: this.releasePointIndex,
       },
@@ -175,6 +176,7 @@ export class CustomEnvelope implements LibNode {
   applyState(state: EnvelopeState): void {
     this.#data.replacePoints(
       state.shape.points,
+      state.shape.valueRange,
       state.shape.sustainIndex,
       state.shape.releaseIndex,
     );

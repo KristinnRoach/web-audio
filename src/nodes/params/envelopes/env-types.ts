@@ -13,6 +13,8 @@ export type EnvelopePoint = {
 export type PointEnvelopeShape = {
   kind: "points";
   points: EnvelopePoint[];
+  /** Allowed point-value bounds. */
+  valueRange: [number, number];
   /** Point held until note release, or null for no sustain. */
   sustainIndex: number | null;
   /** Point from which note release continues. */
