@@ -134,6 +134,7 @@ export class EnvelopeData {
     this.#updateSharpTransitionsFlag();
   }
 
+  /** @internal */
   replacePoints(points: EnvelopePoint[], sustainIndex: number | null, releaseIndex: number) {
     this.points = points.map((point) => ({ ...point }));
     this.#startIdx = 0;

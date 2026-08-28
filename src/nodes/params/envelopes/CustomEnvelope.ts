@@ -155,6 +155,7 @@ export class CustomEnvelope implements LibNode {
     return this.#data.points.length;
   }
 
+  /** @internal */
   getState(): EnvelopeState {
     return {
       enabled: this.#isEnabled,
@@ -170,6 +171,7 @@ export class CustomEnvelope implements LibNode {
     };
   }
 
+  /** @internal */
   applyState(state: EnvelopeState): void {
     this.#data.replacePoints(
       state.shape.points,

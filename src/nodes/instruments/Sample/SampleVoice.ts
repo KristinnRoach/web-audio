@@ -659,6 +659,7 @@ export class SampleVoice {
     return this.#envelopes.get(envType);
   };
 
+  /** @internal */
   applyEnvelopeState = (envType: EnvelopeType, state: EnvelopeState) => {
     const envelope = this.#envelopes.get(envType);
     envelope?.applyState(state);

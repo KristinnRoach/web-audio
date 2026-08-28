@@ -1109,6 +1109,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === ENVELOPES === */
 
+  /** Returns a detached, serializable envelope snapshot. */
   getEnvelopeState(type: SampleEnvelopeType): EnvelopeState {
     const stored = this.envelopeStates.get(type);
     if (stored) return cloneEnvelopeState(stored);
@@ -1119,6 +1120,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return cloneEnvelopeState(state);
   }
 
+  /** Applies a complete snapshot and emits one `envelope:changed` message. */
   applyEnvelopeState(type: SampleEnvelopeType, state: EnvelopeState): void {
     validateEnvelopeState(state);
     this.getEnvelope(type);
