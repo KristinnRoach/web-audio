@@ -182,7 +182,7 @@ export class CustomEnvelope implements LibNode {
     );
     this.#timeScale = state.timeScale;
     this.#syncedToPlaybackRate = state.playbackRateSync;
-    this.#loopEnabled = state.loop;
+    this.setLoopEnabled(state.loop);
     this.#isEnabled = state.enabled;
     if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   }
@@ -312,11 +312,13 @@ export class CustomEnvelope implements LibNode {
 
       // Still track state for release
       this.#isReleased = false;
+      this.#autoReleaseSuppressed = false;
       this.#currentPlaybackRate = options.playbackRate;
       return;
     }
 
     this.#isReleased = false;
+    this.#autoReleaseSuppressed = false;
     this.#currentPlaybackRate = options.playbackRate;
 
     // Store active envelope state for dynamic sustain
@@ -340,18 +342,16 @@ export class CustomEnvelope implements LibNode {
     // Auto-release for held notes with no explicit note-off.
     // Skipped while sustaining or looping - both hold indefinitely until released.
     setTimeout(() => {
-      if (this.sustainEnabled || this.#loopEnabled || this.#isReleased) return;
+      if (this.sustainEnabled || this.#isReleased) return;
 
-      this.#isReleased = true;
-
-      if (options.voiceId !== undefined) {
-        this.sendUpstreamMessage(`${this.envelopeType}:release`, {
-          voiceId: options.voiceId,
-          midiNote: options.midiNote,
-          releasePoint: this.releasePoint, // normalization for display happens in UI code
-          remainingDuration: this.effectiveReleaseDuration,
-        });
+      if (this.#loopEnabled) {
+        // Loop is still holding the note. Remember that this deadline passed so
+        // setLoopEnabled can catch up if the loop is switched off mid-note.
+        this.#autoReleaseSuppressed = true;
+        return;
       }
+
+      this.#sendAutoRelease(options);
     }, this.effectiveReleaseStartTime * 1000);
   }
 
@@ -450,9 +450,24 @@ export class CustomEnvelope implements LibNode {
   }
 
   #isReleased = false;
+  #autoReleaseSuppressed = false;
   #isCurrentlyLooping = false;
   #loopUpdateFlag = false;
   #shouldLoop = () => this.#loopEnabled && !this.#isReleased;
+
+  #sendAutoRelease(options?: { voiceId?: string; midiNote?: number }) {
+    this.#autoReleaseSuppressed = false;
+    this.#isReleased = true;
+
+    if (options?.voiceId !== undefined) {
+      this.sendUpstreamMessage(`${this.envelopeType}:release`, {
+        voiceId: options.voiceId,
+        midiNote: options.midiNote,
+        releasePoint: this.releasePoint, // normalization for display happens in UI code
+        remainingDuration: this.effectiveReleaseDuration,
+      });
+    }
+  }
 
   // Active envelope tracking for dynamic sustain
   #activeEnvelope: {
@@ -866,6 +881,12 @@ export class CustomEnvelope implements LibNode {
       console.info(`Only default env loop mode implemented. Other modes coming soon!`);
     }
     this.#loopEnabled = enabled;
+
+    // The auto-release deadline may have passed while the loop was holding the note.
+    // A sustain point becomes active again once looping stops, so re-check it here.
+    if (!enabled && this.#autoReleaseSuppressed && !this.#isReleased && !this.sustainEnabled) {
+      this.#sendAutoRelease(this.#activeEnvelope?.options);
+    }
   };
 
   syncToPlaybackRate = (sync: boolean) => {
