@@ -14,7 +14,12 @@ import {
   midiToPlaybackRate,
 } from "@/utils";
 
-import { CustomEnvelope, type EnvelopeType, createEnvelope } from "@/nodes/params/envelopes";
+import {
+  CustomEnvelope,
+  type EnvelopeState,
+  type EnvelopeType,
+  createEnvelope,
+} from "@/nodes/params/envelopes";
 
 import { HarmonicFeedback } from "@/nodes/effects/HarmonicFeedback";
 
@@ -652,6 +657,12 @@ export class SampleVoice {
 
   getEnvelope = (envType: EnvelopeType): CustomEnvelope | undefined => {
     return this.#envelopes.get(envType);
+  };
+
+  applyEnvelopeState = (envType: EnvelopeType, state: EnvelopeState) => {
+    const envelope = this.#envelopes.get(envType);
+    envelope?.applyState(state);
+    if (envelope && !state.enabled) this.disableEnvelope(envType);
   };
 
   get envelopes() {

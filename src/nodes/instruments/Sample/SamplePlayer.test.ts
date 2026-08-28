@@ -1,5 +1,22 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { SamplePlayer } from "./SamplePlayer";
+import type { EnvelopeState } from "../../params/envelopes";
+
+const state: EnvelopeState = {
+  enabled: false,
+  timeScale: 2,
+  playbackRateSync: true,
+  loop: false,
+  shape: {
+    kind: "points",
+    points: [
+      { time: 0, value: 0, curve: "linear" },
+      { time: 1, value: 1, curve: "exponential" },
+    ],
+    sustainIndex: null,
+    releaseIndex: 1,
+  },
+};
 
 describe("SamplePlayer.applyParams", () => {
   it("applies only valid parameter values", async () => {
@@ -30,5 +47,62 @@ describe("SamplePlayer.applyParams", () => {
     expect(setGlideTime).toHaveBeenCalledWith(0.2);
     expect(setTempo).not.toHaveBeenCalled();
     expect(setFeedbackPitchScale).not.toHaveBeenCalled();
+  });
+});
+
+describe("SamplePlayer envelope state", () => {
+  it("applies a detached snapshot to every voice and emits once", async () => {
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("AudioContext", class {});
+    vi.stubGlobal("AudioWorkletNode", class {});
+    const { SamplePlayer } = await import("./SamplePlayer");
+    const applyEnvelopeState = vi.fn();
+    const sendUpstreamMessage = vi.fn();
+    const input = {
+      ...state,
+      shape: { ...state.shape, points: state.shape.points.map((point) => ({ ...point })) },
+    };
+    const envelope = { getState: () => state };
+    const voices = [
+      { getEnvelope: () => envelope, applyEnvelopeState },
+      { getEnvelope: () => envelope, applyEnvelopeState },
+    ];
+    const player = Object.assign(Object.create(SamplePlayer.prototype), {
+      envelopeStates: new Map(),
+      voicePool: {
+        allVoices: voices,
+        applyToAllVoices: (fn: (voice: (typeof voices)[number]) => void) => voices.forEach(fn),
+      },
+      sendUpstreamMessage,
+    }) as SamplePlayer;
+
+    player.applyEnvelopeState("amp-env", input);
+    input.shape.points[0].value = 99;
+
+    expect(applyEnvelopeState).toHaveBeenCalledTimes(2);
+    expect(player.getEnvelopeState("amp-env").shape.points[0].value).toBe(0);
+    expect(sendUpstreamMessage).toHaveBeenCalledOnce();
+    expect(sendUpstreamMessage).toHaveBeenCalledWith("envelope:changed", {
+      envelopeType: "amp-env",
+      state: expect.objectContaining({ enabled: false }),
+    });
+  });
+
+  it("rejects invalid snapshots before mutating voices", async () => {
+    const { SamplePlayer } = await import("./SamplePlayer");
+    const applyToAllVoices = vi.fn();
+    const player = Object.assign(Object.create(SamplePlayer.prototype), {
+      envelopeStates: new Map(),
+      voicePool: {
+        allVoices: [{ getEnvelope: () => ({ getState: () => state }) }],
+        applyToAllVoices,
+      },
+      sendUpstreamMessage: vi.fn(),
+    }) as SamplePlayer;
+
+    expect(() => player.applyEnvelopeState("amp-env", { ...state, timeScale: 0 })).toThrowError(
+      "Invalid envelope state",
+    );
+    expect(applyToAllVoices).not.toHaveBeenCalled();
   });
 });

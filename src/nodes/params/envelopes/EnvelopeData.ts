@@ -134,6 +134,15 @@ export class EnvelopeData {
     this.#updateSharpTransitionsFlag();
   }
 
+  replacePoints(points: EnvelopePoint[], sustainIndex: number | null, releaseIndex: number) {
+    this.points = points.map((point) => ({ ...point }));
+    this.#startIdx = 0;
+    this.#endIdx = points.length - 1;
+    this.#sustainIdx = sustainIndex;
+    this.#releaseIdx = releaseIndex;
+    this.#updateSharpTransitionsFlag();
+  }
+
   interpolateValueAtTime(timeSeconds: number): number {
     if (this.points.length === 0) return this.#pointValueRange[0];
     if (this.points.length === 1) return this.points[0].value;

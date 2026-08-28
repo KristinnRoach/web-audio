@@ -3,7 +3,7 @@ import { registerNode, NodeID, unregisterNode } from "@/nodes/node-store";
 
 import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events";
 
-import { EnvelopePoint, EnvelopeType } from "./env-types";
+import { EnvelopePoint, EnvelopeState, EnvelopeType } from "./env-types";
 import { EnvelopeData } from "./EnvelopeData";
 import { LibNode } from "@/nodes/LibNode";
 import { assert, cancelAndPinParamValue, cancelScheduledParamValues, clamp } from "@/utils";
@@ -153,6 +153,34 @@ export class CustomEnvelope implements LibNode {
 
   get numPoints(): number {
     return this.#data.points.length;
+  }
+
+  getState(): EnvelopeState {
+    return {
+      enabled: this.#isEnabled,
+      timeScale: this.#timeScale,
+      playbackRateSync: this.#syncedToPlaybackRate,
+      loop: this.#loopEnabled,
+      shape: {
+        kind: "points",
+        points: this.points.map((point) => ({ ...point })),
+        sustainIndex: this.sustainPointIndex,
+        releaseIndex: this.releasePointIndex,
+      },
+    };
+  }
+
+  applyState(state: EnvelopeState): void {
+    this.#data.replacePoints(
+      state.shape.points,
+      state.shape.sustainIndex,
+      state.shape.releaseIndex,
+    );
+    this.#timeScale = state.timeScale;
+    this.#syncedToPlaybackRate = state.playbackRateSync;
+    this.#loopEnabled = state.loop;
+    this.#isEnabled = state.enabled;
+    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   }
 
   // ===== AUDIO OPERATIONS =====

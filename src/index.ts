@@ -13,7 +13,10 @@ export type {
   CustomEnvelope,
   EnvelopePoint,
   EnvelopeData,
+  EnvelopeState,
   EnvelopeType,
+  PointEnvelopeShape,
+  SampleEnvelopeType,
 } from "./nodes/params/envelopes";
 
 // =*=*= Utilities =*=*= \\

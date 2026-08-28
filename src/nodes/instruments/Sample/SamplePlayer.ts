@@ -29,12 +29,56 @@ import { createInstrumentBus, type InstrumentBus } from "@/nodes/master/createIn
 import { BusNodeName } from "@/nodes/master/InstrumentBus";
 import { SampleVoicePool } from "./SampleVoicePool";
 import { CustomEnvelope } from "@/nodes/params";
-import { EnvelopeType } from "@/nodes/params/envelopes";
+import {
+  type EnvelopeState,
+  type EnvelopeType,
+  type SampleEnvelopeType,
+} from "@/nodes/params/envelopes";
 import { ILibInstrumentNode } from "@/nodes/LibAudioNode";
 import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
 import { createMessageBus, MessageBus } from "@/events";
 import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/generateWaveform";
 import { createSampleVoicePool } from "./createSampleVoicePool";
+
+function cloneEnvelopeState(state: EnvelopeState): EnvelopeState {
+  return {
+    ...state,
+    shape: {
+      ...state.shape,
+      points: state.shape.points.map((point) => ({ ...point })),
+    },
+  };
+}
+
+function validateEnvelopeState(state: EnvelopeState): void {
+  const points = state?.shape?.points;
+  if (
+    typeof state?.enabled !== "boolean" ||
+    typeof state?.loop !== "boolean" ||
+    typeof state?.playbackRateSync !== "boolean" ||
+    !Number.isFinite(state?.timeScale) ||
+    state.timeScale <= 0 ||
+    state?.shape?.kind !== "points" ||
+    !Array.isArray(points) ||
+    points.length < 2 ||
+    points.some(
+      (point, index) =>
+        !Number.isFinite(point.time) ||
+        !Number.isFinite(point.value) ||
+        (point.curve !== undefined && point.curve !== "linear" && point.curve !== "exponential") ||
+        (index > 0 && point.time < points[index - 1].time),
+    ) ||
+    (state.shape.sustainIndex !== null &&
+      (!Number.isInteger(state.shape.sustainIndex) ||
+        state.shape.sustainIndex < 0 ||
+        state.shape.sustainIndex >= points.length)) ||
+    !Number.isInteger(state.shape.releaseIndex) ||
+    state.shape.releaseIndex < 0 ||
+    state.shape.releaseIndex >= points.length
+  ) {
+    throw new TypeError("Invalid envelope state");
+  }
+}
 
 export class SamplePlayer implements ILibInstrumentNode {
   public readonly nodeId: NodeID;
@@ -45,6 +89,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #initialized = false;
   #initPromise: Promise<void> | null = null;
   #isLoaded = false;
+  private readonly envelopeStates = new Map<SampleEnvelopeType, EnvelopeState>();
   #polyphony: number;
   #initialAudioBuffer: AudioBuffer | null = null;
 
@@ -241,6 +286,9 @@ export class SamplePlayer implements ILibInstrumentNode {
   #setupMessageHandling(): this {
     this.voicePool.onMessage("sample:loaded", () => {
       this.#isLoaded = true;
+      this.envelopeStates.forEach((state, type) => {
+        this.applyEnvelopeStateToVoices(type, state);
+      });
     });
 
     this.voicePool.onMessage("voice-pool:initialized", () => {
@@ -1061,14 +1109,54 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === ENVELOPES === */
 
+  getEnvelopeState(type: SampleEnvelopeType): EnvelopeState {
+    const stored = this.envelopeStates.get(type);
+    if (stored) return cloneEnvelopeState(stored);
+
+    const envelope = this.getEnvelope(type);
+    const state = envelope.getState();
+    this.envelopeStates.set(type, state);
+    return cloneEnvelopeState(state);
+  }
+
+  applyEnvelopeState(type: SampleEnvelopeType, state: EnvelopeState): void {
+    validateEnvelopeState(state);
+    this.getEnvelope(type);
+
+    const nextState = cloneEnvelopeState(state);
+    this.envelopeStates.set(type, nextState);
+    this.applyEnvelopeStateToVoices(type, nextState);
+    this.sendUpstreamMessage("envelope:changed", {
+      envelopeType: type,
+      state: cloneEnvelopeState(nextState),
+    });
+  }
+
+  private applyEnvelopeStateToVoices(type: SampleEnvelopeType, state: EnvelopeState): void {
+    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeState(type, state));
+  }
+
+  private emitEnvelopeChanged(type: EnvelopeType): void {
+    if (type !== "amp-env" && type !== "pitch-env" && type !== "filter-env") return;
+    if (!this.voicePool.allVoices[0]?.getEnvelope(type)) return;
+    this.envelopeStates.delete(type);
+    this.sendUpstreamMessage("envelope:changed", {
+      envelopeType: type,
+      state: this.getEnvelopeState(type),
+    });
+  }
+
   enableEnvelope = (envType: EnvelopeType) => {
     this.voicePool.applyToAllVoices((voice) => voice.enableEnvelope(envType));
+    this.emitEnvelopeChanged(envType);
   };
 
   disableEnvelope = (envType: EnvelopeType) => {
     this.voicePool.applyToAllVoices((voice) => voice.disableEnvelope(envType));
+    this.emitEnvelopeChanged(envType);
   };
 
+  /** @deprecated Prefer getEnvelopeState() and applyEnvelopeState(). */
   getEnvelope(envType: EnvelopeType): CustomEnvelope {
     const firstVoice = this.voicePool.allVoices[0];
     if (!firstVoice) throw new Error("No voices available in voice pool");
@@ -1085,34 +1173,42 @@ export class SamplePlayer implements ILibInstrumentNode {
     mode: "normal" | "ping-pong" | "reverse" = "normal",
   ) => {
     this.voicePool.applyToAllVoices((v) => v.setEnvelopeLoop(envType, loop, mode));
+    this.emitEnvelopeChanged(envType);
   };
 
   setEnvelopeSync = (envType: EnvelopeType, sync: boolean) => {
     this.voicePool.applyToAllVoices((v) => v.syncEnvelopeToPlaybackRate(envType, sync));
+    this.emitEnvelopeChanged(envType);
   };
 
   setEnvelopeTimeScale = (envType: EnvelopeType, timeScale: number) => {
     this.voicePool.applyToAllVoices((v) => v.setEnvelopeTimeScale(envType, timeScale));
+    this.emitEnvelopeChanged(envType);
   };
 
   setEnvelopeSustainPoint(envType: EnvelopeType, index: number | null) {
     this.voicePool.applyToAllVoices((v) => v.setEnvelopeSustainPoint(envType, index));
+    this.emitEnvelopeChanged(envType);
   }
 
   setEnvelopeReleasePoint(envType: EnvelopeType, index: number) {
     this.voicePool.applyToAllVoices((v) => v.setEnvelopeReleasePoint(envType, index));
+    this.emitEnvelopeChanged(envType);
   }
 
   updateEnvelopePoint(envType: EnvelopeType, index: number, time: number, value: number): void {
     this.voicePool.applyToAllVoices((v) => v.updateEnvelopePoint(envType, index, time, value));
+    this.emitEnvelopeChanged(envType);
   }
 
   addEnvelopePoint(envType: EnvelopeType, time: number, value: number): void {
     this.voicePool.applyToAllVoices((v) => v.addEnvelopePoint(envType, time, value));
+    this.emitEnvelopeChanged(envType);
   }
 
   deleteEnvelopePoint(envType: EnvelopeType, index: number): void {
     this.voicePool.applyToAllVoices((v) => v.deleteEnvelopePoint(envType, index));
+    this.emitEnvelopeChanged(envType);
   }
 
   startLevelMonitoring(intervalMs?: number) {
