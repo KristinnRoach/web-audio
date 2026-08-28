@@ -67,7 +67,7 @@ export class MacroParam {
 
     this.#currentTargetValue = processedValue;
 
-    const { method = "exponential", debounceMs = 0, onComplete, onCompleteDelayMs = 30 } = options;
+    const { method = "exponential", debounceMs = 20, onComplete, onCompleteDelayMs = 30 } = options;
 
     const executeRamp = () => {
       this.#controller.ramp(processedValue, duration, method, true);

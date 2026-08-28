@@ -299,7 +299,7 @@ export const samplerParams = defineSamplerParams({
     label: "Loop Ramp",
     min: 0.001,
     max: 1,
-    defaultValue: 0.1,
+    defaultValue: 0.5,
     step: 0.001,
     apply: (p, v) => p.setLoopRampDuration(v),
   },

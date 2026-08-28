@@ -905,14 +905,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (loopPoint === "end" && loopEnd === this.loopEnd) return this;
 
     const targetLoopDuration = loopEnd - loopStart;
-    const shortestLoopDuration = Math.max(
-      this.MIN_LOOP_DURATION_SECONDS,
-      Math.min(this.loopEnd - this.loopStart, targetLoopDuration),
-    );
-    const audioRateThreshold = this.#macroLoopStart.longestPeriod || shortestLoopDuration;
-    const audioRateOctaves = Math.max(0, Math.log2(audioRateThreshold / shortestLoopDuration));
-    const RAMP_SENSITIVITY = 1;
-    const scaledRampTime = rampDuration * (1 + audioRateOctaves * RAMP_SENSITIVITY);
 
     if (loopPoint === "start" && loopStart !== this.loopStart) {
       // handle tempo loop sync for loop start
@@ -926,7 +918,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         loopStart = loopEnd - this.MIN_LOOP_DURATION_SECONDS;
       }
 
-      this.#macroLoopStart.ramp(loopStart, scaledRampTime, loopEnd);
+      this.#macroLoopStart.ramp(loopStart, rampDuration, loopEnd);
     } else if (loopPoint === "end" && loopEnd !== this.loopEnd) {
       // handle tempo loop sync for loop end
       if (this.#loopTempoSync) {
@@ -939,7 +931,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         loopEnd = loopStart + this.MIN_LOOP_DURATION_SECONDS;
       }
 
-      this.#macroLoopEnd.ramp(loopEnd, scaledRampTime, loopStart);
+      this.#macroLoopEnd.ramp(loopEnd, rampDuration, loopStart);
     }
 
     this.sendUpstreamMessage("loop-points:updated", {
