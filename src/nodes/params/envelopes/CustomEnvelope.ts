@@ -244,6 +244,7 @@ export class CustomEnvelope implements LibNode {
       playbackRate?: number;
       startFromValue?: number;
     },
+    fromTime = 0,
   ): Float32Array {
     const sampleRate = this.#getCurveSamplingRate(scaledDuration);
     const numSamples = Math.max(2, Math.floor(scaledDuration * sampleRate));
@@ -261,7 +262,7 @@ export class CustomEnvelope implements LibNode {
 
     for (let i = 0; i < numSamples; i++) {
       const normalizedProgress = i / (numSamples - 1);
-      const absoluteTime = normalizedProgress * endTime;
+      const absoluteTime = fromTime + normalizedProgress * (endTime - fromTime);
 
       let envValue = this.#data.interpolateValueAtTime(absoluteTime); // normalized [0,1]
 
@@ -909,7 +910,7 @@ export class CustomEnvelope implements LibNode {
 
     const { audioParam, startTime, options } = this.#activeEnvelope;
     const currentTime = this.#context.currentTime;
-    const elapsedTime = currentTime - Math.max(startTime, currentTime);
+    const elapsedTime = Math.max(0, currentTime - startTime);
 
     // Calculate current position in envelope timeline
     const scaledElapsedTime = this.#syncedToPlaybackRate
@@ -934,12 +935,17 @@ export class CustomEnvelope implements LibNode {
 
       if (scaledRemainingDuration > 0.001) {
         // Generate curve from current position to sustain point
-        const curve = this.#generateCurve(scaledRemainingDuration, sustainPoint.time, {
-          ...options,
-          minValue: audioParam.minValue,
-          maxValue: audioParam.maxValue,
-          startFromValue: audioParam.value,
-        });
+        const curve = this.#generateCurve(
+          scaledRemainingDuration,
+          sustainPoint.time,
+          {
+            ...options,
+            minValue: audioParam.minValue,
+            maxValue: audioParam.maxValue,
+            startFromValue: audioParam.value,
+          },
+          scaledElapsedTime,
+        );
 
         audioParam.setValueCurveAtTime(curve, currentTime, scaledRemainingDuration);
       }
