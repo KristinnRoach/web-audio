@@ -47,8 +47,13 @@ export class LFO {
    * The old one stops at the same time, so there is no gap or overlap.
    *
    * Call this from a note-on to make the modulation land identically on
-   * every note. Scheduled frequency ramps do not survive the swap, so skip
-   * it while gliding. Costs one OscillatorNode allocation per call.
+   * every note. Costs one OscillatorNode allocation per call.
+   *
+   * The replacement starts at the frequency last requested via
+   * setFrequency/setMusicalNote. Pending frequency automation on the old
+   * oscillator is dropped, whether a ramp or an event scheduled for a
+   * future timestamp, so skip the retrigger while gliding and set the
+   * frequency after retriggering rather than before.
    */
   retrigger(timestamp = this.now) {
     const at = Math.max(timestamp, this.now);
