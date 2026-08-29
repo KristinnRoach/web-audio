@@ -31,8 +31,8 @@
   },
   "scripts": {
     "changeset": "vp exec changeset",
-    "bump": "vp exec changeset version",
-    "release": "vp check && vp run test:all && npm login && vp exec changeset publish",
+    "bump": "vp run test:all && vp exec changeset version",
+    "release": "npm login && vp exec changeset publish",
     "build:worklets": "node build-processors.js",
     "build": "vp run clean && vp build",
     "prepack": "vp run build",
@@ -43,7 +43,7 @@
     "test:browser": "vp test run --config vitest.browser.config.ts",
     "test:coverage": "vp test run --coverage",
     "test:watch": "vp test",
-    "test:all": "vp run test && vp run test:browser",
+    "test:all": "vp check --fix && pnpm build && vp run test && vp run test:browser",
     "prepare": "vp config"
   },
   "dependencies": {
