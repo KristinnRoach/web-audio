@@ -148,3 +148,78 @@ describe("CustomEnvelope - #continueFromPoint", () => {
     });
   });
 });
+
+describe("CustomEnvelope - auto-release when loop is turned off mid-note", () => {
+  let envelope: CustomEnvelope;
+  let mockContext: AudioContext;
+  let mockAudioParam: AudioParam;
+  let mockEnvelopeData: EnvelopeData;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+
+    mockContext = {
+      currentTime: 1.0,
+      sampleRate: 44100,
+      getOutputTimestamp: () => ({ contextTime: 1.0, performanceTime: 0 }),
+    } as unknown as AudioContext;
+
+    mockAudioParam = {
+      value: 0.5,
+      minValue: 0,
+      maxValue: 1,
+      cancelScheduledValues: vi.fn(),
+      setValueAtTime: vi.fn(),
+      linearRampToValueAtTime: vi.fn(),
+      setValueCurveAtTime: vi.fn(),
+    } as unknown as AudioParam;
+
+    // No sustain point: without a loop this envelope auto-releases.
+    mockEnvelopeData = {
+      points: [
+        { time: 0, value: 0, curve: "exponential" },
+        { time: 0.5, value: 1, curve: "exponential" },
+        { time: 1.0, value: 0.5, curve: "exponential" },
+        { time: 1.5, value: 0, curve: "exponential" },
+      ],
+      pointValueRange: [0, 1],
+      durationSeconds: 1.5,
+      interpolateValueAtTime: vi.fn(() => 0.5),
+      hasSharpTransitions: false,
+      sustainPointIndex: null,
+      releasePointIndex: 2,
+      startPointIndex: 0,
+      endPointIndex: 3,
+    } as unknown as EnvelopeData;
+
+    envelope = new CustomEnvelope(mockContext, "amp-env", mockEnvelopeData);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("suppresses auto-release while looping, then releases once the loop is switched off", () => {
+    const sendMessageSpy = vi.spyOn(envelope, "sendUpstreamMessage");
+
+    envelope.setLoopEnabled(true);
+    envelope.triggerEnvelope(mockAudioParam, 1.0, {
+      baseValue: 1,
+      playbackRate: 1,
+      voiceId: "test-voice",
+      midiNote: 64,
+    });
+
+    // Past the release deadline - the loop is still holding the note.
+    vi.advanceTimersByTime(2000);
+    expect(sendMessageSpy).not.toHaveBeenCalledWith("amp-env:release", expect.anything());
+
+    envelope.setLoopEnabled(false);
+
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      "amp-env:release",
+      expect.objectContaining({ voiceId: "test-voice", midiNote: 64 }),
+    );
+  });
+});
