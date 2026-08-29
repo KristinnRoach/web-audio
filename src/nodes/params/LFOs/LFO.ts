@@ -13,19 +13,57 @@ export class LFO {
 
   #storedValues: { rate: number; depth?: number } | null = null;
 
+  // Mirrors what was last applied to the oscillator, so a replacement
+  // oscillator can be built with the same settings.
+  #waveform: OscillatorType | PeriodicWave = "sine";
+  #frequency = 1;
+
   constructor(context: AudioContext) {
     this.#context = context;
-    this.#oscillator = context.createOscillator();
     this.#gain = context.createGain();
-
-    this.#oscillator.frequency.value = 1; // 1Hz
     this.#gain.gain.value = 0; // No mod
 
-    this.#oscillator.connect(this.#gain);
-    this.#oscillator.start();
+    this.#oscillator = this.#createOscillator();
+  }
+
+  #createOscillator(startTime = this.now) {
+    const osc = this.#context.createOscillator();
+
+    if (this.#waveform instanceof PeriodicWave) {
+      osc.setPeriodicWave(this.#waveform);
+    } else {
+      osc.type = this.#waveform;
+    }
+
+    osc.frequency.value = this.#frequency;
+    osc.connect(this.#gain);
+    osc.start(startTime);
+
+    return osc;
+  }
+
+  /**
+   * Key sync: replace the oscillator so its phase is 0 at `timestamp`.
+   * The old one stops at the same time, so there is no gap or overlap.
+   *
+   * Call this from a note-on to make the modulation land identically on
+   * every note. Scheduled frequency ramps do not survive the swap, so skip
+   * it while gliding. Costs one OscillatorNode allocation per call.
+   */
+  retrigger(timestamp = this.now) {
+    const at = Math.max(timestamp, this.now);
+    const previous = this.#oscillator;
+
+    this.#oscillator = this.#createOscillator(at);
+
+    previous.stop(at);
+    previous.onended = () => previous.disconnect();
+
+    return this;
   }
 
   setFrequency(hz: number, timestamp = this.now) {
+    this.#frequency = hz;
     this.#oscillator.frequency.setValueAtTime(hz, timestamp);
   }
 
@@ -38,18 +76,22 @@ export class LFO {
     customWaveOptions?: WaveformOptions,
   ) {
     if (waveform instanceof PeriodicWave) {
+      this.#waveform = waveform;
       this.#oscillator.setPeriodicWave(waveform);
     } else if (typeof waveform === "string" && isCustomLibWaveform(waveform)) {
       // It's a custom library waveform string
       const periodicWave = createWave(this.#context, waveform, customWaveOptions);
+      this.#waveform = periodicWave;
       this.#oscillator.setPeriodicWave(periodicWave);
     } else {
       // It's a built-in OscillatorType
+      this.#waveform = waveform as OscillatorType;
       this.#oscillator.type = waveform as OscillatorType;
     }
   }
 
   setPeriodicWave(wave: PeriodicWave) {
+    this.#waveform = wave;
     this.#oscillator.setPeriodicWave(wave);
   }
 
@@ -95,6 +137,7 @@ export class LFO {
       this.setFrequency(fromScaledHz, timestamp);
     }
     // todo: test diff ramp methods
+    this.#frequency = scaledHz;
     this.#oscillator.frequency.setTargetAtTime(scaledHz, timestamp + 0.001, glideTime);
   }
 
