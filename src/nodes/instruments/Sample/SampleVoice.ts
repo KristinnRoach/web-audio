@@ -26,6 +26,14 @@ import { HarmonicFeedback } from "@/nodes/effects/HarmonicFeedback";
 import { LFO } from "@/nodes/params/LFOs/LFO";
 import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/generateWaveform";
 
+export function getKeytrackedFilterHz(
+  baseHz: number,
+  playbackRate: number,
+  amount: number,
+): number {
+  return baseHz * playbackRate ** amount;
+}
+
 export class SampleVoice {
   // TODO: implements ILibAudioNode
   readonly nodeId: NodeID;
@@ -505,7 +513,7 @@ export class SampleVoice {
       freq.cancelScheduledValues(atTime);
     }
 
-    const keytrackedHz = this.#hpfHz * playbackRate * this.#keytrackHPFAmount;
+    const keytrackedHz = getKeytrackedFilterHz(this.#hpfHz, playbackRate, this.#keytrackHPFAmount);
     const safeHz = clamp(keytrackedHz, 20, this.context.sampleRate / 2 - 1000);
 
     if (glideTime > 0) {
@@ -535,7 +543,7 @@ export class SampleVoice {
       freq.cancelScheduledValues(atTime);
     }
 
-    const keytrackedHz = this.#lpfHz * playbackRate * this.#keytrackLPFAmount;
+    const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
     const safeHz = clamp(keytrackedHz, 20, this.context.sampleRate / 2 - 1000);
 
     if (glideTime > 0) {
