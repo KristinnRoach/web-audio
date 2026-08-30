@@ -503,7 +503,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (!this.#activeMidiNote || !this.#hpf || this.#keytrackHPFAmount <= 0) {
+    if (this.#activeMidiNote === null || !this.#hpf || this.#keytrackHPFAmount <= 0) {
       return;
     }
 
@@ -533,7 +533,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (!this.#activeMidiNote || !this.#lpf || this.#keytrackLPFAmount <= 0) {
+    if (this.#activeMidiNote === null || !this.#lpf || this.#keytrackLPFAmount <= 0) {
       return;
     }
 

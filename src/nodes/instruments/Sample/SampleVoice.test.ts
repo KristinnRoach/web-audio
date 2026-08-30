@@ -17,5 +17,6 @@ describe("getKeytrackedFilterHz", () => {
     expect(getKeytrackedFilterHz(500, 2, 0)).toBe(500);
     expect(getKeytrackedFilterHz(500, 2, 0.5)).toBeCloseTo(500 * Math.SQRT2);
     expect(getKeytrackedFilterHz(500, 2, 1)).toBe(1000);
+    expect(getKeytrackedFilterHz(500, 0.5, 0.5)).toBeCloseTo(500 / Math.SQRT2);
   });
 });
