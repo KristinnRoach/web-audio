@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.3.1
+
+### Patch Changes
+
+- 2d96f92: Improve envelope loop duration consistency so defaults to selected sample duration.
+
 ## 0.3.0
 
 ### Minor Changes
