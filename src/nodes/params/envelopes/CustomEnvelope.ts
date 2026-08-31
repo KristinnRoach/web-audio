@@ -595,7 +595,7 @@ export class CustomEnvelope implements LibNode {
             }
           }
 
-          phase += cachedDuration + safetyBuffer;
+          phase += cachedDuration;
           lastScheduledEnd = phase;
 
           // Convert audio context time to performance time for UI sync
