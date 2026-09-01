@@ -52,6 +52,30 @@ describe("SamplePlayer.applyParams", () => {
 });
 
 describe("SamplePlayer envelope state", () => {
+  it("resets an envelope to defaults at the current sample duration", async () => {
+    const { SamplePlayer } = await import("./SamplePlayer");
+    const applyEnvelopeState = vi.fn();
+    const player = Object.assign(Object.create(SamplePlayer.prototype), {
+      applyEnvelopeState,
+    }) as SamplePlayer;
+    Object.defineProperty(player, "sampleDuration", { value: 4 });
+
+    player.resetEnvelope("pitch-env");
+
+    expect(applyEnvelopeState).toHaveBeenCalledWith(
+      "pitch-env",
+      expect.objectContaining({
+        enabled: false,
+        shape: expect.objectContaining({
+          points: [
+            { time: 0, value: 1, curve: "exponential" },
+            { time: 4, value: 1, curve: "exponential" },
+          ],
+        }),
+      }),
+    );
+  });
+
   it("applies a detached snapshot to every voice and emits once", async () => {
     vi.stubGlobal("window", {});
     vi.stubGlobal("AudioContext", class {});

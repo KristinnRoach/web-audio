@@ -28,12 +28,8 @@ import { LFO } from "@/nodes/params/LFOs/LFO";
 import { createInstrumentBus, type InstrumentBus } from "@/nodes/master/createInstrumentBus";
 import { BusNodeName } from "@/nodes/master/InstrumentBus";
 import { SampleVoicePool } from "./SampleVoicePool";
-import { CustomEnvelope } from "@/nodes/params";
-import {
-  type EnvelopeState,
-  type EnvelopeType,
-  type SampleEnvelopeType,
-} from "@/nodes/params/envelopes";
+import { CustomEnvelope, defaultEnvelopeState } from "@/nodes/params";
+import { type EnvelopeState, type EnvelopeType } from "@/nodes/params/envelopes";
 import { ILibInstrumentNode } from "@/nodes/LibAudioNode";
 import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
 import { createMessageBus, MessageBus } from "@/events";
@@ -50,6 +46,12 @@ function cloneEnvelopeState(state: EnvelopeState): EnvelopeState {
     },
   };
 }
+
+const SAMPLE_ENVELOPE_TYPES = [
+  "amp-env",
+  "pitch-env",
+  "filter-env",
+] as const satisfies readonly EnvelopeType[];
 
 function validateEnvelopeState(state: EnvelopeState): void {
   const points = state?.shape?.points;
@@ -94,7 +96,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #initialized = false;
   #initPromise: Promise<void> | null = null;
   #isLoaded = false;
-  private readonly envelopeStates = new Map<SampleEnvelopeType, EnvelopeState>();
+  private readonly envelopeStates = new Map<EnvelopeType, EnvelopeState>();
   #polyphony: number;
   #initialAudioBuffer: AudioBuffer | null = null;
 
@@ -293,6 +295,14 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#isLoaded = true;
       this.envelopeStates.forEach((state, type) => {
         this.applyEnvelopeStateToVoices(type, state);
+        // Update envelope durations to match the new buffer duration
+        this.voicePool.applyToAllVoices((voice) => {
+          voice.getEnvelope(type)?.setDuration(this.#bufferDuration);
+        });
+      });
+
+      SAMPLE_ENVELOPE_TYPES.forEach((type) => {
+        this.emitEnvelopeChanged(type);
       });
     });
 
@@ -1115,7 +1125,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   /* === ENVELOPES === */
 
   /** Returns a detached, serializable envelope snapshot. */
-  getEnvelopeState(type: SampleEnvelopeType): EnvelopeState {
+  getEnvelopeState(type: EnvelopeType): EnvelopeState {
     const stored = this.envelopeStates.get(type);
     if (stored) return cloneEnvelopeState(stored);
 
@@ -1126,9 +1136,8 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   /** Applies a complete snapshot and emits one `envelope:changed` message. */
-  applyEnvelopeState(type: SampleEnvelopeType, state: EnvelopeState): void {
+  applyEnvelopeState(type: EnvelopeType, state: EnvelopeState): void {
     validateEnvelopeState(state);
-    this.getEnvelope(type);
 
     const nextState = cloneEnvelopeState(state);
     this.envelopeStates.set(type, nextState);
@@ -1139,7 +1148,17 @@ export class SamplePlayer implements ILibInstrumentNode {
     });
   }
 
-  private applyEnvelopeStateToVoices(type: SampleEnvelopeType, state: EnvelopeState): void {
+  /** Restores one envelope to defaults sized to the current authority sample. */
+  resetEnvelope(type: EnvelopeType): void {
+    this.applyEnvelopeState(type, defaultEnvelopeState(type, this.sampleDuration || 1));
+  }
+
+  /** Restores all sample envelopes to defaults sized to the current authority sample. */
+  resetEnvelopes(): void {
+    SAMPLE_ENVELOPE_TYPES.forEach((type) => this.resetEnvelope(type));
+  }
+
+  private applyEnvelopeStateToVoices(type: EnvelopeType, state: EnvelopeState): void {
     this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeState(type, state));
   }
 

@@ -11,7 +11,7 @@ import { assert, cancelAndPinParamValue, cancelScheduledParamValues, clamp } fro
 // ===== CUSTOM ENVELOPE  =====
 export class CustomEnvelope implements LibNode {
   readonly nodeId: NodeID;
-  readonly nodeType: EnvelopeType = "default-env";
+  readonly nodeType: EnvelopeType;
   #initialized = false;
 
   #context: AudioContext;
@@ -41,11 +41,8 @@ export class CustomEnvelope implements LibNode {
   ) {
     this.envelopeType = envelopeType;
     this.nodeType = envelopeType;
-    this.nodeId = registerNode(this.envelopeType, this);
-    this.#context = context;
-    this.#messages = createMessageBus<Message>(this.nodeId);
 
-    switch (envelopeType) {
+    switch (envelopeType as EnvelopeType | "loop-env") {
       case "amp-env":
         this.#paramName = "envGain";
         break;
@@ -56,14 +53,13 @@ export class CustomEnvelope implements LibNode {
         this.#paramName = "lpf";
         break;
       case "loop-env":
-        this.#paramName = "loopEnd";
-        console.warn("CustomEnvelope not implemented for type: loop-env");
-        break;
-      default:
-        console.error(`CustomEnvelope not implemented for type: ${envelopeType}`);
-        this.#paramName = "default";
-        break;
+        // this.#paramName = "loopEnd"; // Idea for later
+        throw new Error("CustomEnvelope not implemented for type: loop-env");
     }
+
+    this.nodeId = registerNode(this.envelopeType, this);
+    this.#context = context;
+    this.#messages = createMessageBus<Message>(this.nodeId);
 
     this.#isEnabled = initEnable;
 
@@ -94,6 +90,7 @@ export class CustomEnvelope implements LibNode {
 
   setDuration(seconds: number) {
     this.#data.setDurationSeconds(seconds);
+    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
     return this;
   }
 
@@ -567,6 +564,7 @@ export class CustomEnvelope implements LibNode {
             maxValue: audioParam.maxValue,
             startFromValue: audioParam.value,
           });
+          this.#loopUpdateFlag = false;
         }
 
         // Schedule with lookahead
@@ -1025,98 +1023,6 @@ export class CustomEnvelope implements LibNode {
   hasVariation(): boolean {
     const firstValue = this.points[0]?.value ?? 0;
     return this.points.some((point) => Math.abs(point.value - firstValue) > 0.001);
-  }
-
-  // === DEFAULTS ===
-
-  static getDefaults(envType: EnvelopeType, durationSeconds = 1) {
-    switch (envType) {
-      case "amp-env":
-        return {
-          points: [
-            { time: 0, value: 0, curve: "exponential" as const },
-            {
-              time: Math.min(0.005, 0.1 * durationSeconds),
-              value: 1,
-              curve: "exponential" as const,
-            },
-            {
-              time: 0.25 * durationSeconds,
-              value: 0.75,
-              curve: "exponential" as const,
-            },
-            {
-              time: 0.9 * durationSeconds,
-              value: 0.5,
-              curve: "exponential" as const,
-            },
-            {
-              time: durationSeconds,
-              value: 0.0,
-              curve: "exponential" as const,
-            },
-          ],
-          envPointValueRange: [0, 1] as [number, number],
-          initEnable: true,
-          sustainPointIndex: null,
-          releasePointIndex: 3, // release from second last point
-        };
-
-      case "pitch-env":
-        return {
-          points: [
-            { time: 0, value: 1, curve: "exponential" as const },
-            {
-              time: durationSeconds,
-              value: 1,
-              curve: "exponential" as const,
-            },
-          ],
-          envPointValueRange: [0.5, 1.5] as [number, number],
-          initEnable: false,
-          sustainPointIndex: null,
-          releasePointIndex: 1,
-        };
-
-      case "filter-env":
-        return {
-          points: [
-            { time: 0, value: 0, curve: "exponential" as const },
-            {
-              time: 0.02 * durationSeconds,
-              value: 1,
-              curve: "exponential" as const,
-            },
-            {
-              time: 0.3 * durationSeconds,
-              value: 0.2,
-              curve: "exponential" as const,
-            },
-            {
-              time: durationSeconds,
-              value: 0,
-              curve: "exponential" as const,
-            },
-          ],
-          envPointValueRange: [0, 1] as [number, number],
-          initEnable: false,
-          sustainPointIndex: null,
-          releasePointIndex: 2,
-        };
-
-      default:
-        return {
-          points: [
-            { time: 0, value: 0, curve: "linear" as const },
-            { time: 0.1 * durationSeconds, value: 1, curve: "linear" as const },
-            { time: durationSeconds, value: 0, curve: "linear" as const },
-          ],
-          envPointValueRange: [0, 1] as [number, number],
-          initEnable: true,
-          sustainPointIndex: null,
-          releasePointIndex: 1,
-        };
-    }
   }
 
   // === CLEAN UP ===
