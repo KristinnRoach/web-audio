@@ -92,7 +92,7 @@ export class CustomEnvelope implements LibNode {
     if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   };
 
-  setSampleDuration(seconds: number) {
+  setDuration(seconds: number) {
     this.#data.setDurationSeconds(seconds);
     return this;
   }

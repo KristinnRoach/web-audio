@@ -184,9 +184,6 @@ export class SampleVoice {
     this.#envelopes.set("pitch-env", pitchEnv);
 
     if (this.#filtersEnabled) {
-      // const MIN_HZ = 20;
-      // const MAX_HZ = this.context.sampleRate / 2 - 1000;
-
       const filterEnv = createEnvelope(this.context, "filter-env", {
         durationSeconds,
         envPointValueRange: [0, 1],

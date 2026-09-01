@@ -593,7 +593,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   async cropSample(
     startSeconds = this.getStartPoint(),
     endSeconds = this.getEndPoint(),
-    fadeMs = 4,
+    fadeMs = 1,
   ): Promise<AudioBuffer | null> {
     const buffer = this.#audiobuffer;
     if (!buffer) return null;
