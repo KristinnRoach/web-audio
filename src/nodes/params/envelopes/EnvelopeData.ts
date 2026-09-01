@@ -251,6 +251,26 @@ export class EnvelopeData {
   }
 
   setDurationSeconds(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      throw new RangeError("Envelope duration must be greater than zero");
+    }
+
+    const start = this.startTime;
+    const currentDuration = this.durationSeconds;
+
+    if (currentDuration > 0) {
+      const scale = seconds / currentDuration;
+      this.points = this.points.map((point) => ({
+        ...point,
+        time: start + (point.time - start) * scale,
+      }));
+    } else {
+      this.points[this.#endIdx] = {
+        ...this.points[this.#endIdx],
+        time: start + seconds,
+      };
+    }
+
     this.#durationSeconds = seconds;
   }
 

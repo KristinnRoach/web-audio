@@ -293,6 +293,14 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#isLoaded = true;
       this.envelopeStates.forEach((state, type) => {
         this.applyEnvelopeStateToVoices(type, state);
+        // Update envelope durations to match the new buffer duration
+        this.voicePool.applyToAllVoices((voice) => {
+          voice.getEnvelope(type)?.setDuration(this.#bufferDuration);
+        });
+      });
+
+      (["amp-env", "pitch-env", "filter-env"] as const).forEach((type) => {
+        this.emitEnvelopeChanged(type);
       });
     });
 
@@ -1128,7 +1136,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   /** Applies a complete snapshot and emits one `envelope:changed` message. */
   applyEnvelopeState(type: SampleEnvelopeType, state: EnvelopeState): void {
     validateEnvelopeState(state);
-    this.getEnvelope(type);
 
     const nextState = cloneEnvelopeState(state);
     this.envelopeStates.set(type, nextState);
