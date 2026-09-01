@@ -90,6 +90,7 @@ export class CustomEnvelope implements LibNode {
 
   setDuration(seconds: number) {
     this.#data.setDurationSeconds(seconds);
+    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
     return this;
   }
 
@@ -563,6 +564,7 @@ export class CustomEnvelope implements LibNode {
             maxValue: audioParam.maxValue,
             startFromValue: audioParam.value,
           });
+          this.#loopUpdateFlag = false;
         }
 
         // Schedule with lookahead

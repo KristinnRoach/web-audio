@@ -272,6 +272,7 @@ export class EnvelopeData {
     }
 
     this.#durationSeconds = seconds;
+    this.#updateSharpTransitionsFlag();
   }
 
   get hasSharpTransitions() {

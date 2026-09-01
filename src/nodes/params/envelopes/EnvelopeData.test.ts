@@ -6,7 +6,7 @@ describe("EnvelopeData.setDurationSeconds", () => {
     const data = new EnvelopeData(
       [
         { time: 0, value: 0 },
-        { time: 0.5, value: 1 },
+        { time: 0.01, value: 1 },
         { time: 2, value: 0 },
       ],
       [0, 1],
@@ -17,9 +17,10 @@ describe("EnvelopeData.setDurationSeconds", () => {
 
     expect(data.points).toEqual([
       { time: 0, value: 0 },
-      { time: 1, value: 1 },
+      { time: 0.02, value: 1 },
       { time: 4, value: 0 },
     ]);
     expect(data.durationSeconds).toBe(4);
+    expect(data.hasSharpTransitions).toBe(true);
   });
 });
