@@ -1,7 +1,4 @@
-export type EnvelopeType = "amp-env" | "pitch-env" | "filter-env" | "loop-env" | "default-env";
-
-/** Envelope types available on SamplePlayer. */
-export type SampleEnvelopeType = Extract<EnvelopeType, "amp-env" | "pitch-env" | "filter-env">;
+export type EnvelopeType = "amp-env" | "pitch-env" | "filter-env";
 
 export type EnvelopePoint = {
   time: number; // Absolute time in seconds
@@ -21,7 +18,7 @@ export type PointEnvelopeShape = {
   releaseIndex: number;
 };
 
-/** Serializable SamplePlayer envelope state. */
+/** Serializable envelope state. */
 export type EnvelopeState = {
   enabled: boolean;
   /** Timing multiplier; values above 1 play the envelope faster. */

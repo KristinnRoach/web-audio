@@ -1,6 +1,7 @@
 // =*=*= Factories =*=*= \\
 export { createSamplePlayer } from "./nodes/instruments/Sample/createSamplePlayer";
 export { createAudioRecorder } from "./nodes/recorder";
+export { defaultEnvelopeState } from "./nodes/params/envelopes";
 
 // =*=*= Classes =*=*= \\
 export { SamplePlayer } from "./nodes/instruments/Sample/SamplePlayer";
@@ -16,7 +17,6 @@ export type {
   EnvelopeState,
   EnvelopeType,
   PointEnvelopeShape,
-  SampleEnvelopeType,
 } from "./nodes/params/envelopes";
 
 // =*=*= Utilities =*=*= \\
