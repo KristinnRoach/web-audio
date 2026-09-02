@@ -473,7 +473,10 @@ export class SampleVoice {
     const stopAt = Math.max(timestamp, this.now);
     const envGain = this.getParam("envGain");
     if (envGain) {
-      cancelAndPinParamValue(envGain, stopAt);
+      // param.value is only accurate for now, so pin now and ramp down to
+      // stopAt. Pinning at a future stopAt holds a stale value and steps the
+      // gain back up mid-release.
+      cancelAndPinParamValue(envGain, this.now);
       envGain.linearRampToValueAtTime(0, stopAt + deClickSeconds);
     }
 

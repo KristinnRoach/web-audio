@@ -7,9 +7,19 @@ import { isCancelAndHoldSupported } from "./environment";
  * (param dips to the curve start value -> audible click). Instead, cancel
  * everything and pin the param at a known value.
  *
+ * Verified 2026-09-02 on Chrome 152 (OfflineAudioContext.suspend() mid-curve):
+ * the glitch is exactly 128 samples starting on the next quantum boundary, and
+ * its value equals curve[0] regardless of the hold value. Not filed upstream;
+ * the spec anticipates it at cancelAndHoldAtTime step 4.2.2.1, which tells
+ * implementers the truncated curve MUST produce the same output as the
+ * original. Re-test before dropping this workaround.
+ *
  * holdValue must be captured BEFORE cancelScheduledValues runs, because
- * cancelling reverts param.value to its pre-curve value. Pass holdValue
- * explicitly whenever the caller knows the intended value.
+ * cancelling is spec'd to restore the pre-curve value immediately
+ * ("may cause discontinuities", cancelScheduledValues). Chrome 152 was not
+ * observed to revert - it holds the last computed value - but the spec permits
+ * the revert, so keep the read-before-cancel ordering for other engines.
+ * Pass holdValue explicitly whenever the caller knows the intended value.
  */
 export function cancelAndPinParamValue(param: AudioParam, timestamp: number, holdValue?: number) {
   const value = holdValue ?? param.value; // read before cancel
