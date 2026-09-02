@@ -498,10 +498,15 @@ export class CustomEnvelope implements LibNode {
     },
     runId: number,
   ) {
-    if (runId !== this.#runId || !this.#shouldLoop()) {
+    const shouldStopScheduling = () => {
+      if (runId !== this.#runId) return true;
+      if (this.#shouldLoop()) return false;
+
       this.#isCurrentlyLooping = false;
-      return;
-    }
+      return true;
+    };
+
+    if (shouldStopScheduling()) return;
 
     let cachedDuration = this.#getScaledDuration(
       this.#data.startPointIndex,
@@ -542,10 +547,7 @@ export class CustomEnvelope implements LibNode {
     let nextScheduleTimeout: number | null = null;
 
     const scheduleNext = () => {
-      if (runId !== this.#runId || !this.#shouldLoop()) {
-        this.#isCurrentlyLooping = false;
-        return;
-      }
+      if (shouldStopScheduling()) return;
       // Clear any pending schedule // ? Redundant ?
       if (nextScheduleTimeout !== null) {
         clearTimeout(nextScheduleTimeout);
@@ -576,10 +578,7 @@ export class CustomEnvelope implements LibNode {
 
         // Schedule with lookahead
         while (phase < this.#context.currentTime + lookAhead && phase >= lastScheduledEnd) {
-          if (runId !== this.#runId || !this.#shouldLoop()) {
-            this.#isCurrentlyLooping = false;
-            return;
-          }
+          if (shouldStopScheduling()) return;
 
           const safeCurveDuration = cachedDuration - safetyBuffer;
 
@@ -615,10 +614,7 @@ export class CustomEnvelope implements LibNode {
               const delay = Math.max(0, performanceTime - performance.now());
 
               setTimeout(() => {
-                if (runId !== this.#runId || !this.#shouldLoop()) {
-                  this.#isCurrentlyLooping = false;
-                  return;
-                }
+                if (shouldStopScheduling()) return;
                 this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
                   voiceId: options.voiceId,
                   midiNote: options.midiNote,
@@ -626,10 +622,7 @@ export class CustomEnvelope implements LibNode {
                 });
               }, delay);
             } else {
-              if (runId !== this.#runId || !this.#shouldLoop()) {
-                this.#isCurrentlyLooping = false;
-                return;
-              }
+              if (shouldStopScheduling()) return;
               // Fallback: send message immediately if timestamp is not available
               this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
                 voiceId: options.voiceId,
@@ -642,10 +635,7 @@ export class CustomEnvelope implements LibNode {
 
         // Schedule next iteration BEFORE releasing lock
         nextScheduleTimeout = setTimeout(() => {
-          if (runId !== this.#runId || !this.#shouldLoop()) {
-            this.#isCurrentlyLooping = false;
-            return;
-          }
+          if (shouldStopScheduling()) return;
           scheduleNext();
         }, 100);
       } finally {
