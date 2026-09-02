@@ -7,11 +7,13 @@ import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events"
 
 import {
   assert,
-  clamp,
   cancelAndPinParamValue,
   interpolateLinearToGeometric,
   mapToRange,
   midiToPlaybackRate,
+  getKeytrackedFilterHz,
+  clampHz,
+  maxSafeHz,
 } from "@/utils";
 
 import {
@@ -25,6 +27,7 @@ import { HarmonicFeedback } from "@/nodes/effects/HarmonicFeedback";
 
 import { LFO } from "@/nodes/params/LFOs/LFO";
 import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/generateWaveform";
+import { samplerParams } from "./sampler-params";
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
@@ -57,12 +60,14 @@ export class SampleVoice {
 
   #hpf: BiquadFilterNode | null = null;
   #lpf: BiquadFilterNode | null = null;
-  #hpfHz: number = 40;
+  #hpfHz: number = samplerParams.highpassFilter.defaultValue;
   #hpfQ: number = 0.5;
-  #lpfHz: number = 18000;
+  #lpfHz: number = maxSafeHz();
   #lpfQ: number = 0.707;
-  #keytrackLPFAmount: number = 0.0; // default
-  #keytrackHPFAmount: number = 0.5;
+  // Keytracking defaults roughly tuned by ear for now
+  // TODO: Consider adding as params (#31)
+  #keytrackLPFAmount: number = 0.25;
+  #keytrackHPFAmount: number = 0.75;
 
   // static getProcessorParamDescriptors() {
   //   return SAMPLE_PLAYER_PARAM_DESCRIPTORS;
@@ -149,8 +154,8 @@ export class SampleVoice {
   }
 
   #initFilters() {
-    this.#hpfHz = 40;
-    this.#lpfHz = this.context.sampleRate / 2 - 1000;
+    this.#hpfHz = samplerParams.highpassFilter.defaultValue;
+    this.#lpfHz = maxSafeHz(this.context.sampleRate);
 
     if (!this.#hpf) {
       this.#hpf = new BiquadFilterNode(this.context, {
@@ -361,7 +366,7 @@ export class SampleVoice {
           case "pitch-env":
             return playbackRate;
           case "filter-env":
-            return this.#lpfHz; // current cutoff
+            return this.#keytrackedLpfHz(playbackRate); // current cutoff, keytracking included
           default:
             return 1;
         }
@@ -492,7 +497,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (!this.#activeMidiNote || !this.#hpf || this.#keytrackHPFAmount <= 0) {
+    if (this.#activeMidiNote === null || !this.#hpf || this.#keytrackHPFAmount <= 0) {
       return;
     }
 
@@ -502,8 +507,8 @@ export class SampleVoice {
       freq.cancelScheduledValues(atTime);
     }
 
-    const keytrackedHz = this.#hpfHz * playbackRate * this.#keytrackHPFAmount;
-    const safeHz = clamp(keytrackedHz, 20, this.context.sampleRate / 2 - 1000);
+    const keytrackedHz = getKeytrackedFilterHz(this.#hpfHz, playbackRate, this.#keytrackHPFAmount);
+    const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
     if (glideTime > 0) {
       freq.setTargetAtTime(safeHz, atTime, glideTime);
@@ -511,6 +516,16 @@ export class SampleVoice {
       // immediate set, slightly offset to avoid scheduling conflicts
       freq.setValueAtTime(safeHz, Math.max(atTime, this.now + 0.001));
     }
+  }
+
+  /**
+   * The LPF cutoff with keytracking applied. This is the cutoff the filter
+   * envelope sweeps from, so keytracking and the envelope compose instead of
+   * the envelope resetting the cutoff back to the untracked base.
+   */
+  #keytrackedLpfHz(playbackRate: number = this.getParam("playbackRate")?.value ?? 1): number {
+    const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
+    return clampHz(keytrackedHz, this.context.sampleRate);
   }
 
   /**  Set LPF cutoff relative to playback rate */
@@ -522,7 +537,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (!this.#activeMidiNote || !this.#lpf || this.#keytrackLPFAmount <= 0) {
+    if (this.#activeMidiNote === null || !this.#lpf || this.#keytrackLPFAmount <= 0) {
       return;
     }
 
@@ -532,8 +547,7 @@ export class SampleVoice {
       freq.cancelScheduledValues(atTime);
     }
 
-    const keytrackedHz = this.#lpfHz * playbackRate * this.#keytrackLPFAmount;
-    const safeHz = clamp(keytrackedHz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = this.#keytrackedLpfHz(playbackRate);
 
     if (glideTime > 0) {
       freq.setTargetAtTime(safeHz, atTime, glideTime);
@@ -618,8 +632,8 @@ export class SampleVoice {
     if (envType === "filter-env" && this.#filtersEnabled) {
       const lpf = this.getParam("lpf");
       lpf?.cancelScheduledValues(this.now);
-      // Reset to base lpfHz cutoff value after envelope is disabled
-      lpf?.setValueAtTime(this.#lpfHz, this.now + 0.01);
+      // Reset to the keytracked cutoff after the envelope is disabled
+      lpf?.setValueAtTime(this.#keytrackedLpfHz(), this.now + 0.01);
     }
   };
 
@@ -780,7 +794,7 @@ export class SampleVoice {
     const timestamp = this.now;
     const glideTime = 0.1;
 
-    if (this.#activeMidiNote) {
+    if (this.#activeMidiNote !== null) {
       const rate = midiToPlaybackRate(this.#activeMidiNote);
       this.getParam("playbackRate")?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
       this.#updateHPFCutoffForPlaybackRate(rate, timestamp, {
@@ -1051,7 +1065,7 @@ export class SampleVoice {
       value: enabled,
     });
 
-    if (!enabled && this.#activeMidiNote) this.release({});
+    if (!enabled && this.#activeMidiNote !== null) this.release({});
     return this;
   }
 
@@ -1090,7 +1104,7 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
-    const safeHz = clamp(hz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(hz, this.context.sampleRate);
     this.#hpfHz = safeHz;
     if (this.#hpf) {
       this.setParam("hpf", safeHz, atTime, { glideTime: 0 });
@@ -1106,7 +1120,7 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
-    const safeHz = clamp(hz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
     if (this.#lpf) {
       this.setParam("lpf", safeHz, atTime, {
@@ -1186,14 +1200,14 @@ export class SampleVoice {
       switch (name) {
         case "highpass":
         case "hpf":
-          return this.#hpf?.frequency || null;
+          return this.#hpf?.frequency ?? null;
         case "lowpass":
         case "lpf":
-          return this.#lpf?.frequency || null;
+          return this.#lpf?.frequency ?? null;
         case "hpfQ":
-          return this.#hpf?.Q || null;
+          return this.#hpf?.Q ?? null;
         case "lpfQ":
-          return this.#lpf?.Q || null;
+          return this.#lpf?.Q ?? null;
       }
     }
     return null;

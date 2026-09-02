@@ -16,7 +16,7 @@ describe("findClosest ValueSnapper Integration", () => {
   const snapToValueWithFindClosest = (target: number, allowedValues: number[]): number => {
     if (allowedValues.length === 0) return target;
 
-    return findClosest(allowedValues, target, (x) => x);
+    return findClosest(allowedValues, target, "any", (x) => x);
   };
 
   // Proposed replacement using findClosest with default parameter
@@ -163,9 +163,10 @@ describe("findClosest ValueSnapper Integration", () => {
       expect(findClosestResult).toBe(originalResult);
       expect(findClosestDefaultResult).toBe(originalResult);
 
-      // Performance should improve with larger scales
-      expect(findClosestTime).toBeLessThan(originalTime);
-      expect(findClosestDefaultTime).toBeLessThan(originalTime);
+      // ponytail: timings are logged for information only - asserting one wall
+      // clock measurement beats another flakes on shared CI runners. The
+      // "reads a logarithmic number of elements per call" test covers the
+      // algorithmic claim deterministically.
     });
   });
 
@@ -181,7 +182,7 @@ describe("findClosest ValueSnapper Integration", () => {
       const originalResult = snapper.snapToValue(350);
 
       // Test what findClosest would return
-      const findClosestResult = findClosest(pentatonicFreqs, 350, (x) => x);
+      const findClosestResult = findClosest(pentatonicFreqs, 350, "any", (x) => x);
       const findClosestDefaultResult = findClosest(pentatonicFreqs, 350);
 
       expect(findClosestResult).toBe(originalResult);
@@ -200,7 +201,7 @@ describe("findClosest ValueSnapper Integration", () => {
 
       testTargets.forEach((target) => {
         const originalResult = snapper.snapToValue(target);
-        const findClosestResult = findClosest(normalizedValues, target, (x) => x);
+        const findClosestResult = findClosest(normalizedValues, target, "any", (x) => x);
         const findClosestDefaultResult = findClosest(normalizedValues, target);
 
         expect(findClosestResult).toBe(originalResult);
@@ -266,7 +267,7 @@ describe("findClosest ValueSnapper Integration", () => {
 
       const target = 2.5;
 
-      const sortedResult = findClosest(sorted, target, (x) => x);
+      const sortedResult = findClosest(sorted, target, "any", (x) => x);
       const originalSortedResult = snapToValueOriginal(target, sorted);
 
       expect(sortedResult).toBe(originalSortedResult);
@@ -279,23 +280,30 @@ describe("findClosest ValueSnapper Integration", () => {
       const originalArray = [1, 2, 3, 4, 5];
       const arrayCopy = [...originalArray];
 
-      findClosest(originalArray, 3.5, (x) => x);
+      findClosest(originalArray, 3.5, "any", (x) => x);
 
       expect(originalArray).toEqual(arrayCopy);
     });
 
-    it("handles repeated calls efficiently", () => {
+    it("reads a logarithmic number of elements per call", () => {
+      // ponytail: counting element reads instead of wall-clock time - a ms
+      // threshold flakes on shared CI runners, this fails only if the search
+      // stops being logarithmic.
       const values = Array.from({ length: 1000 }, (_, i) => i);
-      const calls = 10000;
+      const calls = 100;
 
-      const start = performance.now();
+      let reads = 0;
+      const countingAccessor = (x: number) => {
+        reads++;
+        return x;
+      };
+
       for (let i = 0; i < calls; i++) {
-        findClosest(values, Math.random() * 1000, (x) => x);
+        findClosest(values, Math.random() * 1000, "any", countingAccessor);
       }
-      const time = performance.now() - start;
 
-      console.log(`${calls} calls on 1000-element array: ${time.toFixed(2)}ms`);
-      expect(time).toBeLessThan(100); // Should be very fast
+      // log2(1000) ~ 10 probes, plus the endpoints and the two final candidates
+      expect(reads / calls).toBeLessThan(20);
     });
   });
 });

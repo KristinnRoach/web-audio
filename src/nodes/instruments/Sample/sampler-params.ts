@@ -2,6 +2,8 @@
 // UI-agnostic metadata (range, default, taper, formatting) plus an apply()
 // mapping a normalized-or-natural knob value onto the player. Lets any
 // frontend render controls without hardcoding per-param knowledge.
+import { maxSafeHz } from "@/utils";
+
 import type { SamplePlayer } from "./SamplePlayer";
 
 export interface SamplerParamDescriptor {
@@ -81,8 +83,8 @@ export const samplerParams = defineSamplerParams({
   lowpassFilter: {
     label: "LPF",
     min: 40,
-    max: 20000,
-    defaultValue: 20000,
+    max: maxSafeHz(),
+    defaultValue: maxSafeHz(),
     curve: 5,
     format: hz,
     apply: (p, v) => p.setLpfCutoff(v),
@@ -90,7 +92,7 @@ export const samplerParams = defineSamplerParams({
   highpassFilter: {
     label: "HPF",
     min: 20,
-    max: 20000,
+    max: maxSafeHz(),
     defaultValue: 40,
     curve: 5,
     format: hz,

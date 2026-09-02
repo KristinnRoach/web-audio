@@ -90,6 +90,18 @@ export function midiToPlaybackRate(midiNote: number, baseNote: number = 60): num
 }
 
 /**
+ * Scales a filter cutoff to follow playback rate.
+ * `amount` is octaves of cutoff per octave of pitch: 0 = no tracking, 1 = full tracking.
+ */
+export function getKeytrackedFilterHz(
+  baseHz: number,
+  playbackRate: number,
+  amount: number,
+): number {
+  return baseHz * playbackRate ** amount;
+}
+
+/**
  * Converts a MIDI note to a detune value in cents relative to a base note
  */
 export function midiToDetune(midiNote: number, baseNote: number = 60): number {
