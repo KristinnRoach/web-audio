@@ -12,6 +12,7 @@ import {
   interpolateLinearToGeometric,
   mapToRange,
   midiToPlaybackRate,
+  getKeytrackedFilterHz,
 } from "@/utils";
 
 import {
@@ -25,14 +26,6 @@ import { HarmonicFeedback } from "@/nodes/effects/HarmonicFeedback";
 
 import { LFO } from "@/nodes/params/LFOs/LFO";
 import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/generateWaveform";
-
-export function getKeytrackedFilterHz(
-  baseHz: number,
-  playbackRate: number,
-  amount: number,
-): number {
-  return baseHz * playbackRate ** amount;
-}
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
@@ -70,7 +63,7 @@ export class SampleVoice {
   #lpfHz: number = 18000;
   #lpfQ: number = 0.707;
   #keytrackLPFAmount: number = 0.0; // default
-  #keytrackHPFAmount: number = 0.5;
+  #keytrackHPFAmount: number = 1.0;
 
   // static getProcessorParamDescriptors() {
   //   return SAMPLE_PLAYER_PARAM_DESCRIPTORS;
@@ -791,7 +784,7 @@ export class SampleVoice {
     const timestamp = this.now;
     const glideTime = 0.1;
 
-    if (this.#activeMidiNote) {
+    if (this.#activeMidiNote !== null) {
       const rate = midiToPlaybackRate(this.#activeMidiNote);
       this.getParam("playbackRate")?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
       this.#updateHPFCutoffForPlaybackRate(rate, timestamp, {
@@ -1062,7 +1055,7 @@ export class SampleVoice {
       value: enabled,
     });
 
-    if (!enabled && this.#activeMidiNote) this.release({});
+    if (!enabled && this.#activeMidiNote !== null) this.release({});
     return this;
   }
 

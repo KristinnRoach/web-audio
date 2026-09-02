@@ -1,10 +1,5 @@
-import { describe, expect, it, vi } from "vite-plus/test";
-
-vi.stubGlobal("window", {});
-vi.stubGlobal("AudioContext", class {});
-vi.stubGlobal("AudioWorkletNode", class {});
-
-const { getKeytrackedFilterHz } = await import("./SampleVoice");
+import { describe, it, expect } from "vite-plus/test";
+import { getKeytrackedFilterHz } from "../index";
 
 describe("getKeytrackedFilterHz", () => {
   it("preserves the cutoff at unity rate regardless of tracking amount", () => {
