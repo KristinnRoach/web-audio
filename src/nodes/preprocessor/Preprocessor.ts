@@ -26,7 +26,7 @@ export type PreProcessOptions = {
 
 export const DEFAULT_PRE_PROCESS_OPTIONS: PreProcessOptions = {
   normalize: { enabled: true, maxAmplitudePeak: 0.99 }, // amplitude range [-1, 1]
-  compress: { enabled: true },
+  compress: { enabled: false }, // TODO: Remove or replace with proper compression (e.g. offline audiocontext native node)
   trimSilence: { enabled: true, threshold: 0.005 },
   fadeInOutMs: 1, // milliseconds
   tune: { detectPitch: true, autotune: true, targetMidiNote: 60 },
@@ -83,6 +83,7 @@ export async function preProcessAudioBuffer(
   let processed = buffer;
   let results: Partial<PreProcessResults> = {};
 
+  let prePitchDetection = compressAudioBuffer(ctx, processed, 0.5, 2, 1.0); // Only used for better pitch detection results (not in audio results path)
   const PITCH_CONFIDENCE_THRESHOLD = 0.35;
 
   if (trimSilence?.enabled) {
@@ -96,7 +97,7 @@ export async function preProcessAudioBuffer(
       processed = await applyHighPassFilter(processed, hpf.cutoff ?? 80);
     } else if ("auto" in hpf && hpf.auto) {
       // For auto HPF, we need pitch detection first
-      const tempPitch = await detectPitch(processed);
+      const tempPitch = await detectPitch(prePitchDetection);
       if (tempPitch.confidence >= PITCH_CONFIDENCE_THRESHOLD) {
         const cutoffFreq =
           tempPitch.frequency > 30 && tempPitch.frequency < 350 ? tempPitch.frequency : 80;
@@ -110,7 +111,7 @@ export async function preProcessAudioBuffer(
   }
 
   if (compress?.enabled) {
-    // Explicit settings compress unconditionally; otherwise the analysis decides
+    // Explicit settings used if provided; otherwise the analysis decides
     // (suggestedSettings is undefined when the audio doesn't need compression)
     const hasManualSettings =
       compress.threshold !== undefined ||
@@ -137,7 +138,7 @@ export async function preProcessAudioBuffer(
   }
 
   if (tune?.detectPitch || tune?.autotune || (hpf && "auto" in hpf && hpf.auto)) {
-    const detectedPitch = await detectPitch(processed);
+    const detectedPitch = await detectPitch(prePitchDetection);
     // Use target MIDI note 60 (C4) or a provided target note
     const targetMidiNote = tune?.targetMidiNote || 60;
     const transposeSemitones = detectedPitchToTransposition(
@@ -225,7 +226,7 @@ function resampleForPitch(ctx: AudioContext, buffer: AudioBuffer, semitones: num
   return newBuffer;
 }
 
-async function detectPitch(buffer: AudioBuffer, logResults = false) {
+async function detectPitch(buffer: AudioBuffer, logResults = true) {
   const pitchSource = await detectSinglePitchAC(buffer);
   const targetNoteInfo = findClosestNote(pitchSource.frequency);
 
