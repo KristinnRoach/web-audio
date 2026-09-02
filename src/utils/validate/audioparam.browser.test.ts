@@ -41,8 +41,10 @@ describe("cancelAndPinParamValue", () => {
     } else {
       console.warn(
         `\n*** cancelAndHoldAtTime NO LONGER GLITCHES (peak ${native.toFixed(3)}, expected ~1.0).\n` +
-          "*** If Firefox has shipped it too, cancelAndPinParamValue can be\n" +
-          "*** replaced by cancelAndHoldAtTime at all of its call sites.\n" +
+          "*** If Firefox has shipped it too, calls that pass no holdValue can\n" +
+          "*** swap to cancelAndHoldAtTime directly. Calls that pass one are\n" +
+          "*** pinning a value the automation would not produce on its own, so\n" +
+          "*** check each before converting it.\n" +
           "*** See the notes in src/utils/validate/audioparam.ts\n",
       );
     }
