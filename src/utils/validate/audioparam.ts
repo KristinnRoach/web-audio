@@ -1,3 +1,4 @@
+import { clamp } from "../math/math-utils";
 import { isCancelAndHoldSupported } from "./environment";
 
 /**
@@ -31,4 +32,23 @@ export function cancelScheduledParamValues(
       p.setValueAtTime(holdValue !== undefined ? holdValue : p.value, timestamp);
     }
   });
+}
+
+/** Lowest cutoff worth setting on a filter. */
+export const MIN_HZ = 20;
+
+/** Fallback ceiling when no valid sample rate is available. */
+export const FALLBACK_MAX_HZ = 20000;
+
+/**
+ * Highest cutoff that is safe to set for a given sample rate: Nyquist minus a
+ * 1 kHz guard band. Falls back to 20 kHz without a usable sample rate.
+ */
+export function maxSafeHz(sampleRate?: number): number {
+  return sampleRate && sampleRate > 0 ? sampleRate / 2 - 1000 : FALLBACK_MAX_HZ;
+}
+
+/** Clamps a filter cutoff into the safe range for a given sample rate. */
+export function clampHz(hz: number, sampleRate?: number): number {
+  return clamp(hz, MIN_HZ, maxSafeHz(sampleRate));
 }

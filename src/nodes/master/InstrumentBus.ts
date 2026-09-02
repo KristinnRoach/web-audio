@@ -6,7 +6,7 @@ import { getAudioContext } from "@/context";
 
 import { Message, MessageBus, MessageHandler, createMessageBus } from "@/events";
 
-import { clamp, mapToRange } from "@/utils";
+import { clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
 
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from "./defaults";
 
@@ -102,7 +102,7 @@ export class InstrumentBus implements ILibAudioNode {
           new BiquadFilterNode(this.#context, {
             type: "lowpass",
             Q: 0.5,
-            frequency: this.#context.sampleRate / 2 - 1000,
+            frequency: maxSafeHz(this.#context.sampleRate),
           }),
           this.#context,
           "lpf",
@@ -358,13 +358,13 @@ export class InstrumentBus implements ILibAudioNode {
   }
 
   setHpfCutoff(hz: number): this {
-    const safeHz = clamp(hz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(hz, this.context.sampleRate);
     this.getNode("hpf")?.audioNode.frequency.setTargetAtTime(safeHz, this.now, 0.1);
     return this;
   }
 
   setLpfCutoff(hz: number): this {
-    const safeHz = clamp(hz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(hz, this.context.sampleRate);
     this.getNode("lpf")?.audioNode.frequency.setTargetAtTime(safeHz, this.now, 0.1);
     return this;
   }

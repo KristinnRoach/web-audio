@@ -7,12 +7,13 @@ import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events"
 
 import {
   assert,
-  clamp,
   cancelAndPinParamValue,
   interpolateLinearToGeometric,
   mapToRange,
   midiToPlaybackRate,
   getKeytrackedFilterHz,
+  clampHz,
+  maxSafeHz,
 } from "@/utils";
 
 import {
@@ -60,10 +61,10 @@ export class SampleVoice {
   #lpf: BiquadFilterNode | null = null;
   #hpfHz: number = 40;
   #hpfQ: number = 0.5;
-  #lpfHz: number = 18000;
+  #lpfHz: number = maxSafeHz();
   #lpfQ: number = 0.707;
   #keytrackLPFAmount: number = 0.0; // default
-  #keytrackHPFAmount: number = 1.0;
+  #keytrackHPFAmount: number = 0.75;
 
   // static getProcessorParamDescriptors() {
   //   return SAMPLE_PLAYER_PARAM_DESCRIPTORS;
@@ -151,7 +152,7 @@ export class SampleVoice {
 
   #initFilters() {
     this.#hpfHz = 40;
-    this.#lpfHz = this.context.sampleRate / 2 - 1000;
+    this.#lpfHz = maxSafeHz(this.context.sampleRate);
 
     if (!this.#hpf) {
       this.#hpf = new BiquadFilterNode(this.context, {
@@ -185,9 +186,6 @@ export class SampleVoice {
     this.#envelopes.set("pitch-env", pitchEnv);
 
     if (this.#filtersEnabled) {
-      // const MIN_HZ = 20;
-      // const MAX_HZ = this.context.sampleRate / 2 - 1000;
-
       const filterEnv = createEnvelope(this.context, "filter-env", {
         durationSeconds,
         envPointValueRange: [0, 1],
@@ -507,7 +505,7 @@ export class SampleVoice {
     }
 
     const keytrackedHz = getKeytrackedFilterHz(this.#hpfHz, playbackRate, this.#keytrackHPFAmount);
-    const safeHz = clamp(keytrackedHz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
     if (glideTime > 0) {
       freq.setTargetAtTime(safeHz, atTime, glideTime);
@@ -537,7 +535,7 @@ export class SampleVoice {
     }
 
     const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
-    const safeHz = clamp(keytrackedHz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
     if (glideTime > 0) {
       freq.setTargetAtTime(safeHz, atTime, glideTime);
@@ -1094,7 +1092,7 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
-    const safeHz = clamp(hz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(hz, this.context.sampleRate);
     this.#hpfHz = safeHz;
     if (this.#hpf) {
       this.setParam("hpf", safeHz, atTime, { glideTime: 0 });
@@ -1110,7 +1108,7 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
-    const safeHz = clamp(hz, 20, this.context.sampleRate / 2 - 1000);
+    const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
     if (this.#lpf) {
       this.setParam("lpf", safeHz, atTime, {
