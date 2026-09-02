@@ -409,6 +409,10 @@ export class SampleVoice {
   #releaseTimeout: number | null = null;
   #stopTimeout: number | null = null;
 
+  #stopEnvelopes() {
+    this.#envelopes.forEach((env) => env.stopCurrentRun());
+  }
+
   release({ releaseTime = this.releaseTime, secondsFromNow = 0 }): this {
     if (this.#state === VoiceState.RELEASING) return this;
 
@@ -912,6 +916,11 @@ export class SampleVoice {
           break;
 
         case "voice:stopped":
+          this.#stopEnvelopes();
+          if (this.#releaseTimeout) {
+            clearTimeout(this.#releaseTimeout);
+            this.#releaseTimeout = null;
+          }
           this.#state = VoiceState.STOPPED;
           data = {
             voiceId: this.nodeId,

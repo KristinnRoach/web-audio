@@ -47,6 +47,60 @@ describe("CustomEnvelope", () => {
     expect(envelope.envPointValueRange).toEqual([-1, 2]);
   });
 
+  it("stops the current loop run without disabling loop for the next trigger", () => {
+    vi.useFakeTimers();
+    try {
+      const context = {
+        _currentTime: 0,
+        get currentTime() {
+          return this._currentTime;
+        },
+        sampleRate: 44100,
+        getOutputTimestamp: () => ({ contextTime: context._currentTime, performanceTime: 0 }),
+      } as unknown as AudioContext;
+      const envelope = new CustomEnvelope(
+        context,
+        "amp-env",
+        new EnvelopeData(
+          [
+            { time: 0, value: 0 },
+            { time: 1, value: 1 },
+          ],
+          [0, 1],
+          1,
+        ),
+      );
+      const audioParam = {
+        value: 0,
+        minValue: 0,
+        maxValue: 1,
+        cancelScheduledValues: vi.fn(),
+        setValueAtTime: vi.fn(),
+        setValueCurveAtTime: vi.fn(),
+      } as unknown as AudioParam;
+      const sendMessageSpy = vi.spyOn(envelope, "sendUpstreamMessage");
+      const options = { baseValue: 1, playbackRate: 1, voiceId: "test-voice" };
+
+      envelope.setLoopEnabled(true);
+      envelope.triggerEnvelope(audioParam, 0, options);
+      envelope.stopCurrentRun();
+
+      expect(envelope.loopEnabled).toBe(true);
+
+      envelope.triggerEnvelope(audioParam, 0, options);
+      expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(2);
+
+      (context as any)._currentTime = 0.75;
+      vi.advanceTimersByTime(100);
+      expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(3);
+      expect(sendMessageSpy.mock.calls.filter(([type]) => type === "amp-env:release")).toHaveLength(
+        0,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("should generate a curve with correct initial value", () => {
     const envelope = new CustomEnvelope(
       mockAudioContext,

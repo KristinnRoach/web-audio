@@ -315,6 +315,7 @@ export class CustomEnvelope implements LibNode {
       return;
     }
 
+    const runId = ++this.#runId;
     this.#isReleased = false;
     this.#autoReleaseSuppressed = false;
     this.#currentPlaybackRate = options.playbackRate;
@@ -327,9 +328,9 @@ export class CustomEnvelope implements LibNode {
     };
 
     if (this.#loopEnabled) {
-      this.#startLoopingEnv(audioParam, startTime, options);
+      this.#startLoopingEnv(audioParam, startTime, options, runId);
     } else {
-      this.#startSingleEnv(audioParam, startTime, options);
+      this.#startSingleEnv(audioParam, startTime, options, runId);
     }
 
     if (!this.releasePoint) {
@@ -340,6 +341,7 @@ export class CustomEnvelope implements LibNode {
     // Auto-release for held notes with no explicit note-off.
     // Skipped while sustaining or looping - both hold indefinitely until released.
     setTimeout(() => {
+      if (runId !== this.#runId) return;
       if (this.sustainEnabled || this.#isReleased) return;
 
       if (this.#loopEnabled) {
@@ -362,6 +364,7 @@ export class CustomEnvelope implements LibNode {
       voiceId?: string;
       midiNote?: number;
     },
+    runId: number,
   ) {
     const endIdx = this.sustainEnabled
       ? (this.sustainPointIndex ?? this.points.length - 1)
@@ -414,6 +417,7 @@ export class CustomEnvelope implements LibNode {
       if (!this.sustainEnabled) {
         setTimeout(
           () => {
+            if (runId !== this.#runId) return;
             this.#activeEnvelope = null;
           },
           scaledDuration * 1000 + 100,
@@ -430,6 +434,7 @@ export class CustomEnvelope implements LibNode {
         if (!this.sustainEnabled) {
           setTimeout(
             () => {
+              if (runId !== this.#runId) return;
               this.#activeEnvelope = null;
             },
             scaledDuration * 1000 + 100,
@@ -451,6 +456,7 @@ export class CustomEnvelope implements LibNode {
   #autoReleaseSuppressed = false;
   #isCurrentlyLooping = false;
   #loopUpdateFlag = false;
+  #runId = 0;
   #shouldLoop = () => this.#loopEnabled && !this.#isReleased;
 
   #sendAutoRelease(options?: { voiceId?: string; midiNote?: number }) {
@@ -490,11 +496,17 @@ export class CustomEnvelope implements LibNode {
       minValue?: number;
       maxValue?: number;
     },
+    runId: number,
   ) {
-    if (!this.#shouldLoop()) {
+    const shouldStopScheduling = () => {
+      if (runId !== this.#runId) return true;
+      if (this.#shouldLoop()) return false;
+
       this.#isCurrentlyLooping = false;
-      return;
-    }
+      return true;
+    };
+
+    if (shouldStopScheduling()) return;
 
     let cachedDuration = this.#getScaledDuration(
       this.#data.startPointIndex,
@@ -535,10 +547,7 @@ export class CustomEnvelope implements LibNode {
     let nextScheduleTimeout: number | null = null;
 
     const scheduleNext = () => {
-      if (!this.#shouldLoop()) {
-        this.#isCurrentlyLooping = false;
-        return;
-      }
+      if (shouldStopScheduling()) return;
       // Clear any pending schedule // ? Redundant ?
       if (nextScheduleTimeout !== null) {
         clearTimeout(nextScheduleTimeout);
@@ -569,10 +578,7 @@ export class CustomEnvelope implements LibNode {
 
         // Schedule with lookahead
         while (phase < this.#context.currentTime + lookAhead && phase >= lastScheduledEnd) {
-          if (!this.#shouldLoop()) {
-            this.#isCurrentlyLooping = false;
-            return;
-          }
+          if (shouldStopScheduling()) return;
 
           const safeCurveDuration = cachedDuration - safetyBuffer;
 
@@ -608,10 +614,7 @@ export class CustomEnvelope implements LibNode {
               const delay = Math.max(0, performanceTime - performance.now());
 
               setTimeout(() => {
-                if (!this.#shouldLoop()) {
-                  this.#isCurrentlyLooping = false;
-                  return;
-                }
+                if (shouldStopScheduling()) return;
                 this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
                   voiceId: options.voiceId,
                   midiNote: options.midiNote,
@@ -619,10 +622,7 @@ export class CustomEnvelope implements LibNode {
                 });
               }, delay);
             } else {
-              if (!this.#shouldLoop()) {
-                this.#isCurrentlyLooping = false;
-                return;
-              }
+              if (shouldStopScheduling()) return;
               // Fallback: send message immediately if timestamp is not available
               this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
                 voiceId: options.voiceId,
@@ -635,10 +635,7 @@ export class CustomEnvelope implements LibNode {
 
         // Schedule next iteration BEFORE releasing lock
         nextScheduleTimeout = setTimeout(() => {
-          if (!this.#shouldLoop()) {
-            this.#isCurrentlyLooping = false;
-            return;
-          }
+          if (shouldStopScheduling()) return;
           scheduleNext();
         }, 100);
       } finally {
@@ -886,6 +883,15 @@ export class CustomEnvelope implements LibNode {
     if (!enabled && this.#autoReleaseSuppressed && !this.#isReleased && !this.sustainEnabled) {
       this.#sendAutoRelease(this.#activeEnvelope?.options);
     }
+  };
+
+  stopCurrentRun = () => {
+    this.#runId++;
+    this.#isReleased = true;
+    this.#autoReleaseSuppressed = false;
+    this.#isCurrentlyLooping = false;
+    this.#loopUpdateFlag = false;
+    this.#activeEnvelope = null;
   };
 
   syncToPlaybackRate = (sync: boolean) => {
