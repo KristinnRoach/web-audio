@@ -78,24 +78,24 @@ describe("CustomEnvelope", () => {
         setValueAtTime: vi.fn(),
         setValueCurveAtTime: vi.fn(),
       } as unknown as AudioParam;
+      const sendMessageSpy = vi.spyOn(envelope, "sendUpstreamMessage");
+      const options = { baseValue: 1, playbackRate: 1, voiceId: "test-voice" };
 
       envelope.setLoopEnabled(true);
-      envelope.triggerEnvelope(audioParam, 0, { baseValue: 1, playbackRate: 1 });
+      envelope.triggerEnvelope(audioParam, 0, options);
       envelope.stopCurrentRun();
 
       expect(envelope.loopEnabled).toBe(true);
 
-      (context as any)._currentTime = 0.75;
-      vi.advanceTimersByTime(100);
-      expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(1);
-
-      envelope.triggerEnvelope(audioParam, 0, { baseValue: 1, playbackRate: 1 });
-
+      envelope.triggerEnvelope(audioParam, 0, options);
       expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(2);
 
-      (context as any)._currentTime = 1.5;
+      (context as any)._currentTime = 0.75;
       vi.advanceTimersByTime(100);
       expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(3);
+      expect(sendMessageSpy.mock.calls.filter(([type]) => type === "amp-env:release")).toHaveLength(
+        0,
+      );
     } finally {
       vi.useRealTimers();
     }
