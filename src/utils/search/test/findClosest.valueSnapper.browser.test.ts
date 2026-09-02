@@ -16,7 +16,7 @@ describe("findClosest ValueSnapper Integration", () => {
   const snapToValueWithFindClosest = (target: number, allowedValues: number[]): number => {
     if (allowedValues.length === 0) return target;
 
-    return findClosest(allowedValues, target, (x) => x);
+    return findClosest(allowedValues, target, "any", (x) => x);
   };
 
   // Proposed replacement using findClosest with default parameter
@@ -182,7 +182,7 @@ describe("findClosest ValueSnapper Integration", () => {
       const originalResult = snapper.snapToValue(350);
 
       // Test what findClosest would return
-      const findClosestResult = findClosest(pentatonicFreqs, 350, (x) => x);
+      const findClosestResult = findClosest(pentatonicFreqs, 350, "any", (x) => x);
       const findClosestDefaultResult = findClosest(pentatonicFreqs, 350);
 
       expect(findClosestResult).toBe(originalResult);
@@ -201,7 +201,7 @@ describe("findClosest ValueSnapper Integration", () => {
 
       testTargets.forEach((target) => {
         const originalResult = snapper.snapToValue(target);
-        const findClosestResult = findClosest(normalizedValues, target, (x) => x);
+        const findClosestResult = findClosest(normalizedValues, target, "any", (x) => x);
         const findClosestDefaultResult = findClosest(normalizedValues, target);
 
         expect(findClosestResult).toBe(originalResult);
@@ -267,7 +267,7 @@ describe("findClosest ValueSnapper Integration", () => {
 
       const target = 2.5;
 
-      const sortedResult = findClosest(sorted, target, (x) => x);
+      const sortedResult = findClosest(sorted, target, "any", (x) => x);
       const originalSortedResult = snapToValueOriginal(target, sorted);
 
       expect(sortedResult).toBe(originalSortedResult);
@@ -280,7 +280,7 @@ describe("findClosest ValueSnapper Integration", () => {
       const originalArray = [1, 2, 3, 4, 5];
       const arrayCopy = [...originalArray];
 
-      findClosest(originalArray, 3.5, (x) => x);
+      findClosest(originalArray, 3.5, "any", (x) => x);
 
       expect(originalArray).toEqual(arrayCopy);
     });
