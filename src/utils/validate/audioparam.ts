@@ -2,14 +2,14 @@ import { clamp } from "../math/math-utils";
 import { isCancelAndHoldSupported } from "./environment";
 
 /**
- * Chromium workaround: cancelAndHoldAtTime on a partially-rendered
- * setValueCurveAtTime replays the curve from index 0 for one render quantum
- * (param dips to the curve start value -> audible click). Instead, cancel
- * everything and pin the param at a known value.
+ * Cancels scheduled automation and pins the param at a known value.
  *
- * holdValue must be captured BEFORE cancelScheduledValues runs, because
- * cancelling reverts param.value to its pre-curve value. Pass holdValue
- * explicitly whenever the caller knows the intended value.
+ * Stands in for cancelAndHoldAtTime, which glitches on an already-rendering
+ * setValueCurveAtTime in Chrome and is unimplemented in Firefox. Details and
+ * measurements: https://github.com/KristinnRoach/web-audio/issues/33
+ *
+ * holdValue is read before cancelling on purpose - cancelling is allowed to
+ * restore the pre-curve value. Pass it explicitly when the caller knows it.
  */
 export function cancelAndPinParamValue(param: AudioParam, timestamp: number, holdValue?: number) {
   const value = holdValue ?? param.value; // read before cancel
