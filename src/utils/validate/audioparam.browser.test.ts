@@ -41,8 +41,8 @@ describe("cancelAndPinParamValue", () => {
     } else {
       console.warn(
         `\n*** cancelAndHoldAtTime NO LONGER GLITCHES (peak ${native.toFixed(3)}, expected ~1.0).\n` +
-          "*** If Firefox has shipped it too, cancelAndPinParamValue and\n" +
-          "*** isCancelAndHoldSupported can be replaced by cancelAndHoldAtTime.\n" +
+          "*** If Firefox has shipped it too, cancelAndPinParamValue can be\n" +
+          "*** replaced by cancelAndHoldAtTime at all of its call sites.\n" +
           "*** See the notes in src/utils/validate/audioparam.ts\n",
       );
     }

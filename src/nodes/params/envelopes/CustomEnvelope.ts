@@ -6,7 +6,7 @@ import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events"
 import { EnvelopePoint, EnvelopeState, EnvelopeType } from "./env-types";
 import { EnvelopeData } from "./EnvelopeData";
 import { LibNode } from "@/nodes/LibNode";
-import { assert, cancelAndPinParamValue, cancelScheduledParamValues, clamp } from "@/utils";
+import { assert, cancelAndPinParamValue, clamp } from "@/utils";
 
 // ===== CUSTOM ENVELOPE  =====
 export class CustomEnvelope implements LibNode {
@@ -297,7 +297,7 @@ export class CustomEnvelope implements LibNode {
         const safeStart = Math.max(now + 0.001, startTime);
 
         // Cancel all previous scheduling
-        cancelScheduledParamValues(audioParam, safeStart);
+        cancelAndPinParamValue(audioParam, safeStart);
 
         // Simple attack and decay
         audioParam.linearRampToValueAtTime(options.baseValue * 0.8, safeStart + 0.01);
@@ -407,7 +407,7 @@ export class CustomEnvelope implements LibNode {
     }
 
     try {
-      cancelScheduledParamValues(audioParam, safeStart);
+      cancelAndPinParamValue(audioParam, safeStart, curve[0]);
       audioParam.setValueCurveAtTime(curve, safeStart, scaledDuration);
 
       // Clear active envelope state when envelope completes (if not sustained)
@@ -422,7 +422,7 @@ export class CustomEnvelope implements LibNode {
     } catch {
       console.debug("Failed to apply envelope curve due to rapid fire.");
       try {
-        cancelScheduledParamValues(audioParam, safeStart);
+        cancelAndPinParamValue(audioParam, safeStart, curve[0]);
 
         audioParam.linearRampToValueAtTime(curve[curve.length - 1], safeStart + scaledDuration);
 
@@ -698,7 +698,7 @@ export class CustomEnvelope implements LibNode {
         setTimeout(() => {
           try {
             const delayedNow = this.#context.currentTime;
-            cancelScheduledParamValues(audioParam, delayedNow);
+            cancelAndPinParamValue(audioParam, delayedNow);
             audioParam.linearRampToValueAtTime(0, delayedNow + 0.1);
             console.debug("Firefox delayed release envelope - linear ramp to 0");
           } catch (delayedError) {
@@ -922,8 +922,9 @@ export class CustomEnvelope implements LibNode {
     }
 
     try {
-      // Cancel current scheduling
-      cancelScheduledParamValues(audioParam, currentTime);
+      // Read before cancelling: cancelling is allowed to restore the pre-curve value.
+      const currentValue = audioParam.value;
+      cancelAndPinParamValue(audioParam, currentTime, currentValue);
 
       // Calculate remaining duration to sustain point
       const remainingTimeToSustain = sustainPoint.time - scaledElapsedTime;
@@ -940,7 +941,7 @@ export class CustomEnvelope implements LibNode {
             ...options,
             minValue: audioParam.minValue,
             maxValue: audioParam.maxValue,
-            startFromValue: audioParam.value,
+            startFromValue: currentValue,
           },
           scaledElapsedTime,
         );
