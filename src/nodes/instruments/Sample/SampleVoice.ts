@@ -63,7 +63,9 @@ export class SampleVoice {
   #hpfQ: number = 0.5;
   #lpfHz: number = maxSafeHz();
   #lpfQ: number = 0.707;
-  #keytrackLPFAmount: number = 0.0; // default
+  // Keytracking defaults roughly tuned by ear for now
+  // TODO: Consider adding as param
+  #keytrackLPFAmount: number = 0.25;
   #keytrackHPFAmount: number = 0.75;
 
   // static getProcessorParamDescriptors() {
