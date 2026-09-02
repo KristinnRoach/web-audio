@@ -47,6 +47,44 @@ describe("CustomEnvelope", () => {
     expect(envelope.envPointValueRange).toEqual([-1, 2]);
   });
 
+  it("stops the current loop run without disabling loop for the next trigger", () => {
+    vi.useFakeTimers();
+    try {
+      const envelope = new CustomEnvelope(
+        mockAudioContext,
+        "amp-env",
+        new EnvelopeData(
+          [
+            { time: 0, value: 0 },
+            { time: 1, value: 1 },
+          ],
+          [0, 1],
+          1,
+        ),
+      );
+      const audioParam = {
+        value: 0,
+        minValue: 0,
+        maxValue: 1,
+        cancelScheduledValues: vi.fn(),
+        setValueAtTime: vi.fn(),
+        setValueCurveAtTime: vi.fn(),
+      } as unknown as AudioParam;
+
+      envelope.setLoopEnabled(true);
+      envelope.triggerEnvelope(audioParam, 0, { baseValue: 1, playbackRate: 1 });
+      envelope.stopCurrentRun();
+
+      expect(envelope.loopEnabled).toBe(true);
+
+      envelope.triggerEnvelope(audioParam, 0, { baseValue: 1, playbackRate: 1 });
+
+      expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("should generate a curve with correct initial value", () => {
     const envelope = new CustomEnvelope(
       mockAudioContext,

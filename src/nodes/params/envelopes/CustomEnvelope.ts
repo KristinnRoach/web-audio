@@ -888,6 +888,14 @@ export class CustomEnvelope implements LibNode {
     }
   };
 
+  stopCurrentRun = () => {
+    this.#isReleased = true;
+    this.#autoReleaseSuppressed = false;
+    this.#isCurrentlyLooping = false;
+    this.#loopUpdateFlag = false;
+    this.#activeEnvelope = null;
+  };
+
   syncToPlaybackRate = (sync: boolean) => {
     this.#syncedToPlaybackRate = sync;
   };
