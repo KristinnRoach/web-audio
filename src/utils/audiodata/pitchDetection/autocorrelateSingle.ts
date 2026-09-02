@@ -55,7 +55,14 @@ export async function detectSinglePitchAC(
     const y3 = correlations[x + 1];
 
     const denominator = 2 * (2 * y2 - y1 - y3);
-    offset = Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
+    const interpolated = Math.abs(denominator) < 1e-6 ? 0 : (y3 - y1) / denominator;
+
+    // A true peak interpolates to within half a bin. Anything beyond that means
+    // bestLag wasn't a real local max (it sits on the search boundary, where
+    // correlations[minLag - 1] is still 0, or the peak is near-flat) and the
+    // parabola has opened the wrong way. Unclamped, that yields a wild or
+    // negative lag, and sampleRate / negative propagates NaN to the caller.
+    offset = Math.max(-0.5, Math.min(0.5, interpolated));
   }
 
   // Add confidence calculation

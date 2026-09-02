@@ -159,4 +159,27 @@ describe("detectSinglePitchAC", () => {
     expect(result.frequency).toBeGreaterThan(0);
     expect(result.confidence).toBe(0);
   });
+
+  it("always returns a finite positive frequency on degenerate input", async () => {
+    // Inputs that push bestLag onto the search boundary or leave the peak flat,
+    // where the quadratic interpolation offset would otherwise blow up
+    const dc = new Float32Array(4410).fill(0.5);
+
+    const impulse = new Float32Array(4410);
+    impulse[0] = 1;
+
+    const noise = new Float32Array(4410);
+    for (let i = 0; i < noise.length; i++) noise[i] = Math.random() * 2 - 1;
+
+    const alternating = new Float32Array(4410);
+    for (let i = 0; i < alternating.length; i++) alternating[i] = i % 2 ? 1 : -1;
+
+    for (const signal of [dc, impulse, noise, alternating]) {
+      const result = await detectSinglePitchAC(createMockAudioBuffer(signal));
+
+      expect(Number.isFinite(result.frequency)).toBe(true);
+      expect(result.frequency).toBeGreaterThan(0);
+      expect(Number.isFinite(result.confidence)).toBe(true);
+    }
+  });
 });
