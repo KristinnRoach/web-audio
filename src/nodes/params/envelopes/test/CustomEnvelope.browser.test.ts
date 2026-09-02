@@ -50,8 +50,16 @@ describe("CustomEnvelope", () => {
   it("stops the current loop run without disabling loop for the next trigger", () => {
     vi.useFakeTimers();
     try {
+      const context = {
+        _currentTime: 0,
+        get currentTime() {
+          return this._currentTime;
+        },
+        sampleRate: 44100,
+        getOutputTimestamp: () => ({ contextTime: context._currentTime, performanceTime: 0 }),
+      } as unknown as AudioContext;
       const envelope = new CustomEnvelope(
-        mockAudioContext,
+        context,
         "amp-env",
         new EnvelopeData(
           [
@@ -77,9 +85,17 @@ describe("CustomEnvelope", () => {
 
       expect(envelope.loopEnabled).toBe(true);
 
+      (context as any)._currentTime = 0.75;
+      vi.advanceTimersByTime(100);
+      expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(1);
+
       envelope.triggerEnvelope(audioParam, 0, { baseValue: 1, playbackRate: 1 });
 
       expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(2);
+
+      (context as any)._currentTime = 1.5;
+      vi.advanceTimersByTime(100);
+      expect(audioParam.setValueCurveAtTime).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
