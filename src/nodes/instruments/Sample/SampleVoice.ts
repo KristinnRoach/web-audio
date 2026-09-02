@@ -706,7 +706,7 @@ export class SampleVoice {
 
     const { glideTime = 0, cancelPrevious = true } = options;
 
-    if (cancelPrevious) param.cancelScheduledValues(timestamp); // cancelScheduledParamValues(param, timestamp, currVal);
+    if (cancelPrevious) param.cancelScheduledValues(timestamp);
 
     if (glideTime <= 0) param.setValueAtTime(targetValue, Math.max(timestamp, this.now + 0.001));
     else param.linearRampToValueAtTime(targetValue, timestamp + Math.max(glideTime, 0.001));

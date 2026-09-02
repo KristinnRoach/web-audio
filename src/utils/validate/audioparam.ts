@@ -1,5 +1,4 @@
 import { clamp } from "../math/math-utils";
-import { isCancelAndHoldSupported } from "./environment";
 
 /**
  * Cancels scheduled automation and pins the param at a known value.
@@ -15,23 +14,6 @@ export function cancelAndPinParamValue(param: AudioParam, timestamp: number, hol
   const value = holdValue ?? param.value; // read before cancel
   param.cancelScheduledValues(timestamp);
   param.setValueAtTime(value, timestamp);
-}
-
-export function cancelScheduledParamValues(
-  param: AudioParam | AudioParam[],
-  timestamp: number,
-  holdValue?: number,
-) {
-  const paramsToProcess = Array.isArray(param) ? param : [param];
-
-  paramsToProcess.forEach((p) => {
-    if (isCancelAndHoldSupported()) {
-      p.cancelAndHoldAtTime(timestamp);
-    } else {
-      p.cancelScheduledValues(timestamp);
-      p.setValueAtTime(holdValue !== undefined ? holdValue : p.value, timestamp);
-    }
-  });
 }
 
 /** Lowest cutoff worth setting on a filter. */

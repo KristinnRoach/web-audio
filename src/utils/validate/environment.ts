@@ -2,7 +2,6 @@
 import {} from "../../io/types";
 
 type AudioEnvironment = {
-  readonly cancelAndHoldSupported: boolean;
   readonly workletSupported: boolean;
   readonly keyboardAPISupported: boolean;
   readonly modifierStateSupported: boolean;
@@ -30,7 +29,6 @@ class Environment {
         typeof KeyboardEvent.prototype.getModifierState === "function";
 
       this.#capabilities = {
-        cancelAndHoldSupported: typeof param.cancelAndHoldAtTime === "function",
         workletSupported: typeof ctx.audioWorklet === "object",
         keyboardAPISupported: hasKeyboardAPI,
         modifierStateSupported: hasModifierState,
@@ -40,7 +38,6 @@ class Environment {
     } catch {
       // Fallback for test environment
       this.#capabilities = {
-        cancelAndHoldSupported: false,
         workletSupported: false,
         keyboardAPISupported: false,
         modifierStateSupported: false,
@@ -57,7 +54,6 @@ class Environment {
 export const environment = new Environment();
 
 // Convenience getters
-export const isCancelAndHoldSupported = () => !!environment?.capabilities?.cancelAndHoldSupported;
 export const isWorkletSupported = () => !!environment?.capabilities?.workletSupported;
 export const isKeyboardAPISupported = () => !!environment?.capabilities?.keyboardAPISupported;
 export const isModifierStateSupported = () => !!environment?.capabilities?.modifierStateSupported;
