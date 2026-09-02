@@ -457,8 +457,7 @@ export class CustomEnvelope implements LibNode {
   #isCurrentlyLooping = false;
   #loopUpdateFlag = false;
   #runId = 0;
-  #shouldLoop = (runId?: number) =>
-    this.#loopEnabled && !this.#isReleased && (runId === undefined || runId === this.#runId);
+  #shouldLoop = () => this.#loopEnabled && !this.#isReleased;
 
   #sendAutoRelease(options?: { voiceId?: string; midiNote?: number }) {
     this.#autoReleaseSuppressed = false;
@@ -499,7 +498,7 @@ export class CustomEnvelope implements LibNode {
     },
     runId: number,
   ) {
-    if (!this.#shouldLoop(runId)) {
+    if (runId !== this.#runId || !this.#shouldLoop()) {
       this.#isCurrentlyLooping = false;
       return;
     }
@@ -543,7 +542,7 @@ export class CustomEnvelope implements LibNode {
     let nextScheduleTimeout: number | null = null;
 
     const scheduleNext = () => {
-      if (!this.#shouldLoop(runId)) {
+      if (runId !== this.#runId || !this.#shouldLoop()) {
         this.#isCurrentlyLooping = false;
         return;
       }
@@ -577,7 +576,7 @@ export class CustomEnvelope implements LibNode {
 
         // Schedule with lookahead
         while (phase < this.#context.currentTime + lookAhead && phase >= lastScheduledEnd) {
-          if (!this.#shouldLoop(runId)) {
+          if (runId !== this.#runId || !this.#shouldLoop()) {
             this.#isCurrentlyLooping = false;
             return;
           }
@@ -616,7 +615,7 @@ export class CustomEnvelope implements LibNode {
               const delay = Math.max(0, performanceTime - performance.now());
 
               setTimeout(() => {
-                if (!this.#shouldLoop(runId)) {
+                if (runId !== this.#runId || !this.#shouldLoop()) {
                   this.#isCurrentlyLooping = false;
                   return;
                 }
@@ -627,7 +626,7 @@ export class CustomEnvelope implements LibNode {
                 });
               }, delay);
             } else {
-              if (!this.#shouldLoop(runId)) {
+              if (runId !== this.#runId || !this.#shouldLoop()) {
                 this.#isCurrentlyLooping = false;
                 return;
               }
@@ -643,7 +642,7 @@ export class CustomEnvelope implements LibNode {
 
         // Schedule next iteration BEFORE releasing lock
         nextScheduleTimeout = setTimeout(() => {
-          if (!this.#shouldLoop(runId)) {
+          if (runId !== this.#runId || !this.#shouldLoop()) {
             this.#isCurrentlyLooping = false;
             return;
           }
