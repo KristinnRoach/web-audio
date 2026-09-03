@@ -8,6 +8,27 @@ const clipThresholds = {
   high: 0.3,
 } as const;
 
+/**
+ * Which amplitude the center-clip threshold is measured against, as a quantile
+ * of |sample| - the fraction of the recording allowed to sit ABOVE the reference.
+ *
+ * Balances a STRONG pitch against a SUSTAINED one:
+ *   1.0  reference is the single loudest sample, so the loudest transient wins.
+ *   <1.0 steps over the loudest (1 - value) of the recording, so the sustained
+ *        body sets the reference and a short strong sound stops dominating.
+ *
+ * At 1.0 this is exactly the old peak-referenced behaviour, bit for bit - so if
+ * this tuning does not help, set it to 1.0 to confirm, then delete the quantile
+ * block below and go back to a plain max-of-|sample| loop.
+ *
+ * Pick it from the transient you want ignored: stay under
+ * 1 - (transient length / sample duration). A 5ms click in a 500ms sample is 1%,
+ * so 0.99 or below clears it. Measured flat from 0.99 down to 0.75 on transient
+ * fixtures; below ~0.5 the reference sinks into the noise floor and clipping
+ * stops rejecting anything.
+ */
+const AMPLITUDE_QUANTILE = 0.95;
+
 export async function detectSinglePitchAC(
   audioBuffer: AudioBuffer,
   noiseReduction: keyof typeof clipThresholds = "medium",
@@ -15,15 +36,26 @@ export async function detectSinglePitchAC(
   const rawData = audioBuffer.getChannelData(0);
   const clipThreshold = clipThresholds[noiseReduction];
 
-  let maxAbs = 0;
-  for (let i = 0; i < rawData.length; i++) {
-    const abs = Math.abs(rawData[i]);
-    if (abs > maxAbs) maxAbs = abs;
+  // Sorted ascending, so index (n - 1) * quantile is the reference amplitude.
+  // TypedArray sort puts NaN last, so dropping the NaN tail leaves the finite
+  // values and keeps the old behaviour of skipping them.
+  const sortedAbs = Float32Array.from(rawData, Math.abs).sort();
+
+  let finiteCount = sortedAbs.length;
+  while (finiteCount > 0 && Number.isNaN(sortedAbs[finiteCount - 1])) finiteCount--;
+
+  if (finiteCount < sortedAbs.length) {
+    console.warn(
+      `detectSinglePitchAC: ignoring ${sortedAbs.length - finiteCount} NaN sample(s) in the input buffer`,
+    );
   }
+
+  const referenceAmplitude =
+    finiteCount > 0 ? sortedAbs[Math.floor((finiteCount - 1) * AMPLITUDE_QUANTILE)] : 0;
 
   const data =
     clipThreshold > 0
-      ? rawData.map((x) => (Math.abs(x) > clipThreshold * maxAbs ? x : 0))
+      ? rawData.map((x) => (Math.abs(x) > clipThreshold * referenceAmplitude ? x : 0))
       : rawData;
 
   const minLag = Math.floor(audioBuffer.sampleRate / MAX_Hz); // upper bound

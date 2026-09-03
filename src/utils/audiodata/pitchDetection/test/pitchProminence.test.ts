@@ -100,3 +100,42 @@ describe("detectSinglePitchAC - single notes stay accurate", () => {
     });
   }
 });
+
+describe("detectSinglePitchAC - a short strong sound does not hide a sustained one", () => {
+  const SUSTAINED_HZ = 220;
+
+  /** Full-scale broadband click, then nothing */
+  const click = (ms: number) => (t: number) =>
+    t < ms / 1000 ? Math.sin(2 * Math.PI * 3000 * t) * Math.exp(-t / 0.001) : 0;
+
+  // Referenced against the loudest sample, a 5ms full-scale click puts the whole
+  // 0.15-amplitude sustain under the center-clip threshold: 0.2% of the buffer
+  // survives, detection rails at MAX_Hz, and confidence still clears the autotune
+  // gate. Referenced against a quantile, the sustain sets the threshold instead.
+  for (const [name, clickMs, sustainAmp] of [
+    ["5ms click over a 0.15 sustain", 5, 0.15],
+    ["5ms click over a 0.05 sustain", 5, 0.05],
+    ["20ms click over a 0.15 sustain", 20, 0.15],
+  ] as const) {
+    it(`detects the sustained pitch under a ${name}`, async () => {
+      const buffer = render((t) => click(clickMs)(t) + sine(SUSTAINED_HZ, sustainAmp)(t));
+
+      const result = await detectSinglePitchAC(buffer);
+
+      expect(semitoneErrorIgnoringOctaves(result.frequency, SUSTAINED_HZ)).toBeLessThan(0.15);
+    });
+  }
+
+  it("ignores NaN samples rather than letting them set the reference", async () => {
+    const samples = Math.floor(DURATION * SAMPLE_RATE);
+    const data = new Float32Array(samples);
+    for (let i = 0; i < samples; i++)
+      data[i] = Math.sin((2 * Math.PI * SUSTAINED_HZ * i) / SAMPLE_RATE);
+    data[Math.floor(samples / 2)] = NaN;
+
+    const result = await detectSinglePitchAC(createMockAudioBuffer(data));
+
+    expect(semitoneErrorIgnoringOctaves(result.frequency, SUSTAINED_HZ)).toBeLessThan(0.15);
+    expect(result.confidence).toBeGreaterThan(0.5);
+  });
+});
