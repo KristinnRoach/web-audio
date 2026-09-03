@@ -81,9 +81,14 @@ export class SampleVoice {
     private context: AudioContext = getAudioContext(),
     options: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] } = {},
   ) {
+    const signalChain = options.internalSignalChain ?? DEFAULT_CHAIN_ORDER;
+    if (new Set(signalChain).size !== signalChain.length) {
+      throw new TypeError("SampleVoice signal chain cannot contain duplicate nodes");
+    }
+
     this.nodeId = registerNode(this.nodeType, this);
     this.#messages = createMessageBus<Message>(this.nodeId);
-    this.#internalSignalChain = [...(options.internalSignalChain ?? DEFAULT_CHAIN_ORDER)];
+    this.#internalSignalChain = [...signalChain];
 
     this.#outputNode = new GainNode(context, { gain: 1 });
 
@@ -580,6 +585,8 @@ export class SampleVoice {
   }
 
   setModulationAmount(modType: "AM" | "FM", amount: number) {
+    if (modType === "AM" && !this.#chainIncludes("am")) return this;
+
     const safeAmount = mapToRange(amount, 0, 1, 0, 0.95, {
       warn: true,
       name: "sampleVoice.setModulationAmount",
@@ -598,6 +605,8 @@ export class SampleVoice {
     waveform: CustomLibWaveform | OscillatorType | PeriodicWave = "triangle",
     customWaveOptions: WaveformOptions = {},
   ) {
+    if (modType === "AM" && !this.#chainIncludes("am")) return this;
+
     if (modType === "AM") {
       this.#am_lfo?.setWaveform(waveform, customWaveOptions);
     } else if (modType === "FM") {
@@ -1095,6 +1104,8 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
+    if (!this.#chainIncludes("hpf")) return this;
+
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#hpfHz = safeHz;
     if (this.#hpf) {
@@ -1111,6 +1122,8 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
+    if (!this.#chainIncludes("lpf")) return this;
+
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
     if (this.#lpf) {
