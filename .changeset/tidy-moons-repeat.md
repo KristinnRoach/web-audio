@@ -2,12 +2,14 @@
 "@kidlib/web-audio": patch
 ---
 
-Consolidate duplicate pitch detection into `detectPitchWithNote`
+Remove duplicate pitch detection from `SamplePlayer`
 
-`SamplePlayer.detectPitch` and the module-local `detectPitch` in the
-preprocessor were the same function. Both are now `detectPitchWithNote`,
-exported from the package root.
+`SamplePlayer.detectPitch` and `SamplePlayer.detectedPitchToTransposition`
+duplicated the preprocessor's equivalents and had no callers. Both are gone,
+along with the `sample:pitch-detected` message they emitted, which nothing
+listened for.
 
-Removed from `SamplePlayer`: `detectPitch` and `detectedPitchToTransposition`
-(a byte-identical copy of the preprocessor's), plus the unlistened
-`sample:pitch-detected` message they emitted. Nothing called either method.
+`detectSinglePitchAC` is now exported from the package root as the pitch
+detection entry point. The note lookup and MIDI conversion the removed method
+layered on top were a reimplementation of the existing `findClosestNote` and
+`frequencyToMidi`, so they stay at the call site rather than behind a wrapper.

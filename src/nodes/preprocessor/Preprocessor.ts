@@ -4,7 +4,8 @@ import { compressAudioBuffer } from "@/utils/audiodata/process/compressAudioBuff
 import { shouldCompress } from "@/utils/audiodata/process/shouldCompress";
 import { detectThresholdCrossing } from "@/utils/audiodata/process/detectSilence";
 import { trimAudioBuffer } from "@/utils/audiodata/process/trimBuffer";
-import { detectPitchWithNote } from "@/utils/audiodata/pitchDetection";
+import { detectSinglePitchAC } from "@/utils/audiodata/pitchDetection";
+import { findClosestNote, frequencyToMidi } from "@/utils";
 import { findZeroCrossingSeconds } from "@/utils";
 
 export type PreProcessOptions = {
@@ -114,7 +115,7 @@ export async function preProcessAudioBuffer(
       processed = await applyHighPassFilter(processed, hpf.cutoff ?? 80);
     } else if ("auto" in hpf && hpf.auto) {
       // For auto HPF, we need pitch detection first
-      const tempPitch = await detectPitchWithNote(prePitchDetection);
+      const tempPitch = await detectPitch(prePitchDetection);
       const usable =
         tempPitch.periodicity >= minPeriodicity &&
         tempPitch.frequency > 30 &&
@@ -161,7 +162,7 @@ export async function preProcessAudioBuffer(
   }
 
   if (tune?.detectPitch || tune?.autotune || (hpf && "auto" in hpf && hpf.auto)) {
-    const detectedPitch = await detectPitchWithNote(prePitchDetection);
+    const detectedPitch = await detectPitch(prePitchDetection);
     // Use target MIDI note 60 (C4) or a provided target note
     const targetMidiNote = tune?.targetMidiNote || 60;
     const transposeSemitones = detectedPitchToTransposition(
@@ -250,6 +251,22 @@ function resampleForPitch(ctx: AudioContext, buffer: AudioBuffer, semitones: num
   }
 
   return newBuffer;
+}
+
+async function detectPitch(buffer: AudioBuffer) {
+  const { frequency, periodicity } = await detectSinglePitchAC(buffer);
+  const targetNoteInfo = findClosestNote(frequency);
+  const midiFloat = frequencyToMidi(frequency, "none");
+
+  console.table({
+    frequency,
+    periodicity,
+    targetNoteInfo,
+    playbackRateMultiplier: targetNoteInfo.frequency / frequency,
+    midiFloat,
+  });
+
+  return { frequency, periodicity, midiFloat };
 }
 
 function detectedPitchToTransposition(detectedMidiFloat: number, targetMidiNote: number) {
