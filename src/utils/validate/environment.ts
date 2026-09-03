@@ -20,7 +20,6 @@ class Environment {
       // Audio capabilities
       const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioContextConstructor();
-      const param = ctx.createGain().gain;
 
       // Keyboard capabilities
       const hasKeyboardAPI = typeof navigator !== "undefined" && "keyboard" in navigator;
