@@ -4,8 +4,7 @@ import { compressAudioBuffer } from "@/utils/audiodata/process/compressAudioBuff
 import { shouldCompress } from "@/utils/audiodata/process/shouldCompress";
 import { detectThresholdCrossing } from "@/utils/audiodata/process/detectSilence";
 import { trimAudioBuffer } from "@/utils/audiodata/process/trimBuffer";
-import { detectSinglePitchAC } from "@/utils/audiodata/pitchDetection";
-import { findClosestNote } from "@/utils";
+import { detectPitchWithNote } from "@/utils/audiodata/pitchDetection";
 import { findZeroCrossingSeconds } from "@/utils";
 
 export type PreProcessOptions = {
@@ -115,7 +114,7 @@ export async function preProcessAudioBuffer(
       processed = await applyHighPassFilter(processed, hpf.cutoff ?? 80);
     } else if ("auto" in hpf && hpf.auto) {
       // For auto HPF, we need pitch detection first
-      const tempPitch = await detectPitch(prePitchDetection);
+      const tempPitch = await detectPitchWithNote(prePitchDetection);
       const usable =
         tempPitch.periodicity >= minPeriodicity &&
         tempPitch.frequency > 30 &&
@@ -162,7 +161,7 @@ export async function preProcessAudioBuffer(
   }
 
   if (tune?.detectPitch || tune?.autotune || (hpf && "auto" in hpf && hpf.auto)) {
-    const detectedPitch = await detectPitch(prePitchDetection);
+    const detectedPitch = await detectPitchWithNote(prePitchDetection);
     // Use target MIDI note 60 (C4) or a provided target note
     const targetMidiNote = tune?.targetMidiNote || 60;
     const transposeSemitones = detectedPitchToTransposition(
@@ -251,31 +250,6 @@ function resampleForPitch(ctx: AudioContext, buffer: AudioBuffer, semitones: num
   }
 
   return newBuffer;
-}
-
-async function detectPitch(buffer: AudioBuffer, logResults = true) {
-  const pitchSource = await detectSinglePitchAC(buffer);
-  const targetNoteInfo = findClosestNote(pitchSource.frequency);
-
-  const midiFloat = 69 + 12 * Math.log2(pitchSource.frequency / 440);
-  const playbackRateMultiplier = targetNoteInfo.frequency / pitchSource.frequency;
-
-  if (logResults) {
-    console.table({
-      frequency: pitchSource.frequency,
-      periodicity: pitchSource.periodicity,
-      targetNoteInfo,
-      playbackRateMultiplier,
-      midiFloat,
-    });
-  }
-
-  return {
-    frequency: pitchSource.frequency,
-    periodicity: pitchSource.periodicity,
-    midiFloat,
-    targetNoteInfo,
-  };
 }
 
 function detectedPitchToTransposition(detectedMidiFloat: number, targetMidiNote: number) {

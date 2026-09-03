@@ -1,9 +1,8 @@
 // SamplePlayer.ts - Refactored with Composition Pattern
 
 import { Message, MessageHandler } from "@/events";
-import { detectSinglePitchAC } from "@/utils/audiodata/pitchDetection";
 import { trimAudioBuffer } from "@/utils/audiodata/process/trimBuffer";
-import { clamp, findClosestNote, ROOT_NOTES } from "@/utils";
+import { clamp, ROOT_NOTES } from "@/utils";
 
 import {
   preProcessAudioBuffer,
@@ -12,7 +11,6 @@ import {
 } from "@/nodes/preprocessor/Preprocessor";
 
 import { isValidAudioBuffer, isMidiValue } from "@/utils";
-import type { Note } from "@/utils/music-theory/types";
 
 import { MacroParam, NormalizeOptions } from "@/nodes/params";
 
@@ -636,45 +634,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.loadSample(croppedBuffer, undefined, {
       skipPreProcessing: true,
     });
-  }
-
-  async detectPitch(buffer: AudioBuffer): Promise<{
-    frequency: number;
-    periodicity: number;
-    midiFloat: number;
-    targetNoteInfo: Note;
-  }> {
-    const pitchSource = await detectSinglePitchAC(buffer);
-    const targetNoteInfo = findClosestNote(pitchSource.frequency);
-    const midiFloat = 69 + 12 * Math.log2(pitchSource.frequency / 440);
-    const playbackRateMultiplier = targetNoteInfo.frequency / pitchSource.frequency;
-
-    console.table({
-      pitchSource,
-      targetNoteInfo,
-      playbackRateMultiplier,
-      midiFloat,
-    });
-
-    this.sendUpstreamMessage("sample:pitch-detected", {
-      pitchResults: pitchSource,
-      closestNoteInfo: targetNoteInfo,
-    });
-
-    return {
-      frequency: pitchSource.frequency,
-      periodicity: pitchSource.periodicity,
-      midiFloat,
-      targetNoteInfo,
-    };
-  }
-
-  detectedPitchToTransposition(detectedMidiFloat: number, targetMidiNote: number) {
-    let transposeSemitones = targetMidiNote - detectedMidiFloat;
-    // Wrap to nearest octave (-6 to +6 semitones)
-    while (transposeSemitones > 6) transposeSemitones -= 12;
-    while (transposeSemitones < -6) transposeSemitones += 12;
-    return transposeSemitones;
   }
 
   /* === PLAYBACK === */
