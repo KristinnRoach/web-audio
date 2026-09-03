@@ -29,6 +29,10 @@ import { LFO } from "@/nodes/params/LFOs/LFO";
 import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/generateWaveform";
 import { samplerParams } from "./sampler-params";
 
+export type SampleVoiceChainNode = "feedback" | "am" | "hpf" | "lpf";
+
+const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ["feedback", "am", "hpf", "lpf"];
+
 export class SampleVoice {
   // TODO: implements ILibAudioNode
   readonly nodeId: NodeID;
@@ -55,7 +59,7 @@ export class SampleVoice {
 
   #pitchGlideTime = 0; // in seconds
 
-  #filtersEnabled: boolean;
+  #internalSignalChain: readonly SampleVoiceChainNode[];
   #pitchDisabled = false;
 
   #hpf: BiquadFilterNode | null = null;
@@ -75,11 +79,16 @@ export class SampleVoice {
 
   constructor(
     private context: AudioContext = getAudioContext(),
-    options: { processorOptions?: any; enableFilters?: boolean } = {},
+    options: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] } = {},
   ) {
+    const signalChain = options.internalSignalChain ?? DEFAULT_CHAIN_ORDER;
+    if (new Set(signalChain).size !== signalChain.length) {
+      throw new TypeError("SampleVoice signal chain cannot contain duplicate nodes");
+    }
+
     this.nodeId = registerNode(this.nodeType, this);
     this.#messages = createMessageBus<Message>(this.nodeId);
-    this.#filtersEnabled = options.enableFilters ?? true;
+    this.#internalSignalChain = [...signalChain];
 
     this.#outputNode = new GainNode(context, { gain: 1 });
 
@@ -100,13 +109,7 @@ export class SampleVoice {
         // ? Need to wait for worklet 'initialized' message ?
 
         // Create nodes
-        if (this.#filtersEnabled) this.#initFilters();
-
-        this.#feedback = new HarmonicFeedback(this.context);
-        // this.#feedback.input.gain.setValueAtTime(1.5, this.now);
-
-        this.#am_gain = new GainNode(this.context, { gain: 1 });
-        this.#setupAmpModLFO();
+        this.#initInternalSignalChainNodes();
 
         // ? Why is this necessary ?
         // Initialize loopEnd to 0 to force the macro parameter to update
@@ -133,31 +136,43 @@ export class SampleVoice {
   }
 
   #connectAudioChain() {
-    assert(this.#feedback, "SampleVoice: Feedback not initialized!");
-    assert(this.#am_gain, "SampleVoice: AM mod not initialized!");
-
-    if (this.#filtersEnabled) {
-      assert(this.#hpf && this.#lpf, "SampleVoice: Filters not initialized!");
-
-      // Connect: worklet -> feedback -> AM mod gain -> hpf -> lpf
-      this.#playerWorklet.connect(this.#feedback.input);
-      this.#feedback.output.connect(this.#am_gain);
-      this.#am_gain.connect(this.#hpf);
-      this.#hpf.connect(this.#lpf);
-      this.#lpf.connect(this.#outputNode);
-    } else {
-      // Without filters
-      this.#playerWorklet.connect(this.#feedback.input);
-      this.#feedback.output.connect(this.#am_gain);
-      this.#am_gain.connect(this.#outputNode);
-    }
+    const map: Record<SampleVoiceChainNode, AudioNode | HarmonicFeedback | null> = {
+      feedback: this.#feedback,
+      am: this.#am_gain,
+      hpf: this.#hpf,
+      lpf: this.#lpf,
+    };
+    const nodes = [
+      this.#playerWorklet,
+      ...this.#internalSignalChain.flatMap((key) => {
+        const n = map[key];
+        assert(n, `SampleVoice: "${key}" not initialized!`);
+        return n instanceof HarmonicFeedback ? [n.input, n.output] : [n];
+      }),
+    ];
+    for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
+    nodes[nodes.length - 1].connect(this.#outputNode);
   }
 
-  #initFilters() {
-    this.#hpfHz = samplerParams.highpassFilter.defaultValue;
-    this.#lpfHz = maxSafeHz(this.context.sampleRate);
+  #chainIncludes(node: SampleVoiceChainNode) {
+    return this.#internalSignalChain.includes(node);
+  }
 
-    if (!this.#hpf) {
+  #initInternalSignalChainNodes() {
+    if (this.#chainIncludes("feedback") && !this.#feedback) {
+      this.#feedback = new HarmonicFeedback(this.context);
+    }
+
+    if (this.#chainIncludes("am") && !this.#am_gain) {
+      this.#am_gain = new GainNode(this.context, { gain: 1 });
+      this.#am_lfo = new LFO(this.context);
+      this.#am_lfo.setWaveform("square");
+      this.#am_lfo.setDepth(0);
+      this.#am_lfo.setMusicalNote(this.#activeMidiNote ?? 60);
+      this.#am_lfo.connect(this.#am_gain.gain);
+    }
+
+    if (this.#chainIncludes("hpf") && !this.#hpf) {
       this.#hpf = new BiquadFilterNode(this.context, {
         type: "highpass",
         frequency: this.#hpfHz,
@@ -165,7 +180,8 @@ export class SampleVoice {
       });
     }
 
-    if (!this.#lpf) {
+    if (this.#chainIncludes("lpf") && !this.#lpf) {
+      this.#lpfHz = maxSafeHz(this.context.sampleRate);
       this.#lpf = new BiquadFilterNode(this.context, {
         type: "lowpass",
         frequency: this.#lpfHz,
@@ -188,7 +204,7 @@ export class SampleVoice {
 
     this.#envelopes.set("pitch-env", pitchEnv);
 
-    if (this.#filtersEnabled) {
+    if (this.#chainIncludes("lpf")) {
       const filterEnv = createEnvelope(this.context, "filter-env", {
         durationSeconds,
         envPointValueRange: [0, 1],
@@ -380,29 +396,23 @@ export class SampleVoice {
       });
     });
 
-    const ampEnv = this.#envelopes.get("amp-env")!;
-    const pitchEnv = this.#envelopes.get("pitch-env")!;
-    const filterEnv = this.#envelopes.get("filter-env")!;
+    const envDurations = Object.fromEntries(
+      Array.from(this.#envelopes, ([envType, env]) => [
+        envType,
+        env.syncedToPlaybackRate
+          ? env.baseDuration / playbackRate / env.timeScale
+          : env.baseDuration / env.timeScale,
+      ]),
+    );
+    const loopEnabled = Object.fromEntries(
+      Array.from(this.#envelopes, ([envType, env]) => [envType, env.loopEnabled]),
+    );
 
     this.sendUpstreamMessage("sample-envelopes:trigger", {
       voiceId: this.nodeId,
       midiNote: this.#activeMidiNote,
-      envDurations: {
-        "amp-env": ampEnv.syncedToPlaybackRate
-          ? ampEnv.baseDuration / playbackRate / ampEnv.timeScale
-          : ampEnv.baseDuration / ampEnv.timeScale,
-        "pitch-env": pitchEnv.syncedToPlaybackRate
-          ? pitchEnv.baseDuration / playbackRate / pitchEnv.timeScale
-          : pitchEnv.baseDuration / pitchEnv.timeScale,
-        "filter-env": filterEnv.syncedToPlaybackRate
-          ? filterEnv.baseDuration / playbackRate / filterEnv.timeScale
-          : filterEnv.baseDuration / filterEnv.timeScale,
-      },
-      loopEnabled: {
-        "amp-env": ampEnv.loopEnabled,
-        "pitch-env": pitchEnv.loopEnabled,
-        "filter-env": filterEnv.loopEnabled,
-      },
+      envDurations,
+      loopEnabled,
     });
   }
 
@@ -566,30 +576,6 @@ export class SampleVoice {
 
   // === LFOs ===
 
-  /** Setup amplitude modulation LFO (if not already setup) */
-  #setupAmpModLFO(
-    depth = 0,
-    waveform: CustomLibWaveform | OscillatorType | PeriodicWave = "square",
-    customWaveOptions: WaveformOptions = {},
-  ) {
-    if (this.#am_lfo === null) {
-      this.#am_lfo = new LFO(this.context);
-      this.#am_lfo.setWaveform(waveform, customWaveOptions);
-      this.#am_lfo.setDepth(depth);
-      this.#am_lfo.setMusicalNote(this.#activeMidiNote ?? 60);
-
-      if (this.#am_gain) {
-        this.#am_lfo.connect(this.#am_gain.gain);
-      } else {
-        console.error("Missing gain node for AM-LFO in SampleVoice");
-        throw new Error("Missing gain node for AM-LFO in SampleVoice");
-      }
-    } else {
-      console.debug("setupAmpModLFO: LFO already setup: ", this.#am_lfo);
-    }
-    return this;
-  }
-
   /** Cleanup amplitude modulation LFO */
   #cleanupAmpModLFO() {
     if (!this.#am_lfo) return;
@@ -599,13 +585,14 @@ export class SampleVoice {
   }
 
   setModulationAmount(modType: "AM" | "FM", amount: number) {
+    if (modType === "AM" && !this.#chainIncludes("am")) return this;
+
     const safeAmount = mapToRange(amount, 0, 1, 0, 0.95, {
       warn: true,
       name: "sampleVoice.setModulationAmount",
     });
 
     if (modType === "AM") {
-      if (!this.#am_lfo) this.#setupAmpModLFO(safeAmount);
       this.#am_lfo?.setDepth(safeAmount);
     } else if (modType === "FM") {
       console.warn("SampleVoice: FM modulation not implemented yet");
@@ -618,8 +605,9 @@ export class SampleVoice {
     waveform: CustomLibWaveform | OscillatorType | PeriodicWave = "triangle",
     customWaveOptions: WaveformOptions = {},
   ) {
+    if (modType === "AM" && !this.#chainIncludes("am")) return this;
+
     if (modType === "AM") {
-      if (!this.#am_lfo) this.#setupAmpModLFO();
       this.#am_lfo?.setWaveform(waveform, customWaveOptions);
     } else if (modType === "FM") {
       console.info("SampleVoice: FM modulation not implemented yet");
@@ -636,7 +624,7 @@ export class SampleVoice {
   disableEnvelope = (envType: EnvelopeType) => {
     this.#envelopes.get(envType)?.disable();
 
-    if (envType === "filter-env" && this.#filtersEnabled) {
+    if (envType === "filter-env" && this.#chainIncludes("lpf")) {
       const lpf = this.getParam("lpf");
       lpf?.cancelScheduledValues(this.now);
       // Reset to the keytracked cutoff after the envelope is disabled
@@ -1116,6 +1104,8 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
+    if (!this.#chainIncludes("hpf")) return this;
+
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#hpfHz = safeHz;
     if (this.#hpf) {
@@ -1132,6 +1122,8 @@ export class SampleVoice {
     atTime: number = this.now,
     options: { glideTime?: number; cancelPrevious?: boolean } = {},
   ) {
+    if (!this.#chainIncludes("lpf")) return this;
+
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
     if (this.#lpf) {
@@ -1207,21 +1199,19 @@ export class SampleVoice {
       return this.#playerWorklet.parameters.get(name) ?? null;
     }
 
-    // Special case for filter parameters if they exist
-    if (this.#filtersEnabled) {
-      switch (name) {
-        case "highpass":
-        case "hpf":
-          return this.#hpf?.frequency ?? null;
-        case "lowpass":
-        case "lpf":
-          return this.#lpf?.frequency ?? null;
-        case "hpfQ":
-          return this.#hpf?.Q ?? null;
-        case "lpfQ":
-          return this.#lpf?.Q ?? null;
-      }
+    switch (name) {
+      case "highpass":
+      case "hpf":
+        return this.#hpf?.frequency ?? null;
+      case "lowpass":
+      case "lpf":
+        return this.#lpf?.frequency ?? null;
+      case "hpfQ":
+        return this.#hpf?.Q ?? null;
+      case "lpfQ":
+        return this.#lpf?.Q ?? null;
+      default:
+        return null;
     }
-    return null;
   }
 }

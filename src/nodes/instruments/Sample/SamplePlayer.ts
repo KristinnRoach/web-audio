@@ -35,6 +35,8 @@ import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
 import { createMessageBus, MessageBus } from "@/events";
 import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/generateWaveform";
 import { createSampleVoicePool } from "./createSampleVoicePool";
+import { getAudioContext } from "@/context";
+import type { SampleVoiceChainNode } from "./SampleVoice";
 
 function cloneEnvelopeState(state: EnvelopeState): EnvelopeState {
   return {
@@ -87,6 +89,13 @@ function validateEnvelopeState(state: EnvelopeState): void {
   }
 }
 
+export type SamplePlayerOptions = {
+  context?: AudioContext;
+  polyphony?: number;
+  audioBuffer?: AudioBuffer;
+  voiceSignalChain?: readonly SampleVoiceChainNode[];
+};
+
 export class SamplePlayer implements ILibInstrumentNode {
   public readonly nodeId: NodeID;
   readonly nodeType = "sample-player" as const;
@@ -98,6 +107,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #isLoaded = false;
   private readonly envelopeStates = new Map<EnvelopeType, EnvelopeState>();
   #polyphony: number;
+  #voiceSignalChain?: readonly SampleVoiceChainNode[];
   #initialAudioBuffer: AudioBuffer | null = null;
 
   #connections = new Set<NodeID>();
@@ -147,9 +157,9 @@ export class SamplePlayer implements ILibInstrumentNode {
   // ? move to input controller ?
   #sustainedNotes = new Set<MidiValue>();
 
-  constructor(context: AudioContext, polyphony: number = 16, audioBuffer?: AudioBuffer) {
+  constructor(options: SamplePlayerOptions = {}) {
     this.nodeId = registerNode("sample-player", this);
-    this.context = context;
+    this.context = options.context ?? getAudioContext();
 
     // Synchronus setup
     this.#messages = createMessageBus<Message>(this.nodeId);
@@ -162,8 +172,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#macroLoopEnd = new MacroParam(this.context, 0);
 
     // Store configuration for async init
-    this.#polyphony = polyphony;
-    this.#initialAudioBuffer = audioBuffer || null;
+    this.#polyphony = options.polyphony ?? 16;
+    this.#voiceSignalChain = options.voiceSignalChain ? [...options.voiceSignalChain] : undefined;
+    this.#initialAudioBuffer = options.audioBuffer ?? null;
   }
 
   async init(): Promise<void> {
@@ -174,7 +185,11 @@ export class SamplePlayer implements ILibInstrumentNode {
       try {
         // Initialize child components first
         this.outBus = await createInstrumentBus(this.context); // WIP
-        this.voicePool = await createSampleVoicePool(this.context, this.#polyphony);
+        this.voicePool = await createSampleVoicePool(
+          this.context,
+          this.#polyphony,
+          this.#voiceSignalChain,
+        );
 
         this.#resetMacros();
 

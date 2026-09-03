@@ -1,9 +1,9 @@
 // createSampleVoice.ts
-import { SampleVoice } from "./SampleVoice";
+import { SampleVoice, type SampleVoiceChainNode } from "./SampleVoice";
 
 export async function createSampleVoice(
   context: AudioContext,
-  options?: { processorOptions?: any; enableFilters?: boolean },
+  options?: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] },
 ): Promise<SampleVoice> {
   const voice = new SampleVoice(context, options);
   await voice.init();
@@ -13,7 +13,7 @@ export async function createSampleVoice(
 export async function createSampleVoices(
   numVoices: number,
   context: AudioContext,
-  options?: { processorOptions?: any; enableFilters?: boolean },
+  options?: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] },
 ): Promise<SampleVoice[]> {
   const voicePromises = Array.from({ length: numVoices }, () =>
     createSampleVoice(context, options),

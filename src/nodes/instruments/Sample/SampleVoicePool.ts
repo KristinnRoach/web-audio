@@ -1,4 +1,4 @@
-import { SampleVoice } from "./SampleVoice";
+import { SampleVoice, type SampleVoiceChainNode } from "./SampleVoice";
 import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
 import { pop } from "@/utils";
 import { VoiceState } from "../VoiceState";
@@ -14,6 +14,7 @@ export class SampleVoicePool implements LibNode {
   #initialized = false;
   #initPromise: Promise<void> | null = null;
   #polyphony: number;
+  #voiceSignalChain?: readonly SampleVoiceChainNode[];
 
   #allVoices: SampleVoice[] = [];
   #loaded = new Set<NodeID>();
@@ -26,11 +27,16 @@ export class SampleVoicePool implements LibNode {
 
   #gainReductionScalar = 1; // Reduces gain based on number of playing voices
 
-  constructor(context: AudioContext, polyphony: number) {
+  constructor(
+    context: AudioContext,
+    polyphony: number,
+    voiceSignalChain?: readonly SampleVoiceChainNode[],
+  ) {
     this.nodeId = registerNode(this.nodeType, this);
     this.#messages = createMessageBus<Message>(this.nodeId);
     this.#context = context;
     this.#polyphony = polyphony;
+    this.#voiceSignalChain = voiceSignalChain ? [...voiceSignalChain] : undefined;
   }
 
   async init() {
@@ -39,7 +45,9 @@ export class SampleVoicePool implements LibNode {
 
     this.#initPromise = (async () => {
       try {
-        this.#allVoices = await createSampleVoices(this.#polyphony, this.#context);
+        this.#allVoices = await createSampleVoices(this.#polyphony, this.#context, {
+          internalSignalChain: this.#voiceSignalChain,
+        });
 
         this.#allVoices.forEach((voice) => {
           this.#available.add(voice);
