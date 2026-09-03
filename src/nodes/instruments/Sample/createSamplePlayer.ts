@@ -1,7 +1,7 @@
 // createSamplePlayer.ts
 
 import { getAudioContext, ensureAudioCtx } from "@/context";
-import { SamplePlayer } from "./SamplePlayer";
+import { SamplePlayer, type SamplePlayerOptions } from "./SamplePlayer";
 import { assert } from "@/utils";
 
 import { initProcessors } from "@/worklets";
@@ -10,15 +10,14 @@ import { initProcessors } from "@/worklets";
  * Creates a new SamplePlayer instance
  *
  * @param buffer - Audio buffer data to use for the player
- * @param polyphony - Number of voices for polyphony (default: 16)
- * @param context - Optional AudioContext (will use global context if not provided)
+ * @param options - Optional player configuration
  * @returns A new SamplePlayer instance
  */
 export async function createSamplePlayer(
   buffer: AudioBuffer | ArrayBuffer,
-  polyphony: number = 16,
-  context: AudioContext = getAudioContext(),
+  options: Omit<SamplePlayerOptions, "audioBuffer"> = {},
 ): Promise<SamplePlayer> {
+  const context = options.context ?? getAudioContext();
   await ensureAudioCtx();
   assert(context, "Audio context is not available");
 
@@ -32,12 +31,12 @@ export async function createSamplePlayer(
     );
   }
 
-  let audiobuffer: AudioBuffer;
+  let audioBuffer: AudioBuffer;
   if (buffer instanceof AudioBuffer) {
-    audiobuffer = buffer;
+    audioBuffer = buffer;
   } else if (buffer instanceof ArrayBuffer) {
     try {
-      audiobuffer = await context.decodeAudioData(buffer);
+      audioBuffer = await context.decodeAudioData(buffer);
     } catch (error) {
       console.error("Failed to decode sample audiodata when creating SamplePlayer:", error);
       throw error;
@@ -48,7 +47,7 @@ export async function createSamplePlayer(
     );
   }
 
-  const samplePlayer = new SamplePlayer(context, polyphony, audiobuffer);
+  const samplePlayer = new SamplePlayer({ ...options, context, audioBuffer });
 
   await samplePlayer.init();
 

@@ -156,7 +156,6 @@ export class SampleVoice {
   #initInternalSignalChainNodes() {
     if (this.#chainIncludes("feedback") && !this.#feedback) {
       this.#feedback = new HarmonicFeedback(this.context);
-      // this.#feedback.input.gain.setValueAtTime(1.5, this.now);
     }
 
     if (this.#chainIncludes("am") && !this.#am_gain) {
