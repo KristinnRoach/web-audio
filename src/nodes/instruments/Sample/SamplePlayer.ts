@@ -173,7 +173,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     // Store configuration for async init
     this.#polyphony = options.polyphony ?? 16;
-    this.#voiceSignalChain = options.voiceSignalChain;
+    this.#voiceSignalChain = options.voiceSignalChain ? [...options.voiceSignalChain] : undefined;
     this.#initialAudioBuffer = options.audioBuffer ?? null;
   }
 

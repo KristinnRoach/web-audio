@@ -36,7 +36,7 @@ export class SampleVoicePool implements LibNode {
     this.#messages = createMessageBus<Message>(this.nodeId);
     this.#context = context;
     this.#polyphony = polyphony;
-    this.#voiceSignalChain = voiceSignalChain;
+    this.#voiceSignalChain = voiceSignalChain ? [...voiceSignalChain] : undefined;
   }
 
   async init() {
