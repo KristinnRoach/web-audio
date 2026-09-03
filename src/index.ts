@@ -22,6 +22,7 @@ export type {
 } from "./nodes/params/envelopes";
 
 // =*=*= Utilities =*=*= \\
+export { detectSinglePitchAC } from "./utils/audiodata/pitchDetection";
 export { getAudioContext, ensureAudioCtx } from "./context";
 export {
   canSetOutputDevice,
