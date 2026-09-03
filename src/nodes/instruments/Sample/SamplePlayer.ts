@@ -1187,6 +1187,11 @@ export class SamplePlayer implements ILibInstrumentNode {
     });
   }
 
+  /** Envelope types on the current voices; empty until the pool is initialized. */
+  get availableEnvelopeTypes(): EnvelopeType[] {
+    return [...(this.voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
+  }
+
   enableEnvelope = (envType: EnvelopeType) => {
     this.voicePool.applyToAllVoices((voice) => voice.enableEnvelope(envType));
     this.emitEnvelopeChanged(envType);

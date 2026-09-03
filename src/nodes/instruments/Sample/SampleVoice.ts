@@ -31,7 +31,7 @@ import { samplerParams } from "./sampler-params";
 
 export type SampleVoiceChainNode = "feedback" | "am" | "hpf" | "lpf";
 
-const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ["lpf", "hpf", "am", "feedback"];
+const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ["am", "feedback"]; // "lpf", "hpf",
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
