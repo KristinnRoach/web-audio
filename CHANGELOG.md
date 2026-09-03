@@ -1,5 +1,27 @@
 # @kidlib/web-audio
 
+## 0.3.5
+
+### Patch Changes
+
+- c2d8115: Rename pitch-detection `confidence` to `periodicity`
+
+  - `PreProcessOptions.tune.minConfidence` -> `minPeriodicity` (new default 0.35)
+  - `PreProcessResults.detectedPitch.confidence` -> `periodicity`
+
+  Same value, new name: it measures whether the input is pitched at all, not
+  whether the detected frequency is correct. Use it to reject noise, not to
+  trust the note.
+
+- 6184829: Remove redundant pitch-detection API
+
+  - `detectSinglePitchAC` is no longer exported from the package root
+  - `SamplePlayer.detectPitch` and `SamplePlayer.detectedPitchToTransposition` removed
+  - the `sample:pitch-detected` message is gone
+
+  Pitch detection stays available through the preprocess options on `loadSample`
+  and `loadLayers`.
+
 ## 0.3.4
 
 ### Patch Changes
