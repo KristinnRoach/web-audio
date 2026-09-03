@@ -46,6 +46,35 @@ export async function detectSinglePitchAC(
     if (correlations[i] > correlations[bestLag]) bestLag = i;
   }
 
+  // Autocorrelation peaks at every multiple of the true period, and for a mix of
+  // pitches also at the mixture's common period - both LONGER than the pitch we
+  // want. Left alone, a dominant note plus a second tone 12dB down resolves to the
+  // common period: 277Hz + 220Hz reads as 55Hz, a 3.9 semitone tuning error at
+  // confidence 0.997. Prefer the shortest lag whose peak is nearly as strong.
+  //
+  // Scanning a window around bestLag / k because the divided lag lands off-grid.
+  // Descending k so the shortest qualifying lag wins. Ratio is flat over 0.7-0.9
+  // on the mixture fixtures, so 0.8 sits mid-plateau rather than on an edge.
+  const SUBHARMONIC_RATIO = 0.8;
+  const MAX_SUBHARMONIC = 6;
+  for (let k = MAX_SUBHARMONIC; k >= 2; k--) {
+    const candidate = Math.round(bestLag / k);
+    if (candidate < minLag) continue;
+
+    const window = Math.max(1, Math.round(candidate * 0.02));
+    let localBest = candidate;
+    const from = Math.max(minLag, candidate - window);
+    const to = Math.min(maxLag - 1, candidate + window);
+    for (let i = from; i <= to; i++) {
+      if (correlations[i] > correlations[localBest]) localBest = i;
+    }
+
+    if (correlations[localBest] >= SUBHARMONIC_RATIO * correlations[bestLag]) {
+      bestLag = localBest;
+      break;
+    }
+  }
+
   // Quadratic interpolation for sub-sample precision
   const x = bestLag;
   let offset = 0;
@@ -68,7 +97,19 @@ export async function detectSinglePitchAC(
   // Add confidence calculation
   const maxCorrelation = correlations[bestLag];
   const energy = data.reduce((sum, x) => sum + x * x, 0);
-  const normalizedMax = energy > 0 ? maxCorrelation / energy : 0;
+  // const normalizedMax = energy > 0 ? maxCorrelation / energy : 0;
+
+  // r[τ] sums only data.length - bestLag terms while energy (r[0]) sums all of
+  // them, so the raw ratio is tapered down by τ/N = 1/(f * durationSeconds) —
+  // i.e. by 1/(number of fundamental cycles in the buffer). That penalises low
+  // pitches and short samples for reasons unrelated to pitch quality. Undo it
+  // here so scores are comparable across sources.
+  //
+  // Deliberately NOT applied to the bestLag search above: the biased estimator's
+  // taper is what suppresses spurious long-lag peaks, and removing it there
+  // invites sub-octave errors.
+  const overlapCorrection = data.length / (data.length - bestLag);
+  const normalizedMax = energy > 0 ? (maxCorrelation / energy) * overlapCorrection : 0;
 
   const confidence = Math.max(0, Math.min(1, normalizedMax));
 

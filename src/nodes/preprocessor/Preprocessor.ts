@@ -19,7 +19,15 @@ export type PreProcessOptions = {
   }; // dynamic range compression
   trimSilence?: { enabled: boolean; threshold?: number };
   fadeInOutMs?: number; // milliseconds
-  tune?: { detectPitch?: boolean; autotune: boolean; targetMidiNote?: number };
+  tune?: {
+    detectPitch?: boolean;
+    autotune: boolean;
+    targetMidiNote?: number;
+    /** Minimum pitch-detection confidence [0-1] required to autotune.
+     * Transposition wraps to the nearest target note in any octave, so octave
+     * errors are harmless and a loose gate costs little on inharmonic sources. */
+    minConfidence?: number;
+  };
   hpf?: { auto?: boolean } | { cutoff?: number }; // auto starts filtering at detected fundamental if within range 30-350 (below)
   getZeroCrossings?: boolean;
 };
@@ -29,7 +37,7 @@ export const DEFAULT_PRE_PROCESS_OPTIONS: PreProcessOptions = {
   compress: { enabled: false }, // TODO: Remove or replace with proper compression (e.g. offline audiocontext native node)
   trimSilence: { enabled: true, threshold: 0.005 },
   fadeInOutMs: 1, // milliseconds
-  tune: { detectPitch: true, autotune: true, targetMidiNote: 60 },
+  tune: { detectPitch: true, autotune: true, targetMidiNote: 60, minConfidence: 0.35 },
   hpf: { auto: true },
   getZeroCrossings: true,
 } as const;
@@ -80,16 +88,24 @@ export async function preProcessAudioBuffer(
     ...DEFAULT_PRE_PROCESS_OPTIONS.tune,
     ...options.tune,
   };
+  const minConfidence =
+    tune.minConfidence ?? DEFAULT_PRE_PROCESS_OPTIONS.tune?.minConfidence ?? 0.35;
+  const HPF_FALLBACK_HZ = 80;
+
   let processed = buffer;
   let results: Partial<PreProcessResults> = {};
-
-  let prePitchDetection = compressAudioBuffer(ctx, processed, 0.5, 2, 1.0); // Only used for better pitch detection results (not in audio results path)
-  const PITCH_CONFIDENCE_THRESHOLD = 0.35;
 
   if (trimSilence?.enabled) {
     const { start, end } = detectThresholdCrossing(processed, trimSilence.threshold ?? 0.01);
     processed = trimAudioBuffer(ctx, processed, start, end, fadeInOutMs);
   }
+
+  // Only used for better pitch detection results (not in audio results path).
+  // Compressed to lift a quiet sustain toward a loud attack, so the pitch that
+  // rings longest weighs on the autocorrelation rather than just the loudest hit.
+  // Built after trimming, and rebuilt after the HPF below, so detection sees the
+  // same cleanup the pipeline computes instead of the raw input.
+  let prePitchDetection = compressAudioBuffer(ctx, processed, 0.5, 2, 1.0);
 
   // Apply HPF first (before normalization) to avoid filter-induced clipping
   if (hpf) {
@@ -98,12 +114,18 @@ export async function preProcessAudioBuffer(
     } else if ("auto" in hpf && hpf.auto) {
       // For auto HPF, we need pitch detection first
       const tempPitch = await detectPitch(prePitchDetection);
-      if (tempPitch.confidence >= PITCH_CONFIDENCE_THRESHOLD) {
-        const cutoffFreq =
-          tempPitch.frequency > 30 && tempPitch.frequency < 350 ? tempPitch.frequency : 80;
-        processed = await applyHighPassFilter(processed, cutoffFreq);
-      }
+      const usable =
+        tempPitch.confidence >= minConfidence &&
+        tempPitch.frequency > 30 &&
+        tempPitch.frequency < 350;
+      processed = await applyHighPassFilter(
+        processed,
+        usable ? tempPitch.frequency : HPF_FALLBACK_HZ,
+      );
     }
+    // DC and rumble bias the autocorrelation toward long lags, so re-derive the
+    // detection copy now that they are filtered out
+    prePitchDetection = compressAudioBuffer(ctx, processed, 0.5, 2, 1.0);
   }
 
   if (normalize?.enabled) {
@@ -155,14 +177,17 @@ export async function preProcessAudioBuffer(
 
   if (tune?.autotune) {
     if (
-      !results.detectedPitch?.transpositionSemitones ||
-      results.detectedPitch.confidence < PITCH_CONFIDENCE_THRESHOLD
+      !results.detectedPitch ||
+      !Number.isFinite(results.detectedPitch.transpositionSemitones ?? NaN) ||
+      results.detectedPitch.confidence < minConfidence
     ) {
-      console.info("Skipped autotune due to unreliable pitch detection");
-    } else if (Math.abs(results.detectedPitch?.transpositionSemitones ?? 0) < 0.1) {
+      console.info(
+        `Skipped autotune: confidence ${results.detectedPitch?.confidence.toFixed(3) ?? "n/a"} < ${minConfidence}`,
+      );
+    } else if (Math.abs(results.detectedPitch.transpositionSemitones!) < 0.1) {
       console.info("Skipped autotune - detected pitch is already C");
     } else {
-      processed = resampleForPitch(ctx, processed, results.detectedPitch.transpositionSemitones);
+      processed = resampleForPitch(ctx, processed, results.detectedPitch.transpositionSemitones!);
     }
   }
 
@@ -235,7 +260,8 @@ async function detectPitch(buffer: AudioBuffer, logResults = true) {
 
   if (logResults) {
     console.table({
-      pitchSource,
+      frequency: pitchSource.frequency,
+      confidence: pitchSource.confidence,
       targetNoteInfo,
       playbackRateMultiplier,
       midiFloat,
