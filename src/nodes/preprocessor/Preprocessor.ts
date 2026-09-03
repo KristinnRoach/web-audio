@@ -23,10 +23,11 @@ export type PreProcessOptions = {
     detectPitch?: boolean;
     autotune: boolean;
     targetMidiNote?: number;
-    /** Minimum pitch-detection confidence [0-1] required to autotune.
+    /** Minimum periodicity [0-1] required to autotune - see detectSinglePitchAC.
+     * Gates noise out, not wrong notes: a chord scores high at its common period.
      * Transposition wraps to the nearest target note in any octave, so octave
      * errors are harmless and a loose gate costs little on inharmonic sources. */
-    minConfidence?: number;
+    minPeriodicity?: number;
   };
   hpf?: { auto?: boolean } | { cutoff?: number }; // auto starts filtering at detected fundamental if within range 30-350 (below)
   getZeroCrossings?: boolean;
@@ -37,7 +38,7 @@ export const DEFAULT_PRE_PROCESS_OPTIONS: PreProcessOptions = {
   compress: { enabled: false }, // TODO: Remove or replace with proper compression (e.g. offline audiocontext native node)
   trimSilence: { enabled: true, threshold: 0.005 },
   fadeInOutMs: 1, // milliseconds
-  tune: { detectPitch: true, autotune: true, targetMidiNote: 60, minConfidence: 0.35 },
+  tune: { detectPitch: true, autotune: true, targetMidiNote: 60, minPeriodicity: 0.35 },
   hpf: { auto: true },
   getZeroCrossings: true,
 } as const;
@@ -47,7 +48,8 @@ export type PreProcessResults = {
   detectedPitch?: {
     fundamentalHz: number;
     transpositionSemitones?: number;
-    confidence: number;
+    /** Pitch-vs-noise measure, not a correctness score - see detectSinglePitchAC */
+    periodicity: number;
   };
   zeroCrossings?: number[];
 };
@@ -88,8 +90,8 @@ export async function preProcessAudioBuffer(
     ...DEFAULT_PRE_PROCESS_OPTIONS.tune,
     ...options.tune,
   };
-  const minConfidence =
-    tune.minConfidence ?? DEFAULT_PRE_PROCESS_OPTIONS.tune?.minConfidence ?? 0.35;
+  const minPeriodicity =
+    tune.minPeriodicity ?? DEFAULT_PRE_PROCESS_OPTIONS.tune?.minPeriodicity ?? 0.35;
   const HPF_FALLBACK_HZ = 80;
 
   let processed = buffer;
@@ -115,7 +117,7 @@ export async function preProcessAudioBuffer(
       // For auto HPF, we need pitch detection first
       const tempPitch = await detectPitch(prePitchDetection);
       const usable =
-        tempPitch.confidence >= minConfidence &&
+        tempPitch.periodicity >= minPeriodicity &&
         tempPitch.frequency > 30 &&
         tempPitch.frequency < 350;
       processed = await applyHighPassFilter(
@@ -171,7 +173,7 @@ export async function preProcessAudioBuffer(
     results.detectedPitch = {
       fundamentalHz: detectedPitch.frequency,
       transpositionSemitones: transposeSemitones,
-      confidence: detectedPitch.confidence,
+      periodicity: detectedPitch.periodicity,
     };
   }
 
@@ -179,10 +181,10 @@ export async function preProcessAudioBuffer(
     if (
       !results.detectedPitch ||
       !Number.isFinite(results.detectedPitch.transpositionSemitones ?? NaN) ||
-      results.detectedPitch.confidence < minConfidence
+      results.detectedPitch.periodicity < minPeriodicity
     ) {
       console.info(
-        `Skipped autotune: confidence ${results.detectedPitch?.confidence.toFixed(3) ?? "n/a"} < ${minConfidence}`,
+        `Skipped autotune: input is not periodic enough (${results.detectedPitch?.periodicity.toFixed(3) ?? "n/a"} < ${minPeriodicity})`,
       );
     } else if (Math.abs(results.detectedPitch.transpositionSemitones!) < 0.1) {
       console.info("Skipped autotune - detected pitch is already C");
@@ -261,7 +263,7 @@ async function detectPitch(buffer: AudioBuffer, logResults = true) {
   if (logResults) {
     console.table({
       frequency: pitchSource.frequency,
-      confidence: pitchSource.confidence,
+      periodicity: pitchSource.periodicity,
       targetNoteInfo,
       playbackRateMultiplier,
       midiFloat,
@@ -270,7 +272,7 @@ async function detectPitch(buffer: AudioBuffer, logResults = true) {
 
   return {
     frequency: pitchSource.frequency,
-    confidence: pitchSource.confidence,
+    periodicity: pitchSource.periodicity,
     midiFloat,
     targetNoteInfo,
   };

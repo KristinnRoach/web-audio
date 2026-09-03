@@ -82,7 +82,7 @@ export async function detectSinglePitchAC(
   // pitches also at the mixture's common period - both LONGER than the pitch we
   // want. Left alone, a dominant note plus a second tone 12dB down resolves to the
   // common period: 277Hz + 220Hz reads as 55Hz, a 3.9 semitone tuning error at
-  // confidence 0.997. Prefer the shortest lag whose peak is nearly as strong.
+  // periodicity 0.997. Prefer the shortest lag whose peak is nearly as strong.
   //
   // Scanning a window around bestLag / k because the divided lag lands off-grid.
   // Descending k so the shortest qualifying lag wins. Ratio is flat over 0.7-0.9
@@ -126,7 +126,7 @@ export async function detectSinglePitchAC(
     offset = Math.max(-0.5, Math.min(0.5, interpolated));
   }
 
-  // Add confidence calculation
+  // Add periodicity calculation
   const maxCorrelation = correlations[bestLag];
   const energy = data.reduce((sum, x) => sum + x * x, 0);
   // const normalizedMax = energy > 0 ? maxCorrelation / energy : 0;
@@ -143,10 +143,20 @@ export async function detectSinglePitchAC(
   const overlapCorrection = data.length / (data.length - bestLag);
   const normalizedMax = energy > 0 ? (maxCorrelation / energy) * overlapCorrection : 0;
 
-  const confidence = Math.max(0, Math.min(1, normalizedMax));
+  const periodicity = Math.max(0, Math.min(1, normalizedMax));
 
   return {
     frequency: audioBuffer.sampleRate / (x + offset),
-    confidence: confidence,
+    /**
+     * How strongly the waveform repeats at the detected period: effectively a
+     * pitch-vs-noise measure. Noise and silence score near 0, anything pitched
+     * scores above 0.9, so it is a reliable gate for "is this worth tuning".
+     *
+     * It does NOT say the returned frequency is the pitch you wanted. A mixture
+     * of notes is highly periodic at its common period, so a wrong answer on a
+     * chord scores higher (0.997) than a correct one on a clean decaying note
+     * (0.969). Use it to reject noise, not to trust the frequency.
+     */
+    periodicity,
   };
 }

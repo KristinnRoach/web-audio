@@ -40,7 +40,7 @@ function semitoneErrorIgnoringOctaves(detectedHz: number, expectedHz: number): n
 describe("detectSinglePitchAC - prominent pitch in a mixture", () => {
   // Autocorrelation peaks at the common period of a mixture, which is longer than
   // either note. Before sub-harmonic correction these resolved to 55Hz / 82Hz at
-  // confidence >0.99 - the right-sounding answer only when the common period
+  // periodicity >0.99 - the right-sounding answer only when the common period
   // happened to be an exact octave below the dominant note.
   const mixtures: Array<[string, number, number, number]> = [
     ["A3 over C#4", 220, 277.18, -12],
@@ -88,7 +88,7 @@ describe("detectSinglePitchAC - single notes stay accurate", () => {
       const result = await detectSinglePitchAC(buffer);
 
       expect(semitoneErrorIgnoringOctaves(result.frequency, freq)).toBeLessThan(0.15);
-      expect(result.confidence).toBeGreaterThan(0.5);
+      expect(result.periodicity).toBeGreaterThan(0.5);
     });
   }
 
@@ -110,7 +110,7 @@ describe("detectSinglePitchAC - a short strong sound does not hide a sustained o
 
   // Referenced against the loudest sample, a 5ms full-scale click puts the whole
   // 0.15-amplitude sustain under the center-clip threshold: 0.2% of the buffer
-  // survives, detection rails at MAX_Hz, and confidence still clears the autotune
+  // survives, detection rails at MAX_Hz, and periodicity still clears the autotune
   // gate. Referenced against a quantile, the sustain sets the threshold instead.
   for (const [name, clickMs, sustainAmp] of [
     ["5ms click over a 0.15 sustain", 5, 0.15],
@@ -136,6 +136,6 @@ describe("detectSinglePitchAC - a short strong sound does not hide a sustained o
     const result = await detectSinglePitchAC(createMockAudioBuffer(data));
 
     expect(semitoneErrorIgnoringOctaves(result.frequency, SUSTAINED_HZ)).toBeLessThan(0.15);
-    expect(result.confidence).toBeGreaterThan(0.5);
+    expect(result.periodicity).toBeGreaterThan(0.5);
   });
 });

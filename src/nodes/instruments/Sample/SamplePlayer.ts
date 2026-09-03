@@ -640,7 +640,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   async detectPitch(buffer: AudioBuffer): Promise<{
     frequency: number;
-    confidence: number;
+    periodicity: number;
     midiFloat: number;
     targetNoteInfo: Note;
   }> {
@@ -663,7 +663,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     return {
       frequency: pitchSource.frequency,
-      confidence: pitchSource.confidence,
+      periodicity: pitchSource.periodicity,
       midiFloat,
       targetNoteInfo,
     };

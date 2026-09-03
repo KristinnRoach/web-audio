@@ -44,7 +44,7 @@ describe("detectSinglePitchAC", () => {
     // Allow 5% tolerance for frequency detection
     expect(result.frequency).toBeGreaterThan(418);
     expect(result.frequency).toBeLessThan(462);
-    expect(result.confidence).toBeGreaterThan(0.5);
+    expect(result.periodicity).toBeGreaterThan(0.5);
   });
 
   it("should detect 220Hz A3 note", async () => {
@@ -55,7 +55,7 @@ describe("detectSinglePitchAC", () => {
 
     expect(result.frequency).toBeGreaterThan(209);
     expect(result.frequency).toBeLessThan(231);
-    expect(result.confidence).toBeGreaterThan(0.5);
+    expect(result.periodicity).toBeGreaterThan(0.5);
   });
 
   it("should handle low amplitude signals", async () => {
@@ -69,11 +69,11 @@ describe("detectSinglePitchAC", () => {
     const result = await detectSinglePitchAC(buffer);
 
     expect(result.frequency).toBeGreaterThan(0);
-    expect(result.confidence).toBeGreaterThanOrEqual(0);
-    expect(result.confidence).toBeLessThanOrEqual(1);
+    expect(result.periodicity).toBeGreaterThanOrEqual(0);
+    expect(result.periodicity).toBeLessThanOrEqual(1);
   });
 
-  it("should handle noise input with low confidence", async () => {
+  it("should score noise low on periodicity", async () => {
     const noiseSignal = new Float32Array(4410); // 0.1 second at 44.1kHz
     const random = createSeededRandom(0xdecafbad);
     // Generate white noise
@@ -85,7 +85,7 @@ describe("detectSinglePitchAC", () => {
     const result = await detectSinglePitchAC(buffer);
 
     expect(result.frequency).toBeGreaterThan(0);
-    expect(result.confidence).toBeLessThan(0.3); // Should have low confidence for noise
+    expect(result.periodicity).toBeLessThan(0.3); // Noise barely repeats at any period
   });
 
   it("should handle a peak at the maximum lag without NaN", async () => {
@@ -99,12 +99,12 @@ describe("detectSinglePitchAC", () => {
 
     expect(Number.isFinite(result.frequency)).toBe(true);
     expect(result.frequency).toBeCloseTo(44100 / maxLag);
-    expect(Number.isFinite(result.confidence)).toBe(true);
-    expect(result.confidence).toBeGreaterThanOrEqual(0);
-    expect(result.confidence).toBeLessThanOrEqual(1);
+    expect(Number.isFinite(result.periodicity)).toBe(true);
+    expect(result.periodicity).toBeGreaterThanOrEqual(0);
+    expect(result.periodicity).toBeLessThanOrEqual(1);
   });
 
-  it("should return finite confidence for fully clipped input", async () => {
+  it("should return finite periodicity for fully clipped input", async () => {
     const silentSignal = new Float32Array(4410);
     const buffer = createMockAudioBuffer(silentSignal);
 
@@ -112,7 +112,7 @@ describe("detectSinglePitchAC", () => {
 
     expect(Number.isFinite(result.frequency)).toBe(true);
     expect(result.frequency).toBeGreaterThan(0);
-    expect(result.confidence).toBe(0);
+    expect(result.periodicity).toBe(0);
   });
 
   it("should handle very short buffers", async () => {
@@ -126,18 +126,18 @@ describe("detectSinglePitchAC", () => {
     const result = await detectSinglePitchAC(buffer);
 
     expect(result.frequency).toBeGreaterThan(0);
-    expect(Number.isFinite(result.confidence)).toBe(true);
-    expect(result.confidence).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(result.periodicity)).toBe(true);
+    expect(result.periodicity).toBeGreaterThanOrEqual(0);
   });
 
-  it("should return confidence between 0 and 1", async () => {
+  it("should return periodicity between 0 and 1", async () => {
     const testSignal = generateSineWave(330, 44100, 0.15);
     const buffer = createMockAudioBuffer(testSignal);
 
     const result = await detectSinglePitchAC(buffer);
 
-    expect(result.confidence).toBeGreaterThanOrEqual(0);
-    expect(result.confidence).toBeLessThanOrEqual(1);
+    expect(result.periodicity).toBeGreaterThanOrEqual(0);
+    expect(result.periodicity).toBeLessThanOrEqual(1);
   });
 
   it("should handle different sample rates", async () => {
@@ -157,7 +157,7 @@ describe("detectSinglePitchAC", () => {
     const result = await detectSinglePitchAC(buffer);
 
     expect(result.frequency).toBeGreaterThan(0);
-    expect(result.confidence).toBe(0);
+    expect(result.periodicity).toBe(0);
   });
 
   it("always returns a finite positive frequency on degenerate input", async () => {
@@ -179,7 +179,7 @@ describe("detectSinglePitchAC", () => {
 
       expect(Number.isFinite(result.frequency)).toBe(true);
       expect(result.frequency).toBeGreaterThan(0);
-      expect(Number.isFinite(result.confidence)).toBe(true);
+      expect(Number.isFinite(result.periodicity)).toBe(true);
     }
   });
 });
