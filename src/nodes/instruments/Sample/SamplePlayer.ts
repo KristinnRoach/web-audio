@@ -1271,7 +1271,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.outBus.setSendAmount(effect, amount);
   };
 
-  setLpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "post") => {
+  setLpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "pre") => {
     this.#lpfCutoff = hz;
     if (preOrPostFx === "pre") {
       this.voicePool.applyToAllVoices((v) => {
@@ -1282,7 +1282,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
   };
 
-  setHpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "post") => {
+  setHpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "pre") => {
     this.#hpfCutoff = hz;
     if (preOrPostFx === "pre") {
       this.voicePool.applyToAllVoices((v) => {
