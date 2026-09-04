@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vite-plus/test";
-import { findZeroCrossingSeconds, snapToNearestZeroCrossing } from "../zero-crossing";
+import { findZeroCrossings } from "../zero-crossing";
 
 import { findWaveCycles } from "../../wavecycles/findWaveCycles";
 
@@ -14,15 +14,30 @@ class MockAudioBuffer {
 }
 
 describe("zero-crossing utils", () => {
-  it("findZeroCrossingSeconds detects zero crossings", () => {
+  it("findZeroCrossings detects zero crossings in seconds", () => {
     const buffer = new MockAudioBuffer([1, -1, 1, -1]);
-    const crossings = findZeroCrossingSeconds(buffer as any);
+    const crossings = findZeroCrossings(buffer.getChannelData(0), {
+      unit: "seconds",
+      sampleRate: buffer.sampleRate,
+    });
     expect(crossings.length).toBeGreaterThan(0);
   });
 
-  it("snapToNearestZeroCrossing returns closest crossing", () => {
-    const crossings = [0.01, 0.02, 0.03];
-    expect(snapToNearestZeroCrossing(0.025, crossings)).toBeCloseTo(0.03);
+  it("only analyzes the channel supplied by the caller", () => {
+    const left = Float32Array.from([1, 1]);
+    const right = Float32Array.from([1, -1]);
+
+    expect(findZeroCrossings(left, { unit: "seconds", sampleRate: 1 })).toEqual([]);
+    expect(findZeroCrossings(right, { unit: "seconds", sampleRate: 1 })).toEqual([0.5]);
+  });
+
+  it("can return sample and second positions together", () => {
+    const channel = Float32Array.from([1, -3]);
+
+    expect(findZeroCrossings(channel, { unit: "both", sampleRate: 2 })).toEqual({
+      samples: [0],
+      seconds: [0.125],
+    });
   });
 
   it("findWaveCycles returns cycles", () => {
