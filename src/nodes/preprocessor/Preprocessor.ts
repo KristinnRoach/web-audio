@@ -6,7 +6,7 @@ import { detectThresholdCrossing } from "@/utils/audiodata/process/detectSilence
 import { trimAudioBuffer, type FadeMs } from "@/utils/audiodata/process/trimBuffer";
 import { detectSinglePitchAC } from "@/utils/audiodata/pitchDetection";
 import { findClosestNote, frequencyToMidi } from "@/utils";
-import { findZeroCrossingSeconds } from "@/utils";
+import { findZeroCrossings } from "@/utils";
 
 export type PreProcessOptions = {
   skipPreProcessing?: boolean;
@@ -68,7 +68,11 @@ export async function preProcessAudioBuffer(
   if (options.skipPreProcessing) {
     const finalResults: PreProcessResults = { audiobuffer: buffer };
     if (getZeroCrossings) {
-      const zeroes = findZeroCrossingSeconds(buffer);
+      // ? Consider running zero detection on all channels and returning array of arrays
+      const zeroes = findZeroCrossings(buffer.getChannelData(0), {
+        unit: "seconds",
+        sampleRate: buffer.sampleRate,
+      });
       finalResults.zeroCrossings = zeroes;
     }
     return finalResults;
@@ -198,7 +202,10 @@ export async function preProcessAudioBuffer(
   }
 
   if (getZeroCrossings) {
-    const zeroes = findZeroCrossingSeconds(processed);
+    const zeroes = findZeroCrossings(processed.getChannelData(0), {
+      unit: "seconds",
+      sampleRate: processed.sampleRate,
+    });
     results.zeroCrossings = zeroes;
   }
 
