@@ -57,7 +57,7 @@ export function trimAudioBuffer(
   const toSamples = (ms: number | "default") =>
     ms === "default"
       ? minFadeSamples(buffer.sampleRate)
-      : Math.floor((ms / 1000) * buffer.sampleRate);
+      : Math.max(0, Math.floor((ms / 1000) * buffer.sampleRate));
 
   const fadeInSamples = toSamples(fadeMs.in);
   const fadeOutSamples = toSamples(fadeMs.out);
@@ -71,8 +71,9 @@ export function trimAudioBuffer(
       output[i] = input[start + i];
     }
 
-    // Only fade when both ramps fit without meeting in the middle
-    if (fadeInSamples + fadeOutSamples < newLength) {
+    // Fade only if the ramps fit. Equal is fine: they abut, they don't overlap,
+    // and a disabled side contributes 0, so one fade may fill the whole buffer.
+    if (fadeInSamples + fadeOutSamples <= newLength) {
       if (fadeInSamples > 0) applyFade(output, 0, fadeInSamples, "in");
       if (fadeOutSamples > 0) applyFade(output, newLength - fadeOutSamples, fadeOutSamples, "out");
     }

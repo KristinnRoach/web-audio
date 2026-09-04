@@ -102,3 +102,45 @@ describe("trimAudioBuffer fade options", () => {
     expect(out[4800 - 47]).toBeLessThan(1);
   });
 });
+
+describe("trimAudioBuffer fade fitting", () => {
+  const ctx = {
+    createBuffer: (numberOfChannels: number, length: number, sampleRate: number) => {
+      const channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+      return {
+        numberOfChannels,
+        length,
+        sampleRate,
+        getChannelData: (i: number) => channels[i],
+      };
+    },
+  } as unknown as AudioContext;
+
+  const dc = (length: number, sampleRate = 48000) =>
+    ({
+      numberOfChannels: 1,
+      length,
+      sampleRate,
+      getChannelData: () => new Float32Array(length).fill(1),
+    }) as unknown as AudioBuffer;
+
+  // 4800 samples @ 48kHz = 100ms
+  it("lets one fade fill the buffer when the other is disabled", () => {
+    const out = trimAudioBuffer(ctx, dc(4800), 0, 4800, { in: 0, out: 100 }).getChannelData(0);
+    expect(out[0]).toBe(1);
+    expect(out[2400]).toBeCloseTo(0.5, 2);
+    expect(out[4799]).toBeLessThan(0.01);
+  });
+
+  it("allows two fades that exactly abut", () => {
+    const out = trimAudioBuffer(ctx, dc(4800), 0, 4800, { in: 50, out: 50 }).getChannelData(0);
+    expect(out[0]).toBe(0);
+    expect(out[2400]).toBe(1);
+    expect(out[4799]).toBeLessThan(0.01);
+  });
+
+  it("drops a fade longer than the buffer instead of indexing before 0", () => {
+    const out = trimAudioBuffer(ctx, dc(4800), 0, 4800, { in: 0, out: 200 }).getChannelData(0);
+    expect(Array.from(out).every((v) => v === 1)).toBe(true);
+  });
+});
