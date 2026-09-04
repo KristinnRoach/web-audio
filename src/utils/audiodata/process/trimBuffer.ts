@@ -8,8 +8,10 @@ export function applyFade(
 
   for (let i = startSample; i < endSample; i++) {
     const progress = (i - startSample) / lengthSamples;
-    const gain = fadeType === "in" ? progress : 1 - progress;
-    channelData[i] *= gain;
+    // Raised cosine: slope is continuous at both ends, so short fades don't
+    // click the way a linear ramp's abrupt slope change does.
+    const ramp = 0.5 - 0.5 * Math.cos(Math.PI * progress);
+    channelData[i] *= fadeType === "in" ? ramp : 1 - ramp;
   }
 }
 
@@ -18,7 +20,7 @@ export function trimAudioBuffer(
   buffer: AudioBuffer,
   start: number,
   end: number,
-  fadeMs: number = 4,
+  fadeMs: number = 1,
 ) {
   const numChannels = buffer.numberOfChannels;
   const newLength = end - start;
