@@ -1,5 +1,16 @@
 # @kidlib/web-audio
 
+## 0.3.6
+
+### Patch Changes
+
+- b8c1479: `trimAudioBuffer` fade options
+
+  `fadeMs` is now a required `{ in, out }`: milliseconds, `"default"` for the
+  shortest fade that hides a cut at the buffer's sample rate, or `0` to skip that
+  side. Replaces `PreProcessOptions.fadeInOutMs`. Neither symbol is exported from
+  the package root.
+
 ## 0.3.5
 
 ### Patch Changes
