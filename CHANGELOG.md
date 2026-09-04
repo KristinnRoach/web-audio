@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.3.7
+
+### Patch Changes
+
+- 1a8faea: Reduce clicks in duration-preserved sample playback.
+
 ## 0.3.6
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@kidlib/web-audio",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "High-level Web Audio primitives for musical instruments and tools.",
   "license": "MIT",
   "repository": {
