@@ -30,8 +30,8 @@ describe("DurationPreserver", () => {
     preserver.setEnabled(true, 10);
 
     expect(preserver.prepareCorrection(true, 20, 1, [10, 20], samples)).toBeNull();
-    expect(preserver.prepareCorrection(true, 20, 1, [10, 12, 20], samples)).toEqual({
-      outgoingPosition: 20,
+    expect(preserver.prepareCorrection(true, 12, 1, [10, 12, 20], samples)).toEqual({
+      outgoingPosition: 12,
       resetTarget: 12,
     });
   });
