@@ -1,4 +1,30 @@
+import { findClosestIdx } from "@/utils/search/findClosest";
 import { findNearestZeroCrossing } from "@/worklets/shared/utils/findNearestZeroCrossing.js";
+
+function crossingSlope(samples, position) {
+  const center = Math.round(position);
+  const left = Math.max(0, center - 1);
+  const right = Math.min(samples.length - 1, center + 1);
+  return Math.sign(samples[right] - samples[left]);
+}
+
+function findSlopeMatchedCrossing(zeroCrossings, samples, position, slope, maxDistance) {
+  const closestIndex = findClosestIdx(zeroCrossings, position);
+  let left = zeroCrossings[closestIndex] <= position ? closestIndex : closestIndex - 1;
+  let right = left + 1;
+
+  while (left >= 0 || right < zeroCrossings.length) {
+    const leftDistance = left >= 0 ? position - zeroCrossings[left] : Infinity;
+    const rightDistance = right < zeroCrossings.length ? zeroCrossings[right] - position : Infinity;
+    const index = leftDistance <= rightDistance ? left-- : right++;
+    const crossing = zeroCrossings[index];
+
+    if (Math.abs(crossing - position) > maxDistance) return null;
+    if (crossingSlope(samples, crossing) === slope) return crossing;
+  }
+
+  return null;
+}
 
 /**
  * Owns the private timeline and correction state for zero-crossing duration preservation.
@@ -65,9 +91,10 @@ export class DurationPreserver {
    * @param {number} playbackPosition Current caller-owned playback position in samples.
    * @param {number} playbackRate Signed source-sample advance per output sample.
    * @param {number[]} zeroCrossings Zero-crossing positions in ascending sample order.
+   * @param {Float32Array} referenceSamples Channel used to detect the zero crossings.
    * @returns {{outgoingPosition: number, resetTarget: number} | null}
    */
-  prepareCorrection(active, playbackPosition, playbackRate, zeroCrossings) {
+  prepareCorrection(active, playbackPosition, playbackRate, zeroCrossings, referenceSamples) {
     if (!active) return null;
 
     if (Math.abs(playbackPosition - this.#timelinePosition) > this.#maxDriftSamples) {
@@ -81,16 +108,17 @@ export class DurationPreserver {
 
     if (Math.abs(outgoingPosition - playbackPosition) > Math.abs(playbackRate)) return null;
 
+    const resetTarget = findSlopeMatchedCrossing(
+      zeroCrossings,
+      referenceSamples,
+      this.#timelinePosition,
+      crossingSlope(referenceSamples, outgoingPosition),
+      this.#maxDriftSamples,
+    );
+    if (resetTarget === null) return null;
+
     this.#resetPending = false;
-    return {
-      outgoingPosition,
-      resetTarget: findNearestZeroCrossing(
-        zeroCrossings,
-        this.#timelinePosition,
-        "any",
-        this.#maxDriftSamples,
-      ),
-    };
+    return { outgoingPosition, resetTarget };
   }
 
   /**

@@ -752,6 +752,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.playbackPosition,
         playbackStep,
         this.zeroCrossings,
+        this.buffer[0],
       );
       const durationResetTarget = durationCorrection?.resetTarget ?? null;
       if (durationCorrection) this.playbackPosition = durationCorrection.outgoingPosition;
