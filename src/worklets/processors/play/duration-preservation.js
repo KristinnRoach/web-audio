@@ -1,30 +1,7 @@
-import { findClosestIdx } from "@/utils/search/findClosest";
-import { findNearestZeroCrossing } from "@/worklets/shared/utils/findNearestZeroCrossing.js";
-
-function crossingSlope(samples, position) {
-  const center = Math.round(position);
-  const left = Math.max(0, center - 1);
-  const right = Math.min(samples.length - 1, center + 1);
-  return Math.sign(samples[right] - samples[left]);
-}
-
-function findSlopeMatchedCrossing(zeroCrossings, samples, position, slope, maxDistance) {
-  const closestIndex = findClosestIdx(zeroCrossings, position);
-  let left = zeroCrossings[closestIndex] <= position ? closestIndex : closestIndex - 1;
-  let right = left + 1;
-
-  while (left >= 0 || right < zeroCrossings.length) {
-    const leftDistance = left >= 0 ? position - zeroCrossings[left] : Infinity;
-    const rightDistance = right < zeroCrossings.length ? zeroCrossings[right] - position : Infinity;
-    const index = leftDistance <= rightDistance ? left-- : right++;
-    const crossing = zeroCrossings[index];
-
-    if (Math.abs(crossing - position) > maxDistance) return null;
-    if (crossingSlope(samples, crossing) === slope) return crossing;
-  }
-
-  return null;
-}
+import {
+  findNearestSlopeMatchedZeroCrossing,
+  findNearestZeroCrossing,
+} from "@/worklets/shared/utils/findNearestZeroCrossing.js";
 
 /**
  * Owns the private timeline and correction state for zero-crossing duration preservation.
@@ -108,11 +85,11 @@ export class DurationPreserver {
 
     if (Math.abs(outgoingPosition - playbackPosition) > Math.abs(playbackRate)) return null;
 
-    const resetTarget = findSlopeMatchedCrossing(
+    const resetTarget = findNearestSlopeMatchedZeroCrossing(
       zeroCrossings,
       referenceSamples,
       this.#timelinePosition,
-      crossingSlope(referenceSamples, outgoingPosition),
+      outgoingPosition,
       this.#maxDriftSamples,
     );
     if (resetTarget === null) return null;
