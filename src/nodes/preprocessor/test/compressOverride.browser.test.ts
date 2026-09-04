@@ -38,7 +38,7 @@ describe("Preprocessor explicit compression settings", () => {
   const baseOptions = {
     normalize: { enabled: false },
     trimSilence: { enabled: false },
-    fadeInOutMs: 0,
+    fadeMs: { in: 0, out: 0 },
     tune: { detectPitch: false, autotune: false },
     hpf: { cutoff: 20 },
     getZeroCrossings: false,

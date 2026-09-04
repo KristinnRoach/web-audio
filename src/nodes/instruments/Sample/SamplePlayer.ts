@@ -1,7 +1,7 @@
 // SamplePlayer.ts - Refactored with Composition Pattern
 
 import { Message, MessageHandler } from "@/events";
-import { trimAudioBuffer } from "@/utils/audiodata/process/trimBuffer";
+import { trimAudioBuffer, type FadeMs } from "@/utils/audiodata/process/trimBuffer";
 import { clamp, ROOT_NOTES } from "@/utils";
 
 import {
@@ -613,10 +613,17 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
   }
 
+  /**
+   * Replace the loaded sample with the region between its start and end points,
+   * reloading it without re-running preprocessing.
+   *
+   * Seconds are clamped to the buffer. Returns null if there is no sample
+   * loaded, the bounds aren't finite, or the region is empty.
+   */
   async cropSample(
     startSeconds = this.getStartPoint(),
     endSeconds = this.getEndPoint(),
-    fadeMs = 1,
+    fadeMs: FadeMs = { in: "default", out: "default" },
   ): Promise<AudioBuffer | null> {
     const buffer = this.#audiobuffer;
     if (!buffer) return null;

@@ -64,7 +64,7 @@ describe("Debug >1.0 peak issue", () => {
     );
 
     // Step 4: Trim
-    const trimmed = trimAudioBuffer(audioContext, compressed, start, end, 5);
+    const trimmed = trimAudioBuffer(audioContext, compressed, start, end, { in: 5, out: 5 });
     const peakAfterTrim = analyzeBuffer(trimmed, "5. After trim");
 
     // Also test autotune since it might be the culprit

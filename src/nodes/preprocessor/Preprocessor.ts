@@ -3,7 +3,7 @@ import { normalizeAudioBuffer } from "@/utils/audiodata/process/normalizeAudioBu
 import { compressAudioBuffer } from "@/utils/audiodata/process/compressAudioBuffer";
 import { shouldCompress } from "@/utils/audiodata/process/shouldCompress";
 import { detectThresholdCrossing } from "@/utils/audiodata/process/detectSilence";
-import { trimAudioBuffer } from "@/utils/audiodata/process/trimBuffer";
+import { trimAudioBuffer, type FadeMs } from "@/utils/audiodata/process/trimBuffer";
 import { detectSinglePitchAC } from "@/utils/audiodata/pitchDetection";
 import { findClosestNote, frequencyToMidi } from "@/utils";
 import { findZeroCrossingSeconds } from "@/utils";
@@ -18,7 +18,7 @@ export type PreProcessOptions = {
     makeupGain?: number;
   }; // dynamic range compression
   trimSilence?: { enabled: boolean; threshold?: number };
-  fadeInOutMs?: number; // milliseconds
+  fadeMs: FadeMs;
   tune?: {
     detectPitch?: boolean;
     autotune: boolean;
@@ -37,7 +37,7 @@ export const DEFAULT_PRE_PROCESS_OPTIONS: PreProcessOptions = {
   normalize: { enabled: true, maxAmplitudePeak: 0.99 }, // amplitude range [-1, 1]
   compress: { enabled: false }, // TODO: Remove or replace with proper compression (e.g. offline audiocontext native node)
   trimSilence: { enabled: true, threshold: 0.005 },
-  fadeInOutMs: 1, // milliseconds
+  fadeMs: { in: "default", out: "default" },
   tune: { detectPitch: true, autotune: true, targetMidiNote: 60, minPeriodicity: 0.35 },
   hpf: { auto: true },
   getZeroCrossings: true,
@@ -60,7 +60,7 @@ export async function preProcessAudioBuffer(
   options: Partial<PreProcessOptions> = {},
 ): Promise<PreProcessResults> {
   const {
-    fadeInOutMs = DEFAULT_PRE_PROCESS_OPTIONS.fadeInOutMs,
+    fadeMs = DEFAULT_PRE_PROCESS_OPTIONS.fadeMs,
     hpf = DEFAULT_PRE_PROCESS_OPTIONS.hpf,
     getZeroCrossings = DEFAULT_PRE_PROCESS_OPTIONS.getZeroCrossings,
   } = options;
@@ -99,7 +99,7 @@ export async function preProcessAudioBuffer(
 
   if (trimSilence?.enabled) {
     const { start, end } = detectThresholdCrossing(processed, trimSilence.threshold ?? 0.01);
-    processed = trimAudioBuffer(ctx, processed, start, end, fadeInOutMs);
+    processed = trimAudioBuffer(ctx, processed, start, end, fadeMs);
   }
 
   // Only used for better pitch detection results (not in audio results path).

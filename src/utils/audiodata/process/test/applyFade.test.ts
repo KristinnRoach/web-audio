@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vite-plus/test";
-import { applyFade } from "../trimBuffer";
+import { applyFade, minFadeSamples, trimAudioBuffer } from "../trimBuffer";
 
 const ones = (n: number) => new Float32Array(n).fill(1);
 
@@ -36,5 +36,69 @@ describe("applyFade", () => {
     expect(data[32]).toBe(1);
     expect(data[16]).toBe(1);
     expect(data[24]).toBeLessThan(1);
+  });
+});
+
+describe("minFadeSamples", () => {
+  it("holds ~0.2ms at normal sample rates", () => {
+    for (const sr of [44100, 48000, 96000, 192000]) {
+      const ms = (minFadeSamples(sr) / sr) * 1000;
+      expect(ms).toBeGreaterThanOrEqual(0.2);
+      expect(ms).toBeLessThan(0.25);
+    }
+  });
+
+  it("floors at 8 samples so low rates still get a smooth ramp", () => {
+    expect(minFadeSamples(8000)).toBe(8);
+    expect(minFadeSamples(16000)).toBe(8);
+  });
+});
+
+describe("trimAudioBuffer fade options", () => {
+  const ctx = {
+    createBuffer: (numberOfChannels: number, length: number, sampleRate: number) => {
+      const channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+      return {
+        numberOfChannels,
+        length,
+        sampleRate,
+        getChannelData: (i: number) => channels[i],
+      };
+    },
+  } as unknown as AudioContext;
+
+  const dc = (length: number, sampleRate = 48000) =>
+    ({
+      numberOfChannels: 1,
+      length,
+      sampleRate,
+      getChannelData: () => new Float32Array(length).fill(1),
+    }) as unknown as AudioBuffer;
+
+  it("defaults both sides to the shortest safe fade", () => {
+    const out = trimAudioBuffer(ctx, dc(1000), 0, 1000, {
+      in: "default",
+      out: "default",
+    }).getChannelData(0);
+    const n = minFadeSamples(48000);
+    expect(out[0]).toBe(0);
+    expect(out[999]).toBeLessThan(1);
+    expect(out[n]).toBe(1);
+  });
+
+  it("skips the side set to 0", () => {
+    const out = trimAudioBuffer(ctx, dc(1000), 0, 1000, { in: 0, out: "default" }).getChannelData(
+      0,
+    );
+    expect(out[0]).toBe(1);
+    expect(out[999]).toBeLessThan(1);
+  });
+
+  it("applies different lengths per side", () => {
+    const out = trimAudioBuffer(ctx, dc(4800), 0, 4800, { in: 10, out: 1 }).getChannelData(0);
+    expect(out[479]).toBeLessThan(1); // 10ms = 480 samples
+    expect(out[480]).toBe(1);
+    expect(out[4800 - 48]).toBe(1); // 1ms = 48 samples
+    expect(out[4800 - 47]).toBeLessThan(1);
   });
 });

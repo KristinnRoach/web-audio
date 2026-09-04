@@ -1,3 +1,9 @@
+/**
+ * Ramp `lengthSamples` of `channelData` in place, starting at `startSample`.
+ *
+ * The ramp is always shaped over the full `lengthSamples`, so a fade running
+ * past the end of the array is cut short rather than squeezed to fit.
+ */
 export function applyFade(
   channelData: Float32Array,
   startSample: number,
@@ -15,19 +21,46 @@ export function applyFade(
   }
 }
 
+/**
+ * Shortest fade that still hides a cut, in samples.
+ *
+ * ~0.2ms is where a raised cosine stops splattering audibly. The 8-sample floor
+ * takes over below ~40kHz, where 0.2ms is too few points to shape a ramp.
+ */
+export function minFadeSamples(sampleRate: number) {
+  return Math.max(Math.ceil(0.0002 * sampleRate), 8);
+}
+
+/**
+ * Fade length per side, in milliseconds. "default" is the shortest fade that
+ * still hides a cut at the buffer's sample rate; 0 skips that side.
+ */
+export type FadeMs = { in: number | "default"; out: number | "default" };
+
+/**
+ * Copy samples [start, end) into a new buffer, fading each edge so the cut
+ * doesn't click.
+ *
+ * If the two fades would overlap in the trimmed length, neither is applied.
+ */
 export function trimAudioBuffer(
   ctx: AudioContext,
   buffer: AudioBuffer,
   start: number,
   end: number,
-  fadeMs: number = 1,
+  fadeMs: FadeMs,
 ) {
   const numChannels = buffer.numberOfChannels;
   const newLength = end - start;
   const trimmedBuffer = ctx.createBuffer(numChannels, newLength, buffer.sampleRate);
 
-  // Convert fade time to samples
-  const fadeSamples = Math.floor((fadeMs / 1000) * buffer.sampleRate);
+  const toSamples = (ms: number | "default") =>
+    ms === "default"
+      ? minFadeSamples(buffer.sampleRate)
+      : Math.floor((ms / 1000) * buffer.sampleRate);
+
+  const fadeInSamples = toSamples(fadeMs.in);
+  const fadeOutSamples = toSamples(fadeMs.out);
 
   for (let ch = 0; ch < numChannels; ch++) {
     const input = buffer.getChannelData(ch);
@@ -38,10 +71,10 @@ export function trimAudioBuffer(
       output[i] = input[start + i];
     }
 
-    // Apply fades if we have enough samples
-    if (newLength > fadeSamples * 2 && fadeSamples > 0) {
-      applyFade(output, 0, fadeSamples, "in");
-      applyFade(output, newLength - fadeSamples, fadeSamples, "out");
+    // Only fade when both ramps fit without meeting in the middle
+    if (fadeInSamples + fadeOutSamples < newLength) {
+      if (fadeInSamples > 0) applyFade(output, 0, fadeInSamples, "in");
+      if (fadeOutSamples > 0) applyFade(output, newLength - fadeOutSamples, fadeOutSamples, "out");
     }
   }
 
