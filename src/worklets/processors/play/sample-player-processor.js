@@ -208,6 +208,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
     this.panDriftEnabled = true;
+    this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
+
     this.nextDriftGenerated = false;
 
     // Amplitude compensation for short loops
@@ -428,8 +430,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // uses it to size its minimum loop length.
     baseDuration = calcLoopEnd - calcLoopStart;
 
+    const isAudioRate = baseDuration <= this.PITCH_PRESERVATION_THRESHOLD;
+
     // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration)
-    if (baseDuration > this.PITCH_PRESERVATION_THRESHOLD) {
+    if (!isAudioRate) {
       calcLoopStart = this.#findNearestZeroCrossing(calcLoopStart, "right");
     }
 
@@ -448,9 +452,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         if (shouldUpdateDrift) {
           this.currentLoopDrift = this.#generateLoopDrift(driftAmount, baseDuration);
 
-          if (this.panDriftEnabled && driftAmount > 0 && this.loopCount > 0) {
-            const panDriftAmountScalar = 0.0001;
-            this.currentPanDrift = this.currentLoopDrift * panDriftAmountScalar;
+          if (!isAudioRate && this.panDriftEnabled && driftAmount > 0 && this.loopCount > 0) {
+            // Track the relative loop stretch, not its absolute sample count:
+            // scaling raw samples made pan depend on loop length, so long loops
+            // saturated to hard-panned while audio-rate loops got nothing.
+            this.currentPanDrift = (this.currentLoopDrift / baseDuration) * this.PAN_DRIFT_DEPTH;
           } else {
             this.currentPanDrift = 0;
           }
@@ -478,10 +484,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // leaves the actual loop end off a zero crossing -> discontinuity click.
     // Skip the snap when the end sits in the silent tail: zero crossings only exist
     // inside the buffer, so snapping there would erase the padding.
-    if (
-      baseDuration > this.PITCH_PRESERVATION_THRESHOLD &&
-      calcLoopEnd <= playbackRange.endSamples
-    ) {
+    if (!isAudioRate && calcLoopEnd <= playbackRange.endSamples) {
       calcLoopEnd = Math.max(calcLoopStart + 1, this.#findNearestZeroCrossing(calcLoopEnd, "left"));
     }
 
