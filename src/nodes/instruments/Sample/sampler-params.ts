@@ -271,7 +271,10 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    step: 0.0001, // Small step size to allow reaching minimum loop duration for any reasonable sample length. 1s sample has 0.1ms step
+    // Step is normalized, so absolute resolution is step * sampleDuration: 0.1ms for a
+    // 1s sample. Reaching MIN_LOOP_DURATION_SECONDS (1/523.25 = 1.91ms) needs
+    // step * sampleDuration <= 1.91ms, so samples longer than ~19s step past the minimum.
+    step: 0.0001,
     format: seconds,
     apply: (p, v) => p.setLoopStart(v * p.sampleDuration),
   },
@@ -280,7 +283,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 1,
-    step: 0.0001, // Small step size to allow reaching minimum loop duration for any reasonable sample length. 1s sample has 0.1ms step
+    step: 0.0001, // See loopStart: ~19s sample length ceiling before the step exceeds the minimum loop duration.
     format: seconds,
     apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },
