@@ -547,7 +547,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Scale by effective drift amount and base duration
     const maxDriftSamples = effectiveDriftAmount * baseDuration;
 
-    return Math.floor(randomFactor * maxDriftSamples);
+    // Round to the nearest source sample: floor turns even tiny negative drift
+    // into a full-sample shortening of the loop.
+    return Math.round(randomFactor * maxDriftSamples);
   }
 
   /**

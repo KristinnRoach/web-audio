@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { midiToPlaybackRate } from "../../../../utils/music-theory/utils/core-utils";
 
 const TEST_SAMPLE_RATE = 48_000;
@@ -31,7 +31,11 @@ type TestProcessor = {
 
 type Parameters = Record<string, Float32Array>;
 
-function makeParameters(playbackRate: number): Parameters {
+function makeParameters(
+  playbackRate: number,
+  loopLengthSamples = LOOP_LENGTH_SAMPLES,
+  driftAmount = 0,
+): Parameters {
   return {
     masterGain: new Float32Array([1]),
     envGain: new Float32Array([1]),
@@ -39,11 +43,12 @@ function makeParameters(playbackRate: number): Parameters {
     pan: new Float32Array([0]),
     playbackRate: new Float32Array([playbackRate]),
     loopStart: new Float32Array([0]),
-    loopEnd: new Float32Array([LOOP_LENGTH_SAMPLES / TEST_SAMPLE_RATE]),
+    // Stay inside the intended source frame after Float32 conversion and floor.
+    loopEnd: new Float32Array([(loopLengthSamples + 0.25) / TEST_SAMPLE_RATE]),
     startPoint: new Float32Array([0]),
     endPoint: new Float32Array([1]),
     playbackPosition: new Float32Array([0]),
-    loopDurationDriftAmount: new Float32Array([0]),
+    loopDurationDriftAmount: new Float32Array([driftAmount]),
     maxLoopCount: new Float32Array([999_999]),
     tempo: new Float32Array([120]),
   };
@@ -52,6 +57,8 @@ function makeParameters(playbackRate: number): Parameters {
 async function measureLoopPeriod(
   midiNote: number,
   playbackDirection: "forward" | "reverse" = "forward",
+  loopLengthSamples = LOOP_LENGTH_SAMPLES,
+  driftAmount = 0,
 ): Promise<number> {
   const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
@@ -73,7 +80,11 @@ async function measureLoopPeriod(
   }
   processor.port.onmessage?.({ data: { type: "voice:start" } } as MessageEvent);
 
-  const parameters = makeParameters(midiToPlaybackRate(midiNote, ROOT_MIDI_NOTE));
+  const parameters = makeParameters(
+    midiToPlaybackRate(midiNote, ROOT_MIDI_NOTE),
+    loopLengthSamples,
+    driftAmount,
+  );
   const wrapFrames: number[] = [];
   let previousLoopCount = 0;
 
@@ -98,6 +109,39 @@ describe("audio-rate loop tuning", () => {
 
   afterAll(() => {
     vi.unstubAllGlobals();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(["forward", "reverse"] as const)(
+    "does not shift a minimum-length %s loop for sub-half-sample drift",
+    async (direction) => {
+      // Captured 30% UI drift maps to this worklet amount. At 92 samples,
+      // adaptive scaling limits drift to about +/-0.0146 source samples.
+      for (const randomValue of [0.25, 0.75]) {
+        vi.spyOn(Math, "random").mockReturnValue(randomValue);
+        const period = await measureLoopPeriod(84, direction, 92, 0.0015848932089284062);
+        expect(period).toBe(23);
+      }
+    },
+  );
+
+  it.each([
+    { loopLength: 92, driftAmount: 0.2, delta: 1 },
+    { loopLength: 9600, driftAmount: 0.001, delta: 5 },
+  ])("retains symmetric audible drift for $loopLength-sample loops", async (testCase) => {
+    for (const sign of [-1, 1]) {
+      vi.spyOn(Math, "random").mockReturnValue(sign < 0 ? 0.25 : 0.75);
+      const period = await measureLoopPeriod(
+        ROOT_MIDI_NOTE,
+        "forward",
+        testCase.loopLength,
+        testCase.driftAmount,
+      );
+      expect(period).toBe(testCase.loopLength + sign * testCase.delta);
+    }
   });
 
   it("stays in tune while stepping chromatically from C2 through C7", async () => {
