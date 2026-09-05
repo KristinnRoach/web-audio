@@ -721,7 +721,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
             this.buffer[0][Math.floor(loopRange.loopStartSamples)] || 0,
           );
 
-          this.playbackPosition = loopRange.loopStartSamples;
+          const overshoot = this.playbackPosition - loopRange.loopEndSamples;
+          this.playbackPosition = loopRange.loopStartSamples + overshoot;
           this.loopCount++;
 
           // Reset drift flag to generate new drift for next loop iteration
