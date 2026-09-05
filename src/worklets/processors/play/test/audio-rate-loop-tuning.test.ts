@@ -6,6 +6,7 @@ const ROOT_MIDI_NOTE = 60;
 const LOOP_LENGTH_SAMPLES = 192;
 const FIRST_MIDI_NOTE = 36;
 const LAST_MIDI_NOTE = 96;
+const REVERSE_TEST_MIDI_NOTE = 88;
 const WRAPS_TO_MEASURE = 32;
 const TUNING_TOLERANCE_CENTS = 3;
 
@@ -48,7 +49,10 @@ function makeParameters(playbackRate: number): Parameters {
   };
 }
 
-async function measureLoopPeriod(midiNote: number): Promise<number> {
+async function measureLoopPeriod(
+  midiNote: number,
+  playbackDirection: "forward" | "reverse" = "forward",
+): Promise<number> {
   const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
   const channel = new Float32Array(TEST_SAMPLE_RATE);
@@ -62,6 +66,11 @@ async function measureLoopPeriod(midiNote: number): Promise<number> {
     },
   } as MessageEvent);
   processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
+  if (playbackDirection === "reverse") {
+    processor.port.onmessage?.({
+      data: { type: "voice:setPlaybackDirection", playbackDirection },
+    } as MessageEvent);
+  }
   processor.port.onmessage?.({ data: { type: "voice:start" } } as MessageEvent);
 
   const parameters = makeParameters(midiToPlaybackRate(midiNote, ROOT_MIDI_NOTE));
@@ -111,5 +120,17 @@ describe("audio-rate loop tuning", () => {
       }));
 
     expect(outOfTuneNotes, "notes outside the 3-cent tuning tolerance").toEqual([]);
+  });
+
+  it("stays in tune during reverse playback at MIDI 88", async () => {
+    const playbackRate = midiToPlaybackRate(REVERSE_TEST_MIDI_NOTE, ROOT_MIDI_NOTE);
+    const expectedPeriod = LOOP_LENGTH_SAMPLES / playbackRate;
+    const measuredPeriod = await measureLoopPeriod(REVERSE_TEST_MIDI_NOTE, "reverse");
+    const centsError = 1_200 * Math.log2(expectedPeriod / measuredPeriod);
+
+    expect(
+      Math.abs(centsError),
+      `reverse tuning error: ${centsError.toFixed(2)} cents`,
+    ).toBeLessThanOrEqual(TUNING_TOLERANCE_CENTS);
   });
 });

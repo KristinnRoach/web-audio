@@ -737,10 +737,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
             silencePadTail ? 0 : this.buffer[0][Math.floor(loopRange.loopEndSamples) - 1] || 0,
           );
 
-          // Wrap to the loop end exactly so reverse travel matches forward
-          // (loopEnd - loopStart per pass); high-boundary checks are all
-          // guarded by !reversePlayback, so this cannot re-trigger anything.
-          this.playbackPosition = loopRange.loopEndSamples;
+          const underflow = loopRange.loopStartSamples - this.playbackPosition;
+          this.playbackPosition = loopRange.loopEndSamples - underflow;
           this.loopCount++;
 
           // Reset drift flag to generate new drift for next loop iteration
