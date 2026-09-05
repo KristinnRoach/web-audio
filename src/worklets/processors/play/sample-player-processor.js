@@ -227,7 +227,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   // Arm click compensation for a loop-wrap discontinuity between the sample
   // just emitted and the first sample of the next pass.
-  #smoothLoopWrap(lastLoopSample, newFirstSample) {
+  #smoothLoopWrap(lastLoopSample, newFirstSample, loopDurationSamples, playbackRate) {
+    const isHighRateAudioLoop =
+      loopDurationSamples <= this.PITCH_PRESERVATION_THRESHOLD && Math.abs(playbackRate) > 1;
+
+    if (isHighRateAudioLoop) return;
+
     const discontinuity = lastLoopSample - newFirstSample;
 
     if (this.enableLoopSmoothing && Math.abs(discontinuity) > 0.01) {
@@ -719,6 +724,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           this.#smoothLoopWrap(
             silencePadTail ? 0 : this.buffer[0][Math.floor(this.playbackPosition - 1)] || 0,
             this.buffer[0][Math.floor(loopRange.loopStartSamples)] || 0,
+            loopRange.loopDurationSamples,
+            baseRate,
           );
 
           const overshoot = this.playbackPosition - loopRange.loopEndSamples;
@@ -735,6 +742,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           this.#smoothLoopWrap(
             this.buffer[0][Math.floor(loopRange.loopStartSamples)] || 0,
             silencePadTail ? 0 : this.buffer[0][Math.floor(loopRange.loopEndSamples) - 1] || 0,
+            loopRange.loopDurationSamples,
+            baseRate,
           );
 
           const underflow = loopRange.loopStartSamples - this.playbackPosition;
