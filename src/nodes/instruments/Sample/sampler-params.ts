@@ -271,9 +271,18 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    step: 0.001,
+    step: 0.0001, // Small step size to allow reaching minimum loop duration for any reasonable sample length. 1s sample has 0.1ms step
     format: seconds,
     apply: (p, v) => p.setLoopStart(v * p.sampleDuration),
+  },
+  loopEnd: {
+    label: "Loop End",
+    min: 0,
+    max: 1,
+    defaultValue: 1,
+    step: 0.0001, // Small step size to allow reaching minimum loop duration for any reasonable sample length. 1s sample has 0.1ms step
+    format: seconds,
+    apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },
   loopDuration: {
     label: "Loop Length",
@@ -286,16 +295,6 @@ export const samplerParams = defineSamplerParams({
       return s <= 0.061 ? `${(s * 1000).toFixed(0)}ms` : `${s.toFixed(2)} s`;
     },
     apply: (p, v) => p.setLoopDuration(v * p.sampleDuration),
-  },
-  // Todo: Decide whether all params should be returned or just those requested by app (add param?)
-  loopEnd: {
-    label: "Loop End",
-    min: 0,
-    max: 1,
-    defaultValue: 1,
-    step: 0.001,
-    format: seconds,
-    apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },
   loopRampDuration: {
     label: "Loop Ramp",
