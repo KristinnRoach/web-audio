@@ -29,8 +29,7 @@ type TestProcessor = {
 type Parameters = Record<string, Float32Array>;
 
 function samplesToSeconds(samples: number) {
-  // Match the source frame the processor lands on after Float32 conversion and floor.
-  return (samples + 0.25) / TEST_SAMPLE_RATE;
+  return samples / TEST_SAMPLE_RATE;
 }
 
 function makeParameters(
@@ -104,15 +103,14 @@ describe("loop wrap with an overshoot larger than the loop", () => {
     const processor = await startProcessor("forward");
 
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES);
-    render(processor, wide, WIDE_LOOP_SAMPLES - 100);
+    render(processor, wide, WIDE_LOOP_SAMPLES - 99);
     expect(processor.playbackPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
 
     // loopEnd jumps back behind the playhead: overshoot is ~18x the new loop length.
     const narrow = makeParameters(0, NARROW_LOOP_SAMPLES);
     render(processor, narrow, 1);
 
-    expect(processor.playbackPosition).toBeLessThanOrEqual(NARROW_LOOP_SAMPLES);
-    expect(processor.playbackPosition).toBeGreaterThanOrEqual(0);
+    expect(processor.playbackPosition).toBeCloseTo(1);
   });
 
   it("keeps the playhead inside the loop when loopStart moves past it in reverse", async () => {
@@ -133,9 +131,6 @@ describe("loop wrap with an overshoot larger than the loop", () => {
     );
     render(processor, narrow, 1);
 
-    expect(processor.playbackPosition).toBeGreaterThanOrEqual(
-      WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES,
-    );
-    expect(processor.playbackPosition).toBeLessThanOrEqual(WIDE_LOOP_SAMPLES);
+    expect(processor.playbackPosition).toBeCloseTo(WIDE_LOOP_SAMPLES - 1);
   });
 });
