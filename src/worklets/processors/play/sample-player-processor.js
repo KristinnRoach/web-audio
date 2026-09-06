@@ -346,8 +346,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const samples = {
       startPointSamples: Math.floor(parameters.startPoint[0] * sampleRate),
       endPointSamples: Math.floor(parameters.endPoint[0] * sampleRate),
-      loopStartSamples: Math.floor(parameters.loopStart[0] * sampleRate),
-      loopEndSamples: Math.floor(parameters.loopEnd[0] * sampleRate),
+      // Keep loop points fractional: the loop length sets the pitch of an audio-rate
+      // loop, and flooring quantized it to whole source samples (~5 cents at the
+      // 523 Hz minimum loop). Playback position and interpolation are already
+      // fractional; every consumer that needs an index floors locally.
+      loopStartSamples: parameters.loopStart[0] * sampleRate,
+      loopEndSamples: parameters.loopEnd[0] * sampleRate,
     };
     return samples;
   }

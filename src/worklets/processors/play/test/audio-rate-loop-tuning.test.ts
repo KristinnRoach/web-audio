@@ -43,8 +43,7 @@ function makeParameters(
     pan: new Float32Array([0]),
     playbackRate: new Float32Array([playbackRate]),
     loopStart: new Float32Array([0]),
-    // Stay inside the intended source frame after Float32 conversion and floor.
-    loopEnd: new Float32Array([(loopLengthSamples + 0.25) / TEST_SAMPLE_RATE]),
+    loopEnd: new Float32Array([loopLengthSamples / TEST_SAMPLE_RATE]),
     startPoint: new Float32Array([0]),
     endPoint: new Float32Array([1]),
     playbackPosition: new Float32Array([0]),
