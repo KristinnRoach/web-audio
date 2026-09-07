@@ -204,6 +204,8 @@ describe("CustomEnvelope - auto-release when loop is turned off mid-note", () =>
       ],
       pointValueRange: [0, 1],
       durationSeconds: 1.5,
+      startTime: 0,
+      endTime: 1.5,
       interpolateValueAtTime: vi.fn(() => 0.5),
       hasSharpTransitions: false,
       sustainPointIndex: null,
@@ -241,5 +243,19 @@ describe("CustomEnvelope - auto-release when loop is turned off mid-note", () =>
       "amp-env:release",
       expect.objectContaining({ voiceId: "test-voice", midiNote: 64 }),
     );
+  });
+
+  it("hands release off from the current loop phase", () => {
+    vi.mocked(mockEnvelopeData.interpolateValueAtTime).mockImplementation((time) => time);
+
+    envelope.setLoopEnabled(true);
+    envelope.triggerEnvelope(mockAudioParam, 1.0);
+    vi.clearAllMocks();
+
+    (mockContext as any).currentTime = 3.25;
+    envelope.releaseEnvelope(mockAudioParam, 3.25);
+
+    expect(mockEnvelopeData.interpolateValueAtTime).toHaveBeenCalledWith(0.75);
+    expect(mockAudioParam.setValueAtTime).toHaveBeenCalledWith(0.75, 3.25);
   });
 });

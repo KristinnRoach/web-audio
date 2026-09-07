@@ -729,15 +729,12 @@ export class CustomEnvelope implements LibNode {
       elapsedSeconds !== undefined
         ? elapsedSeconds * playbackRateScale * this.#timeScale
         : undefined;
-    const sustainTime = this.sustainEnabled ? this.sustainPoint?.time : undefined;
-
-    let releaseHandoffEnvelopeTime = elapsedEnvelopeTime;
-    if (releaseHandoffEnvelopeTime !== undefined) {
-      releaseHandoffEnvelopeTime =
-        sustainTime !== undefined
-          ? Math.min(releaseHandoffEnvelopeTime, sustainTime)
-          : Math.min(releaseHandoffEnvelopeTime, this.baseDuration);
-    }
+    const releaseHandoffEnvelopeTime =
+      elapsedEnvelopeTime === undefined
+        ? undefined
+        : this.#isCurrentlyLooping
+          ? elapsedEnvelopeTime % this.baseDuration
+          : Math.min(elapsedEnvelopeTime, this.sustainPoint?.time ?? this.baseDuration);
     const releaseStartValue =
       this.envelopeType === "amp-env" &&
       activeEnvelope?.audioParam === audioParam &&
