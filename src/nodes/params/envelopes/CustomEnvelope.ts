@@ -653,7 +653,7 @@ export class CustomEnvelope implements LibNode {
   #debugRelease(data: {
     audioParamValue: number;
     elapsedSeconds?: number;
-    envelopeTime?: number;
+    releaseHandoffEnvelopeTime?: number;
     releaseStartValue?: number;
     safeStart: number;
     startTime: number;
@@ -722,21 +722,29 @@ export class CustomEnvelope implements LibNode {
     const elapsedSeconds = activeEnvelope
       ? Math.max(0, safeStart - activeEnvelope.startTime)
       : undefined;
-    const envelopeTime =
+
+    const playbackRateScale =
+      this.#syncedToPlaybackRate && activeEnvelope ? activeEnvelope.options.playbackRate : 1;
+    const elapsedEnvelopeTime =
       elapsedSeconds !== undefined
-        ? Math.min(
-            this.baseDuration,
-            elapsedSeconds *
-              (this.#syncedToPlaybackRate ? activeEnvelope!.options.playbackRate : 1) *
-              this.#timeScale,
-          )
+        ? elapsedSeconds * playbackRateScale * this.#timeScale
         : undefined;
+    const sustainTime = this.sustainEnabled ? this.sustainPoint?.time : undefined;
+
+    let releaseHandoffEnvelopeTime = elapsedEnvelopeTime;
+    if (releaseHandoffEnvelopeTime !== undefined) {
+      releaseHandoffEnvelopeTime =
+        sustainTime !== undefined
+          ? Math.min(releaseHandoffEnvelopeTime, sustainTime)
+          : Math.min(releaseHandoffEnvelopeTime, this.baseDuration);
+    }
     const releaseStartValue =
       this.envelopeType === "amp-env" &&
       activeEnvelope?.audioParam === audioParam &&
-      envelopeTime !== undefined
+      releaseHandoffEnvelopeTime !== undefined
         ? this.#clampToPointValueRange(
-            this.#data.interpolateValueAtTime(envelopeTime) * activeEnvelope.options.baseValue,
+            this.#data.interpolateValueAtTime(releaseHandoffEnvelopeTime) *
+              activeEnvelope.options.baseValue,
           )
         : undefined;
 
@@ -744,7 +752,7 @@ export class CustomEnvelope implements LibNode {
       this.#debugRelease({
         audioParamValue: audioParam.value,
         elapsedSeconds,
-        envelopeTime,
+        releaseHandoffEnvelopeTime,
         releaseStartValue,
         safeStart,
         startTime,

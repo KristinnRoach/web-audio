@@ -88,6 +88,26 @@ describe("CustomEnvelope - #continueFromPoint", () => {
       expect(mockAudioParam.setValueCurveAtTime).toHaveBeenCalled();
     });
 
+    it("starts release from the held sustain value after reaching the sustain point", () => {
+      vi.mocked(mockEnvelopeData.interpolateValueAtTime).mockImplementation((time) => {
+        if (time === 0.5) return 1;
+        if (time === 1.5) return 0;
+        return 0.5;
+      });
+
+      envelope.triggerEnvelope(mockAudioParam, 1.0, {
+        baseValue: 1,
+        playbackRate: 1,
+      });
+      vi.clearAllMocks();
+
+      (mockContext as any).currentTime = 3.0;
+      envelope.releaseEnvelope(mockAudioParam, 3.0);
+
+      expect(mockEnvelopeData.interpolateValueAtTime).toHaveBeenCalledWith(0.5);
+      expect(mockAudioParam.setValueAtTime).toHaveBeenCalledWith(1, 3.0);
+    });
+
     it("should send release message with correct data", () => {
       const sendMessageSpy = vi.spyOn(envelope, "sendUpstreamMessage");
 
