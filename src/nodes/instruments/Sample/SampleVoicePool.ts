@@ -103,7 +103,8 @@ export class SampleVoicePool implements LibNode {
       this.#playing.add(msg.voice);
       this.#onVoiceStateChange();
 
-      this.#playingMidiVoiceMap.set(msg.midiNote, msg.voice);
+      // noteOn owns MIDI assignment; a delayed acknowledgement may be for
+      // a voice that has already been replaced by another note-on.
     });
 
     voice.onMessage("voice:releasing", (msg: Message) => {
@@ -261,6 +262,10 @@ export class SampleVoicePool implements LibNode {
     });
 
     if (success && voice) {
+      const previousVoice = this.#playingMidiVoiceMap.get(midiNote);
+      if (previousVoice && previousVoice !== voice) {
+        previousVoice.release({ secondsFromNow });
+      }
       this.#playingMidiVoiceMap.set(midiNote, voice);
       this.prevMidiNote = midiNote;
       return midiNote;
@@ -281,8 +286,10 @@ export class SampleVoicePool implements LibNode {
   }
 
   allNotesOff(releaseTime = 0) {
-    this.#playingMidiVoiceMap.forEach((voice) => {
-      voice.release({ releaseTime });
+    this.#allVoices.forEach((voice) => {
+      if (voice.state === VoiceState.PLAYING || voice.state === VoiceState.RELEASING) {
+        voice.release({ releaseTime });
+      }
     });
 
     this.#playingMidiVoiceMap.clear();
