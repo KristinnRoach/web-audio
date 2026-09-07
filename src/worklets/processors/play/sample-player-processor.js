@@ -114,6 +114,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // will be set in process() using parameters
         this.playbackPosition = 0;
 
+        // Frame this note should sound at. A timestamp that has already passed
+        // by the time the message arrives starts the note now.
+        this.pendingStartFrame = timestamp ? Math.round(timestamp * sampleRate) : 0;
+
         this.port.postMessage({
           type: "voice:started",
           time: timestamp || currentTime,
@@ -191,6 +195,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #resetState() {
     this.isPlaying = false;
     this.isReleasing = false;
+    this.pendingStartFrame = 0;
     this.loopEnabled = false;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
@@ -223,6 +228,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #stop() {
     this.isPlaying = false;
     this.isReleasing = false;
+    this.pendingStartFrame = 0;
     this.playbackPosition = 0;
     this.port.postMessage({ type: "voice:stopped" });
   }
@@ -704,6 +710,18 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
     const TAIL_FADE_SAMPLES = 64;
 
+    // ===== Scheduled start =====
+
+    // Output is zeroed each quantum, so a note scheduled mid-block just starts
+    // the sample loop at an offset and leaves the samples before it silent.
+    let startOffset = 0;
+    if (this.pendingStartFrame > currentFrame) {
+      startOffset = this.pendingStartFrame - currentFrame;
+      // Whole quantum is before the note: stay silent, leave position untouched.
+      if (startOffset >= outputChannels[0].length) return true;
+    }
+    this.pendingStartFrame = 0;
+
     // ===== Init playback position =====
 
     if (this.playbackPosition === 0) {
@@ -715,7 +733,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // ===== AUDIO PROCESSING =====
 
-    for (let sample = 0; sample < outputChannels[0].length; sample++) {
+    for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
       // Use getSafeParam for a-rate params
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
 
