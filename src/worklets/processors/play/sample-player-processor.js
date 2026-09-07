@@ -737,8 +737,15 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
             baseRate,
           );
 
+          // Carrying the overshoot keeps the loop period exact, but it assumes the
+          // overshoot is smaller than the loop. loopRange is recomputed per block, so
+          // loop-point automation or a keytracked pitch sweep can pull loopEnd back
+          // behind the playhead, leaving an overshoot of several loop lengths that
+          // would land outside the loop. Fall back to the plain snap there.
           const overshoot = this.playbackPosition - loopRange.loopEndSamples;
-          this.playbackPosition = loopRange.loopStartSamples + overshoot;
+          this.playbackPosition =
+            loopRange.loopStartSamples +
+            (overshoot < loopRange.loopDurationSamples ? overshoot : 0);
           this.loopCount++;
 
           // Reset drift flag to generate new drift for next loop iteration
@@ -755,8 +762,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
             baseRate,
           );
 
+          // Mirror of the forward clamp above.
           const underflow = loopRange.loopStartSamples - this.playbackPosition;
-          this.playbackPosition = loopRange.loopEndSamples - underflow;
+          this.playbackPosition =
+            loopRange.loopEndSamples - (underflow < loopRange.loopDurationSamples ? underflow : 0);
           this.loopCount++;
 
           // Reset drift flag to generate new drift for next loop iteration
