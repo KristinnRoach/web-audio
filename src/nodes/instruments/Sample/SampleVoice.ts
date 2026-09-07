@@ -905,16 +905,25 @@ export class SampleVoice {
 
         case "voice:stopped":
           this.#stopEnvelopes();
+
+          const envGain = this.getParam("envGain");
+          if (envGain) {
+            cancelAndPinParamValue(envGain, this.now, 0);
+          }
+
           if (this.#releaseTimeout) {
             clearTimeout(this.#releaseTimeout);
             this.#releaseTimeout = null;
           }
+
           this.#state = VoiceState.STOPPED;
+
           data = {
             voiceId: this.nodeId,
             voice: this,
             midiNote: this.#activeMidiNote,
           };
+
           this.#activeMidiNote = null;
           break;
 
