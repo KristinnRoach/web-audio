@@ -114,6 +114,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // will be set in process() using parameters
         this.playbackPosition = 0;
 
+        // Frame this note should sound at. A timestamp that has already passed
+        // by the time the message arrives starts the note now.
+        this.pendingStartFrame = timestamp ? Math.round(timestamp * sampleRate) : 0;
+
         this.port.postMessage({
           type: "voice:started",
           time: timestamp || currentTime,
@@ -191,6 +195,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #resetState() {
     this.isPlaying = false;
     this.isReleasing = false;
+    this.pendingStartFrame = 0;
     this.loopEnabled = false;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
@@ -223,6 +228,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #stop() {
     this.isPlaying = false;
     this.isReleasing = false;
+    this.pendingStartFrame = 0;
     this.playbackPosition = 0;
     this.port.postMessage({ type: "voice:stopped" });
   }
@@ -633,6 +639,37 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    // Handle different output structures
+    let outputChannels;
+    if (output instanceof Float32Array) {
+      // Case 1: output is a single Float32Array (mono output - legacy)
+      outputChannels = [output];
+    } else if (Array.isArray(output) && output.every((ch) => ch instanceof Float32Array)) {
+      // Case 2: output is array of Float32Arrays (stereo/multi-channel output)
+      outputChannels = output;
+    } else {
+      console.error("Unexpected output structure:", {
+        outputType: typeof output,
+        isArray: Array.isArray(output),
+        constructor: output?.constructor?.name,
+        length: output?.length,
+      });
+      return true;
+    }
+
+    // ===== Scheduled start =====
+
+    // Gate playback before any stateful preparation, such as loop-drift
+    // generation, so silent lookahead blocks cannot change the first audible
+    // block. Worklet output buffers start each render quantum cleared to zero.
+    let startOffset = 0;
+    if (this.pendingStartFrame > currentFrame) {
+      startOffset = this.pendingStartFrame - currentFrame;
+      // Whole quantum is before the note: stay silent, leave all state untouched.
+      if (startOffset >= outputChannels[0].length) return true;
+    }
+    this.pendingStartFrame = 0;
+
     // ===== GET PARAM VALUES =====
 
     const masterGain = parameters.masterGain[0];
@@ -676,24 +713,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       ? Math.max(-1, Math.min(1, basePan + this.currentPanDrift))
       : basePan;
 
-    // Handle different output structures
-    let outputChannels;
-    if (output instanceof Float32Array) {
-      // Case 1: output is a single Float32Array (mono output - legacy)
-      outputChannels = [output];
-    } else if (Array.isArray(output) && output.every((ch) => ch instanceof Float32Array)) {
-      // Case 2: output is array of Float32Arrays (stereo/multi-channel output)
-      outputChannels = output;
-    } else {
-      console.error("Unexpected output structure:", {
-        outputType: typeof output,
-        isArray: Array.isArray(output),
-        constructor: output?.constructor?.name,
-        length: output?.length,
-      });
-      return true;
-    }
-
     const numChannels = outputChannels.length; // Always process all output channels
 
     const isConstant = this.#getConstantFlags(parameters);
@@ -715,7 +734,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // ===== AUDIO PROCESSING =====
 
-    for (let sample = 0; sample < outputChannels[0].length; sample++) {
+    for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
       // Use getSafeParam for a-rate params
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
 
