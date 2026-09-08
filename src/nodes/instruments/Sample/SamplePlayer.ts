@@ -409,6 +409,9 @@ export class SamplePlayer implements ILibInstrumentNode {
   setModulationAmount = (modType: "AM" | "FM", amount: number) =>
     this.voicePool.applyToAllVoices((v) => v.setModulationAmount(modType, amount));
 
+  setAMModOctaveOffset = (offset: number) =>
+    this.voicePool.applyToAllVoices((v) => v.setAMModOctaveOffset(offset));
+
   setModulationWaveform(
     modType: "AM" | "FM" = "AM",
     waveform: CustomLibWaveform | OscillatorType | PeriodicWave = "triangle",

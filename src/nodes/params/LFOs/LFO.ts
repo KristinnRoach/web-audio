@@ -4,6 +4,7 @@ import {
   WaveformOptions,
   isCustomLibWaveform,
 } from "@/utils/audiodata/generate/generateWaveform";
+import { maxSafeHz } from "@/utils";
 
 export class LFO {
   #context: AudioContext;
@@ -128,8 +129,10 @@ export class LFO {
     } = {},
   ) {
     const { divisor = 1, glideTime = 0, timestamp = this.now } = options;
+    // Ceiling only, no MIN_HZ floor: sub-20 Hz is the normal LFO range.
+    const ceiling = maxSafeHz(this.#context.sampleRate);
     const hz = 440 * Math.pow(2, (midiNote - 69) / 12);
-    const scaledHz = hz / divisor;
+    const scaledHz = Math.min(hz / divisor, ceiling);
 
     if (glideTime <= 0.001) {
       this.setFrequency(scaledHz, timestamp);
@@ -138,7 +141,7 @@ export class LFO {
 
     if (options.glideFromMidiNote) {
       const fromHz = 440 * Math.pow(2, (options.glideFromMidiNote - 69) / 12);
-      const fromScaledHz = fromHz / divisor;
+      const fromScaledHz = Math.min(fromHz / divisor, ceiling);
       this.setFrequency(fromScaledHz, timestamp);
     }
     // todo: test diff ramp methods
