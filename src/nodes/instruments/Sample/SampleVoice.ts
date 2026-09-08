@@ -44,6 +44,7 @@ export class SampleVoice {
   #playerWorklet: AudioWorkletNode;
 
   #am_lfo: LFO | null = null;
+  #am_lfo_semitone_offset: number = samplerParams.amModOctaveOffset.defaultValue * 12;
   #am_gain: GainNode | null = null;
   #feedback: HarmonicFeedback | null = null;
 
@@ -168,7 +169,9 @@ export class SampleVoice {
       this.#am_lfo = new LFO(this.context);
       this.#am_lfo.setWaveform("square");
       this.#am_lfo.setDepth(0);
-      this.#am_lfo.setMusicalNote(this.#activeMidiNote ?? 60);
+      this.#am_lfo.setMusicalNote(
+        this.#activeMidiNote ? this.#activeMidiNote + this.#am_lfo_semitone_offset : 60,
+      );
       this.#am_lfo.connect(this.#am_gain.gain);
     }
 
@@ -358,7 +361,7 @@ export class SampleVoice {
       triggerDecay: true,
     });
 
-    this.#am_lfo?.setMusicalNote(midiNote, {
+    this.#am_lfo?.setMusicalNote(midiNote + this.#am_lfo_semitone_offset, {
       divisor: 1,
       glideTime: scaledGlideTime,
       glideFromMidiNote: options?.glide?.prevMidiNote,
@@ -1181,6 +1184,14 @@ export class SampleVoice {
 
   setTimestretchEnabled = (enabled: boolean) =>
     this.sendToProcessor({ type: "setPreserveDuration", value: enabled });
+
+  setAMModOctaveOffset(offset: number) {
+    const semitoneOffset = offset * 12; // convert octaves to semitones
+    this.#am_lfo_semitone_offset = semitoneOffset;
+    if (this.#am_lfo && this.#activeMidiNote !== null) {
+      this.#am_lfo.setMusicalNote(this.#activeMidiNote + semitoneOffset);
+    }
+  }
 
   debugDuration() {
     console.info(`

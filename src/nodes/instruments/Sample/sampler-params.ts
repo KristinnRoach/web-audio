@@ -167,6 +167,14 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0,
     apply: (p, v) => p.setModulationAmount("AM", v),
   },
+  amModOctaveOffset: {
+    label: "AM Octave",
+    min: -4,
+    max: 3,
+    defaultValue: 1,
+    step: 1,
+    apply: (p, v) => p.setAMModOctaveOffset(v),
+  },
 
   // Sends / space
   reverbSend: {
