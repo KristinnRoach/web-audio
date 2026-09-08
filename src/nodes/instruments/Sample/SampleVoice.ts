@@ -169,9 +169,7 @@ export class SampleVoice {
       this.#am_lfo = new LFO(this.context);
       this.#am_lfo.setWaveform("square");
       this.#am_lfo.setDepth(0);
-      this.#am_lfo.setMusicalNote(
-        this.#activeMidiNote ? this.#activeMidiNote + this.#am_lfo_semitone_offset : 60,
-      );
+      this.#am_lfo.setMusicalNote((this.#activeMidiNote ?? 60) + this.#am_lfo_semitone_offset);
       this.#am_lfo.connect(this.#am_gain.gain);
     }
 
