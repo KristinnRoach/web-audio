@@ -103,6 +103,7 @@ describe("audio-rate loop tuning", () => {
     vi.stubGlobal("AudioWorkletProcessor", MockAudioWorkletProcessor);
     vi.stubGlobal("sampleRate", TEST_SAMPLE_RATE);
     vi.stubGlobal("currentTime", 0);
+    vi.stubGlobal("currentFrame", 0);
     vi.stubGlobal("registerProcessor", vi.fn());
   });
 
