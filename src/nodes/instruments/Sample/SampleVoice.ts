@@ -424,6 +424,8 @@ export class SampleVoice {
   }
 
   release({ releaseTime = this.releaseTime, secondsFromNow = 0 }): this {
+    // An immediate release must also stop a voice already in its release tail.
+    if (releaseTime <= 0) return this.stop(this.now + secondsFromNow);
     if (this.#state === VoiceState.RELEASING) return this;
 
     const envGain = this.getParam("envGain");
@@ -445,9 +447,6 @@ export class SampleVoice {
         midiNote: this.#activeMidiNote ?? 60, // not used
       });
     });
-
-    // Immediate stop for zero release time
-    if (releaseTime <= 0) return this.stop(timestamp);
 
     this.sendToProcessor({ type: "voice:release", timestamp });
 
