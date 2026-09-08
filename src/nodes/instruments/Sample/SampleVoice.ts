@@ -1188,6 +1188,11 @@ export class SampleVoice {
     this.sendToProcessor({ type: "setPreserveDuration", value: enabled });
 
   setAMModOctaveOffset(offset: number) {
+    assert(
+      offset >= samplerParams.amModOctaveOffset.min &&
+        offset <= samplerParams.amModOctaveOffset.max,
+      `AM modulation octave offset must be between ${samplerParams.amModOctaveOffset.min} and ${samplerParams.amModOctaveOffset.max}`,
+    );
     const semitoneOffset = offset * 12; // convert octaves to semitones
     this.#am_lfo_semitone_offset = semitoneOffset;
     if (this.#am_lfo && this.#activeMidiNote !== null) {
