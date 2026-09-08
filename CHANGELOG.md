@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.3.10
+
+### Patch Changes
+
+- de48889: Expose AM modulation octave offset on SamplePlayer. Default is +1 octave, changing the AM modulator pitch for existing users.
+
 ## 0.3.9
 
 ### Patch Changes
