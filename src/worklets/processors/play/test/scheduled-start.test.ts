@@ -98,6 +98,7 @@ describe("scheduled sample start", () => {
     expect(processor.driftUpdateCounter).toBe(0);
     expect(processor.nextDriftGenerated).toBe(false);
     expect(random).not.toHaveBeenCalled();
+    expect(processor.pendingStartFrame).toBe(BLOCK_SIZE * 2);
   });
 
   it("starts at the scheduled sample within a render block", async () => {
