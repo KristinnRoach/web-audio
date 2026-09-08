@@ -639,6 +639,37 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    // Handle different output structures
+    let outputChannels;
+    if (output instanceof Float32Array) {
+      // Case 1: output is a single Float32Array (mono output - legacy)
+      outputChannels = [output];
+    } else if (Array.isArray(output) && output.every((ch) => ch instanceof Float32Array)) {
+      // Case 2: output is array of Float32Arrays (stereo/multi-channel output)
+      outputChannels = output;
+    } else {
+      console.error("Unexpected output structure:", {
+        outputType: typeof output,
+        isArray: Array.isArray(output),
+        constructor: output?.constructor?.name,
+        length: output?.length,
+      });
+      return true;
+    }
+
+    // ===== Scheduled start =====
+
+    // Gate playback before any stateful preparation, such as loop-drift
+    // generation, so silent lookahead blocks cannot change the first audible
+    // block. Worklet output buffers start each render quantum cleared to zero.
+    let startOffset = 0;
+    if (this.pendingStartFrame > currentFrame) {
+      startOffset = this.pendingStartFrame - currentFrame;
+      // Whole quantum is before the note: stay silent, leave all state untouched.
+      if (startOffset >= outputChannels[0].length) return true;
+    }
+    this.pendingStartFrame = 0;
+
     // ===== GET PARAM VALUES =====
 
     const masterGain = parameters.masterGain[0];
@@ -682,24 +713,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       ? Math.max(-1, Math.min(1, basePan + this.currentPanDrift))
       : basePan;
 
-    // Handle different output structures
-    let outputChannels;
-    if (output instanceof Float32Array) {
-      // Case 1: output is a single Float32Array (mono output - legacy)
-      outputChannels = [output];
-    } else if (Array.isArray(output) && output.every((ch) => ch instanceof Float32Array)) {
-      // Case 2: output is array of Float32Arrays (stereo/multi-channel output)
-      outputChannels = output;
-    } else {
-      console.error("Unexpected output structure:", {
-        outputType: typeof output,
-        isArray: Array.isArray(output),
-        constructor: output?.constructor?.name,
-        length: output?.length,
-      });
-      return true;
-    }
-
     const numChannels = outputChannels.length; // Always process all output channels
 
     const isConstant = this.#getConstantFlags(parameters);
@@ -709,18 +722,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // non-zero value doesn't click into the silence.
     const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
     const TAIL_FADE_SAMPLES = 64;
-
-    // ===== Scheduled start =====
-
-    // Output is zeroed each quantum, so a note scheduled mid-block just starts
-    // the sample loop at an offset and leaves the samples before it silent.
-    let startOffset = 0;
-    if (this.pendingStartFrame > currentFrame) {
-      startOffset = this.pendingStartFrame - currentFrame;
-      // Whole quantum is before the note: stay silent, leave position untouched.
-      if (startOffset >= outputChannels[0].length) return true;
-    }
-    this.pendingStartFrame = 0;
 
     // ===== Init playback position =====
 
