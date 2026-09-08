@@ -253,25 +253,23 @@ export class SampleVoicePool implements LibNode {
     }
 
     const voice = this.allocate();
+    if (!voice) return null;
 
-    const success = voice?.trigger({
+    const success = voice.trigger({
       midiNote: midiNote,
       velocity,
       secondsFromNow,
       glide: { prevMidiNote: this.prevMidiNote, glideTime },
     });
+    if (success === null) return null;
 
-    if (success && voice) {
-      const previousVoice = this.#playingMidiVoiceMap.get(midiNote);
-      if (previousVoice && previousVoice !== voice) {
-        previousVoice.release({ secondsFromNow });
-      }
-      this.#playingMidiVoiceMap.set(midiNote, voice);
-      this.prevMidiNote = midiNote;
-      return midiNote;
-    } else {
-      return null;
+    const previousVoice = this.#playingMidiVoiceMap.get(midiNote);
+    if (previousVoice && previousVoice !== voice) {
+      previousVoice.release({ secondsFromNow });
     }
+    this.#playingMidiVoiceMap.set(midiNote, voice);
+    this.prevMidiNote = midiNote;
+    return midiNote;
   }
 
   noteOff(midiNote: MidiValue, secondsFromNow: number = 0, releaseTime?: number) {

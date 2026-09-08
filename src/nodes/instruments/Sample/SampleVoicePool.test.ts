@@ -78,6 +78,20 @@ describe("SampleVoicePool note ownership", () => {
     pool.dispose();
   });
 
+  it("maps MIDI note 0 and routes its note-off", async () => {
+    const pool = await setup();
+
+    expect(pool.noteOn(0)).toBe(0);
+    const voice = pool.assignedVoicesMidiMap.get(0)!;
+    const release = vi.spyOn(voice, "release");
+
+    pool.noteOff(0);
+
+    expect(release).toHaveBeenCalledOnce();
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    pool.dispose();
+  });
+
   it.each([true, false])(
     "keeps the replacement assigned despite delayed acknowledgements (new first: %s)",
     async (newFirst) => {
