@@ -364,7 +364,7 @@ export class SampleVoice {
     this.#am_lfo?.setMusicalNote(midiNote + this.#am_lfo_semitone_offset, {
       divisor: 1,
       glideTime: scaledGlideTime,
-      glideFromMidiNote: options?.glide?.prevMidiNote
+      glideFromMidiNote: options.glide
         ? options.glide.prevMidiNote + this.#am_lfo_semitone_offset
         : undefined,
       timestamp,
