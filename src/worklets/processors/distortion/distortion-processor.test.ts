@@ -39,7 +39,22 @@ describe("distortion-processor", () => {
 
   it("still clips when clipping is actually engaged", () => {
     const out = run([1.0], { clippingAmount: 1, clippingThreshold: 0.25 });
-    expect(out[0]).toBeCloseTo(0.25);
+    expect(Math.abs(out[0])).toBeLessThan(1.0);
+  });
+
+  it("holds the clipped level steady as the threshold drops", () => {
+    // #57: the old makeup gain left the clipped path ~17 dB below the dry path
+    // at low thresholds, so the macro lost ~7 dB over its last 10% of travel.
+    const wet = (clippingThreshold: number) =>
+      run([1.0], { clippingAmount: 1, clippingThreshold })[0];
+    expect(wet(0.03)).toBeCloseTo(wet(0.25), 5);
+  });
+
+  it("keeps the clipped path below full scale at every threshold", () => {
+    for (const clippingThreshold of [0.001, 0.03, 0.25, 1.0]) {
+      const out = run([1.0, -1.0], { clippingAmount: 1, clippingThreshold });
+      expect(out.every((s) => Math.abs(s) < 1.0)).toBe(true);
+    }
   });
 
   it("declares a non-zero minimum clipping threshold so it cannot divide by zero", () => {
