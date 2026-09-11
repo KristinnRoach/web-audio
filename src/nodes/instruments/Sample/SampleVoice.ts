@@ -143,16 +143,19 @@ export class SampleVoice {
       hpf: this.#hpf,
       lpf: this.#lpf,
     };
-    const nodes = [
-      this.#playerWorklet,
-      ...this.#internalSignalChain.flatMap((key) => {
+    // Each stage is the pair of nodes the signal enters and leaves by. Nodes with
+    // an internal path (HarmonicFeedback) expose different faces, so connecting
+    // one's input straight to its output would bypass that path.
+    const stages = [
+      { in: this.#playerWorklet, out: this.#playerWorklet as AudioNode },
+      ...this.#internalSignalChain.map((key) => {
         const n = map[key];
         assert(n, `SampleVoice: "${key}" not initialized!`);
-        return n instanceof HarmonicFeedback ? [n.input, n.output] : [n];
+        return n instanceof HarmonicFeedback ? { in: n.input, out: n.output } : { in: n, out: n };
       }),
+      { in: this.#outputNode as AudioNode, out: this.#outputNode as AudioNode },
     ];
-    for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
-    nodes[nodes.length - 1].connect(this.#outputNode);
+    for (let i = 0; i < stages.length - 1; i++) stages[i].out.connect(stages[i + 1].in);
   }
 
   #chainIncludes(node: SampleVoiceChainNode) {
