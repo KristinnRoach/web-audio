@@ -1,5 +1,5 @@
 ---
-"@kidlib/web-audio": minor
+"@kidlib/web-audio": patch
 ---
 
 Add `@kidlib/web-audio/debug` with `monitorLevels`, plus `getGainStages()` on `SamplePlayer`, `InstrumentBus`, `SampleVoicePool` and `SampleVoice` for per-stage peak, RMS and clip counts while audio runs.
