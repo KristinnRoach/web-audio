@@ -54,6 +54,18 @@ describe("level-meter-processor", () => {
     expect(reports[1].peak).toBeCloseTo(0.1);
   });
 
+  it("reports on frames, not channel samples, so stereo keeps the same interval", () => {
+    const reports: any[] = [];
+    const meter = new MeterProcessor({ processorOptions: {} });
+    meter.port = { postMessage: (data: any) => reports.push(data) };
+    const stereoBlock = () => [Float32Array.from(blockOf(0.5)), Float32Array.from(blockOf(0.5))];
+    for (let i = 0; i < blocksPerReport - 1; i++) meter.process([stereoBlock()]);
+    expect(reports).toHaveLength(0);
+    meter.process([stereoBlock()]);
+    expect(reports).toHaveLength(1);
+    expect(reports[0].rms).toBeCloseTo(0.5);
+  });
+
   it("survives a disconnected input", () => {
     const meter = new MeterProcessor({});
     expect(meter.process([[]])).toBe(true);

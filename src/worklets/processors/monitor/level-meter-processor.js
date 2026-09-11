@@ -18,6 +18,7 @@ registerProcessor(
       this.peak = 0;
       this.sumSquares = 0;
       this.samples = 0;
+      this.frames = 0;
     }
 
     process(inputs) {
@@ -34,8 +35,11 @@ registerProcessor(
         }
         this.samples += channel.length;
       }
+      // reportInterval is in frames; this.samples counts every channel, so a stereo
+      // input would otherwise report twice as often as asked.
+      this.frames += channels[0].length;
 
-      if (this.samples >= this.reportInterval) {
+      if (this.frames >= this.reportInterval) {
         this.port.postMessage({
           peak: this.peak,
           rms: Math.sqrt(this.sumSquares / this.samples),
