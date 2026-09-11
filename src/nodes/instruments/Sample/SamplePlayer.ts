@@ -1226,8 +1226,16 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.emitEnvelopeChanged(envType);
   }
 
-  startLevelMonitoring(intervalMs?: number) {
-    this.outBus.startLevelMonitoring(intervalMs);
+  /**
+   * Named tap points covering the whole instrument, from bus input to master out.
+   * Pass to `monitorLevels` from `@kidlib/web-audio/debug`.
+   */
+  getGainStages(): Record<string, AudioNode> {
+    const busStages = Object.entries(this.outBus.getGainStages());
+    return {
+      ...Object.fromEntries(busStages.map(([name, node]) => [`bus.${name}`, node])),
+      masterOut: this.#masterOut,
+    };
   }
 
   /* === FX === */

@@ -24,6 +24,10 @@
     "./components": {
       "types": "./dist/components.d.ts",
       "import": "./dist/components.js"
+    },
+    "./debug": {
+      "types": "./dist/debug.d.ts",
+      "import": "./dist/debug.js"
     }
   },
   "publishConfig": {

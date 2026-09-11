@@ -10,7 +10,6 @@ import { clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
 
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from "./defaults";
 
-import { LevelMonitor } from "@/utils/audiodata/monitoring/LevelMonitor";
 import { DattorroReverb } from "@/nodes/effects/DattorroReverb";
 import { HarmonicFeedback } from "../effects/HarmonicFeedback";
 
@@ -716,46 +715,15 @@ export class InstrumentBus implements ILibAudioNode {
     return Object.keys(this.#nodes);
   }
 
-  // Level monitoring
-  #levelMonitor: LevelMonitor | null = null;
-
-  startLevelMonitoring(
-    intervalMs: number = 1000,
-    fftSize: number = 1024,
-    logOutput: boolean = false,
-  ): void {
-    this.stopLevelMonitoring();
-
-    this.#levelMonitor = new LevelMonitor(
-      this.#context,
-      this.getNode("input").audioNode,
-      this.getNode("output").audioNode,
-      fftSize,
-    );
-    this.#levelMonitor.start(intervalMs, undefined, logOutput);
-    console.log("Level monitoring started");
-  }
-
-  stopLevelMonitoring(): void {
-    if (this.#levelMonitor) {
-      this.#levelMonitor.stop();
-      this.#levelMonitor = null;
-      console.log("Level monitoring stopped");
-    }
-  }
-
-  logLevels(): void {
-    let monitor = this.#levelMonitor;
-    if (monitor === null) {
-      monitor = new LevelMonitor(
-        this.#context,
-        this.getNode("input").audioNode,
-        this.getNode("output").audioNode,
-      );
-    }
-    const levels = monitor.getLevels();
-    console.log(
-      `Levels: Input RMS ${levels.input.rmsDB.toFixed(1)} dB | Output RMS ${levels.output.rmsDB.toFixed(1)} dB`,
+  /**
+   * Named tap points for level monitoring, keyed by bus node name.
+   * Pass to `monitorLevels` from `@kidlib/web-audio/debug`.
+   */
+  getGainStages(): Record<string, AudioNode> {
+    return Object.fromEntries(
+      Object.entries(this.#nodes)
+        .filter(([, node]) => node !== undefined)
+        .map(([name, node]) => [name, node!.output]),
     );
   }
 
