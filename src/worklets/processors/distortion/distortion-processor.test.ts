@@ -12,8 +12,10 @@ beforeAll(async () => {
   await import("./distortion-processor.js");
 });
 
-const run = (samples: number[], params: Record<string, number>) => {
+const run = (samples: number[], params: Record<string, number>, mode?: string) => {
   const node = new DistortionProcessor();
+  // Goes through the real port handler, so this covers setLimitingMode too.
+  if (mode) node.port.onmessage({ data: { type: "setLimitingMode", mode } });
   const input = [[Float32Array.from(samples)]];
   const output = [[new Float32Array(samples.length)]];
   node.process(input, output, {
@@ -39,7 +41,37 @@ describe("distortion-processor", () => {
 
   it("still clips when clipping is actually engaged", () => {
     const out = run([1.0], { clippingAmount: 1, clippingThreshold: 0.25 });
-    expect(out[0]).toBeCloseTo(0.25);
+    expect(Math.abs(out[0])).toBeLessThan(1.0);
+  });
+
+  it("holds the clipped level steady as the threshold drops", () => {
+    // #57: the old makeup gain left the clipped path ~17 dB below the dry path
+    // at low thresholds, so the macro lost ~7 dB over its last 10% of travel.
+    const wet = (clippingThreshold: number) =>
+      run([1.0], { clippingAmount: 1, clippingThreshold })[0];
+    expect(wet(0.03)).toBeCloseTo(wet(0.25), 5);
+  });
+
+  it("keeps the clipped path below full scale at every threshold", () => {
+    for (const clippingThreshold of [0.001, 0.03, 0.25, 1.0]) {
+      const out = run([1.0, -1.0], { clippingAmount: 1, clippingThreshold });
+      expect(out.every((s) => Math.abs(s) < 1.0)).toBe(true);
+    }
+  });
+
+  it("holds the soft-clipped level steady as the threshold drops", () => {
+    // tanh saturates asymptotically, so this only holds once the input is well
+    // past the threshold. 2.0 against a 0.25 threshold is tanh(8), close enough.
+    const wet = (clippingThreshold: number) =>
+      run([2.0], { clippingAmount: 1, clippingThreshold }, "soft-clipping")[0];
+    expect(wet(0.03)).toBeCloseTo(wet(0.25), 5);
+  });
+
+  it("keeps the soft-clipped path below full scale at every threshold", () => {
+    for (const clippingThreshold of [0.001, 0.03, 0.25, 1.0]) {
+      const out = run([1.0, -1.0], { clippingAmount: 1, clippingThreshold }, "soft-clipping");
+      expect(out.every((s) => Math.abs(s) < 1.0)).toBe(true);
+    }
   });
 
   it("declares a non-zero minimum clipping threshold so it cannot divide by zero", () => {

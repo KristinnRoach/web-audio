@@ -1,3 +1,9 @@
+// Ceiling the clipped path is normalized to, regardless of clipping threshold.
+// Lowering the threshold then adds harmonics instead of dropping level, which is
+// what made the macro lose ~7 dB over its last 10% of travel. One knob: lower it
+// for more headroom under the bus limiter, raise it for a louder wet path. See #57.
+const CLIP_OUTPUT_CEILING = 0.3;
+
 class Distortion {
   constructor() {
     this.limitingMode = "hard-clipping";
@@ -15,26 +21,24 @@ class Distortion {
   applyClipping(sample, clippingAmount, clipThreshold) {
     if (clippingAmount <= 0) return sample;
 
+    // Both shapers normalize by the threshold first, then scale to the fixed
+    // ceiling, so the clipped path holds its level as the threshold drops.
+    // clippingThreshold's minValue keeps these divisions away from zero.
     let clippedSample;
     switch (this.limitingMode) {
       case "soft-clipping":
-        clippedSample = clipThreshold * Math.tanh(sample / clipThreshold);
+        clippedSample = CLIP_OUTPUT_CEILING * Math.tanh(sample / clipThreshold);
         break;
 
       case "hard-clipping":
-        clippedSample = Math.max(-clipThreshold, Math.min(clipThreshold, sample));
+        clippedSample = CLIP_OUTPUT_CEILING * Math.max(-1, Math.min(1, sample / clipThreshold));
         break;
 
       case "bypass":
       default:
+        // Nothing was clipped, so there is no ceiling to normalize against.
         clippedSample = sample;
         break;
-    }
-
-    // Add makeup gain to compensate for extreme low clip threshold
-    if (clipThreshold < 0.08) {
-      const makeupGain = Math.min(2, Math.pow(0.1 / clipThreshold, 0.5));
-      clippedSample *= makeupGain;
     }
 
     // Blend clean and clipped
