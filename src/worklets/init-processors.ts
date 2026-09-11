@@ -1,18 +1,29 @@
 import processorCode from "../../dist/processors/processors.js?raw";
 
-let processorsInitialized = false;
+type InitResult = {
+  success: boolean;
+  loadedPath: string;
+  timestamp: string;
+  error?: string;
+};
 
-// Function to try multiple paths to load the audio worklet
-export async function initProcessors(context: AudioContext) {
-  if (processorsInitialized) {
-    console.info("AudioWorklet processors already initialized, skipping");
-    return {
-      success: true,
-      loadedPath: "already-initialized",
-      timestamp: new Date().toISOString(),
-    };
-  }
+// Worklet scope is per-context, and addModule is async: a shared in-flight promise
+// keeps concurrent calls from registering the same processor twice.
+const initialized = new WeakMap<AudioContext, Promise<InitResult>>();
 
+export function initProcessors(context: AudioContext): Promise<InitResult> {
+  const existing = initialized.get(context);
+  if (existing) return existing;
+
+  const pending = load(context).catch((err) => {
+    initialized.delete(context); // ponytail: let a later call retry
+    throw err;
+  });
+  initialized.set(context, pending);
+  return pending;
+}
+
+async function load(context: AudioContext): Promise<InitResult> {
   // Check if AudioWorklet is supported
   if (!context.audioWorklet) {
     // This is a known issue on some Android browsers where AudioWorkletNode exists
@@ -42,7 +53,6 @@ export async function initProcessors(context: AudioContext) {
     URL.revokeObjectURL(processorUrl);
   }
 
-  processorsInitialized = true;
   console.info("Audiolib: AudioWorklet module loaded.");
 
   return {

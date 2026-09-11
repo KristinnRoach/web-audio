@@ -11,6 +11,7 @@ import "./delay/delay-processor";
 import "./reverb/dattorro-reverb-processor";
 import "./distortion/distortion-processor";
 import "./follower/envelope-follower-processor";
+import "./monitor/level-meter-processor";
 // import './spectral/spectral-freeze-processor';
 
 // For dev de-bugging / testing:

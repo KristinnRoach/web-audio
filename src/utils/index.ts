@@ -1,7 +1,6 @@
 // audio data utils
 export * from "./audiodata/convert/parseWavHeader";
 export * from "./audiodata/validate/audiobuffer";
-export * from "./audiodata/monitoring/LevelMonitor";
 export * from "./audiodata/process/normalizeAudioBuffer";
 export * from "./audiodata/zero-crossings/zero-crossing";
 export * from "./audiodata/wavecycles/findWaveCycles";

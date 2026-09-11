@@ -136,26 +136,46 @@ export class SampleVoice {
     return this.#initPromise;
   }
 
-  #connectAudioChain() {
+  /**
+   * Each chain entry as the pair of nodes the signal enters and leaves by.
+   * Nodes with an internal path (HarmonicFeedback) expose different faces;
+   * connecting one's input straight to its output would bypass that path.
+   */
+  #chainStages(): { name: string; in: AudioNode; out: AudioNode }[] {
     const map: Record<SampleVoiceChainNode, AudioNode | HarmonicFeedback | null> = {
       feedback: this.#feedback,
       am: this.#am_gain,
       hpf: this.#hpf,
       lpf: this.#lpf,
     };
-    // Each stage is the pair of nodes the signal enters and leaves by. Nodes with
-    // an internal path (HarmonicFeedback) expose different faces, so connecting
-    // one's input straight to its output would bypass that path.
+    return this.#internalSignalChain.map((name) => {
+      const node = map[name];
+      assert(node, `SampleVoice: "${name}" not initialized!`);
+      return node instanceof HarmonicFeedback
+        ? { name, in: node.input, out: node.output }
+        : { name, in: node, out: node };
+    });
+  }
+
+  #connectAudioChain() {
     const stages = [
-      { in: this.#playerWorklet, out: this.#playerWorklet as AudioNode },
-      ...this.#internalSignalChain.map((key) => {
-        const n = map[key];
-        assert(n, `SampleVoice: "${key}" not initialized!`);
-        return n instanceof HarmonicFeedback ? { in: n.input, out: n.output } : { in: n, out: n };
-      }),
-      { in: this.#outputNode as AudioNode, out: this.#outputNode as AudioNode },
+      { name: "worklet", in: this.#playerWorklet, out: this.#playerWorklet as AudioNode },
+      ...this.#chainStages(),
+      { name: "out", in: this.#outputNode as AudioNode, out: this.#outputNode as AudioNode },
     ];
     for (let i = 0; i < stages.length - 1; i++) stages[i].out.connect(stages[i + 1].in);
+  }
+
+  /**
+   * Named tap points along this voice's internal chain, in signal order.
+   * Pass to `monitorLevels` from `@kidlib/web-audio/debug`.
+   */
+  getGainStages(): Record<string, AudioNode> {
+    return {
+      worklet: this.#playerWorklet,
+      ...Object.fromEntries(this.#chainStages().map(({ name, out }) => [name, out])),
+      out: this.#outputNode,
+    };
   }
 
   #chainIncludes(node: SampleVoiceChainNode) {

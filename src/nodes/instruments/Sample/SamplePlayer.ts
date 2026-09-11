@@ -13,6 +13,7 @@ import {
 import { isValidAudioBuffer, isMidiValue } from "@/utils";
 
 import { MacroParam, NormalizeOptions } from "@/nodes/params";
+import { GainStages } from "@/nodes/LibNode";
 
 import {
   isValidSamplerParamValue,
@@ -1226,8 +1227,21 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.emitEnvelopeChanged(envType);
   }
 
-  startLevelMonitoring(intervalMs?: number) {
-    this.outBus.startLevelMonitoring(intervalMs);
+  /**
+   * Named tap points covering the whole instrument, from inside the voices
+   * through the bus to master out.
+   * Pass to `monitorLevels` from `@kidlib/web-audio/debug`.
+   */
+  getGainStages({ includeVoices = true } = {}): GainStages {
+    const busStages = Object.entries(this.outBus.getGainStages()).map(([name, node]) => [
+      `bus.${name}`,
+      node,
+    ]);
+    return {
+      ...(includeVoices ? this.voicePool.getGainStages() : {}),
+      ...Object.fromEntries(busStages),
+      masterOut: this.#masterOut,
+    };
   }
 
   /* === FX === */

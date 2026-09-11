@@ -42,6 +42,12 @@ export type NodeType = KnownNodeType | (string & Record<never, never>);
 
 export type Destination = ILibAudioNode | AudioNode | AudioParam;
 
+/**
+ * Named tap points for level monitoring. A list of nodes under one name is
+ * metered as their sum, not individually.
+ */
+export type GainStages = Record<string, AudioNode | AudioNode[]>;
+
 export interface SampleLoader {
   loadSample(buffer: AudioBuffer | ArrayBuffer): Promise<AudioBuffer | null>;
 }

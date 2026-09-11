@@ -73,6 +73,7 @@ export default defineConfig({
         index: resolve(import.meta.dirname, "src/index.ts"),
         io: resolve(import.meta.dirname, "src/io/index.ts"),
         components: resolve(import.meta.dirname, "src/components/index.ts"),
+        debug: resolve(import.meta.dirname, "src/debug/index.ts"),
       },
       name: "@kidlib/web-audio",
       formats: ["es"],
