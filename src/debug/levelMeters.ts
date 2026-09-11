@@ -40,9 +40,10 @@ const SILENT: LevelReading = { peakDB: SILENCE_DB, rmsDB: SILENCE_DB, clipCount:
  * Nothing is created until this is awaited, and `stop()` releases everything, so an
  * unmonitored graph carries no cost.
  *
- * `clipCount` is measured at the tap, which is not necessarily what reaches the
- * speakers: stages downstream may attenuate, and the hardware output clamps to +/-1
- * regardless. A stage over 0 dB is the thing to fix, not the clamp.
+ * Mid-graph, `clipCount` means the stage has run out of headroom, not that it is
+ * distorting: Web Audio carries float32 internally, so samples above 1 pass through
+ * intact. Only the hardware output clamps. A stage over 0 dB is still worth fixing,
+ * since everything downstream of it is working harder than it should be.
  */
 export async function monitorLevels(
   stages: GainStages,
