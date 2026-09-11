@@ -3,7 +3,7 @@ import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
 import { pop } from "@/utils";
 import { VoiceState } from "../VoiceState";
 import { Message, MessageHandler, MessageBus, createMessageBus } from "@/events";
-import { LibNode } from "@/nodes/LibNode";
+import { GainStages, LibNode } from "@/nodes/LibNode";
 import { createSampleVoices } from "./createSampleVoice";
 
 export class SampleVoicePool implements LibNode {
@@ -78,6 +78,20 @@ export class SampleVoicePool implements LibNode {
     this.#allVoices.forEach((voice) => {
       voice.disconnect();
     });
+  }
+
+  /**
+   * Named tap points inside the voices, prefixed `voice.`, each one metered as
+   * the sum of that stage across every voice. Reads whatever is playing without
+   * depending on which voice the allocator picked; with a chord it shows the
+   * summed level at that stage rather than any single voice.
+   */
+  getGainStages(): GainStages {
+    const perVoice = this.#allVoices.map((voice) => voice.getGainStages());
+    const stageNames = Object.keys(perVoice[0] ?? {});
+    return Object.fromEntries(
+      stageNames.map((name) => [`voice.${name}`, perVoice.map((stages) => stages[name])]),
+    );
   }
 
   /* === MESSAGES === */

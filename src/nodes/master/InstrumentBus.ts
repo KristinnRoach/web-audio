@@ -2,6 +2,7 @@
 
 import { ILibAudioNode, LibAudioNode } from "@/nodes/LibAudioNode";
 import { registerNode, NodeID, unregisterNode } from "@/nodes/node-store";
+import { GainStages } from "@/nodes/LibNode";
 import { getAudioContext } from "@/context";
 
 import { Message, MessageBus, MessageHandler, createMessageBus } from "@/events";
@@ -719,7 +720,7 @@ export class InstrumentBus implements ILibAudioNode {
    * Named tap points for level monitoring, keyed by bus node name.
    * Pass to `monitorLevels` from `@kidlib/web-audio/debug`.
    */
-  getGainStages(): Record<string, AudioNode> {
+  getGainStages(): GainStages {
     return Object.fromEntries(
       Object.entries(this.#nodes)
         .filter(([, node]) => node !== undefined)
