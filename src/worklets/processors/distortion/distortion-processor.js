@@ -70,7 +70,9 @@ registerProcessor(
         {
           name: "clippingThreshold",
           defaultValue: 0.5,
-          minValue: 0,
+          // Non-zero: applyClipping divides by this, and 0 yields NaN, which
+          // permanently silences every downstream node.
+          minValue: 0.001,
           maxValue: 1,
           automationRate: "k-rate",
         },
@@ -124,8 +126,10 @@ registerProcessor(
           // Apply clipping blend
           sample = this.distortion.applyClipping(sample, clippingAmount, clipThreshold);
 
-          // Basic output limiting
-          output[c][i] = Math.max(-0.999, Math.min(0.999, sample));
+          // No output clamp here: Web Audio is float32 and the bus limiter
+          // (DynamicsCompressor @ -1 dB) owns output protection. Clamping here
+          // made a bypassed stage a hard clipper. See #55.
+          output[c][i] = sample;
         }
       }
 
@@ -133,3 +137,5 @@ registerProcessor(
     }
   },
 );
+
+export {}; // module marker so the test can import this file
