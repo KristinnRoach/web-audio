@@ -391,11 +391,19 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const lpStart = params.loopStartSamples;
     const lpEnd = params.loopEndSamples;
 
-    // Default to playback range if loop points are not set
-    let calcLoopStart = lpStart < lpEnd && lpStart >= 0 ? lpStart : playbackRange.startSamples;
+    // Loop points clamp into the playback range, so a loop reaching past an edge
+    // loops up to that edge instead of silently becoming the whole range. Only an
+    // unset or degenerate loop falls back to the full playback range.
+    const clamp = (value) =>
+      Math.min(Math.max(value, playbackRange.startSamples), playbackRange.endSamples);
 
-    let calcLoopEnd =
-      lpEnd > lpStart && lpEnd <= playbackRange.endSamples ? lpEnd : playbackRange.endSamples;
+    let calcLoopStart = clamp(lpStart);
+    let calcLoopEnd = clamp(lpEnd);
+
+    if (calcLoopEnd - calcLoopStart < 1) {
+      calcLoopStart = playbackRange.startSamples;
+      calcLoopEnd = playbackRange.endSamples;
+    }
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
