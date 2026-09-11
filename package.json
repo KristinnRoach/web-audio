@@ -35,7 +35,7 @@
   },
   "scripts": {
     "changeset": "vp exec changeset",
-    "bump": " vp exec changeset version",
+    "bump": "vp run test:all && vp exec changeset version",
     "release": "npm login && vp exec changeset publish",
     "build:worklets": "node build-processors.js",
     "build": "vp run clean && vp build",
