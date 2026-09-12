@@ -28,7 +28,7 @@ import { createInstrumentBus, type InstrumentBus } from "@/nodes/master/createIn
 import { BusNodeName } from "@/nodes/master/InstrumentBus";
 import { SampleVoicePool } from "./SampleVoicePool";
 import { CustomEnvelope, defaultEnvelopeState } from "@/nodes/params";
-import { type EnvelopeState, type EnvelopeType } from "@/nodes/params/envelopes";
+import { type Envelope, type EnvelopeState, type EnvelopeType } from "@/nodes/params/envelopes";
 import { ILibInstrumentNode } from "@/nodes/LibAudioNode";
 import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
 import { createMessageBus, MessageBus } from "@/events";
@@ -1264,6 +1264,15 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (preOrPostFx === "post" || preOrPostFx === "all") {
       this.outBus.setLpfCutoff(hz);
     }
+  };
+
+  /**
+   * Envelope for the post-FX lowpass cutoff. See `InstrumentBus.setLpfEnvelope`.
+   * Set `setLpfCutoff` low first - it is the base the sweep starts from, and it
+   * defaults to wide open, where a sweep upwards is inaudible.
+   */
+  setLpfEnvelope = (envelope: Envelope | null, amount = 0) => {
+    this.outBus.setLpfEnvelope(envelope, amount);
   };
 
   setHpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "post") => {

@@ -7,7 +7,9 @@ import { getAudioContext } from "@/context";
 
 import { Message, MessageBus, MessageHandler, createMessageBus } from "@/events";
 
-import { clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
+import { cancelAndPinParamValue, clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
+
+import { scheduleEnvelope, type Envelope } from "@/nodes/params/envelopes";
 
 import { DEFAULT } from "@/constants";
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from "./defaults";
@@ -37,6 +39,21 @@ export type BusNodeName =
 
 export type BusSendName = `${BusNodeName}_send`;
 
+/**
+ * On by default so the post filter sweeps without anything having to wire it up.
+ *
+ * ponytail: a constant, not a preset system. The real source should be the
+ * instrument's existing `filter-env` state - this exists so the scheduling path can
+ * be heard before that connection is designed.
+ */
+const DEFAULT_LPF_ENVELOPE: Envelope = {
+  points: [
+    { time: 0, value: 0, curve: "exponential" },
+    { time: 0.01, value: 1, curve: "exponential" },
+    { time: 0.25, value: 0.15, curve: "exponential" },
+  ],
+};
+
 type BusNodeTypeMap = {
   input: ILibAudioNode<GainNode>;
   lpf: ILibAudioNode<BiquadFilterNode>;
@@ -59,6 +76,11 @@ export class InstrumentBus implements ILibAudioNode {
   #context: AudioContext;
   #initialized = false;
   #initPromise: Promise<void> | null = null;
+
+  /** Last cutoff from `setLpfCutoff`, which is the envelope's base. Set in init(). */
+  #lpfCutoffHz = 0;
+  #lpfEnv: Envelope | null = DEFAULT_LPF_ENVELOPE;
+  #lpfEnvAmount = 6000;
 
   #nodes: Partial<BusNodeTypeMap> = {};
   #internalRouting = new Map<string, string[]>();
@@ -99,11 +121,13 @@ export class InstrumentBus implements ILibAudioNode {
         const wetMix = this.createGainNode(this.#context, { initialGain: 1 });
         const output = this.createGainNode(this.#context, { initialGain: 1 });
 
+        this.#lpfCutoffHz = maxSafeHz(this.#context.sampleRate);
+
         const lpf = new LibAudioNode<BiquadFilterNode>(
           new BiquadFilterNode(this.#context, {
             type: "lowpass",
             Q: DEFAULT.LPF_Q,
-            frequency: maxSafeHz(this.#context.sampleRate),
+            frequency: this.#lpfCutoffHz,
           }),
           this.#context,
           "lpf",
@@ -339,6 +363,24 @@ export class InstrumentBus implements ILibAudioNode {
     const delayNode = this.getNode("delay");
     delayNode?.audioNode.sendProcessorMessage({ type: "trigger" });
 
+    const cutoff = this.#lpfEnv && this.getNode("lpf")?.audioNode.frequency;
+    if (cutoff) {
+      // One filter shared by every note, so a new note simply takes over: pin the
+      // param where it is, then draw from there. Last note wins.
+      const time = this.now + secondsFromNow;
+      cancelAndPinParamValue(cutoff, time);
+      scheduleEnvelope(cutoff, this.#lpfEnv!, time, {
+        base: this.#lpfCutoffHz,
+        // Keep the peak inside the filter's range. Past Nyquist the browser clamps
+        // and warns, and the top of the sweep is lost either way. Only ever lowers
+        // a positive amount, so a negative one still inverts.
+        amount: Math.min(
+          this.#lpfEnvAmount,
+          maxSafeHz(this.context.sampleRate) - this.#lpfCutoffHz,
+        ),
+      });
+    }
+
     return this;
   }
 
@@ -370,11 +412,37 @@ export class InstrumentBus implements ILibAudioNode {
 
   setLpfCutoff(hz: number): this {
     const safeHz = clampHz(hz, this.context.sampleRate);
+    this.#lpfCutoffHz = safeHz;
+
+    // Always write, even with an envelope set: the knob has to do something between
+    // notes. The next noteOn pins and redraws from #lpfCutoffHz, so the envelope
+    // wins from there; turning the knob mid-note is the only place the two overlap.
     this.getNode("lpf")?.audioNode.frequency.setTargetAtTime(
       safeHz,
       this.now,
       DEFAULT.CUTOFF_SMOOTHING_SEC,
     );
+    return this;
+  }
+
+  /**
+   * Envelope for the post-FX cutoff, or null to stop sweeping and settle back on the
+   * resting cutoff, wherever the last note left the filter. `amount` is sweep depth
+   * in Hz above the cutoff: a point value of 0 sits at the cutoff, 1 at cutoff +
+   * amount.
+   *
+   * Mark the segments "exponential". That ramp is geometric in Hz, which is how a
+   * cutoff sweep is heard; a linear one puts nearly all its motion at the top.
+   *
+   * ponytail: one-shot, so there is no noteOff hook and no held-note counting - the
+   * shape plays through on every note. For a sweep that holds while keys are down,
+   * give the envelope a `sustain` and add a note counter that calls releaseEnvelope
+   * when it reaches zero.
+   */
+  setLpfEnvelope(envelope: Envelope | null, amount = 0): this {
+    this.#lpfEnv = envelope;
+    this.#lpfEnvAmount = amount;
+    if (!envelope) this.setLpfCutoff(this.#lpfCutoffHz);
     return this;
   }
 
