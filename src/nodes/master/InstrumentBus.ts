@@ -7,9 +7,13 @@ import { getAudioContext } from "@/context";
 
 import { Message, MessageBus, MessageHandler, createMessageBus } from "@/events";
 
-import { cancelAndPinParamValue, clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
+import { clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
 
-import { scheduleEnvelope, type Envelope } from "@/nodes/params/envelopes";
+import {
+  createEnvelopeScheduler,
+  type Envelope,
+  type EnvelopeScheduler,
+} from "@/nodes/params/envelopes";
 
 import { DEFAULT } from "@/constants";
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from "./defaults";
@@ -39,21 +43,6 @@ export type BusNodeName =
 
 export type BusSendName = `${BusNodeName}_send`;
 
-/**
- * On by default so the post filter sweeps without anything having to wire it up.
- *
- * ponytail: a constant, not a preset system. The real source should be the
- * instrument's existing `filter-env` state - this exists so the scheduling path can
- * be heard before that connection is designed.
- */
-const DEFAULT_LPF_ENVELOPE: Envelope = {
-  points: [
-    { time: 0, value: 0, curve: "exponential" },
-    { time: 0.01, value: 1, curve: "exponential" },
-    { time: 0.25, value: 0.15, curve: "exponential" },
-  ],
-};
-
 type BusNodeTypeMap = {
   input: ILibAudioNode<GainNode>;
   lpf: ILibAudioNode<BiquadFilterNode>;
@@ -79,8 +68,9 @@ export class InstrumentBus implements ILibAudioNode {
 
   /** Last cutoff from `setLpfCutoff`, which is the envelope's base. Set in init(). */
   #lpfCutoffHz = 0;
-  #lpfEnv: Envelope | null = DEFAULT_LPF_ENVELOPE;
-  #lpfEnvAmount = 6000;
+  #lpfEnvAmount = 0;
+  #lpfEnvScheduler: EnvelopeScheduler | null = null;
+  #heldNotes = new Map<number, number>();
 
   #nodes: Partial<BusNodeTypeMap> = {};
   #internalRouting = new Map<string, string[]>();
@@ -351,6 +341,8 @@ export class InstrumentBus implements ILibAudioNode {
   // === NOTE ON/OFF ===
 
   noteOn(midiNote: number, velocity: number = 100, secondsFromNow = 0, glideTime = 0): this {
+    this.#heldNotes.set(midiNote, (this.#heldNotes.get(midiNote) ?? 0) + 1);
+
     const feedback = this.getNode("feedback");
     if (feedback && "trigger" in feedback && typeof feedback.trigger === "function") {
       feedback.trigger(midiNote, {
@@ -363,13 +355,10 @@ export class InstrumentBus implements ILibAudioNode {
     const delayNode = this.getNode("delay");
     delayNode?.audioNode.sendProcessorMessage({ type: "trigger" });
 
-    const cutoff = this.#lpfEnv && this.getNode("lpf")?.audioNode.frequency;
-    if (cutoff) {
-      // One filter shared by every note, so a new note simply takes over: pin the
-      // param where it is, then draw from there. Last note wins.
+    if (this.#lpfEnvScheduler) {
+      // One filter shared by every note, so a new note simply takes over. Last note wins.
       const time = this.now + secondsFromNow;
-      cancelAndPinParamValue(cutoff, time);
-      scheduleEnvelope(cutoff, this.#lpfEnv!, time, {
+      this.#lpfEnvScheduler.trigger(time, {
         base: this.#lpfCutoffHz,
         // Keep the peak inside the filter's range. Past Nyquist the browser clamps
         // and warns, and the top of the sweep is lost either way. Only ever lowers
@@ -381,6 +370,23 @@ export class InstrumentBus implements ILibAudioNode {
       });
     }
 
+    return this;
+  }
+
+  noteOff(midiNote: number): this {
+    const count = this.#heldNotes.get(midiNote);
+    if (count === undefined) return this;
+
+    if (count > 1) this.#heldNotes.set(midiNote, count - 1);
+    else this.#heldNotes.delete(midiNote);
+
+    if (this.#heldNotes.size === 0) this.#lpfEnvScheduler?.release();
+    return this;
+  }
+
+  releaseAll(): this {
+    this.#heldNotes.clear();
+    this.#lpfEnvScheduler?.release();
     return this;
   }
 
@@ -434,15 +440,16 @@ export class InstrumentBus implements ILibAudioNode {
    * Mark the segments "exponential". That ramp is geometric in Hz, which is how a
    * cutoff sweep is heard; a linear one puts nearly all its motion at the top.
    *
-   * ponytail: one-shot, so there is no noteOff hook and no held-note counting - the
-   * shape plays through on every note. For a sweep that holds while keys are down,
-   * give the envelope a `sustain` and add a note counter that calls releaseEnvelope
-   * when it reaches zero.
+   * Sustain holds and loop repeats until the instrument's last held note is released.
    */
   setLpfEnvelope(envelope: Envelope | null, amount = 0): this {
-    this.#lpfEnv = envelope;
+    this.#lpfEnvScheduler?.dispose();
     this.#lpfEnvAmount = amount;
-    if (!envelope) this.setLpfCutoff(this.#lpfCutoffHz);
+    const cutoff = envelope && this.getNode("lpf")?.audioNode.frequency;
+    this.#lpfEnvScheduler = cutoff
+      ? createEnvelopeScheduler(this.#context, cutoff, envelope)
+      : null;
+    if (!envelope || amount === 0) this.setLpfCutoff(this.#lpfCutoffHz);
     return this;
   }
 
@@ -693,6 +700,10 @@ export class InstrumentBus implements ILibAudioNode {
   }
 
   dispose(): void {
+    this.#heldNotes.clear();
+    this.#lpfEnvScheduler?.dispose();
+    this.#lpfEnvScheduler = null;
+
     // Disconnect all nodes
     for (const name of Object.keys(this.#nodes)) {
       this.#disconnectFromTo(name);
