@@ -88,7 +88,12 @@ function validateEnvelopeState(state: EnvelopeState): void {
   }
 }
 
-const POST_FILTER_ENV_AMOUNT = 3000;
+/**
+ * Filter envelope depth, normalized against the filter's usable range.
+ *
+ * 0.13 is roughly the 3 kHz this was fixed at before, at a 48 kHz sample rate.
+ */
+const DEFAULT_FILTER_ENV_AMOUNT = 0.13;
 
 export type SamplePlayerOptions = {
   context?: AudioContext;
@@ -140,6 +145,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
+  #filterEnvAmount: number = DEFAULT_FILTER_ENV_AMOUNT;
   #loopTempoSync = false; // TODO: Implement!
   #MAX_TEMPO = 300;
   #MIN_TEMPO = 20;
@@ -1144,12 +1150,47 @@ export class SamplePlayer implements ILibInstrumentNode {
     });
   }
 
+  /**
+   * The post-FX cutoff follows `filter-env` directly, so the state's own release point
+   * and time scale come with it. `playbackRateSync` does not: the bus has one filter for
+   * every note and so no playback rate to sync to.
+   */
   private applyPostFilterEnvelope(state: EnvelopeState): void {
-    const { points, sustainIndex } = state.shape;
+    const { points, sustainIndex, releaseIndex } = state.shape;
     const envelope: Envelope =
-      sustainIndex === null ? { points } : { points, sustain: sustainIndex, loop: state.loop };
+      sustainIndex === null
+        ? { points, release: releaseIndex }
+        : {
+            points,
+            sustain: sustainIndex,
+            release: releaseIndex,
+            loop: state.loop,
+          };
 
-    this.setLpfEnvelope(envelope, state.enabled ? POST_FILTER_ENV_AMOUNT : 0);
+    this.setLpfEnvelope(envelope, {
+      amount: state.enabled ? this.#filterEnvAmount : 0,
+      timeScale: state.timeScale,
+    });
+  }
+
+  /**
+   * Filter envelope depth, 0 for no sweep and 1 to sweep the filter's whole range.
+   *
+   * ponytail: post-FX lowpass only. The "hpf" | "lpf" and "pre" | "post" targets go
+   * here when there is a second filter envelope to aim.
+   */
+  setFilterEnvAmount = (amount: number): this => {
+    this.#filterEnvAmount = clamp(amount, 0, 1);
+
+    // Nothing to re-apply until the envelope has been applied once; the new depth is
+    // read from the field then. Avoids getEnvelopeState, which needs a live voice.
+    const state = this.envelopeStates.get("filter-env");
+    if (state) this.applyPostFilterEnvelope(state);
+    return this;
+  };
+
+  getFilterEnvAmount(): number {
+    return this.#filterEnvAmount;
   }
 
   /** Restores one envelope to defaults sized to the current authority sample. */
@@ -1183,7 +1224,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   enableEnvelope = (envType: EnvelopeType) => {
     if (envType === "filter-env") {
-      this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), enabled: true });
+      this.applyEnvelopeState(envType, {
+        ...this.getEnvelopeState(envType),
+        enabled: true,
+      });
       return;
     }
     this.voicePool.applyToAllVoices((voice) => voice.enableEnvelope(envType));
@@ -1192,7 +1236,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   disableEnvelope = (envType: EnvelopeType) => {
     if (envType === "filter-env") {
-      this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), enabled: false });
+      this.applyEnvelopeState(envType, {
+        ...this.getEnvelopeState(envType),
+        enabled: false,
+      });
       return;
     }
     this.voicePool.applyToAllVoices((voice) => voice.disableEnvelope(envType));
@@ -1216,7 +1263,10 @@ export class SamplePlayer implements ILibInstrumentNode {
     mode: "normal" | "ping-pong" | "reverse" = "normal",
   ) => {
     if (envType === "filter-env") {
-      this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), loop });
+      this.applyEnvelopeState(envType, {
+        ...this.getEnvelopeState(envType),
+        loop,
+      });
       return;
     }
     this.voicePool.applyToAllVoices((v) => v.setEnvelopeLoop(envType, loop, mode));
@@ -1229,6 +1279,13 @@ export class SamplePlayer implements ILibInstrumentNode {
   };
 
   setEnvelopeTimeScale = (envType: EnvelopeType, timeScale: number) => {
+    if (envType === "filter-env") {
+      this.applyEnvelopeState(envType, {
+        ...this.getEnvelopeState(envType),
+        timeScale,
+      });
+      return;
+    }
     this.voicePool.applyToAllVoices((v) => v.setEnvelopeTimeScale(envType, timeScale));
     this.emitEnvelopeChanged(envType);
   };
@@ -1247,6 +1304,14 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   setEnvelopeReleasePoint(envType: EnvelopeType, index: number) {
+    if (envType === "filter-env") {
+      const state = this.getEnvelopeState(envType);
+      this.applyEnvelopeState(envType, {
+        ...state,
+        shape: { ...state.shape, releaseIndex: index },
+      });
+      return;
+    }
     this.voicePool.applyToAllVoices((v) => v.setEnvelopeReleasePoint(envType, index));
     this.emitEnvelopeChanged(envType);
   }
@@ -1310,8 +1375,11 @@ export class SamplePlayer implements ILibInstrumentNode {
    * Set `setLpfCutoff` low first - it is the base the sweep starts from, and it
    * defaults to wide open, where a sweep upwards is inaudible.
    */
-  setLpfEnvelope = (envelope: Envelope | null, amount = 0) => {
-    this.outBus.setLpfEnvelope(envelope, amount);
+  setLpfEnvelope = (
+    envelope: Envelope | null,
+    options: { amount?: number; timeScale?: number } = {},
+  ) => {
+    this.outBus.setLpfEnvelope(envelope, options);
   };
 
   setHpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "post") => {

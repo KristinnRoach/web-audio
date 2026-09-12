@@ -69,6 +69,7 @@ export class InstrumentBus implements ILibAudioNode {
   /** Last cutoff from `setLpfCutoff`, which is the envelope's base. Set in init(). */
   #lpfCutoffHz = 0;
   #lpfEnvAmount = 0;
+  #lpfEnvTimeScale = 1;
   #lpfEnvScheduler: EnvelopeScheduler | null = null;
   #heldNotes = new Map<number, number>();
 
@@ -358,15 +359,15 @@ export class InstrumentBus implements ILibAudioNode {
     if (this.#lpfEnvScheduler) {
       // One filter shared by every note, so a new note simply takes over. Last note wins.
       const time = this.now + secondsFromNow;
+      const ceiling = maxSafeHz(this.context.sampleRate);
+
       this.#lpfEnvScheduler.trigger(time, {
         base: this.#lpfCutoffHz,
         // Keep the peak inside the filter's range. Past Nyquist the browser clamps
         // and warns, and the top of the sweep is lost either way. Only ever lowers
         // a positive amount, so a negative one still inverts.
-        amount: Math.min(
-          this.#lpfEnvAmount,
-          maxSafeHz(this.context.sampleRate) - this.#lpfCutoffHz,
-        ),
+        amount: Math.min(this.#lpfEnvAmount * ceiling, ceiling - this.#lpfCutoffHz),
+        timeScale: this.#lpfEnvTimeScale,
       });
     }
 
@@ -433,18 +434,32 @@ export class InstrumentBus implements ILibAudioNode {
 
   /**
    * Envelope for the post-FX cutoff, or null to stop sweeping and settle back on the
-   * resting cutoff, wherever the last note left the filter. `amount` is sweep depth
-   * in Hz above the cutoff: a point value of 0 sits at the cutoff, 1 at cutoff +
-   * amount.
+   * resting cutoff, wherever the last note left the filter.
+   *
+   * `amount` is sweep depth normalized against the filter's usable range, so 1 sweeps
+   * from the cutoff to just under Nyquist and 0 does not sweep at all. A point value of
+   * 0 sits at the cutoff, 1 at the top of that depth. Normalized rather than Hz because
+   * the ceiling is a property of the sample rate, which the caller should not have to
+   * know; the depth is still resolved per note, so it tracks a sample-rate change.
    *
    * Mark the segments "exponential". That ramp is geometric in Hz, which is how a
    * cutoff sweep is heard; a linear one puts nearly all its motion at the top.
    *
    * Sustain holds and loop repeats until the instrument's last held note is released.
+   * An envelope with a `release` and no `sustain` sweeps through on its own while notes
+   * are held and still plays its tail on the last note off.
+   *
+   * `timeScale` divides every point time, so values above 1 sweep faster. One filter is
+   * shared by every note, so there is no per-note playback rate for it to follow - a
+   * sample envelope's `playbackRateSync` has no meaning here and is not read.
    */
-  setLpfEnvelope(envelope: Envelope | null, amount = 0): this {
+  setLpfEnvelope(envelope: Envelope | null, { amount = 0, timeScale = 1 } = {}): this {
     this.#lpfEnvScheduler?.dispose();
     this.#lpfEnvAmount = amount;
+    // Guards the divide in the scheduler: zero or NaN would push every point to the
+    // same instant, or to no instant at all.
+    this.#lpfEnvTimeScale = Number.isFinite(timeScale) && timeScale > 0 ? timeScale : 1;
+
     const cutoff = envelope && this.getNode("lpf")?.audioNode.frequency;
     this.#lpfEnvScheduler = cutoff
       ? createEnvelopeScheduler(this.#context, cutoff, envelope)
