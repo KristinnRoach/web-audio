@@ -14,6 +14,7 @@ export type { SamplePlayerOptions } from "./nodes/instruments/Sample/SamplePlaye
 export type { SampleVoiceChainNode } from "./nodes/instruments/Sample/SampleVoice";
 export type {
   CustomEnvelope,
+  Envelope,
   EnvelopePoint,
   EnvelopeData,
   EnvelopeState,
