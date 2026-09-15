@@ -300,9 +300,9 @@ export class SampleVoicePool implements LibNode {
     this.#gainReductionScalar =
       1 / (1 + Math.log10(activeCount) * this.#GAIN_REDUCTION_SENSITIVITY);
 
-    // Skip releasing voices since they are already fading out.
     this.#allVoices.forEach((voice) => {
-      if (voice.state === VoiceState.PLAYING) voice.setMasterGain(this.#gainReductionScalar);
+      if (voice.state === VoiceState.PLAYING || voice.state === VoiceState.RELEASING)
+        voice.setMasterGain(this.#gainReductionScalar);
     });
   }
 
