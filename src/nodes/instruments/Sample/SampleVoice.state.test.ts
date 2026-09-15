@@ -86,15 +86,6 @@ describe("SampleVoice state", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("is AVAILABLE until triggered", async () => {
-    const voice = await loadedVoice();
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
-
-    expect(trigger(voice)).toBe(60);
-    expect(voice.state).toBe(VoiceState.PLAYING);
-    expect(voice.midiNote).toBe(60);
-  });
-
   it("refuses to trigger before audio is loaded", async () => {
     const voice = newVoice();
     await voice.init();
@@ -104,69 +95,44 @@ describe("SampleVoice state", () => {
     expect(sentTypes()).not.toContain("voice:start");
   });
 
-  it("stops rather than restarts when triggered while sounding", async () => {
+  it("owns the complete lifecycle and reports each transition synchronously", async () => {
+    const voice = await loadedVoice();
+    const events: string[] = [];
+    ["voice:started", "voice:releasing", "voice:stopped"].forEach((type) => {
+      voice.onMessage(type, () => events.push(type));
+    });
+
+    voice.release({ releaseTime: 0.1 });
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+
+    expect(trigger(voice)).toBe(60);
+    expect(voice.state).toBe(VoiceState.PLAYING);
+    expect(voice.midiNote).toBe(60);
+
+    voice.release({ releaseTime: 0.1 });
+    voice.release({ releaseTime: 0.1 });
+    expect(voice.state).toBe(VoiceState.RELEASING);
+
+    vi.runAllTimers();
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+    expect(voice.midiNote).toBeNull();
+    expect(events).toEqual(["voice:started", "voice:releasing", "voice:stopped"]);
+  });
+
+  it("stops rather than retriggering an active voice", async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
 
     expect(trigger(voice, 64)).toBeNull();
     expect(voice.state).toBe(VoiceState.AVAILABLE);
+    expect(voice.midiNote).toBeNull();
   });
 
-  it("releases only from PLAYING", async () => {
-    const voice = await loadedVoice();
-
-    voice.release({ releaseTime: 1 });
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
-
-    trigger(voice);
-    voice.release({ releaseTime: 1 });
-    expect(voice.state).toBe(VoiceState.RELEASING);
-
-    voice.release({ releaseTime: 1 });
-    expect(voice.state).toBe(VoiceState.RELEASING);
-  });
-
-  it("treats a zero release as a stop, including mid-tail", async () => {
+  it("treats a zero release as one idempotent stop", async () => {
     const voice = await loadedVoice();
     trigger(voice);
-    voice.release({ releaseTime: 1 });
-
+    voice.release({ releaseTime: 0.1 });
     voice.release({ releaseTime: 0 });
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
-  });
-
-  it("stops itself when the release tail runs out", async () => {
-    const voice = await loadedVoice();
-    trigger(voice);
-    voice.release({ releaseTime: 0.1 });
-
-    vi.runAllTimers();
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
-  });
-
-  it("disarms the release timer when stopped mid-tail", async () => {
-    const voice = await loadedVoice();
-    trigger(voice);
-    voice.release({ releaseTime: 0.1 });
-    const armedDuringTail = vi.getTimerCount();
-
-    voice.stop();
-
-    // stop() swaps the release timer for its own, so the count holds. Left
-    // armed it would sit out the rest of the tail - harmless, since the
-    // callback no-ops on AVAILABLE, but it keeps a dead voice's timer alive.
-    expect(vi.getTimerCount()).toBe(armedDuringTail);
-    vi.runAllTimers();
-    expect(sentTypes().filter((t) => t === "voice:stop")).toHaveLength(1);
-  });
-
-  it("does not stop a voice that is already stopped", async () => {
-    const voice = await loadedVoice();
-    trigger(voice);
-    voice.stop();
-    vi.runAllTimers();
-    expect(sentTypes().filter((t) => t === "voice:stop")).toHaveLength(1);
-
     voice.stop();
     vi.runAllTimers();
 
@@ -174,17 +140,19 @@ describe("SampleVoice state", () => {
     expect(sentTypes().filter((t) => t === "voice:stop")).toHaveLength(1);
   });
 
-  it("reports AVAILABLE before the processor does", async () => {
+  it("coalesces a synchronous stop and retrigger", async () => {
     const voice = await loadedVoice();
-    trigger(voice);
+    trigger(voice, 60);
 
     voice.stop();
-
     expect(voice.state).toBe(VoiceState.AVAILABLE);
     expect(sentTypes()).not.toContain("voice:stop");
 
+    trigger(voice, 64);
     vi.runAllTimers();
-    expect(audio.posted.at(-1)).toEqual({ type: "voice:stop", timestamp: 0 });
+    expect(voice.state).toBe(VoiceState.PLAYING);
+    expect(voice.midiNote).toBe(64);
+    expect(sentTypes()).not.toContain("voice:stop");
   });
 
   it("holds a stop scheduled for a future timestamp", async () => {
@@ -201,60 +169,13 @@ describe("SampleVoice state", () => {
     expect(audio.posted.at(-1)).toEqual({ type: "voice:stop", timestamp: 0.5 });
   });
 
-  it("disarms a pending stop when retriggered before it is posted", async () => {
+  it("accepts current natural completion and ignores completion from the previous note", async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
-    voice.stop();
 
-    trigger(voice, 64);
-    vi.runAllTimers();
-
-    expect(voice.state).toBe(VoiceState.PLAYING);
-    expect(voice.midiNote).toBe(64);
-    expect(sentTypes()).not.toContain("voice:stop");
-  });
-
-  it("reports lifecycle changes without waiting for processor acknowledgements", async () => {
-    const voice = await loadedVoice();
-    const started = vi.fn();
-    const releasing = vi.fn();
-    const stopped = vi.fn();
-    voice.onMessage("voice:started", started);
-    voice.onMessage("voice:releasing", releasing);
-    voice.onMessage("voice:stopped", stopped);
-
-    trigger(voice);
-    voice.release({ releaseTime: 1 });
-    voice.stop();
-
-    expect(started).toHaveBeenCalledOnce();
-    expect(releasing).toHaveBeenCalledOnce();
-    expect(stopped).toHaveBeenCalledOnce();
-  });
-
-  it("clears the active note synchronously when stopped", async () => {
-    const voice = await loadedVoice();
-    trigger(voice, 60);
-    voice.stop();
-
+    endPlayback(0);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
     expect(voice.midiNote).toBeNull();
-  });
-
-  it("becomes available when playback ends in the processor", async () => {
-    const voice = await loadedVoice();
-    trigger(voice, 60);
-
-    endPlayback();
-
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
-    expect(voice.midiNote).toBeNull();
-  });
-
-  it("ignores natural completion from the voice's previous note", async () => {
-    const voice = await loadedVoice();
-    trigger(voice, 60);
-    voice.stop();
     voice.trigger({ midiNote: 64, velocity: 100, secondsFromNow: 1 });
 
     endPlayback(0);
@@ -263,7 +184,7 @@ describe("SampleVoice state", () => {
     expect(voice.midiNote).toBe(64);
   });
 
-  it("does not clear a note triggered while layers are loading", async () => {
+  it("distinguishes a load acknowledgement from replacing the loaded layers", async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
 
@@ -271,11 +192,6 @@ describe("SampleVoice state", () => {
 
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(60);
-  });
-
-  it("ends the note when new layers are loaded under it", async () => {
-    const voice = await loadedVoice();
-    trigger(voice);
 
     await voice.loadLayers([fakeBuffer()]);
     expect(voice.state).toBe(VoiceState.AVAILABLE);

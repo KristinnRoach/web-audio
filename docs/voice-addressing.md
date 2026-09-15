@@ -16,21 +16,19 @@ The map has a second problem. It is keyed by note but invalidated per voice, and
 
 `SampleVoice.#transitionTo` owns the invariants for all three states. Start, release, and explicit stop no longer wait for processor acknowledgements. The processor reports `voice:ended` only when it reaches the playback boundary, and `SampleVoice` turns that into the existing upstream `voice:stopped` event.
 
-## Remaining: the pool
+## Done: the pool
 
-Keep `#allVoices`. Delete the three Sets and the map, and derive everything by scan — polyphony is 8–64.
+`SampleVoicePool` now keeps only `#allVoices` and derives lifecycle facts by scan — polyphony is 8–64:
 
 - counts: filter `#allVoices` on `voice.state`
 - `noteOff(note)`: release every voice where `voice.midiNote === note` and state is PLAYING
 - `allocate()`: first AVAILABLE, else oldest RELEASING, else oldest PLAYING
 
-That last step is missing today — `noteOn` refuses and logs at max polyphony rather than stealing. Dropped notes are the more audible failure.
+At max polyphony the pool steals rather than dropping the new note. Repeated notes can own multiple sounding voices without a note-keyed bookkeeping structure.
 
 The pool's message handlers then serve only `#updateVoiceGains` and upstream notification.
 
-One cleanup while in there: `SampleVoice.setLoopEnabled` infers "playing" from `#midiNote !== null`, which stays true for an AVAILABLE voice until the stop echo lands. It should read `#state`.
-
-`SampleVoicePool.test.ts` reads `assignedVoicesMidiMap` in 13 places and asserts map identity rather than audible behaviour. Rewriting it against `noteOn` / `noteOff` / `state` is most of the work.
+`SampleVoicePool.test.ts` now exercises allocation priority, deterministic stealing, repeated-note ownership, note-off fan-out, and state-derived targeting without reading private bookkeeping.
 
 ## Reconcile before the follow-up
 
