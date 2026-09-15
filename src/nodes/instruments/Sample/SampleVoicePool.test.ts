@@ -6,7 +6,7 @@ import { VoiceState } from "../VoiceState";
 
 vi.mock("./createSampleVoice", () => {
   class TestVoice {
-    state: VoiceState = VoiceState.LOADED;
+    state: VoiceState = VoiceState.AVAILABLE;
     currMidiNote: number | null = null;
     handlers = new Map<string, MessageHandler<Message>[]>();
 
