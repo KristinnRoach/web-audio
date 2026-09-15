@@ -7,7 +7,7 @@ import { VoiceState } from "../VoiceState";
 vi.mock("./createSampleVoice", () => {
   class TestVoice {
     state: VoiceState = VoiceState.AVAILABLE;
-    currMidiNote: number | null = null;
+    midiNote: number | null = null;
     handlers = new Map<string, MessageHandler<Message>[]>();
 
     onMessage(type: string, handler: MessageHandler<Message>) {
@@ -21,13 +21,13 @@ vi.mock("./createSampleVoice", () => {
       this.handlers
         .get(type)
         ?.forEach((handler) =>
-          handler({ type, senderId: "test", voice: this, midiNote: this.currMidiNote }),
+          handler({ type, senderId: "test", voice: this, midiNote: this.midiNote }),
         );
     }
 
     trigger({ midiNote }: { midiNote: number }): number | null {
       this.state = VoiceState.PLAYING;
-      this.currMidiNote = midiNote;
+      this.midiNote = midiNote;
       return midiNote;
     }
 

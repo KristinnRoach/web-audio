@@ -1042,16 +1042,8 @@ export class SampleVoice {
     return endPoint - startPoint;
   }
 
-  get isActive() {
-    return this.#midiNote !== null;
-  }
-
   get feedback() {
     return this.#feedback;
-  }
-
-  get currMidiNote(): number | null {
-    return this.#midiNote;
   }
 
   get hpf() {
@@ -1129,7 +1121,7 @@ export class SampleVoice {
       value: enabled,
     });
 
-    if (!enabled && this.#midiNote !== null) this.release({});
+    if (!enabled && this.#state === VoiceState.PLAYING) this.release({});
     return this;
   }
 

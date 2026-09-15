@@ -91,7 +91,7 @@ describe("SampleVoice state", () => {
 
     expect(trigger(voice)).toBe(60);
     expect(voice.state).toBe(VoiceState.PLAYING);
-    expect(voice.currMidiNote).toBe(60);
+    expect(voice.midiNote).toBe(60);
   });
 
   it("refuses to trigger before audio is loaded", async () => {
@@ -209,7 +209,7 @@ describe("SampleVoice state", () => {
     vi.runAllTimers();
 
     expect(voice.state).toBe(VoiceState.PLAYING);
-    expect(voice.currMidiNote).toBe(64);
+    expect(voice.midiNote).toBe(64);
     expect(sentTypes()).not.toContain("voice:stop");
   });
 
@@ -222,7 +222,7 @@ describe("SampleVoice state", () => {
     stopEcho(); // echo of note 60's stop, arriving after note 64 started
 
     expect(voice.state).toBe(VoiceState.PLAYING);
-    expect(voice.currMidiNote).toBe(64);
+    expect(voice.midiNote).toBe(64);
   });
 
   it("clears the active note on a stop echo it is waiting for", async () => {
@@ -233,8 +233,7 @@ describe("SampleVoice state", () => {
     stopEcho();
 
     expect(voice.state).toBe(VoiceState.AVAILABLE);
-    expect(voice.currMidiNote).toBeNull();
-    expect(voice.isActive).toBe(false);
+    expect(voice.midiNote).toBeNull();
   });
 
   it("ends the note when new layers are loaded under it", async () => {

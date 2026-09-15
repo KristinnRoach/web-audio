@@ -28,7 +28,7 @@ That last step is missing today — `noteOn` refuses and logs at max polyphony r
 
 The pool's message handlers then serve only `#updateVoiceGains` and upstream notification.
 
-Two cleanups while in there: `SampleVoice.isActive` and `setLoopEnabled` both infer "playing" from `#midiNote !== null`, which is true for an AVAILABLE voice until the stop echo lands. Both should read `#state`. `currMidiNote` and `midiNote` are duplicate getters.
+One cleanup while in there: `SampleVoice.setLoopEnabled` infers "playing" from `#midiNote !== null`, which stays true for an AVAILABLE voice until the stop echo lands. It should read `#state`.
 
 `SampleVoicePool.test.ts` reads `assignedVoicesMidiMap` in 13 places and asserts map identity rather than audible behaviour. Rewriting it against `noteOn` / `noteOff` / `state` is most of the work.
 
