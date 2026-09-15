@@ -1,71 +1,51 @@
 # Voice addressing — design record
 
-Root cause of the occasional stuck note, plus the sustain-pedal behaviour it masks. Proposal only; nothing implemented yet.
+One fact, several representations. Every desync bug in this area is two of them disagreeing.
 
-## The bug
+## Root cause
 
-`SampleVoicePool` keys playing voices with `Map<MidiValue, SampleVoice>` (`#playingMidiVoiceMap`). The real relationship is one note to _many_ sounding voices, so the map cannot represent it.
+A voice's state is owned by `SampleVoice.#state` and written synchronously at the call sites: `trigger()` to PLAYING, `release()` to RELEASING, `stop()` to AVAILABLE.
 
-`noteOn` (`SampleVoicePool.ts:258`) never consults the map and never steals: it allocates a fresh voice and overwrites the entry. Strike the same note twice without an intervening `noteOff` and the first voice is still sounding but no longer addressable. `noteOff` (`:289`) resolves only the newest voice; the orphan's `voice:stopped` cleanup then finds the map pointing elsewhere and no-ops (`:147`).
+`SampleVoicePool` keeps four copies of that fact — `#available`, `#playing`, `#releasing`, and `#playingMidiVoiceMap` — and rebuilds them from worklet messages. Those messages lag by a round trip, so the pool's view is a stale copy of state the voice already knows.
 
-An orphaned one-shot ends by itself. An orphaned **looping** voice never does.
+The map has a second problem. It is keyed by note but invalidated per voice, and `Map<note, voice>` cannot hold the several voices a note can own. `allocate()` reuses a RELEASING voice without dropping its old key, so one voice ends up under two notes.
 
-Reachable on `main` today:
+## Done: the voice layer
 
-1. Sustain pedal down: `setSustainPedal` calls both `setHoldEnabled(true)` and `setLoopEnabled(true)` (`SamplePlayer.ts:840`)
-2. Strike C: voice A, looping
-3. Release C: `release()` early-returns on `holdEnabled` (`:675`), no note-off
-4. Strike C again: voice B allocated, map entry overwritten, **A orphaned and looping**
-5. Pedal up: `releaseAll(0.1)` reaches `allNotesOff`, which iterates `#allVoices` directly and does catch A
+`VoiceState` is three states — AVAILABLE, PLAYING, RELEASING. Readiness is tracked separately by `#hasLoadedAudio`, since a voice can be reloaded while sounding.
 
-Step 5 is why it is intermittent. Any path reaching `voicePool.noteOff` instead of `allNotesOff` leaves A running indefinitely.
+Worklet messages no longer write `#state`; they are advisory. `voice:stopped` ignores an echo that arrives after a retrigger, which is what used to let a late message delete the live map entry for a note and leave it sounding.
 
-## Fix
+## Remaining: the pool
 
-Invert the ownership. Voices are the primary entity and already know their own note, so address them by scan and delete the index:
+Keep `#allVoices`. Delete the three Sets and the map, and derive everything by scan — polyphony is 8–64.
 
-```ts
-noteOff(midiNote, secondsFromNow = 0, releaseTime?) {
-  for (const voice of this.#allVoices) {
-    if (voice.midiNote === midiNote && voice.state === VoiceState.PLAYING) {
-      voice.release({ secondsFromNow, releaseTime });
-    }
-  }
-}
-```
+- counts: filter `#allVoices` on `voice.state`
+- `noteOff(note)`: release every voice where `voice.midiNote === note` and state is PLAYING
+- `allocate()`: first AVAILABLE, else oldest RELEASING, else oldest PLAYING
 
-Polyphony is 8–64, so the scan is free. This removes `#playingMidiVoiceMap` along with the stale-entry guards at `:120` and `:147`, which exist only to paper over the desync. Keeping an index instead would require `Map<midi, Set<voice>>`.
+That last step is missing today — `noteOn` refuses and logs at max polyphony rather than stealing. Dropped notes are the more audible failure.
 
-MIDI note-off names a pitch and nothing else — there is no voice identity in the protocol, which is what MPE's per-channel allocation exists to solve. Addressing by note is correct; one-voice-per-note is the wrong arity.
+The pool's message handlers then serve only `#updateVoiceGains` and upstream notification.
 
-Out of scope, noted while reading: at max polyphony `noteOn` refuses and logs (`:264`) rather than stealing the oldest voice. Audible as dropped notes under dense playing.
+Two cleanups while in there: `SampleVoice.isActive` and `setLoopEnabled` both infer "playing" from `#midiNote !== null`, which is true for an AVAILABLE voice until the stop echo lands. Both should read `#state`. `currMidiNote` and `midiNote` are duplicate getters.
 
-## Reconcile before implementing
+`SampleVoicePool.test.ts` reads `assignedVoicesMidiMap` in 13 places and asserts map identity rather than audible behaviour. Rewriting it against `noteOn` / `noteOff` / `state` is most of the work.
 
-`SampleVoicePool.ts` is byte-identical on `main` and `post-filter-cutoff-env`, so this fix branches cleanly off either. The follow-up below does not.
+## Reconcile before the follow-up
 
-`InstrumentBus` on `main` exposes `noteOn` only. `noteOff`, `releaseAll`, `#heldNotes` and `#lpfEnvScheduler` all arrive on `post-filter-cutoff-env`. Consequences:
+`SampleVoicePool.ts` is identical on `main` and `post-filter-cutoff-env`, so the pool work branches off either.
 
-- On `main`, `SamplePlayer.play()` calls `outBus.noteOn` with no counterpart anywhere. Unbalanced, and harmless only because nothing counts yet.
-- On `post-filter-cutoff-env`, `#heldNotes` is a refcount whose `size === 0` gates the post-FX filter envelope release. Every `outBus.noteOn` must get exactly one `outBus.noteOff` or the envelope never releases.
-- `SamplePlayer.release()` therefore differs between the two branches.
-
-The follow-up is written against the `post-filter-cutoff-env` shape and should land on top of it, not on `main`.
+The pedal follow-up does not. `InstrumentBus` on `main` has `noteOn` only; `noteOff`, `releaseAll`, `#heldNotes` and `#lpfEnvScheduler` arrive on `post-filter-cutoff-env`, where `#heldNotes` gates the post-FX filter envelope release. `SamplePlayer.release()` differs between the two. The follow-up should land on top of that branch.
 
 ## Follow-up: sustain pedal should not be hold
 
-`#sustainedNotes` (`SamplePlayer.ts:157`) is a deferred-release queue that is currently unreachable. Pedal down calls `setHoldEnabled(true)` (`:851`), so `release()` returns at the `holdEnabled` guard (`:675`) before it can ever reach the `.add` at `:680`. Both branches of the `#holdLocked` check exit early, so the set is always empty and the pedal-up drain loop at `:855` iterates nothing.
+`#sustainedNotes` is a deferred-release queue that never fills. Pedal down calls `setHoldEnabled(true)`, so `release()` returns at the hold guard before it can queue anything, and the pedal-up drain loop iterates an empty set.
 
-Net effect: pedal-up runs `releaseAll`, which cuts **every** note including keys still physically held. On a real piano, and under MIDI CC64, lifting the pedal never damps a key that is still down.
+So pedal-up runs `releaseAll` and cuts every note, including keys still physically held. A real pedal never damps a key that is still down.
 
-Three edits, all in `SamplePlayer`, roughly break-even on line count:
+The fix is to drop `setHoldEnabled(pressed)` from `setSustainPedal` and extract the note-off sequence already duplicated between `release()` and the drain loop. Hold stays the bigger hammer and still wins the guard when explicitly enabled. Nothing outside `SamplePlayer` reads `holdEnabled` or `hold:enabled`.
 
-1. Extract the note-off sequence into `#endNote(note)`. That body is already duplicated between the tail of `release()` and the pedal drain loop.
-2. Drop `setHoldEnabled(pressed)` from `setSustainPedal`. This alone makes the queue reachable; `release()` then works as written. Hold stays the bigger hammer and still wins the guard when explicitly enabled.
-3. In `play()`, flush a pending sustained note before re-triggering, so each `outBus.noteOn` keeps its partner. Unnecessary once the voice-pool fix lands, since a scan-based `noteOff` releases both voices correctly on its own.
+Loop-on-pedal is untouched and remains a separate question.
 
-Nothing outside `SamplePlayer` reads `holdEnabled` or `hold:enabled`, so the only observable API change is that the pedal stops lighting the hold state.
-
-Loop-on-pedal (`:845`) is untouched and remains a separate question.
-
-**Tonal change, needs an ear test.** Pedal-up currently forces a 0.1s release on every note via `releaseAll(0.1)`. The new path uses `voicePool.noteOff`, which leaves `releaseTime` undefined so each voice uses its own envelope release (`SampleVoicePool.ts:289` vs `:300`). More correct, probably longer, definitely different.
+**Needs an ear test.** Pedal-up currently forces a 0.1s release via `releaseAll(0.1)`. Per-note `noteOff` leaves `releaseTime` undefined, so each voice uses its own envelope release. Different, probably longer.
