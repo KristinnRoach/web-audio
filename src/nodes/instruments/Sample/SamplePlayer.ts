@@ -1138,10 +1138,10 @@ export class SamplePlayer implements ILibInstrumentNode {
     const nextState = cloneEnvelopeState(state);
     this.envelopeStates.set(type, nextState);
 
+    this.applyEnvelopeStateToVoices(type, nextState);
+
     if (type === "filter-env") {
       this.applyPostFilterEnvelope(nextState);
-    } else {
-      this.applyEnvelopeStateToVoices(type, nextState);
     }
 
     this.sendUpstreamMessage("envelope:changed", {
@@ -1173,26 +1173,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     });
   }
 
-  /**
-   * Filter envelope depth, 0 for no sweep and 1 to sweep the filter's whole range.
-   *
-   * ponytail: post-FX lowpass only. The "hpf" | "lpf" and "pre" | "post" targets go
-   * here when there is a second filter envelope to aim.
-   */
-  setFilterEnvAmount = (amount: number): this => {
-    this.#filterEnvAmount = clamp(amount, 0, 1);
-
-    // Nothing to re-apply until the envelope has been applied once; the new depth is
-    // read from the field then. Avoids getEnvelopeState, which needs a live voice.
-    const state = this.envelopeStates.get("filter-env");
-    if (state) this.applyPostFilterEnvelope(state);
-    return this;
-  };
-
-  getFilterEnvAmount(): number {
-    return this.#filterEnvAmount;
-  }
-
   /** Restores one envelope to defaults sized to the current authority sample. */
   resetEnvelope(type: EnvelopeType): void {
     this.applyEnvelopeState(type, defaultEnvelopeState(type, this.sampleDuration || 1));
@@ -1208,12 +1188,13 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   private emitEnvelopeChanged(type: EnvelopeType): void {
-    if (type !== "amp-env" && type !== "pitch-env" && type !== "filter-env") return;
     if (!this.voicePool.allVoices[0]?.getEnvelope(type)) return;
     this.envelopeStates.delete(type);
+    const state = this.getEnvelopeState(type);
+    if (type === "filter-env") this.applyPostFilterEnvelope(state);
     this.sendUpstreamMessage("envelope:changed", {
       envelopeType: type,
-      state: this.getEnvelopeState(type),
+      state,
     });
   }
 
@@ -1223,27 +1204,11 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   enableEnvelope = (envType: EnvelopeType) => {
-    if (envType === "filter-env") {
-      this.applyEnvelopeState(envType, {
-        ...this.getEnvelopeState(envType),
-        enabled: true,
-      });
-      return;
-    }
-    this.voicePool.applyToAllVoices((voice) => voice.enableEnvelope(envType));
-    this.emitEnvelopeChanged(envType);
+    this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), enabled: true });
   };
 
   disableEnvelope = (envType: EnvelopeType) => {
-    if (envType === "filter-env") {
-      this.applyEnvelopeState(envType, {
-        ...this.getEnvelopeState(envType),
-        enabled: false,
-      });
-      return;
-    }
-    this.voicePool.applyToAllVoices((voice) => voice.disableEnvelope(envType));
-    this.emitEnvelopeChanged(envType);
+    this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), enabled: false });
   };
 
   /** @deprecated Prefer getEnvelopeState() and applyEnvelopeState(). */
@@ -1257,20 +1222,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     return envelope;
   }
 
-  setEnvelopeLoop = (
-    envType: EnvelopeType,
-    loop: boolean,
-    mode: "normal" | "ping-pong" | "reverse" = "normal",
-  ) => {
-    if (envType === "filter-env") {
-      this.applyEnvelopeState(envType, {
-        ...this.getEnvelopeState(envType),
-        loop,
-      });
-      return;
-    }
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeLoop(envType, loop, mode));
-    this.emitEnvelopeChanged(envType);
+  // ponytail: dropped the loop `mode` argument - only "normal" was ever implemented.
+  setEnvelopeLoop = (envType: EnvelopeType, loop: boolean) => {
+    this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), loop });
   };
 
   setEnvelopeSync = (envType: EnvelopeType, sync: boolean) => {
@@ -1279,41 +1233,23 @@ export class SamplePlayer implements ILibInstrumentNode {
   };
 
   setEnvelopeTimeScale = (envType: EnvelopeType, timeScale: number) => {
-    if (envType === "filter-env") {
-      this.applyEnvelopeState(envType, {
-        ...this.getEnvelopeState(envType),
-        timeScale,
-      });
-      return;
-    }
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeTimeScale(envType, timeScale));
-    this.emitEnvelopeChanged(envType);
+    this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), timeScale });
   };
 
   setEnvelopeSustainPoint(envType: EnvelopeType, index: number | null) {
-    if (envType === "filter-env") {
-      const state = this.getEnvelopeState(envType);
-      this.applyEnvelopeState(envType, {
-        ...state,
-        shape: { ...state.shape, sustainIndex: index },
-      });
-      return;
-    }
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeSustainPoint(envType, index));
-    this.emitEnvelopeChanged(envType);
+    const state = this.getEnvelopeState(envType);
+    this.applyEnvelopeState(envType, {
+      ...state,
+      shape: { ...state.shape, sustainIndex: index },
+    });
   }
 
   setEnvelopeReleasePoint(envType: EnvelopeType, index: number) {
-    if (envType === "filter-env") {
-      const state = this.getEnvelopeState(envType);
-      this.applyEnvelopeState(envType, {
-        ...state,
-        shape: { ...state.shape, releaseIndex: index },
-      });
-      return;
-    }
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeReleasePoint(envType, index));
-    this.emitEnvelopeChanged(envType);
+    const state = this.getEnvelopeState(envType);
+    this.applyEnvelopeState(envType, {
+      ...state,
+      shape: { ...state.shape, releaseIndex: index },
+    });
   }
 
   updateEnvelopePoint(envType: EnvelopeType, index: number, time: number, value: number): void {
