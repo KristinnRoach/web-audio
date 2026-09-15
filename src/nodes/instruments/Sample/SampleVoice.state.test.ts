@@ -12,12 +12,10 @@ const audio = vi.hoisted(() => {
   const PARAM_NAMES = ["envGain", "playbackRate", "velocity", "loopStart", "loopEnd"];
 
   const noop = () => {};
-  /** Records ramps so the de-click ramp can be asserted without spies. */
-  const fakeParam = (name: string) =>
+  const fakeParam = () =>
     ({
       value: 1,
-      linearRampToValueAtTime: (value: number, time: number) =>
-        latest.ramps.push({ param: name, value, time }),
+      linearRampToValueAtTime: noop,
       cancelScheduledValues: noop,
       cancelAndHoldAtTime: noop,
       setValueAtTime: noop,
@@ -30,11 +28,10 @@ const audio = vi.hoisted(() => {
   const latest = {
     port: null as unknown as { postMessage: (m: any) => void; onmessage: (e: any) => void },
     posted: [] as any[],
-    ramps: [] as { param: string; value: number; time: number }[],
   };
 
   class FakeAudioWorkletNode {
-    parameters = new Map(PARAM_NAMES.map((name) => [name, fakeParam(name)]));
+    parameters = new Map(PARAM_NAMES.map((name) => [name, fakeParam()]));
     port = {
       postMessage: (msg: any) => latest.posted.push(msg),
       start: () => {},
@@ -48,7 +45,7 @@ const audio = vi.hoisted(() => {
   }
 
   class FakeGainNode {
-    gain = fakeParam("gain");
+    gain = fakeParam();
     connect() {}
     disconnect() {}
   }
@@ -68,7 +65,6 @@ const fakeBuffer = () =>
 /** A voice with no internal chain - filters, AM and feedback are not state. */
 function newVoice() {
   audio.posted = [];
-  audio.ramps = [];
   const context = { currentTime: 0, sampleRate: SAMPLE_RATE } as unknown as AudioContext;
   return new SampleVoice(context, { internalSignalChain: [] });
 }
@@ -78,7 +74,6 @@ async function loadedVoice() {
   await voice.init();
   await voice.loadLayers([fakeBuffer()]);
   audio.posted = [];
-  audio.ramps = [];
   return voice;
 }
 
@@ -162,21 +157,34 @@ describe("SampleVoice state", () => {
     expect(sentTypes().filter((t) => t === "voice:stop")).toHaveLength(1);
   });
 
-  it("reports AVAILABLE before the processor does, ramping gain over the de-click", async () => {
+  it("reports AVAILABLE before the processor does", async () => {
     const voice = await loadedVoice();
     trigger(voice);
 
     voice.stop();
 
     expect(voice.state).toBe(VoiceState.AVAILABLE);
-    expect(audio.ramps).toContainEqual({ param: "envGain", value: 0, time: 0.005 });
     expect(sentTypes()).not.toContain("voice:stop");
 
-    vi.advanceTimersByTime(6);
+    vi.runAllTimers();
     expect(audio.posted.at(-1)).toEqual({ type: "voice:stop", timestamp: 0 });
   });
 
-  it("disarms a pending stop when retriggered inside the de-click ramp", async () => {
+  it("holds a stop scheduled for a future timestamp", async () => {
+    const voice = await loadedVoice();
+    trigger(voice);
+
+    voice.stop(0.5); // context currentTime is 0 in this suite
+
+    expect(sentTypes()).not.toContain("voice:stop");
+    vi.advanceTimersByTime(499);
+    expect(sentTypes()).not.toContain("voice:stop");
+
+    vi.advanceTimersByTime(2);
+    expect(audio.posted.at(-1)).toEqual({ type: "voice:stop", timestamp: 0.5 });
+  });
+
+  it("disarms a pending stop when retriggered before it is posted", async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
     voice.stop();

@@ -6,7 +6,7 @@
  * gates `trigger()`, so AVAILABLE means "not sounding", not "playable".
  *
  * Past construction, AVAILABLE is written in exactly one place,
- * `SampleVoice.stop()`, so it always implies the de-click ramp was applied.
+ * `SampleVoice.stop()`.
  */
 export const VoiceState = {
   AVAILABLE: "AVAILABLE",

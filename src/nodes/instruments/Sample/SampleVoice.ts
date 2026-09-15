@@ -529,20 +529,17 @@ export class SampleVoice {
     return this;
   }
 
+  /**
+   * The processor cuts output as soon as it gets `voice:stop`, so a stop is a
+   * hard edge. De-click fading belongs on the processor side, where rendering
+   * actually ends - see issue #65.
+   */
   stop(timestamp = this.now): this {
     if (this.#state === VoiceState.AVAILABLE) return this;
     this.#state = VoiceState.AVAILABLE;
 
-    const deClickSeconds = 0.005;
-    const stopAt = Math.max(timestamp, this.now);
-    const envGain = this.getParam("envGain");
-    if (envGain) {
-      // param.value is only accurate for now, so pin now and ramp down to
-      // stopAt. Pinning at a future stopAt holds a stale value and steps the
-      // gain back up mid-release.
-      cancelAndPinParamValue(envGain, this.now);
-      envGain.linearRampToValueAtTime(0, stopAt + deClickSeconds);
-    }
+    const now = this.now;
+    const stopAt = Math.max(timestamp, now);
 
     if (this.#stopTimeout) clearTimeout(this.#stopTimeout);
     this.#stopTimeout = setTimeout(
@@ -550,7 +547,7 @@ export class SampleVoice {
         this.sendToProcessor({ type: "voice:stop", timestamp: stopAt });
         this.#stopTimeout = null;
       },
-      Math.max(0, (stopAt + deClickSeconds - this.now) * 1000),
+      (stopAt - now) * 1000,
     );
     return this;
   }
