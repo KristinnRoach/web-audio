@@ -79,8 +79,8 @@ async function loadedVoice() {
 
 const trigger = (voice: SampleVoice, midiNote = 60) => voice.trigger({ midiNote, velocity: 100 });
 const sentTypes = () => audio.posted.map((m) => m.type);
-const endPlayback = (startedTimestamp = 0) =>
-  audio.port.onmessage({ data: { type: "voice:ended", startedTimestamp } });
+const endPlayback = (playbackGeneration = 1) =>
+  audio.port.onmessage({ data: { type: "voice:ended", playbackGeneration } });
 
 describe("SampleVoice state", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -155,6 +155,24 @@ describe("SampleVoice state", () => {
     expect(sentTypes()).not.toContain("voice:stop");
   });
 
+  it("ignores completion from an older playback with the same timestamp", async () => {
+    const voice = await loadedVoice();
+    trigger(voice, 60);
+    voice.stop();
+    trigger(voice, 64);
+
+    const starts = audio.posted.filter((message) => message.type === "voice:start");
+    expect(starts.map(({ timestamp }) => timestamp)).toEqual([0, 0]);
+    expect(starts.map(({ playbackGeneration }) => playbackGeneration)).toEqual([1, 2]);
+
+    endPlayback(1);
+    expect(voice.state).toBe(VoiceState.PLAYING);
+    expect(voice.midiNote).toBe(64);
+
+    endPlayback(2);
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+  });
+
   it("holds a stop scheduled for a future timestamp", async () => {
     const voice = await loadedVoice();
     trigger(voice);
@@ -173,12 +191,12 @@ describe("SampleVoice state", () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
 
-    endPlayback(0);
+    endPlayback(1);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
     expect(voice.midiNote).toBeNull();
     voice.trigger({ midiNote: 64, velocity: 100, secondsFromNow: 1 });
 
-    endPlayback(0);
+    endPlayback(1);
 
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(64);

@@ -59,6 +59,7 @@ export class SampleVoice {
 
   #midiNote: number | null = null;
   #startedTimestamp: number = -1;
+  #playbackGenerationCounter = 0;
 
   #sampleDurationSeconds = 0;
 
@@ -383,6 +384,7 @@ export class SampleVoice {
     this.sendToProcessor({
       type: "voice:start",
       timestamp,
+      playbackGeneration: this.#playbackGenerationCounter,
     });
     this.sendUpstreamMessage("voice:started", {
       voice: this,
@@ -490,6 +492,7 @@ export class SampleVoice {
         assert(this.#state === VoiceState.AVAILABLE, "Only AVAILABLE voices can play");
         assert(note, "PLAYING requires note information");
         this.#clearTimeouts();
+        this.#playbackGenerationCounter++;
         this.#midiNote = note.midiNote;
         this.#startedTimestamp = note.startedTimestamp;
         break;
@@ -982,7 +985,7 @@ export class SampleVoice {
         case "voice:ended": {
           if (
             this.#state === VoiceState.AVAILABLE ||
-            data.startedTimestamp !== this.#startedTimestamp
+            data.playbackGeneration !== this.#playbackGenerationCounter
           ) {
             return;
           }

@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-p
 
 const TEST_SAMPLE_RATE = 48_000;
 const BLOCK_SIZE = 128;
+const TEST_PLAYBACK_GENERATION = 7;
 
 type WorkletPort = {
   onmessage: ((event: MessageEvent) => void) | null;
@@ -64,7 +65,11 @@ async function createProcessor(
     processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
   }
   processor.port.onmessage?.({
-    data: { type: "voice:start", timestamp: startFrame / TEST_SAMPLE_RATE },
+    data: {
+      type: "voice:start",
+      timestamp: startFrame / TEST_SAMPLE_RATE,
+      playbackGeneration: TEST_PLAYBACK_GENERATION,
+    },
   } as MessageEvent);
 
   return processor;
@@ -164,7 +169,7 @@ describe("scheduled sample start", () => {
     expect(processor.isPlaying).toBe(false);
     expect(processor.port.postMessage).toHaveBeenCalledWith({
       type: "voice:ended",
-      startedTimestamp: 0,
+      playbackGeneration: TEST_PLAYBACK_GENERATION,
     });
   });
 });
