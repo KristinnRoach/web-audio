@@ -4,7 +4,7 @@ One fact, several representations. Every desync bug in this area is two of them 
 
 ## Root cause
 
-A voice's state is owned by `SampleVoice.#state` and written synchronously at the call sites: `trigger()` to PLAYING, `release()` to RELEASING, `stop()` to AVAILABLE.
+A voice's state is owned by `SampleVoice.#state`. Host-driven transitions happen synchronously at the call sites; the processor reports the one transition only rendering can discover, when playback reaches its natural end.
 
 `SampleVoicePool` keeps four copies of that fact — `#available`, `#playing`, `#releasing`, and `#playingMidiVoiceMap` — and rebuilds them from worklet messages. Those messages lag by a round trip, so the pool's view is a stale copy of state the voice already knows.
 
@@ -14,7 +14,7 @@ The map has a second problem. It is keyed by note but invalidated per voice, and
 
 `VoiceState` is three states — AVAILABLE, PLAYING, RELEASING. Readiness is tracked separately by `#hasLoadedAudio`, since a voice can be reloaded while sounding.
 
-Worklet messages no longer write `#state`; they are advisory. `voice:stopped` ignores an echo that arrives after a retrigger, which is what used to let a late message delete the live map entry for a note and leave it sounding.
+`SampleVoice.#transitionTo` owns the invariants for all three states. Start, release, and explicit stop no longer wait for processor acknowledgements. The processor reports `voice:ended` only when it reaches the playback boundary, and `SampleVoice` turns that into the existing upstream `voice:stopped` event.
 
 ## Remaining: the pool
 

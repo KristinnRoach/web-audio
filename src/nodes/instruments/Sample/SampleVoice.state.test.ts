@@ -79,7 +79,8 @@ async function loadedVoice() {
 
 const trigger = (voice: SampleVoice, midiNote = 60) => voice.trigger({ midiNote, velocity: 100 });
 const sentTypes = () => audio.posted.map((m) => m.type);
-const stopEcho = () => audio.port.onmessage({ data: { type: "voice:stopped" } });
+const endPlayback = (startedTimestamp = 0) =>
+  audio.port.onmessage({ data: { type: "voice:ended", startedTimestamp } });
 
 describe("SampleVoice state", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -213,27 +214,63 @@ describe("SampleVoice state", () => {
     expect(sentTypes()).not.toContain("voice:stop");
   });
 
-  it("ignores a stop echo that lags a retrigger", async () => {
+  it("reports lifecycle changes without waiting for processor acknowledgements", async () => {
+    const voice = await loadedVoice();
+    const started = vi.fn();
+    const releasing = vi.fn();
+    const stopped = vi.fn();
+    voice.onMessage("voice:started", started);
+    voice.onMessage("voice:releasing", releasing);
+    voice.onMessage("voice:stopped", stopped);
+
+    trigger(voice);
+    voice.release({ releaseTime: 1 });
+    voice.stop();
+
+    expect(started).toHaveBeenCalledOnce();
+    expect(releasing).toHaveBeenCalledOnce();
+    expect(stopped).toHaveBeenCalledOnce();
+  });
+
+  it("clears the active note synchronously when stopped", async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
     voice.stop();
-    trigger(voice, 64);
 
-    stopEcho(); // echo of note 60's stop, arriving after note 64 started
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+    expect(voice.midiNote).toBeNull();
+  });
+
+  it("becomes available when playback ends in the processor", async () => {
+    const voice = await loadedVoice();
+    trigger(voice, 60);
+
+    endPlayback();
+
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+    expect(voice.midiNote).toBeNull();
+  });
+
+  it("ignores natural completion from the voice's previous note", async () => {
+    const voice = await loadedVoice();
+    trigger(voice, 60);
+    voice.stop();
+    voice.trigger({ midiNote: 64, velocity: 100, secondsFromNow: 1 });
+
+    endPlayback(0);
 
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(64);
   });
 
-  it("clears the active note on a stop echo it is waiting for", async () => {
+  it("does not clear a note triggered while layers are loading", async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
-    voice.stop();
 
-    stopEcho();
+    audio.port.onmessage({ data: { type: "voice:loaded", durationSeconds: 1 } });
 
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
-    expect(voice.midiNote).toBeNull();
+    expect(voice.state).toBe(VoiceState.PLAYING);
+    expect(voice.midiNote).toBe(60);
   });
 
   it("ends the note when new layers are loaded under it", async () => {

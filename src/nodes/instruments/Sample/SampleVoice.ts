@@ -7,7 +7,6 @@ import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events"
 
 import {
   assert,
-  cancelAndPinParamValue,
   interpolateLinearToGeometric,
   mapToRange,
   midiToPlaybackRate,
@@ -329,9 +328,8 @@ export class SampleVoice {
 
     const timestamp = this.now + secondsFromNow;
 
-    // An unloaded voice sounds nothing, yet the processor still echoes
-    // `voice:started` and never a `voice:stopped` - the pool would book it as
-    // playing and never get it back.
+    // An unloaded voice sounds nothing and cannot complete naturally, so it
+    // must not enter PLAYING.
     if (!this.#hasLoadedAudio) return null;
 
     if (this.#state !== VoiceState.AVAILABLE) {
@@ -342,10 +340,10 @@ export class SampleVoice {
 
     // A reused voice can still have a stop or release scheduled against the
     // note it just finished. Left armed, they fire into this note and cut it.
-    this.#clearTimeouts();
-    this.#state = VoiceState.PLAYING;
-    this.#startedTimestamp = timestamp;
-    this.#midiNote = midiNote;
+    this.#transitionTo(VoiceState.PLAYING, {
+      midiNote,
+      startedTimestamp: timestamp,
+    });
 
     const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
     const glideTime = options.glide?.glideTime ?? this.#pitchGlideTime;
@@ -385,6 +383,10 @@ export class SampleVoice {
     this.sendToProcessor({
       type: "voice:start",
       timestamp,
+    });
+    this.sendUpstreamMessage("voice:started", {
+      voice: this,
+      midiNote: this.#midiNote,
     });
 
     // Apply amp, filter and pitch envelopes if enabled
@@ -462,11 +464,11 @@ export class SampleVoice {
   #stopTimeout: number | null = null;
 
   #clearTimeouts() {
-    if (this.#releaseTimeout) {
+    if (this.#releaseTimeout !== null) {
       clearTimeout(this.#releaseTimeout);
       this.#releaseTimeout = null;
     }
-    if (this.#stopTimeout) {
+    if (this.#stopTimeout !== null) {
       clearTimeout(this.#stopTimeout);
       this.#stopTimeout = null;
     }
@@ -474,6 +476,30 @@ export class SampleVoice {
 
   #stopEnvelopes() {
     this.#envelopes.forEach((env) => env.stopCurrentRun());
+  }
+
+  #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
+    switch (state) {
+      case VoiceState.AVAILABLE:
+        this.#clearTimeouts();
+        this.#stopEnvelopes();
+        this.#midiNote = null;
+        break;
+
+      case VoiceState.PLAYING:
+        assert(this.#state === VoiceState.AVAILABLE, "Only AVAILABLE voices can play");
+        assert(note, "PLAYING requires note information");
+        this.#clearTimeouts();
+        this.#midiNote = note.midiNote;
+        this.#startedTimestamp = note.startedTimestamp;
+        break;
+
+      case VoiceState.RELEASING:
+        assert(this.#state === VoiceState.PLAYING, "Only PLAYING voices can release");
+        break;
+    }
+
+    this.#state = state;
   }
 
   release({ releaseTime = this.releaseTime, secondsFromNow = 0 }): this {
@@ -484,7 +510,7 @@ export class SampleVoice {
     const envGain = this.getParam("envGain");
     if (!envGain) throw new Error("Cannot release - envGain parameter is null");
 
-    this.#state = VoiceState.RELEASING;
+    this.#transitionTo(VoiceState.RELEASING);
     const timestamp = this.now + secondsFromNow;
     const playbackRate = this.getParam("playbackRate")?.value ?? 1;
 
@@ -502,6 +528,11 @@ export class SampleVoice {
     });
 
     this.sendToProcessor({ type: "voice:release", timestamp });
+    this.sendUpstreamMessage("voice:releasing", {
+      voiceId: this.nodeId,
+      voice: this,
+      midiNote: this.#midiNote,
+    });
 
     // Get longest release time of enabled envelopes
     const enabledEnvelopes = Array.from(this.#envelopes.values()).filter((env) => env.isEnabled);
@@ -536,21 +567,19 @@ export class SampleVoice {
    */
   stop(timestamp = this.now): this {
     if (this.#state === VoiceState.AVAILABLE) return this;
-    this.#state = VoiceState.AVAILABLE;
-
-    // Clearing #stopTimeout here is only reachable in theory - trigger() is the
-    // sole way back out of AVAILABLE and already clears it. The call is here to
-    // disarm #releaseTimeout, which release() leaves pending for the whole tail.
-    this.#clearTimeouts();
+    const midiNote = this.#midiNote;
+    this.#transitionTo(VoiceState.AVAILABLE);
+    this.sendUpstreamMessage("voice:stopped", {
+      voiceId: this.nodeId,
+      voice: this,
+      midiNote,
+    });
 
     const now = this.now;
     const stopAt = Math.max(timestamp, now);
 
-    // Deferred even when stopAt is now, which is what lets a synchronous
-    // stop()-then-trigger() coalesce: the timer cannot fire mid-task, so
-    // trigger()'s #clearTimeouts() always wins and the processor gets only
-    // voice:start, which resets playback state anyway. Sending immediately
-    // would add a redundant stop/start round trip on every stolen voice.
+    // Deferred even when stopAt is now, which lets a synchronous
+    // stop()-then-trigger() coalesce into only voice:start.
     this.#stopTimeout = setTimeout(
       () => {
         // ponytail: the processor ignores this timestamp and stops on receipt,
@@ -940,8 +969,6 @@ export class SampleVoice {
           break;
 
         case "voice:loaded":
-          this.#midiNote = null;
-
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
 
@@ -952,44 +979,23 @@ export class SampleVoice {
           }
           break;
 
-        case "voice:started":
-          data = {
-            voice: this,
-            midiNote: this.#midiNote,
-          };
-          break;
-
-        case "voice:stopped":
-          // The echo lags the stop that caused it by a round trip. If the voice
-          // was retriggered in that window this is about the previous note, and
-          // acting on it would zero the gain of the live one.
-          if (this.#state !== VoiceState.AVAILABLE) return;
-
-          this.#stopEnvelopes();
-
-          const envGain = this.getParam("envGain");
-          if (envGain) {
-            cancelAndPinParamValue(envGain, this.now, 0);
+        case "voice:ended": {
+          if (
+            this.#state === VoiceState.AVAILABLE ||
+            data.startedTimestamp !== this.#startedTimestamp
+          ) {
+            return;
           }
-
-          this.#clearTimeouts();
-
+          const midiNote = this.#midiNote;
+          this.#transitionTo(VoiceState.AVAILABLE);
+          type = "voice:stopped";
           data = {
             voiceId: this.nodeId,
             voice: this,
-            midiNote: this.#midiNote,
-          };
-
-          this.#midiNote = null;
-          break;
-
-        case "voice:releasing":
-          data = {
-            voiceId: this.nodeId,
-            voice: this,
-            midiNote: this.#midiNote,
+            midiNote,
           };
           break;
+        }
 
         case "loop:enabled":
           break;
