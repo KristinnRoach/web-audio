@@ -143,6 +143,22 @@ describe("SampleVoice state", () => {
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
+  it("disarms the release timer when stopped mid-tail", async () => {
+    const voice = await loadedVoice();
+    trigger(voice);
+    voice.release({ releaseTime: 0.1 });
+    const armedDuringTail = vi.getTimerCount();
+
+    voice.stop();
+
+    // stop() swaps the release timer for its own, so the count holds. Left
+    // armed it would sit out the rest of the tail - harmless, since the
+    // callback no-ops on AVAILABLE, but it keeps a dead voice's timer alive.
+    expect(vi.getTimerCount()).toBe(armedDuringTail);
+    vi.runAllTimers();
+    expect(sentTypes().filter((t) => t === "voice:stop")).toHaveLength(1);
+  });
+
   it("does not stop a voice that is already stopped", async () => {
     const voice = await loadedVoice();
     trigger(voice);

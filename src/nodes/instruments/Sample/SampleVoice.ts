@@ -538,12 +538,24 @@ export class SampleVoice {
     if (this.#state === VoiceState.AVAILABLE) return this;
     this.#state = VoiceState.AVAILABLE;
 
+    // Clearing #stopTimeout here is only reachable in theory - trigger() is the
+    // sole way back out of AVAILABLE and already clears it. The call is here to
+    // disarm #releaseTimeout, which release() leaves pending for the whole tail.
+    this.#clearTimeouts();
+
     const now = this.now;
     const stopAt = Math.max(timestamp, now);
 
-    if (this.#stopTimeout) clearTimeout(this.#stopTimeout);
+    // Deferred even when stopAt is now, which is what lets a synchronous
+    // stop()-then-trigger() coalesce: the timer cannot fire mid-task, so
+    // trigger()'s #clearTimeouts() always wins and the processor gets only
+    // voice:start, which resets playback state anyway. Sending immediately
+    // would add a redundant stop/start round trip on every stolen voice.
     this.#stopTimeout = setTimeout(
       () => {
+        // ponytail: the processor ignores this timestamp and stops on receipt,
+        // so a future stopAt is only as accurate as the host timer. Sample
+        // accuracy needs the processor to own stop timing - see issue #65.
         this.sendToProcessor({ type: "voice:stop", timestamp: stopAt });
         this.#stopTimeout = null;
       },
