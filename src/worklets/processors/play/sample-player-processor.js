@@ -65,7 +65,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       durationSeconds,
       zeroCrossings,
       playbackDirection,
-      playbackGeneration,
+      triggerId,
     } = event.data;
 
     switch (type) {
@@ -110,7 +110,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case "voice:start":
         this.isReleasing = false;
         this.isPlaying = true;
-        this.playbackGeneration = playbackGeneration;
+        this.triggerId = triggerId;
         this.loopCount = 0;
 
         // will be set in process() using parameters
@@ -188,7 +188,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isPlaying = false;
     this.isReleasing = false;
     this.pendingStartFrame = 0;
-    this.playbackGeneration = 0;
+    this.triggerId = 0;
     this.loopEnabled = false;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
@@ -812,11 +812,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.playbackPosition <= loopRange.loopEndSamples;
 
       if ((shouldStopForward || shouldStopReverse) && !(this.loopEnabled && isWithinLoop)) {
-        const endedPlaybackGeneration = this.playbackGeneration;
+        const endedTriggerId = this.triggerId;
         this.#stop();
         this.port.postMessage({
           type: "voice:ended",
-          playbackGeneration: endedPlaybackGeneration,
+          triggerId: endedTriggerId,
         });
         return true;
       }

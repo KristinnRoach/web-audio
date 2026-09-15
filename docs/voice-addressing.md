@@ -16,6 +16,8 @@ The map has a second problem. It is keyed by note but invalidated per voice, and
 
 `SampleVoice.#transitionTo` owns the invariants for all three states. Start, release, and explicit stop no longer wait for processor acknowledgements. The processor reports `voice:ended` only when it reaches the playback boundary, and `SampleVoice` turns that into the existing upstream `voice:stopped` event.
 
+A `voice:ended` message is correlated with the trigger that caused it by `triggerId`, a counter `SampleVoice` bumps on each transition to PLAYING and echoes through the processor. A retrigger during the round trip therefore cannot be ended by the previous note's message.
+
 ## Done: the pool
 
 `SampleVoicePool` now keeps only `#allVoices` and derives lifecycle facts by scan — polyphony is 8–64:

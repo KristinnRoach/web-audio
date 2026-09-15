@@ -79,8 +79,8 @@ async function loadedVoice() {
 
 const trigger = (voice: SampleVoice, midiNote = 60) => voice.trigger({ midiNote, velocity: 100 });
 const sentTypes = () => audio.posted.map((m) => m.type);
-const endPlayback = (playbackGeneration = 1) =>
-  audio.port.onmessage({ data: { type: "voice:ended", playbackGeneration } });
+const endPlayback = (triggerId = 1) =>
+  audio.port.onmessage({ data: { type: "voice:ended", triggerId } });
 
 describe("SampleVoice state", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -163,7 +163,7 @@ describe("SampleVoice state", () => {
 
     const starts = audio.posted.filter((message) => message.type === "voice:start");
     expect(starts.map(({ timestamp }) => timestamp)).toEqual([0, 0]);
-    expect(starts.map(({ playbackGeneration }) => playbackGeneration)).toEqual([1, 2]);
+    expect(starts.map(({ triggerId }) => triggerId)).toEqual([1, 2]);
 
     endPlayback(1);
     expect(voice.state).toBe(VoiceState.PLAYING);
