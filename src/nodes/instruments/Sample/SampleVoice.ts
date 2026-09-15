@@ -58,7 +58,7 @@ export class SampleVoice {
   // the round trip still arrives after the layers are in place.
   #hasLoadedAudio = false;
 
-  #activeMidiNote: number | null = null;
+  #midiNote: number | null = null;
   #startedTimestamp: number = -1;
 
   #sampleDurationSeconds = 0;
@@ -197,7 +197,7 @@ export class SampleVoice {
       this.#am_lfo = new LFO(this.context);
       this.#am_lfo.setWaveform("square");
       this.#am_lfo.setDepth(0);
-      this.#am_lfo.setMusicalNote((this.#activeMidiNote ?? 60) + this.#am_lfo_semitone_offset);
+      this.#am_lfo.setMusicalNote((this.#midiNote ?? 60) + this.#am_lfo_semitone_offset);
       this.#am_lfo.connect(this.#am_gain.gain);
     }
 
@@ -345,7 +345,7 @@ export class SampleVoice {
     this.#clearTimeouts();
     this.#state = VoiceState.PLAYING;
     this.#startedTimestamp = timestamp;
-    this.#activeMidiNote = midiNote;
+    this.#midiNote = midiNote;
 
     const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
     const glideTime = options.glide?.glideTime ?? this.#pitchGlideTime;
@@ -407,7 +407,7 @@ export class SampleVoice {
       timestamp,
     });
 
-    return this.#activeMidiNote;
+    return this.#midiNote;
   }
 
   applyEnvelopes(timestamp: number, playbackRate: number, velocity?: number, midiNote?: number) {
@@ -452,7 +452,7 @@ export class SampleVoice {
 
     this.sendUpstreamMessage("sample-envelopes:trigger", {
       voiceId: this.nodeId,
-      midiNote: this.#activeMidiNote,
+      midiNote: this.#midiNote,
       envDurations,
       loopEnabled,
     });
@@ -497,7 +497,7 @@ export class SampleVoice {
       env.releaseEnvelope(param, timestamp, {
         playbackRate,
         voiceId: this.nodeId,
-        midiNote: this.#activeMidiNote ?? 60, // not used
+        midiNote: this.#midiNote ?? 60, // not used
       });
     });
 
@@ -573,7 +573,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (this.#activeMidiNote === null || !this.#hpf || this.#keytrackHPFAmount <= 0) {
+    if (this.#midiNote === null || !this.#hpf || this.#keytrackHPFAmount <= 0) {
       return;
     }
 
@@ -613,7 +613,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (this.#activeMidiNote === null || !this.#lpf || this.#keytrackLPFAmount <= 0) {
+    if (this.#midiNote === null || !this.#lpf || this.#keytrackLPFAmount <= 0) {
       return;
     }
 
@@ -848,8 +848,8 @@ export class SampleVoice {
     const timestamp = this.now;
     const glideTime = 0.1;
 
-    if (this.#activeMidiNote !== null) {
-      const rate = midiToPlaybackRate(this.#activeMidiNote);
+    if (this.#midiNote !== null) {
+      const rate = midiToPlaybackRate(this.#midiNote);
       this.getParam("playbackRate")?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
       this.#updateHPFCutoffForPlaybackRate(rate, timestamp, {
         glideTime,
@@ -919,7 +919,7 @@ export class SampleVoice {
         (msg) => ({
           ...msg,
           voiceId: this.nodeId,
-          midiNote: this.#activeMidiNote,
+          midiNote: this.#midiNote,
         }),
       );
     });
@@ -940,7 +940,7 @@ export class SampleVoice {
           break;
 
         case "voice:loaded":
-          this.#activeMidiNote = null;
+          this.#midiNote = null;
 
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
@@ -955,7 +955,7 @@ export class SampleVoice {
         case "voice:started":
           data = {
             voice: this,
-            midiNote: this.#activeMidiNote,
+            midiNote: this.#midiNote,
           };
           break;
 
@@ -977,17 +977,17 @@ export class SampleVoice {
           data = {
             voiceId: this.nodeId,
             voice: this,
-            midiNote: this.#activeMidiNote,
+            midiNote: this.#midiNote,
           };
 
-          this.#activeMidiNote = null;
+          this.#midiNote = null;
           break;
 
         case "voice:releasing":
           data = {
             voiceId: this.nodeId,
             voice: this,
-            midiNote: this.#activeMidiNote,
+            midiNote: this.#midiNote,
           };
           break;
 
@@ -1043,7 +1043,7 @@ export class SampleVoice {
   }
 
   get isActive() {
-    return this.#activeMidiNote !== null;
+    return this.#midiNote !== null;
   }
 
   get feedback() {
@@ -1051,7 +1051,7 @@ export class SampleVoice {
   }
 
   get currMidiNote(): number | null {
-    return this.#activeMidiNote;
+    return this.#midiNote;
   }
 
   get hpf() {
@@ -1082,8 +1082,8 @@ export class SampleVoice {
     return this.context.currentTime;
   }
 
-  get activeNoteId(): number | string | null {
-    return this.#activeMidiNote;
+  get midiNote(): number | null {
+    return this.#midiNote;
   }
 
   get triggerTimestamp(): number {
@@ -1129,7 +1129,7 @@ export class SampleVoice {
       value: enabled,
     });
 
-    if (!enabled && this.#activeMidiNote !== null) this.release({});
+    if (!enabled && this.#midiNote !== null) this.release({});
     return this;
   }
 
@@ -1246,8 +1246,8 @@ export class SampleVoice {
     );
     const semitoneOffset = offset * 12; // convert octaves to semitones
     this.#am_lfo_semitone_offset = semitoneOffset;
-    if (this.#am_lfo && this.#activeMidiNote !== null) {
-      this.#am_lfo.setMusicalNote(this.#activeMidiNote + semitoneOffset);
+    if (this.#am_lfo && this.#midiNote !== null) {
+      this.#am_lfo.setMusicalNote(this.#midiNote + semitoneOffset);
     }
   }
 
