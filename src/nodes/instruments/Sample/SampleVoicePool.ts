@@ -18,8 +18,6 @@ export class SampleVoicePool implements LibNode {
   #allVoices: SampleVoice[] = [];
   #loaded = new Set<NodeID>();
 
-  #gainReductionScalar = 1; // Reduces gain based on number of playing voices
-
   constructor(
     context: AudioContext,
     polyphony: number,
@@ -100,10 +98,6 @@ export class SampleVoicePool implements LibNode {
   #envelopeCreatedMap = new Map<string, Set<SampleVoice>>();
 
   #setupMessageHandling(voice: SampleVoice) {
-    ["voice:started", "voice:releasing", "voice:stopped"].forEach((type) => {
-      voice.onMessage(type, () => this.#updateVoiceGains());
-    });
-
     voice.onMessage("voice:initialized", (msg: Message) => {
       this.#initializedVoices.add(msg.voice);
 
@@ -283,27 +277,6 @@ export class SampleVoicePool implements LibNode {
       return;
     }
     voices.forEach(fn);
-  }
-
-  #GAIN_REDUCTION_SENSITIVITY = 0.4;
-
-  #updateVoiceGains() {
-    const activeCount = this.#allVoices.filter(
-      (voice) => voice.state !== VoiceState.AVAILABLE,
-    ).length;
-
-    if (activeCount === 0) {
-      this.#gainReductionScalar = 1;
-      return;
-    }
-
-    this.#gainReductionScalar =
-      1 / (1 + Math.log10(activeCount) * this.#GAIN_REDUCTION_SENSITIVITY);
-
-    this.#allVoices.forEach((voice) => {
-      if (voice.state === VoiceState.PLAYING || voice.state === VoiceState.RELEASING)
-        voice.setMasterGain(this.#gainReductionScalar);
-    });
   }
 
   debug() {

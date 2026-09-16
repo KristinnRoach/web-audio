@@ -10,7 +10,7 @@ Implementation: `sample-player-processor.js` (`layers[]`, `buffer` getter, `voic
 - Each `SampleVoice` runs **two** worklets: the player, plus a feedback delay inside `HarmonicFeedback` (`worklet-factory.ts:10`). Full voice graph is 8 nodes. At 16-voice polyphony that's 128 nodes / 32 worklets per instrument.
 - `this.buffer` in the processor had only 3 write sites and 11 read sites. Replacing the writes with a `layers[]` array and adding `get buffer() { return this.layers[0] }` makes every read site mean "authority layer" for free.
 - `parameterDescriptors` is a static getter, so per-layer `AudioParam`s can't be created per instance. Per-layer gain is either a fixed `layerGain0..N` descriptor set or postMessage scalars.
-- `#gainReductionScalar` already owns `voice.setMasterGain()` and rewrites it on every voice-state change (`SampleVoicePool.ts:315`). Anything parked there gets stomped.
+- `#gainReductionScalar` used to own `voice.setMasterGain()` and rewrote it on every voice-state change, so anything parked there got stomped. **No longer true** — polyphony gain compensation was removed and nothing writes `masterGain` now. It is free if a future layer feature wants it.
 
 ## Decisions
 
@@ -20,7 +20,7 @@ Implementation: `sample-player-processor.js` (`layers[]`, `buffer` getter, `voic
 - **`loadLayers(buffers[])` is atomic.** Replaces the whole set. `loadSample(b)` ≡ `loadLayers([b])`, so it clears layers 1-3. `loadLayer(i, b)` extends later as sugar for `loadLayers(layers.with(i, b))`.
 - **`MAX_LAYERS = 4`** — the number that keeps fixed `layerGain0..3` descriptors viable later.
 - **Preprocessing runs per layer.** Independent `trimSilence` aligns each layer to its own first non-silence, so attacks line up.
-- **`layerGain = 1/L`**, its own factor in the processor (not `masterGain`, see above). Correct for coherent layers, 3dB conservative otherwise.
+- **`layerGain = 1/L`**, its own factor in the processor rather than folded into `masterGain`, so layer count and per-voice gain stay independently readable. (`masterGain` was unavailable when this was decided; it since freed up, but keeping the factors separate is still the clearer split.) Correct for coherent layers, 3dB conservative otherwise.
 - **Automated coverage is deferred to [#7](https://github.com/KristinnRoach/web-audio/issues/7).** The testing architecture needs a maintainable AudioWorklet/browser harness before adding tests likely to be refactored with this first-draft API. Verified by hand in the locally linked consuming app, currently the package's only real consumer.
 
 ## Deferred
