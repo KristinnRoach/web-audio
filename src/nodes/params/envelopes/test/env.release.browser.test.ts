@@ -41,6 +41,11 @@ describe("CustomEnvelope - #continueFromPoint", () => {
       cancelScheduledValues: vi.fn(),
       setValueAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
+      exponentialRampToValueAtTime: vi.fn(),
+      setTargetAtTime: vi.fn(),
+      cancelAndHoldAtTime: vi.fn(),
+      minValue: 0,
+      maxValue: 22050,
       setValueCurveAtTime: vi.fn(),
     } as unknown as AudioParam;
 
@@ -191,6 +196,11 @@ describe("CustomEnvelope - auto-release when loop is turned off mid-note", () =>
       cancelScheduledValues: vi.fn(),
       setValueAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
+      exponentialRampToValueAtTime: vi.fn(),
+      setTargetAtTime: vi.fn(),
+      cancelAndHoldAtTime: vi.fn(),
+      minValue: 0,
+      maxValue: 22050,
       setValueCurveAtTime: vi.fn(),
     } as unknown as AudioParam;
 

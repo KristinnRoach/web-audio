@@ -162,6 +162,11 @@ describe("CustomEnvelope", () => {
       cancelScheduledValues: vi.fn(),
       cancelAndHoldAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
+      exponentialRampToValueAtTime: vi.fn(),
+      setTargetAtTime: vi.fn(),
+      cancelAndHoldAtTime: vi.fn(),
+      minValue: 0,
+      maxValue: 22050,
     };
 
     const envelope = new CustomEnvelope(
@@ -243,6 +248,11 @@ describe("CustomEnvelope", () => {
         cancelScheduledValues: vi.fn(),
         cancelAndHoldAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
+        setTargetAtTime: vi.fn(),
+        cancelAndHoldAtTime: vi.fn(),
+        minValue: 0,
+        maxValue: 22050,
       };
 
       const envelope = new CustomEnvelope(
@@ -347,6 +357,11 @@ describe("CustomEnvelope", () => {
         cancelScheduledValues: vi.fn(),
         cancelAndHoldAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
+        setTargetAtTime: vi.fn(),
+        cancelAndHoldAtTime: vi.fn(),
+        minValue: 0,
+        maxValue: 22050,
       };
 
       envelope.triggerEnvelope(mockAudioParam as any, 0, {

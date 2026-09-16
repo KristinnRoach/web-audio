@@ -5,8 +5,10 @@ import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events"
 
 import { EnvelopePoint, EnvelopeState, EnvelopeType } from "./env-types";
 import { EnvelopeData } from "./EnvelopeData";
+import { createEnvelopeScheduler, type EnvelopeScheduler } from "./Envelope";
+import { bindEnvelope } from "./bindEnvelope";
 import { LibNode } from "@/nodes/LibNode";
-import { assert, cancelAndPinParamValue, clamp } from "@/utils";
+import { assert } from "@/utils";
 
 // ===== CUSTOM ENVELOPE  =====
 export class CustomEnvelope implements LibNode {
@@ -27,6 +29,19 @@ export class CustomEnvelope implements LibNode {
   #currentPlaybackRate = 1;
 
   #timeScale = 1;
+
+  /** Rebuilt from the stored state on every trigger, so the shape it plays is never stale. */
+  #scheduler: EnvelopeScheduler | null = null;
+  /** The note currently being played, or null between notes. */
+  #active: {
+    audioParam: AudioParam;
+    startTime: number;
+    options: { baseValue: number; playbackRate: number; voiceId?: string; midiNote?: number };
+  } | null = null;
+  #isReleased = false;
+  #autoReleaseSuppressed = false;
+  #autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  #loopMessageTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     context: AudioContext,
@@ -75,22 +90,18 @@ export class CustomEnvelope implements LibNode {
   // Delegate data operations to EnvelopeData
   addPoint = (time: number, value: number, curve?: "linear" | "exponential"): void => {
     this.#data.addPoint(time, value, curve);
-    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   };
 
   deletePoint = (index: number): void => {
     this.#data.deletePoint(index);
-    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   };
 
   updatePoint = (index: number, time?: number, value?: number) => {
     this.#data.updatePoint(index, time, value);
-    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   };
 
   setDuration(seconds: number) {
     this.#data.setDurationSeconds(seconds);
-    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
     return this;
   }
 
@@ -181,7 +192,6 @@ export class CustomEnvelope implements LibNode {
     this.#syncedToPlaybackRate = state.playbackRateSync;
     this.setLoopEnabled(state.loop);
     this.#isEnabled = state.enabled;
-    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   }
 
   // ===== AUDIO OPERATIONS =====
@@ -220,64 +230,37 @@ export class CustomEnvelope implements LibNode {
     return this.#getScaledDuration(this.#data.startPointIndex, index);
   }
 
-  #getCurveSamplingRate(duration: number): number {
-    // Higher sample rate for filter envelopes (logarithmic) for smoother curves
-    if (this.envelopeType === "filter-env") {
-      return duration < 1 ? 1000 : 750;
-    }
-    if (this.#data.hasSharpTransitions) {
-      return 1000;
-    }
-    return duration < 1 ? 500 : 250;
+  // ===== AUDIO SCHEDULING =====
+
+  /**
+   * Resolves the stored state against one parameter and one note.
+   *
+   * The ceiling only means anything to a filter envelope, which sweeps from the
+   * resting cutoff up towards it. `maxValue` on a cutoff is the filter's own limit.
+   */
+  #bind(audioParam: AudioParam, baseValue: number, playbackRate: number) {
+    return bindEnvelope(this.getState(), this.envelopeType, {
+      baseValue,
+      playbackRate,
+      ceiling: audioParam.maxValue,
+    });
   }
 
-  #generateCurve(
-    scaledDuration: number,
-    endTime = this.baseDuration,
-    options: {
-      baseValue: number;
-      minValue: number;
-      maxValue: number;
-      playbackRate?: number;
-      startFromValue?: number;
-    },
-    fromTime = 0,
-  ): Float32Array {
-    const sampleRate = this.#getCurveSamplingRate(scaledDuration);
-    const numSamples = Math.max(2, Math.floor(scaledDuration * sampleRate));
-    const curve = new Float32Array(numSamples);
+  /** Schedules the bound shape from the current state onto the active parameter. */
+  #schedule() {
+    if (!this.#active) return;
+    const { audioParam, startTime, options } = this.#active;
 
-    const { baseValue, minValue, maxValue, startFromValue } = options;
+    this.#scheduler?.dispose();
 
-    // Precompute log scaling for filter-env
-    let minLog: number | undefined, maxLog: number | undefined, logRange: number | undefined;
-    if (this.envelopeType === "filter-env") {
-      minLog = Math.log(baseValue);
-      maxLog = Math.log(maxValue);
-      logRange = maxLog - minLog;
-    }
+    const { envelope, options: scheduleOptions } = this.#bind(
+      audioParam,
+      options.baseValue,
+      options.playbackRate,
+    );
 
-    for (let i = 0; i < numSamples; i++) {
-      const normalizedProgress = i / (numSamples - 1);
-      const absoluteTime = fromTime + normalizedProgress * (endTime - fromTime);
-
-      let envValue = this.#data.interpolateValueAtTime(absoluteTime); // normalized [0,1]
-
-      // Blend from startFromValue to envelope trajectory if specified
-      if (startFromValue !== undefined && i === 0) {
-        envValue = startFromValue;
-      } else if (this.envelopeType === "filter-env" && minLog && logRange) {
-        // Use precomputed log values
-        envValue = Math.exp(minLog + logRange * envValue);
-        // envValue = mapToRange(envValue, 0, 1, baseValue, maxValue);
-      } else if (baseValue !== 1) {
-        envValue = envValue * baseValue;
-      }
-
-      curve[i] = clamp(envValue, minValue, maxValue);
-    }
-
-    return curve;
+    this.#scheduler = createEnvelopeScheduler(this.#context, audioParam, envelope);
+    this.#scheduler.trigger(Math.max(this.#context.currentTime, startTime), scheduleOptions);
   }
 
   triggerEnvelope(
@@ -290,47 +273,32 @@ export class CustomEnvelope implements LibNode {
       midiNote?: number;
     } = { baseValue: 1, playbackRate: 1 },
   ) {
-    // Firefox fallback - use extremely simple envelope behavior
-    if (this.#isFirefox) {
-      try {
-        const now = this.#context.currentTime;
-        const safeStart = Math.max(now + 0.001, startTime);
-
-        // Cancel all previous scheduling
-        cancelAndPinParamValue(audioParam, safeStart);
-
-        // Simple attack and decay
-        audioParam.linearRampToValueAtTime(options.baseValue * 0.8, safeStart + 0.01);
-        audioParam.linearRampToValueAtTime(options.baseValue * 0.5, safeStart + 0.1);
-
-        console.debug("Firefox trigger envelope - simple linear ramps");
-      } catch (error) {
-        console.debug("Firefox trigger envelope failed silently:", error);
-      }
-
-      // Still track state for release
-      this.#isReleased = false;
-      this.#autoReleaseSuppressed = false;
-      this.#currentPlaybackRate = options.playbackRate;
-      return;
-    }
-
-    const runId = ++this.#runId;
     this.#isReleased = false;
     this.#autoReleaseSuppressed = false;
     this.#currentPlaybackRate = options.playbackRate;
+    this.#active = { audioParam, startTime, options };
 
-    // Store active envelope state for dynamic sustain
-    this.#activeEnvelope = {
-      audioParam,
-      startTime,
-      options,
-    };
+    this.#schedule();
 
-    if (this.#loopEnabled) {
-      this.#startLoopingEnv(audioParam, startTime, options, runId);
-    } else {
-      this.#startSingleEnv(audioParam, startTime, options, runId);
+    const duration = this.#getScaledDuration(
+      this.#data.startPointIndex,
+      this.sustainEnabled
+        ? (this.sustainPointIndex ?? this.#data.endPointIndex)
+        : this.#data.endPointIndex,
+      options.playbackRate,
+      this.#timeScale,
+    );
+
+    if (options.voiceId !== undefined) {
+      this.sendUpstreamMessage(`${this.envelopeType}:trigger`, {
+        voiceId: options.voiceId,
+        midiNote: options.midiNote,
+        duration,
+        sustainEnabled: this.sustainEnabled,
+        loopEnabled: this.#loopEnabled,
+        sustainPoint: this.sustainPoint,
+        releasePoint: this.releasePoint,
+      });
     }
 
     if (!this.releasePoint) {
@@ -338,14 +306,27 @@ export class CustomEnvelope implements LibNode {
       return;
     }
 
-    // Auto-release for held notes with no explicit note-off.
-    // Skipped while sustaining or looping - both hold indefinitely until released.
-    setTimeout(() => {
-      if (runId !== this.#runId) return;
+    this.#startLoopMessages(startTime, options);
+    this.#armAutoRelease(options);
+  }
+
+  /**
+   * Auto-release for a held note with no explicit note-off: the shape has run past its
+   * release point on its own, so the voice is told to release.
+   *
+   * A timer rather than audio scheduling because nothing about the parameter changes
+   * here. This is a notification to JS, and only the clock can deliver it.
+   */
+  #armAutoRelease(options: { voiceId?: string; midiNote?: number }) {
+    this.#clearAutoRelease();
+
+    // Sustain and loop both hold indefinitely, so neither has a deadline to arm.
+    this.#autoReleaseTimer = setTimeout(() => {
+      this.#autoReleaseTimer = null;
       if (this.sustainEnabled || this.#isReleased) return;
 
       if (this.#loopEnabled) {
-        // Loop is still holding the note. Remember that this deadline passed so
+        // The loop is still holding the note. Remember the deadline passed so
         // setLoopEnabled can catch up if the loop is switched off mid-note.
         this.#autoReleaseSuppressed = true;
         return;
@@ -355,109 +336,11 @@ export class CustomEnvelope implements LibNode {
     }, this.effectiveReleaseStartTime * 1000);
   }
 
-  #startSingleEnv(
-    audioParam: AudioParam,
-    startTime: number,
-    options: {
-      baseValue: number;
-      playbackRate: number;
-      voiceId?: string;
-      midiNote?: number;
-    },
-    runId: number,
-  ) {
-    const endIdx = this.sustainEnabled
-      ? (this.sustainPointIndex ?? this.points.length - 1)
-      : this.points.length - 1;
-
-    const scaledDuration = this.#getScaledDuration(
-      0,
-      endIdx,
-      options.playbackRate,
-      this.#timeScale,
-    );
-
-    const curve = this.#generateCurve(
-      scaledDuration,
-      this.sustainEnabled ? (this.sustainPoint?.time ?? this.baseDuration) : this.baseDuration,
-      {
-        ...options,
-        minValue: audioParam.minValue,
-        maxValue: audioParam.maxValue,
-        startFromValue: audioParam.value,
-      },
-    );
-
-    if (options.voiceId !== undefined) {
-      this.sendUpstreamMessage(`${this.envelopeType}:trigger`, {
-        voiceId: options.voiceId,
-        midiNote: options.midiNote,
-        duration: scaledDuration,
-        sustainEnabled: this.sustainEnabled,
-        loopEnabled: false,
-        sustainPoint: this.sustainPoint,
-        releasePoint: this.releasePoint,
-        // curveData: curve,
-      });
-    }
-
-    const timestamp = this.#context.currentTime;
-    const safeStart = Math.max(timestamp, startTime);
-
-    if (scaledDuration < 0.005) {
-      audioParam.linearRampToValueAtTime(curve[curve.length - 1], safeStart + scaledDuration);
-      return;
-    }
-
-    try {
-      cancelAndPinParamValue(audioParam, safeStart, curve[0]);
-      audioParam.setValueCurveAtTime(curve, safeStart, scaledDuration);
-
-      // Clear active envelope state when envelope completes (if not sustained)
-      if (!this.sustainEnabled) {
-        setTimeout(
-          () => {
-            if (runId !== this.#runId) return;
-            this.#activeEnvelope = null;
-          },
-          scaledDuration * 1000 + 100,
-        ); // Small buffer to ensure completion
-      }
-    } catch {
-      console.debug("Failed to apply envelope curve due to rapid fire.");
-      try {
-        cancelAndPinParamValue(audioParam, safeStart, curve[0]);
-
-        audioParam.linearRampToValueAtTime(curve[curve.length - 1], safeStart + scaledDuration);
-
-        // Clear active envelope state for fallback case too
-        if (!this.sustainEnabled) {
-          setTimeout(
-            () => {
-              if (runId !== this.#runId) return;
-              this.#activeEnvelope = null;
-            },
-            scaledDuration * 1000 + 100,
-          );
-        }
-      } catch {
-        try {
-          audioParam.setValueAtTime(curve[curve.length - 1], safeStart);
-          this.#activeEnvelope = null; // Clear immediately for instant set
-        } catch {
-          // Silent fail
-          this.#activeEnvelope = null;
-        }
-      }
-    }
+  #clearAutoRelease() {
+    if (this.#autoReleaseTimer === null) return;
+    clearTimeout(this.#autoReleaseTimer);
+    this.#autoReleaseTimer = null;
   }
-
-  #isReleased = false;
-  #autoReleaseSuppressed = false;
-  #isCurrentlyLooping = false;
-  #loopUpdateFlag = false;
-  #runId = 0;
-  #shouldLoop = () => this.#loopEnabled && !this.#isReleased;
 
   #sendAutoRelease(options?: { voiceId?: string; midiNote?: number }) {
     this.#autoReleaseSuppressed = false;
@@ -473,196 +356,54 @@ export class CustomEnvelope implements LibNode {
     }
   }
 
-  // Active envelope tracking for dynamic sustain
-  #activeEnvelope: {
-    audioParam: AudioParam;
-    startTime: number;
-    options: {
-      baseValue: number;
-      playbackRate: number;
-      voiceId?: string;
-      midiNote?: number;
-    };
-  } | null = null;
+  /**
+   * Per-cycle notification so a UI can follow a looping envelope.
+   *
+   * ponytail: a self-correcting timer rather than a callback on the scheduler. The
+   * audio side already loops without help; this only drives a display, so it re-reads
+   * the audio clock each pass instead of counting its own ticks and drifting. Move it
+   * onto a scheduler callback if a consumer ever needs sample-accurate cycle edges.
+   */
+  #startLoopMessages(startTime: number, options: { voiceId?: string; midiNote?: number }) {
+    this.#stopLoopMessages();
+    if (!this.#loopEnabled || options.voiceId === undefined) return;
 
-  #startLoopingEnv(
-    audioParam: AudioParam,
-    startTime: number,
-    options: {
-      baseValue: number;
-      playbackRate: number;
-      voiceId?: string;
-      midiNote?: number;
-      minValue?: number;
-      maxValue?: number;
-    },
-    runId: number,
-  ) {
-    const shouldStopScheduling = () => {
-      if (runId !== this.#runId) return true;
-      if (this.#shouldLoop()) return false;
-
-      this.#isCurrentlyLooping = false;
-      return true;
-    };
-
-    if (shouldStopScheduling()) return;
-
-    let cachedDuration = this.#getScaledDuration(
+    const duration = this.#getScaledDuration(
       this.#data.startPointIndex,
       this.#data.endPointIndex,
-      options.playbackRate,
+      this.#currentPlaybackRate,
       this.#timeScale,
     );
+    if (duration <= 0) return;
 
-    let cachedCurve = this.#generateCurve(cachedDuration, this.baseDuration, {
-      ...options,
-      minValue: audioParam.minValue,
-      maxValue: audioParam.maxValue,
-      startFromValue: audioParam.value,
-    });
+    let cycle = 1;
+    const tick = () => {
+      if (this.#isReleased || !this.#loopEnabled) return this.#stopLoopMessages();
 
-    // Send initial trigger message
-    if (options.voiceId !== undefined) {
-      this.sendUpstreamMessage(`${this.envelopeType}:trigger`, {
+      this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
         voiceId: options.voiceId,
         midiNote: options.midiNote,
-        duration: cachedDuration,
-        sustainEnabled: false,
-        loopEnabled: true,
-        sustainPoint: this.sustainPoint,
-        releasePoint: this.releasePoint,
+        duration,
       });
-    }
 
-    let phase = Math.max(this.#context.currentTime, startTime);
-    const lookAhead = Math.max(0.15, Math.min(cachedDuration * 3, 0.5));
-    const safetyBuffer = 0.005;
-
-    let lastScheduledEnd = 0;
-    let debugOverlapCount = 0;
-
-    this.#isCurrentlyLooping = true;
-    let isScheduling = false;
-    let nextScheduleTimeout: number | null = null;
-
-    const scheduleNext = () => {
-      if (shouldStopScheduling()) return;
-      // Clear any pending schedule // ? Redundant ?
-      if (nextScheduleTimeout !== null) {
-        clearTimeout(nextScheduleTimeout);
-        nextScheduleTimeout = null;
-      }
-
-      if (isScheduling) return; // Prevent concurrent scheduling
-      isScheduling = true;
-
-      try {
-        // Recalculate if envelope has changed
-        if (this.#loopUpdateFlag) {
-          cachedDuration = this.#getScaledDuration(
-            this.#data.startPointIndex,
-            this.#data.endPointIndex,
-            options.playbackRate,
-            this.#timeScale,
-          );
-
-          cachedCurve = this.#generateCurve(cachedDuration, this.baseDuration, {
-            ...options,
-            minValue: audioParam.minValue,
-            maxValue: audioParam.maxValue,
-            startFromValue: audioParam.value,
-          });
-          this.#loopUpdateFlag = false;
-        }
-
-        // Schedule with lookahead
-        while (phase < this.#context.currentTime + lookAhead && phase >= lastScheduledEnd) {
-          if (shouldStopScheduling()) return;
-
-          const safeCurveDuration = cachedDuration - safetyBuffer;
-
-          // NOTE: IF having overlapping scheduling issues,
-          // last resort that should always work is just:  "audioParam.cancelScheduledValues(phase)"
-
-          try {
-            audioParam.setValueCurveAtTime(cachedCurve, phase, safeCurveDuration);
-          } catch {
-            // Curve overlap, advance phase
-            debugOverlapCount++;
-            if (debugOverlapCount >= 100) {
-              console.debug(
-                `Multiple curve overlaps in looping envelope, nr of overlaps: ${debugOverlapCount} 
-                (loop duration: ${cachedDuration.toFixed(3)}s, buffer: ${safetyBuffer})`,
-              );
-              debugOverlapCount = 0;
-            }
-          }
-
-          phase += cachedDuration;
-          lastScheduledEnd = phase;
-
-          // Convert audio context time to performance time for UI sync
-          if (options.voiceId !== undefined) {
-            const timestamp = this.#context.getOutputTimestamp();
-
-            if (timestamp.contextTime !== undefined && timestamp.performanceTime !== undefined) {
-              const elapsedTime = phase - timestamp.contextTime;
-              const performanceTime = timestamp.performanceTime + elapsedTime * 1000;
-
-              // Schedule UI update at performance time
-              const delay = Math.max(0, performanceTime - performance.now());
-
-              setTimeout(() => {
-                if (shouldStopScheduling()) return;
-                this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
-                  voiceId: options.voiceId,
-                  midiNote: options.midiNote,
-                  duration: cachedDuration,
-                });
-              }, delay);
-            } else {
-              if (shouldStopScheduling()) return;
-              // Fallback: send message immediately if timestamp is not available
-              this.sendUpstreamMessage(`${this.envelopeType}:trigger:loop`, {
-                voiceId: options.voiceId,
-                midiNote: options.midiNote,
-                duration: cachedDuration,
-              });
-            }
-          }
-        }
-
-        // Schedule next iteration BEFORE releasing lock
-        nextScheduleTimeout = setTimeout(() => {
-          if (shouldStopScheduling()) return;
-          scheduleNext();
-        }, 100);
-      } finally {
-        isScheduling = false;
-      }
+      cycle++;
+      const nextAt = startTime + cycle * duration;
+      this.#loopMessageTimer = setTimeout(
+        tick,
+        Math.max(0, (nextAt - this.#context.currentTime) * 1000),
+      );
     };
 
-    scheduleNext();
+    this.#loopMessageTimer = setTimeout(
+      tick,
+      Math.max(0, (startTime + duration - this.#context.currentTime) * 1000),
+    );
   }
 
-  // Temp fix for Firefox - fixed release
-  #isFirefox = navigator.userAgent.includes("Firefox");
-
-  // release-click diagnostic
-  #debugRelease(data: {
-    audioParamValue: number;
-    elapsedSeconds?: number;
-    releaseHandoffEnvelopeTime?: number;
-    releaseStartValue?: number;
-    safeStart: number;
-    startTime: number;
-    activeStartTime?: number;
-  }) {
-    console.debug("CustomEnvelope release debug:", {
-      envelopeType: this.envelopeType,
-      ...data,
-    });
+  #stopLoopMessages() {
+    if (this.#loopMessageTimer === null) return;
+    clearTimeout(this.#loopMessageTimer);
+    this.#loopMessageTimer = null;
   }
 
   releaseEnvelope(
@@ -673,230 +414,58 @@ export class CustomEnvelope implements LibNode {
       playbackRate?: number;
       voiceId?: string;
       midiNote?: number;
-      minValue?: number;
-      maxValue?: number;
     },
-    debugLog: boolean = false,
   ) {
     if (this.#isReleased) return;
-
-    const activeEnvelope = this.#activeEnvelope;
     this.#isReleased = true;
-    this.#activeEnvelope = null; // Clear active envelope state
-
-    if (this.#isFirefox) {
-      try {
-        const now = this.#context.currentTime;
-
-        // For Firefox, we need to be very aggressive about clearing the timeline
-        audioParam.cancelScheduledValues(now);
-
-        // Use setTimeout to delay the release ramp to avoid conflicts
-        setTimeout(() => {
-          try {
-            const delayedNow = this.#context.currentTime;
-            cancelAndPinParamValue(audioParam, delayedNow);
-            audioParam.linearRampToValueAtTime(0, delayedNow + 0.1);
-            console.debug("Firefox delayed release envelope - linear ramp to 0");
-          } catch (delayedError) {
-            console.debug("Firefox delayed release also failed:", delayedError);
-          }
-        }, 10); // 10ms delay to let any curves finish
-      } catch (error) {
-        console.debug("Firefox immediate release failed:", error);
-        // Try an even more delayed approach
-        setTimeout(() => {
-          try {
-            const veryDelayedNow = this.#context.currentTime;
-            audioParam.setValueAtTime(0, veryDelayedNow + 0.05);
-          } catch (veryDelayedError) {
-            console.debug("Firefox very delayed release failed:", veryDelayedError);
-          }
-        }, 50);
-      }
-
-      return; // Don't call #continueFromPoint if using fallback
-    }
+    this.#autoReleaseSuppressed = false;
+    this.#clearAutoRelease();
+    this.#stopLoopMessages();
 
     const safeStart = Math.max(this.#context.currentTime, startTime);
-    const elapsedSeconds = activeEnvelope
-      ? Math.max(0, safeStart - activeEnvelope.startTime)
-      : undefined;
 
-    const playbackRateScale =
-      this.#syncedToPlaybackRate && activeEnvelope ? activeEnvelope.options.playbackRate : 1;
-    const elapsedEnvelopeTime =
-      elapsedSeconds !== undefined
-        ? elapsedSeconds * playbackRateScale * this.#timeScale
-        : undefined;
-    const releaseHandoffEnvelopeTime =
-      elapsedEnvelopeTime === undefined
-        ? undefined
-        : this.#isCurrentlyLooping
-          ? elapsedEnvelopeTime % this.baseDuration
-          : Math.min(elapsedEnvelopeTime, this.sustainPoint?.time ?? this.baseDuration);
-    const releaseStartValue =
-      this.envelopeType === "amp-env" &&
-      activeEnvelope?.audioParam === audioParam &&
-      releaseHandoffEnvelopeTime !== undefined
-        ? this.#clampToPointValueRange(
-            this.#data.interpolateValueAtTime(releaseHandoffEnvelopeTime) *
-              activeEnvelope.options.baseValue,
-          )
-        : undefined;
+    // The scheduler hands off from the envelope's own value at `safeStart`, read from
+    // the shape rather than from `audioParam.value`. A release scheduled ahead of now
+    // therefore starts where the envelope will actually have reached, and the velocity
+    // scaling is already in it because depth rides in `amount`.
+    this.#scheduler?.release(safeStart);
 
-    if (debugLog) {
-      this.#debugRelease({
-        audioParamValue: audioParam.value,
-        elapsedSeconds,
-        releaseHandoffEnvelopeTime,
-        releaseStartValue,
-        safeStart,
-        startTime,
-        activeStartTime: activeEnvelope?.startTime,
-      });
-    }
-
-    this.#continueFromPoint(audioParam, startTime, this.releasePointIndex, {
-      baseValue: audioParam.value,
-      playbackRate: this.#currentPlaybackRate,
-      releaseStartValue,
-      // Amp release curve must be scaled like releaseStartValue (velocity),
-      // otherwise it drifts toward the unscaled trajectory. Other envelope
-      // types map baseValue differently, so leave them unscaled.
-      curveScale: this.envelopeType === "amp-env" ? activeEnvelope?.options.baseValue : undefined,
-      ...options,
-    });
-  }
-
-  #continueFromPoint(
-    audioParam: AudioParam,
-    startTime: number,
-    fromPointIndex: number,
-    options: {
-      baseValue: number;
-      playbackRate: number;
-      releaseStartValue?: number;
-      curveScale?: number;
-      voiceId?: string;
-      midiNote?: number;
-    },
-  ) {
-    const curveScale = options.curveScale ?? 1;
-
-    const fromPoint = this.points[fromPointIndex];
-    const lastPoint = this.points[this.points.length - 1];
-
-    const safeStart = Math.max(this.#context.currentTime, startTime);
-    const rawRemainingDuration = lastPoint.time - fromPoint.time; // (before any scaling)
-
-    const scaledRemainingDuration = this.#getScaledDuration(
-      fromPointIndex,
-      this.points.length - 1,
-      options.playbackRate,
-      this.#timeScale,
-    );
-
-    const targetEndValue = this.#clampToPointValueRange(
-      this.#data.interpolateValueAtTime(lastPoint.time) * curveScale,
-    );
-
-    if (scaledRemainingDuration <= 0.0001) {
-      cancelAndPinParamValue(audioParam, safeStart, options.releaseStartValue);
-      audioParam.linearRampToValueAtTime(targetEndValue, safeStart + 0.005);
-      return;
-    }
-
-    // Generate the release curve shape from sustain point to end
-    const sampleRate = this.#getCurveSamplingRate(scaledRemainingDuration);
-    const numSamples = Math.max(2, Math.floor(scaledRemainingDuration * sampleRate));
-    const curve = new Float32Array(numSamples);
-
-    // Generate original envelope curve shape
-    for (let i = 0; i < numSamples; i++) {
-      const normalizedProgress = i / (numSamples - 1);
-      const absoluteTime = fromPoint.time + normalizedProgress * rawRemainingDuration;
-
-      // Get the envelope's original value at this time
-      curve[i] = this.#clampToPointValueRange(
-        this.#data.interpolateValueAtTime(absoluteTime) * curveScale,
-      );
-    }
-
-    // Emit release event
-    if (options.voiceId !== undefined) {
+    if (options?.voiceId !== undefined) {
       this.sendUpstreamMessage(`${this.envelopeType}:release`, {
         voiceId: options.voiceId,
         midiNote: options.midiNote,
         releasePoint: this.releasePoint,
-        remainingDuration: scaledRemainingDuration,
+        remainingDuration: this.effectiveReleaseDuration,
       });
     }
 
-    try {
-      // ! Needs testing specifically for Firefox ( and Safari )
-      // Capture the handoff value BEFORE cancelling: cancel reverts
-      // audioParam.value to its pre-curve value (0 for amp env).
-      const currentValue = options.releaseStartValue ?? audioParam.value;
-      cancelAndPinParamValue(audioParam, safeStart, currentValue);
-
-      // Adjust curve to start from currentValue instead of envelope's release point
-      const adjustedCurve = new Float32Array(curve.length);
-      for (let i = 0; i < curve.length; i++) {
-        const progress = i / (curve.length - 1);
-        // Blend from current value to target curve value
-        adjustedCurve[i] = currentValue + progress * (curve[i] - currentValue);
-      }
-      adjustedCurve[0] = currentValue;
-
-      audioParam.setValueCurveAtTime(adjustedCurve, safeStart + 0.001, scaledRemainingDuration);
-    } catch {
-      // Silent fallback - this is expected behavior for rapid envelope changes
-
-      try {
-        // Fallback to simple linear ramp
-        cancelAndPinParamValue(audioParam, safeStart, options.releaseStartValue);
-
-        audioParam.linearRampToValueAtTime(targetEndValue, safeStart + scaledRemainingDuration);
-      } catch (fallbackError) {
-        console.warn("Fallback linear ramp also failed:", fallbackError);
-        // Final fallback - just set the end value
-        try {
-          audioParam.setValueAtTime(targetEndValue, safeStart);
-        } catch (finalError) {
-          console.warn("All AudioParam operations failed:", finalError);
-        }
-      }
-    }
+    this.#active = null;
   }
 
   // ===== LOOP / TIME CONTROL =====
 
   setTimeScale = (timeScale: number) => {
     this.#timeScale = timeScale;
-    if (this.#isCurrentlyLooping) this.#loopUpdateFlag = true;
   };
 
-  setLoopEnabled = (enabled: boolean, mode: "normal" | "ping-pong" | "reverse" = "normal") => {
-    if (mode !== "normal") {
-      console.info(`Only default env loop mode implemented. Other modes coming soon!`);
-    }
+  setLoopEnabled = (enabled: boolean) => {
     this.#loopEnabled = enabled;
 
     // The auto-release deadline may have passed while the loop was holding the note.
     // A sustain point becomes active again once looping stops, so re-check it here.
     if (!enabled && this.#autoReleaseSuppressed && !this.#isReleased && !this.sustainEnabled) {
-      this.#sendAutoRelease(this.#activeEnvelope?.options);
+      this.#sendAutoRelease(this.#active?.options);
     }
   };
 
   stopCurrentRun = () => {
-    this.#runId++;
     this.#isReleased = true;
     this.#autoReleaseSuppressed = false;
-    this.#isCurrentlyLooping = false;
-    this.#loopUpdateFlag = false;
-    this.#activeEnvelope = null;
+    this.#clearAutoRelease();
+    this.#stopLoopMessages();
+    this.#scheduler?.dispose();
+    this.#scheduler = null;
+    this.#active = null;
   };
 
   syncToPlaybackRate = (sync: boolean) => {
@@ -908,62 +477,11 @@ export class CustomEnvelope implements LibNode {
   setSustainPoint = (index: number | null) => {
     this.#data.setSustainPoint(index);
 
-    // Handle dynamic sustain - reschedule if envelope is currently active
-    if (this.#activeEnvelope && !this.#isReleased) {
-      this.#rescheduleForSustain();
-    }
+    // Reschedule a running envelope so a sustain point added mid-note takes hold.
+    // Rebuilding from the current state is the whole mechanism now: there is no
+    // separate mid-note path to keep in step with the trigger path.
+    if (this.#active && !this.#isReleased) this.#schedule();
   };
-
-  #rescheduleForSustain() {
-    if (!this.#activeEnvelope || !this.sustainEnabled) return;
-
-    const { audioParam, startTime, options } = this.#activeEnvelope;
-    const currentTime = this.#context.currentTime;
-    const elapsedTime = Math.max(0, currentTime - startTime);
-
-    // Calculate current position in envelope timeline
-    const scaledElapsedTime = this.#syncedToPlaybackRate
-      ? elapsedTime * options.playbackRate * this.#timeScale
-      : elapsedTime * this.#timeScale;
-
-    const sustainPoint = this.sustainPoint;
-    if (!sustainPoint || scaledElapsedTime >= sustainPoint.time) {
-      // Already passed sustain point, no action needed
-      return;
-    }
-
-    try {
-      // Read before cancelling: cancelling is allowed to restore the pre-curve value.
-      const currentValue = audioParam.value;
-      cancelAndPinParamValue(audioParam, currentTime, currentValue);
-
-      // Calculate remaining duration to sustain point
-      const remainingTimeToSustain = sustainPoint.time - scaledElapsedTime;
-      const scaledRemainingDuration = this.#syncedToPlaybackRate
-        ? remainingTimeToSustain / options.playbackRate / this.#timeScale
-        : remainingTimeToSustain / this.#timeScale;
-
-      if (scaledRemainingDuration > 0.001) {
-        // Generate curve from current position to sustain point
-        const curve = this.#generateCurve(
-          scaledRemainingDuration,
-          sustainPoint.time,
-          {
-            ...options,
-            minValue: audioParam.minValue,
-            maxValue: audioParam.maxValue,
-            startFromValue: currentValue,
-          },
-          scaledElapsedTime,
-        );
-
-        audioParam.setValueCurveAtTime(curve, currentTime, scaledRemainingDuration);
-      }
-    } catch {
-      // Silent fallback for rapid changes
-      console.debug("Dynamic sustain reschedule failed, envelope will continue normally");
-    }
-  }
 
   setReleasePoint = (index: number) => this.#data.setReleasePoint(index);
 
@@ -1008,10 +526,6 @@ export class CustomEnvelope implements LibNode {
 
   setCurrentPlaybackRate(playbackRate: number) {
     this.#currentPlaybackRate = playbackRate;
-
-    if (this.#syncedToPlaybackRate && this.#isCurrentlyLooping) {
-      this.#loopUpdateFlag = true;
-    }
   }
 
   // === MESSAGES ===
@@ -1027,11 +541,6 @@ export class CustomEnvelope implements LibNode {
 
   // === UTILS ===
 
-  #clampToPointValueRange(value: number): number {
-    const [min, max] = this.#data.pointValueRange;
-    return Math.max(min, Math.min(max, value));
-  }
-
   hasVariation(): boolean {
     const firstValue = this.points[0]?.value ?? 0;
     return this.points.some((point) => Math.abs(point.value - firstValue) > 0.001);
@@ -1041,6 +550,7 @@ export class CustomEnvelope implements LibNode {
 
   dispose() {
     this.#loopEnabled = false;
+    this.stopCurrentRun();
     unregisterNode(this.nodeId);
   }
 }

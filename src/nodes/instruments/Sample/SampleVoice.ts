@@ -1097,13 +1097,10 @@ export class SampleVoice {
     return this;
   }
 
-  setEnvelopeLoop = (
-    envType: EnvelopeType,
-    loop: boolean,
-    mode: "normal" | "ping-pong" | "reverse" = "normal",
-  ) => {
+  // ponytail: dropped the loop `mode` argument - only "normal" was ever implemented.
+  setEnvelopeLoop = (envType: EnvelopeType, loop: boolean) => {
     const env = this.#envelopes.get(envType);
-    env?.setLoopEnabled(loop, mode);
+    env?.setLoopEnabled(loop);
     return this;
   };
 

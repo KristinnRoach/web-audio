@@ -67,7 +67,7 @@ export type Envelope = {
  * Following a sample's playback rate is this same knob at the call site, not a second
  * mechanism: pass `rate * scale` and the envelope stretches with the sample.
  */
-type ScheduleOptions = { base?: number; amount?: number; timeScale?: number };
+export type ScheduleOptions = { base?: number; amount?: number; timeScale?: number };
 
 export type EnvelopeScheduler = {
   trigger(time?: number, options?: ScheduleOptions): void;
