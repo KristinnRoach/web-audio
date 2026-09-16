@@ -28,7 +28,7 @@ A `voice:ended` message is correlated with the trigger that caused it by `trigge
 
 At max polyphony the pool steals rather than dropping the new note. Repeated notes can own multiple sounding voices without a note-keyed bookkeeping structure.
 
-The pool no longer subscribes to `voice:started` / `voice:releasing` / `voice:stopped` at all. Those handlers existed only to drive polyphony gain compensation, which was removed. What remains is `voice:initialized` and envelope-creation fan-in, both upstream notification.
+The pool no longer _handles_ `voice:started` / `voice:releasing` / `voice:stopped`. Those handlers existed only to drive polyphony gain compensation, which was removed. The events are still forwarded upstream by `#messages.forwardFrom`, alongside the fan-in handlers that remain: `voice:initialized`, envelope creation, and `voice:loaded`, which becomes `sample:loaded` once every voice has loaded.
 
 `SampleVoicePool.test.ts` now exercises allocation priority, deterministic stealing, repeated-note ownership, note-off fan-out, and state-derived targeting without reading private bookkeeping.
 
