@@ -36,13 +36,19 @@ export function clampHz(hz: number, sampleRate?: number): number {
 }
 
 /**
- * Converts a glide duration in seconds to a `setTargetAtTime` time constant.
+ * Converts a ramp duration in seconds to a `setTargetAtTime` time constant.
  *
- * `setTargetAtTime` approaches its target exponentially and is ~95% settled
- * after 3 time constants, so `seconds / 3` lands the move on the requested
- * duration. Non-positive or non-finite input returns `fallbackSec`; a negative
- * time constant makes `setTargetAtTime` throw a RangeError.
+ * `durationSec` is the duration by which the param should be ~95% settled.
+ * `setTargetAtTime` approaches its target exponentially and is ~95% there after
+ * 3 time constants, so the constant is `durationSec / 3`. Non-positive or
+ * non-finite input returns `fallbackSec`; a negative time constant makes
+ * `setTargetAtTime` throw a RangeError.
  */
-export function glideToTimeConstant(seconds: number | undefined, fallbackSec: number): number {
-  return seconds !== undefined && isFinite(seconds) && seconds > 0 ? seconds / 3 : fallbackSec;
+export function durationToTimeConstant(
+  durationSec: number | undefined,
+  fallbackSec: number,
+): number {
+  return durationSec !== undefined && isFinite(durationSec) && durationSec > 0
+    ? durationSec / 3
+    : fallbackSec;
 }

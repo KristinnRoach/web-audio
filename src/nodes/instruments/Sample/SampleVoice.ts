@@ -13,7 +13,7 @@ import {
   midiToPlaybackRate,
   getKeytrackedFilterHz,
   clampHz,
-  glideToTimeConstant,
+  durationToTimeConstant,
   maxSafeHz,
 } from "@/utils";
 
@@ -621,7 +621,7 @@ export class SampleVoice {
     const keytrackedHz = getKeytrackedFilterHz(this.#hpfHz, playbackRate, this.#keytrackHPFAmount);
     const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
-    const timeConstant = glideToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+    const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
@@ -656,7 +656,7 @@ export class SampleVoice {
 
     const safeHz = this.#keytrackedLpfHz(playbackRate);
 
-    const timeConstant = glideToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+    const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
@@ -1147,7 +1147,7 @@ export class SampleVoice {
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#hpfHz = safeHz;
     if (this.#hpf) {
-      const timeConstant = glideToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+      const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#hpf.frequency.cancelScheduledValues(atTime);
       this.#hpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;
@@ -1173,7 +1173,7 @@ export class SampleVoice {
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
     if (this.#lpf) {
-      const timeConstant = glideToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+      const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);
       this.#lpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;

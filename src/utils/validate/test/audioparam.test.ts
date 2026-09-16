@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vite-plus/test";
-import { clampHz, glideToTimeConstant, maxSafeHz, FALLBACK_MAX_HZ, MIN_HZ } from "../audioparam";
+import { clampHz, durationToTimeConstant, maxSafeHz, FALLBACK_MAX_HZ, MIN_HZ } from "../audioparam";
 
 describe("maxSafeHz", () => {
   it("leaves a 1 kHz guard band below Nyquist", () => {
@@ -22,16 +22,16 @@ describe("clampHz", () => {
   });
 });
 
-describe("glideToTimeConstant", () => {
+describe("durationToTimeConstant", () => {
   it("divides a positive glide by 3 so it settles on time", () => {
-    expect(glideToTimeConstant(0.9, 0.1)).toBeCloseTo(0.3);
+    expect(durationToTimeConstant(0.9, 0.1)).toBeCloseTo(0.3);
   });
 
   it("falls back for input setTargetAtTime would reject", () => {
-    expect(glideToTimeConstant(undefined, 0.1)).toBe(0.1);
-    expect(glideToTimeConstant(0, 0.1)).toBe(0.1);
-    expect(glideToTimeConstant(-0.5, 0.1)).toBe(0.1); // negative tau throws RangeError
-    expect(glideToTimeConstant(Infinity, 0.1)).toBe(0.1);
-    expect(glideToTimeConstant(NaN, 0.1)).toBe(0.1);
+    expect(durationToTimeConstant(undefined, 0.1)).toBe(0.1);
+    expect(durationToTimeConstant(0, 0.1)).toBe(0.1);
+    expect(durationToTimeConstant(-0.5, 0.1)).toBe(0.1); // negative tau throws RangeError
+    expect(durationToTimeConstant(Infinity, 0.1)).toBe(0.1);
+    expect(durationToTimeConstant(NaN, 0.1)).toBe(0.1);
   });
 });
