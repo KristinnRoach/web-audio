@@ -13,6 +13,7 @@ import {
   midiToPlaybackRate,
   getKeytrackedFilterHz,
   clampHz,
+  glideToTimeConstant,
   maxSafeHz,
 } from "@/utils";
 
@@ -620,9 +621,7 @@ export class SampleVoice {
     const keytrackedHz = getKeytrackedFilterHz(this.#hpfHz, playbackRate, this.#keytrackHPFAmount);
     const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
-    // setTargetAtTime takes an exponential time constant, not a ramp duration:
-    // ~95% settled after 3 constants, so glideTime / 3 lands on the requested glide.
-    const timeConstant = glideTime > 0 ? glideTime / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
+    const timeConstant = glideToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
@@ -657,9 +656,7 @@ export class SampleVoice {
 
     const safeHz = this.#keytrackedLpfHz(playbackRate);
 
-    // setTargetAtTime takes an exponential time constant, not a ramp duration:
-    // ~95% settled after 3 constants, so glideTime / 3 lands on the requested glide.
-    const timeConstant = glideTime > 0 ? glideTime / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
+    const timeConstant = glideToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
@@ -1150,9 +1147,7 @@ export class SampleVoice {
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#hpfHz = safeHz;
     if (this.#hpf) {
-      // glideTime is a ramp duration; setTargetAtTime wants a time constant (~3 to settle).
-      const glideSec = options.glideTime ?? 0;
-      const timeConstant = glideSec > 0 ? glideSec / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
+      const timeConstant = glideToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#hpf.frequency.cancelScheduledValues(atTime);
       this.#hpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;
@@ -1178,9 +1173,7 @@ export class SampleVoice {
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
     if (this.#lpf) {
-      // glideTime is a ramp duration; setTargetAtTime wants a time constant (~3 to settle).
-      const glideSec = options.glideTime ?? 0;
-      const timeConstant = glideSec > 0 ? glideSec / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
+      const timeConstant = glideToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);
       this.#lpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;

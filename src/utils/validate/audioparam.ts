@@ -34,3 +34,15 @@ export function maxSafeHz(sampleRate?: number): number {
 export function clampHz(hz: number, sampleRate?: number): number {
   return clamp(hz, MIN_HZ, maxSafeHz(sampleRate));
 }
+
+/**
+ * Converts a glide duration in seconds to a `setTargetAtTime` time constant.
+ *
+ * `setTargetAtTime` approaches its target exponentially and is ~95% settled
+ * after 3 time constants, so `seconds / 3` lands the move on the requested
+ * duration. Non-positive or non-finite input returns `fallbackSec`; a negative
+ * time constant makes `setTargetAtTime` throw a RangeError.
+ */
+export function glideToTimeConstant(seconds: number | undefined, fallbackSec: number): number {
+  return seconds !== undefined && isFinite(seconds) && seconds > 0 ? seconds / 3 : fallbackSec;
+}
