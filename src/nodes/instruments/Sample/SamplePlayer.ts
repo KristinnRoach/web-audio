@@ -28,10 +28,9 @@ import { createInstrumentBus, type InstrumentBus } from "@/nodes/master/createIn
 import { BusNodeName } from "@/nodes/master/InstrumentBus";
 import { SampleVoicePool } from "./SampleVoicePool";
 import {
-  addPoint,
-  deletePoint,
+  assertValidEnvelopeSettings,
+  cloneEnvelopeSettings,
   setDuration,
-  updatePoint,
   type Envelope,
   type EnvelopeSettings,
 } from "@/nodes/params/envelopes";
@@ -42,49 +41,13 @@ import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/g
 import { createSampleVoicePool } from "./createSampleVoicePool";
 import { getAudioContext } from "@/context";
 import type { SampleVoiceChainNode } from "./SampleVoice";
-import { ENVELOPE_TARGETS, type EnvelopeId } from "../../params/envelopes/envelope-targets";
-
-function cloneEnvelopeSettings(settings: EnvelopeSettings): EnvelopeSettings {
-  return {
-    ...settings,
-    envelope: {
-      ...settings.envelope,
-      points: settings.envelope.points.map((point) => ({ ...point })),
-    },
-  };
-}
-
-const ENVELOPE_IDS = Object.keys(ENVELOPE_TARGETS) as EnvelopeId[];
-
-function validateEnvelopeSettings(settings: EnvelopeSettings): void {
-  const { envelope } = settings;
-  const points = envelope?.points;
-  const validMarker = (index: number | undefined) =>
-    index === undefined || (Number.isInteger(index) && index >= 0 && index < points.length);
-
-  if (
-    typeof settings?.enabled !== "boolean" ||
-    !Number.isFinite(settings?.timeScale) ||
-    settings.timeScale <= 0 ||
-    !Array.isArray(points) ||
-    points.length < 2 ||
-    (envelope.loop !== undefined && typeof envelope.loop !== "boolean") ||
-    points.some(
-      (point, index) =>
-        !Number.isFinite(point.time) ||
-        !Number.isFinite(point.value) ||
-        (point.curve !== undefined &&
-          point.curve !== "step" &&
-          point.curve !== "linear" &&
-          point.curve !== "exponential") ||
-        (index > 0 && point.time < points[index - 1].time),
-    ) ||
-    !validMarker(envelope.sustain) ||
-    !validMarker(envelope.release)
-  ) {
-    throw new TypeError("Invalid envelope settings");
-  }
-}
+import {
+  SAMPLE_ENVELOPE_IDS,
+  createDefaultSampleEnvelopeSettings,
+  getPostFilterEnvelopeOptions,
+  getSampleEnvelopeEventTypes,
+  type SampleEnvelopeId,
+} from "./temporary-sample-envelope-adapters";
 
 /**
  * Filter envelope depth, normalized against the filter's usable range.
@@ -109,8 +72,8 @@ export class SamplePlayer implements ILibInstrumentNode {
   #initialized = false;
   #initPromise: Promise<void> | null = null;
   #isLoaded = false;
-  private readonly envelopeSettings = new Map<EnvelopeId, EnvelopeSettings>();
-  private readonly playbackRateSyncedEnvelopes = new Set<EnvelopeId>();
+  private readonly envelopeSettings = new Map<SampleEnvelopeId, EnvelopeSettings>();
+  private readonly playbackRateSyncedEnvelopes = new Set<SampleEnvelopeId>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
   #initialAudioBuffer: AudioBuffer | null = null;
@@ -318,7 +281,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       // Rescale every shape to the new buffer and push it down. Voices come up on
       // their own defaults, so this is also what first puts them on the owned state -
       // without it the player and its voices would hold different shapes.
-      ENVELOPE_IDS.forEach((id) => {
+      SAMPLE_ENVELOPE_IDS.forEach((id) => {
         const settings = this.getEnvelopeSettings(id);
         this.applyEnvelopeSettings(id, {
           ...settings,
@@ -329,7 +292,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.voicePool.onMessage("voice-pool:initialized", () => {
       // Fresh voices start on defaults, so hand them the owned state before they play.
-      ENVELOPE_IDS.forEach((id) =>
+      SAMPLE_ENVELOPE_IDS.forEach((id) =>
         this.#applyEnvelopeSettingsToVoices(id, this.getEnvelopeSettings(id)),
       );
       this.playbackRateSyncedEnvelopes.forEach((id) =>
@@ -345,21 +308,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       "voice:stopped",
       "voice:releasing",
       "sample:loaded",
-
-      "amp-env:created",
-      "amp-env:trigger",
-      "amp-env:trigger:loop",
-      "amp-env:release",
-
-      "pitch-env:created",
-      "pitch-env:trigger",
-      "pitch-env:trigger:loop",
-      "pitch-env:release",
-
-      "filter-env:created",
-      "filter-env:trigger",
-      "filter-env:trigger:loop",
-      "filter-env:release",
+      ...getSampleEnvelopeEventTypes(),
     ]);
     return this;
   }
@@ -1133,18 +1082,18 @@ export class SamplePlayer implements ILibInstrumentNode {
    * pushed-down duplicate they can schedule from but never write to, so there is no
    * second authority to read back from and nothing to invalidate.
    */
-  getEnvelopeSettings(id: EnvelopeId): EnvelopeSettings {
+  getEnvelopeSettings(id: SampleEnvelopeId): EnvelopeSettings {
     const stored = this.envelopeSettings.get(id);
     if (stored) return cloneEnvelopeSettings(stored);
 
-    const settings = ENVELOPE_TARGETS[id].defaults(this.sampleDuration || 1);
+    const settings = createDefaultSampleEnvelopeSettings(id, this.sampleDuration || 1);
     this.envelopeSettings.set(id, settings);
     return cloneEnvelopeSettings(settings);
   }
 
   /** Applies a complete snapshot and emits one `envelope:changed` message. */
-  applyEnvelopeSettings(id: EnvelopeId, settings: EnvelopeSettings): void {
-    validateEnvelopeSettings(settings);
+  applyEnvelopeSettings(id: SampleEnvelopeId, settings: EnvelopeSettings): void {
+    assertValidEnvelopeSettings(settings);
 
     const next = cloneEnvelopeSettings(settings);
     this.envelopeSettings.set(id, next);
@@ -1166,73 +1115,39 @@ export class SamplePlayer implements ILibInstrumentNode {
    * playback rate, so only the envelope's own time scale applies.
    */
   private applyPostFilterEnvelope(settings: EnvelopeSettings): void {
-    this.setLpfEnvelope(settings.envelope, {
-      amount: settings.enabled ? this.#filterEnvAmount : 0,
-      timeScale: settings.timeScale,
-    });
+    this.setLpfEnvelope(
+      settings.envelope,
+      getPostFilterEnvelopeOptions(settings, this.#filterEnvAmount),
+    );
   }
 
   /** Restores one envelope to defaults sized to the current authority sample. */
-  resetEnvelope(id: EnvelopeId): void {
-    this.applyEnvelopeSettings(id, ENVELOPE_TARGETS[id].defaults(this.sampleDuration || 1));
+  resetEnvelope(id: SampleEnvelopeId): void {
+    this.applyEnvelopeSettings(
+      id,
+      createDefaultSampleEnvelopeSettings(id, this.sampleDuration || 1),
+    );
   }
 
   /** Restores all envelopes to defaults sized to the current sample. */
   resetEnvelopes(): void {
-    ENVELOPE_IDS.forEach((id) => this.resetEnvelope(id));
+    SAMPLE_ENVELOPE_IDS.forEach((id) => this.resetEnvelope(id));
   }
 
-  #applyEnvelopeSettingsToVoices(id: EnvelopeId, settings: EnvelopeSettings): void {
+  #applyEnvelopeSettingsToVoices(id: SampleEnvelopeId, settings: EnvelopeSettings): void {
     this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, settings));
   }
 
   /** Envelope types on the current voices; empty until the pool is initialized. */
-  get availableEnvelopeIds(): EnvelopeId[] {
+  get availableEnvelopeIds(): SampleEnvelopeId[] {
     return [...(this.voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
   }
 
-  setEnvelopeSync = (id: EnvelopeId, sync: boolean) => {
+  setEnvelopeSync = (id: SampleEnvelopeId, sync: boolean) => {
     if (sync) this.playbackRateSyncedEnvelopes.add(id);
     else this.playbackRateSyncedEnvelopes.delete(id);
     this.voicePool.applyToAllVoices((voice) => voice.setEnvelopePlaybackRateSync(id, sync));
   };
-
-  // setEnvelopeTimeScale = (id: EnvelopeId, timeScale: number) => {
-  //   this.applyEnvelopeSettings(id, { ...this.getEnvelopeSettings(id), timeScale });
-  // };
-
-  // setEnvelopeSustainPoint(id: EnvelopeId, index?: number) {
-  //   const settings = this.getEnvelopeSettings(id);
-  //   this.applyEnvelopeSettings(id, {
-  //     ...settings,
-  //     envelope: { ...settings.envelope, sustain: index },
-  //   });
-  // }
-
-  // setEnvelopeReleasePoint(id: EnvelopeId, index?: number) {
-  //   const settings = this.getEnvelopeSettings(id);
-  //   this.applyEnvelopeSettings(id, {
-  //     ...settings,
-  //     envelope: { ...settings.envelope, release: index },
-  //   });
-  // }
-
-  // updateEnvelopePoint(id: EnvelopeId, index: number, time: number, value: number): void {
-  //   this.#editEnvelope(id, (envelope) => updatePoint(envelope, index, time, value));
-  // }
-
-  // addEnvelopePoint(id: EnvelopeId, time: number, value: number): void {
-  //   this.#editEnvelope(id, (envelope) => addPoint(envelope, time, value));
-  // }
-
-  // deleteEnvelopePoint(id: EnvelopeId, index: number): void {
-  //   this.#editEnvelope(id, (envelope) => deletePoint(envelope, index));
-  // }
-
-  // #editEnvelope(id: EnvelopeId, edit: (envelope: Envelope) => Envelope): void {
-  //   const settings = this.getEnvelopeSettings(id);
-  //   this.applyEnvelopeSettings(id, { ...settings, envelope: edit(settings.envelope) });
-  // }
 
   /**
    * Named tap points covering the whole instrument, from inside the voices

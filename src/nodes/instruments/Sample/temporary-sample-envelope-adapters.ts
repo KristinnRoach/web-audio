@@ -1,0 +1,114 @@
+import {
+  envelopePresets,
+  hasVariation,
+  type AutomatableParam,
+  type Envelope,
+  type EnvelopeRuntimeTriggerOptions,
+  type EnvelopeSettings,
+} from "@/nodes/params/envelopes";
+
+/**
+ * Temporary sampler policy around the generic envelope runtime.
+ * Keep these functions pure so each can either disappear or move independently.
+ */
+
+export const SAMPLE_ENVELOPE_IDS = ["amp-env", "pitch-env", "filter-env"] as const;
+export type SampleEnvelopeId = (typeof SAMPLE_ENVELOPE_IDS)[number];
+
+export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEnvelopeId[] {
+  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ["amp-env", "pitch-env"];
+}
+
+export function createDefaultSampleEnvelopeSettings(
+  id: SampleEnvelopeId,
+  durationSeconds: number,
+): EnvelopeSettings {
+  switch (id) {
+    case "amp-env":
+      return envelopePresets.amplitude(durationSeconds);
+    case "pitch-env":
+      return envelopePresets.pitch(durationSeconds);
+    case "filter-env":
+      return envelopePresets.filter(durationSeconds);
+  }
+}
+
+export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
+  switch (id) {
+    case "amp-env":
+      return "envGain";
+    case "pitch-env":
+      return "playbackRate";
+    case "filter-env":
+      return "lpf";
+  }
+}
+
+export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, settings: EnvelopeSettings) {
+  return settings.enabled && (id !== "pitch-env" || hasVariation(settings.envelope));
+}
+
+export function getSampleEnvelopeBaseValue(
+  id: SampleEnvelopeId,
+  values: { velocity?: number; playbackRate: number; filterCutoff: number },
+): number {
+  switch (id) {
+    case "amp-env":
+      return values.velocity === undefined ? 1 : values.velocity / 127;
+    case "pitch-env":
+      return values.playbackRate;
+    case "filter-env":
+      return values.filterCutoff;
+  }
+}
+
+export function resolveSampleEnvelopeTrigger(
+  id: SampleEnvelopeId,
+  envelope: Envelope,
+  baseValue: number,
+  param: AutomatableParam,
+): EnvelopeRuntimeTriggerOptions {
+  if (id !== "filter-env") return { amount: baseValue };
+
+  const low = Math.max(baseValue, 1e-3);
+  const high = Math.max(param.maxValue, low);
+  const logLow = Math.log(low);
+  const logRange = Math.log(high) - logLow;
+  const points = envelope.points.map((point) => ({
+    ...point,
+    value: Math.exp(logLow + logRange * point.value),
+    curve: "exponential" as const,
+  }));
+
+  return { envelope: { ...envelope, points } };
+}
+
+export function getSampleEnvelopeEventType(
+  id: SampleEnvelopeId,
+  event: "created" | "trigger" | "trigger:loop" | "release",
+) {
+  return `${id}:${event}`;
+}
+
+export function getSampleEnvelopeEventTypes(): string[] {
+  return SAMPLE_ENVELOPE_IDS.flatMap((id) => [
+    getSampleEnvelopeEventType(id, "created"),
+    getSampleEnvelopeEventType(id, "trigger"),
+    getSampleEnvelopeEventType(id, "trigger:loop"),
+    getSampleEnvelopeEventType(id, "release"),
+  ]);
+}
+
+export function getSampleEnvelopeTimeScaleMultiplier(
+  syncToPlaybackRate: boolean,
+  playbackRate: number,
+) {
+  return syncToPlaybackRate ? playbackRate : 1;
+}
+
+export function getPostFilterEnvelopeOptions(settings: EnvelopeSettings, amount: number) {
+  return {
+    amount: settings.enabled ? amount : 0,
+    timeScale: settings.timeScale,
+  };
+}

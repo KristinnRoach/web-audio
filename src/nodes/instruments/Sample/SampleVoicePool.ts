@@ -4,6 +4,11 @@ import { VoiceState } from "../VoiceState";
 import { Message, MessageHandler, MessageBus, createMessageBus } from "@/events";
 import { GainStages, LibNode } from "@/nodes/LibNode";
 import { createSampleVoices } from "./createSampleVoice";
+import {
+  SAMPLE_ENVELOPE_IDS,
+  getSampleEnvelopeEventType,
+  getSampleEnvelopeEventTypes,
+} from "./temporary-sample-envelope-adapters";
 
 export class SampleVoicePool implements LibNode {
   readonly nodeId: NodeID;
@@ -110,9 +115,9 @@ export class SampleVoicePool implements LibNode {
     });
 
     // Envelope creation tracking
-    const envelopeTypes = ["amp-env", "pitch-env", "filter-env"];
-    envelopeTypes.forEach((envType) => {
-      voice.onMessage(`${envType}:created`, (msg: Message) => {
+    SAMPLE_ENVELOPE_IDS.forEach((envType) => {
+      const createdEvent = getSampleEnvelopeEventType(envType, "created");
+      voice.onMessage(createdEvent, (msg: Message) => {
         if (!this.#envelopeCreatedMap.has(envType)) {
           this.#envelopeCreatedMap.set(envType, new Set());
         }
@@ -120,7 +125,7 @@ export class SampleVoicePool implements LibNode {
         set.add(msg.voice);
         if (set.size === this.#allVoices.length) {
           // All voices have created this envelope type
-          this.sendUpstreamMessage(`${envType}:created`, {
+          this.sendUpstreamMessage(createdEvent, {
             envType,
             voiceCount: this.#allVoices.length,
           });
@@ -137,19 +142,7 @@ export class SampleVoicePool implements LibNode {
         "voice:releasing",
         "voice:loaded",
 
-        "amp-env:trigger",
-        "amp-env:trigger:loop",
-        "amp-env:release",
-        "pitch-env:trigger",
-        "pitch-env:trigger:loop",
-        "pitch-env:release",
-        "filter-env:trigger",
-        "filter-env:trigger:loop",
-        "filter-env:release",
-        // Forward envelope created events
-        "amp-env:created",
-        "pitch-env:created",
-        "filter-env:created",
+        ...getSampleEnvelopeEventTypes(),
       ],
       (msg) => {
         if (msg.type === "voice:loaded") {

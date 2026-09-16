@@ -10,7 +10,15 @@ import { clamp } from "../math/math-utils";
  * holdValue is read before cancelling on purpose - cancelling is allowed to
  * restore the pre-curve value. Pass it explicitly when the caller knows it.
  */
-export function cancelAndPinParamValue(param: AudioParam, timestamp: number, holdValue?: number) {
+export function cancelAndPinParamValue(
+  param: {
+    value: number;
+    cancelScheduledValues(cancelTime: number): unknown;
+    setValueAtTime(value: number, startTime: number): unknown;
+  },
+  timestamp: number,
+  holdValue?: number,
+) {
   const value = holdValue ?? param.value; // read before cancel
   param.cancelScheduledValues(timestamp);
   param.setValueAtTime(value, timestamp);

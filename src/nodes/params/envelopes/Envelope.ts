@@ -2,6 +2,17 @@ import { cancelAndPinParamValue } from "@/utils";
 
 export type EnvelopeCurve = "step" | "linear" | "exponential";
 
+/** The automation surface an envelope needs; native `AudioParam` is one implementation. */
+export type AutomatableParam = {
+  value: number;
+  readonly minValue: number;
+  readonly maxValue: number;
+  setValueAtTime(value: number, startTime: number): unknown;
+  linearRampToValueAtTime(value: number, endTime: number): unknown;
+  exponentialRampToValueAtTime(value: number, endTime: number): unknown;
+  cancelScheduledValues(cancelTime: number): unknown;
+};
+
 export type EnvelopePoint = {
   readonly time: number;
   readonly value: number;
@@ -57,6 +68,48 @@ export type EnvelopeSettings = {
   readonly envelope: Envelope;
 };
 
+/** Returns a settings snapshot whose shape and points can be safely retained. */
+export function cloneEnvelopeSettings(settings: EnvelopeSettings): EnvelopeSettings {
+  return {
+    ...settings,
+    envelope: {
+      ...settings.envelope,
+      points: settings.envelope.points.map((point) => ({ ...point })),
+    },
+  };
+}
+
+/** Rejects settings that cannot be scheduled predictably. */
+export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
+  const points = settings?.envelope?.points;
+  const validMarker = (index: number | undefined) =>
+    index === undefined ||
+    (Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length);
+
+  if (
+    typeof settings?.enabled !== "boolean" ||
+    !Number.isFinite(settings?.timeScale) ||
+    settings.timeScale <= 0 ||
+    !Array.isArray(points) ||
+    points.length < 2 ||
+    (settings.envelope.loop !== undefined && typeof settings.envelope.loop !== "boolean") ||
+    points.some(
+      (point, index) =>
+        !Number.isFinite(point.time) ||
+        !Number.isFinite(point.value) ||
+        (point.curve !== undefined &&
+          point.curve !== "step" &&
+          point.curve !== "linear" &&
+          point.curve !== "exponential") ||
+        (index > 0 && point.time < points[index - 1].time),
+    ) ||
+    !validMarker(settings.envelope.sustain) ||
+    !validMarker(settings.envelope.release)
+  ) {
+    throw new TypeError("Invalid envelope settings");
+  }
+}
+
 /**
  * How the envelope reaches the parameter: `param = base + amount * value`.
  *
@@ -99,7 +152,7 @@ function addLoop(fill: () => void) {
   };
 }
 
-function schedulePoint(param: AudioParam, value: number, time: number, curve: EnvelopeCurve) {
+function schedulePoint(param: AutomatableParam, value: number, time: number, curve: EnvelopeCurve) {
   if (curve === "step") param.setValueAtTime(value, time);
   else if (curve === "exponential") param.exponentialRampToValueAtTime(value, time);
   else param.linearRampToValueAtTime(value, time);
@@ -149,7 +202,7 @@ function valueOf(
 
 /** Returns the time of the last point scheduled. */
 function scheduleRange(
-  param: AudioParam,
+  param: AutomatableParam,
   envelope: Envelope,
   from: number,
   to: number,
@@ -177,7 +230,7 @@ function scheduleRange(
 
 /** Schedules the envelope up to its sustain point, or to its end when it has none. */
 export function scheduleEnvelope(
-  param: AudioParam,
+  param: AutomatableParam,
   envelope: Envelope,
   startTime: number,
   { base = 0, amount = 1, timeScale = 1 }: ScheduleOptions = {},
@@ -233,7 +286,7 @@ function releaseIndexOf(envelope: Envelope) {
  * value so a `releaseTime` in the future hands off correctly.
  */
 export function releaseEnvelope(
-  param: AudioParam,
+  param: AutomatableParam,
   envelope: Envelope,
   releaseTime: number,
   { base = 0, amount = 1, timeScale = 1 }: ScheduleOptions = {},
@@ -266,7 +319,7 @@ export function releaseEnvelope(
 /** Creates a timestamp-anchored rolling scheduler for an envelope. */
 export function createEnvelopeScheduler(
   context: AudioContext,
-  param: AudioParam,
+  param: AutomatableParam,
   envelope: Envelope,
 ): EnvelopeScheduler {
   let removeLoop: (() => void) | undefined;
