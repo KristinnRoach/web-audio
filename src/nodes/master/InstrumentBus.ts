@@ -7,13 +7,9 @@ import { getAudioContext } from "@/context";
 
 import { Message, MessageBus, MessageHandler, createMessageBus } from "@/events";
 
-import { clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
+import { clamp, clampHz, mapToRange, maxSafeHz, midiToPlaybackRate } from "@/utils";
 
-import {
-  createEnvelopeScheduler,
-  type Envelope,
-  type EnvelopeScheduler,
-} from "@/nodes/params/envelopes";
+import { EnvelopeRuntime, type Envelope } from "@/nodes/params/envelopes";
 
 import { DEFAULT } from "@/constants";
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from "./defaults";
@@ -69,8 +65,7 @@ export class InstrumentBus implements ILibAudioNode {
   /** Last cutoff from `setLpfCutoff`, which is the envelope's base. Set in init(). */
   #lpfCutoffHz = 0;
   #lpfEnvAmount = 0;
-  #lpfEnvTimeScale = 1;
-  #lpfEnvScheduler: EnvelopeScheduler | null = null;
+  #lpfEnvelope: EnvelopeRuntime | null = null;
   #heldNotes = new Map<number, number>();
 
   #nodes: Partial<BusNodeTypeMap> = {};
@@ -356,18 +351,21 @@ export class InstrumentBus implements ILibAudioNode {
     const delayNode = this.getNode("delay");
     delayNode?.audioNode.sendProcessorMessage({ type: "trigger" });
 
-    if (this.#lpfEnvScheduler) {
+    if (this.#lpfEnvelope) {
       // One filter shared by every note, so a new note simply takes over. Last note wins.
       const time = this.now + secondsFromNow;
       const ceiling = maxSafeHz(this.context.sampleRate);
 
-      this.#lpfEnvScheduler.trigger(time, {
+      const cutoff = this.getNode("lpf")?.audioNode.frequency;
+      if (!cutoff) return this;
+
+      this.#lpfEnvelope.trigger(cutoff, time, {
         base: this.#lpfCutoffHz,
         // Keep the peak inside the filter's range. Past Nyquist the browser clamps
         // and warns, and the top of the sweep is lost either way. Only ever lowers
         // a positive amount, so a negative one still inverts.
         amount: Math.min(this.#lpfEnvAmount * ceiling, ceiling - this.#lpfCutoffHz),
-        timeScale: this.#lpfEnvTimeScale,
+        timeScaleMultiplier: midiToPlaybackRate(midiNote),
       });
     }
 
@@ -381,13 +379,13 @@ export class InstrumentBus implements ILibAudioNode {
     if (count > 1) this.#heldNotes.set(midiNote, count - 1);
     else this.#heldNotes.delete(midiNote);
 
-    if (this.#heldNotes.size === 0) this.#lpfEnvScheduler?.release();
+    if (this.#heldNotes.size === 0) this.#lpfEnvelope?.release(this.now);
     return this;
   }
 
   releaseAll(): this {
     this.#heldNotes.clear();
-    this.#lpfEnvScheduler?.release();
+    this.#lpfEnvelope?.release(this.now);
     return this;
   }
 
@@ -449,20 +447,14 @@ export class InstrumentBus implements ILibAudioNode {
    * An envelope with a `release` and no `sustain` sweeps through on its own while notes
    * are held and still plays its tail on the last note off.
    *
-   * `timeScale` divides every point time, so values above 1 sweep faster. One filter is
-   * shared by every note, so there is no per-note playback rate for it to follow - a
-   * per-note playback-rate scaling has no meaning here and is not applied.
+   * `timeScale` divides every point time, and note-on multiplies it by the triggering
+   * MIDI note's playback rate.
    */
   setLpfEnvelope(envelope: Envelope | null, { amount = 0, timeScale = 1 } = {}): this {
-    this.#lpfEnvScheduler?.dispose();
+    this.#lpfEnvelope?.dispose();
     this.#lpfEnvAmount = amount;
-    // Guards the divide in the scheduler: zero or NaN would push every point to the
-    // same instant, or to no instant at all.
-    this.#lpfEnvTimeScale = Number.isFinite(timeScale) && timeScale > 0 ? timeScale : 1;
-
-    const cutoff = envelope && this.getNode("lpf")?.audioNode.frequency;
-    this.#lpfEnvScheduler = cutoff
-      ? createEnvelopeScheduler(this.#context, cutoff, envelope)
+    this.#lpfEnvelope = envelope
+      ? new EnvelopeRuntime(this.#context, { enabled: amount !== 0, timeScale, envelope })
       : null;
     if (!envelope || amount === 0) this.setLpfCutoff(this.#lpfCutoffHz);
     return this;
@@ -716,8 +708,8 @@ export class InstrumentBus implements ILibAudioNode {
 
   dispose(): void {
     this.#heldNotes.clear();
-    this.#lpfEnvScheduler?.dispose();
-    this.#lpfEnvScheduler = null;
+    this.#lpfEnvelope?.dispose();
+    this.#lpfEnvelope = null;
 
     // Disconnect all nodes
     for (const name of Object.keys(this.#nodes)) {
