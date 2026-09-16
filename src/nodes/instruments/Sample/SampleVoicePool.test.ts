@@ -50,7 +50,6 @@ vi.mock("./createSampleVoice", () => {
       return this;
     }
 
-    setMasterGain() {}
     dispose() {}
   }
 

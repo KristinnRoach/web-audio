@@ -1106,12 +1106,6 @@ export class SampleVoice {
 
   // Setters
 
-  setMasterGain(gain: number) {
-    const param = this.#playerWorklet.parameters.get("masterGain")!;
-    param.cancelScheduledValues(this.context.currentTime);
-    param.setTargetAtTime(gain, this.context.currentTime, 0.006);
-  }
-
   enablePositionTracking(enabled: boolean) {
     this.sendToProcessor({
       type: "voice:usePlaybackPosition",
