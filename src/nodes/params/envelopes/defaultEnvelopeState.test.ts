@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { defaultEnvelopeState } from "./createEnvelope";
+import { defaultEnvelopeState } from "./defaultEnvelopeState";
 
 describe("defaultEnvelopeState", () => {
   it("maps runtime defaults to detached serializable state at the requested duration", () => {

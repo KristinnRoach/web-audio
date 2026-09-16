@@ -1,19 +1,5 @@
-// createEnvelope.ts
-import { CustomEnvelope } from "./CustomEnvelope";
-import type { EnvelopePoint, EnvelopeState, EnvelopeType } from "./env-types";
-import type { EnvelopeData } from "./EnvelopeData";
+import type { EnvelopeState, EnvelopeType } from "./env-types";
 
-interface EnvelopeOptions {
-  durationSeconds?: number;
-  points?: EnvelopePoint[];
-  envPointValueRange?: [number, number];
-  initEnable?: boolean;
-  sharedData?: EnvelopeData;
-  sustainPointIndex?: number | null;
-  releasePointIndex?: number;
-}
-
-/** Default serializable state with point times scaled to the requested duration. */
 export function defaultEnvelopeState(type: EnvelopeType, durationSeconds = 1): EnvelopeState {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
     throw new RangeError("Envelope duration must be greater than zero");
@@ -83,50 +69,4 @@ export function defaultEnvelopeState(type: EnvelopeType, durationSeconds = 1): E
         },
       };
   }
-}
-
-export function createEnvelope(
-  context: AudioContext,
-  type: EnvelopeType,
-  options: EnvelopeOptions = {},
-): CustomEnvelope {
-  const {
-    durationSeconds = 2,
-    points,
-    sustainPointIndex,
-    releasePointIndex,
-    envPointValueRange,
-    initEnable,
-    sharedData,
-  } = options;
-
-  // Use shared data if provided // todo: finish or remove
-  if (sharedData) {
-    return new CustomEnvelope(context, type, sharedData);
-  }
-
-  const defaults = defaultEnvelopeState(type, durationSeconds);
-
-  // Use custom values or defaults
-  const finalPoints = points || defaults.shape.points;
-  const finalValueRange = envPointValueRange || defaults.shape.valueRange;
-  const finalInitEnable = initEnable !== undefined ? initEnable : defaults.enabled;
-  const finalSustainIndex =
-    sustainPointIndex !== undefined ? sustainPointIndex : defaults.shape.sustainIndex;
-  const finalReleaseIndex =
-    releasePointIndex !== undefined ? releasePointIndex : defaults.shape.releaseIndex;
-
-  const envelope = new CustomEnvelope(
-    context,
-    type,
-    undefined, // no shared data
-    finalPoints,
-    finalValueRange,
-    durationSeconds,
-    finalInitEnable,
-  ); // Set sustain and release points
-  envelope.setSustainPoint(finalSustainIndex);
-  if (finalReleaseIndex) envelope.setReleasePoint(finalReleaseIndex);
-
-  return envelope;
 }

@@ -2,7 +2,7 @@ import { cancelAndPinParamValue } from "@/utils";
 
 export type EnvelopeCurve = "step" | "linear" | "exponential";
 
-// Not exported: `env-types` already publishes an `EnvelopePoint` for CustomEnvelope.
+// Not exported: `env-types` already publishes an `EnvelopePoint` as the stored shape.
 type Point = {
   readonly time: number;
   readonly value: number;

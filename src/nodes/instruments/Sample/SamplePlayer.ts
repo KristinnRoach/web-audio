@@ -27,8 +27,17 @@ import { LFO } from "@/nodes/params/LFOs/LFO";
 import { createInstrumentBus, type InstrumentBus } from "@/nodes/master/createInstrumentBus";
 import { BusNodeName } from "@/nodes/master/InstrumentBus";
 import { SampleVoicePool } from "./SampleVoicePool";
-import { CustomEnvelope, defaultEnvelopeState } from "@/nodes/params";
-import { type Envelope, type EnvelopeState, type EnvelopeType } from "@/nodes/params/envelopes";
+import { defaultEnvelopeState } from "@/nodes/params";
+import {
+  addPoint,
+  deletePoint,
+  setDuration,
+  updatePoint,
+  type Envelope,
+  type EnvelopeState,
+  type EnvelopeType,
+  type PointEnvelopeShape,
+} from "@/nodes/params/envelopes";
 import { ILibInstrumentNode } from "@/nodes/LibAudioNode";
 import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
 import { createMessageBus, MessageBus } from "@/events";
@@ -315,20 +324,24 @@ export class SamplePlayer implements ILibInstrumentNode {
   #setupMessageHandling(): this {
     this.voicePool.onMessage("sample:loaded", () => {
       this.#isLoaded = true;
-      this.envelopeStates.forEach((state, type) => {
-        this.applyEnvelopeStateToVoices(type, state);
-        // Update envelope durations to match the new buffer duration
-        this.voicePool.applyToAllVoices((voice) => {
-          voice.getEnvelope(type)?.setDuration(this.#bufferDuration);
-        });
-      });
 
+      // Rescale every shape to the new buffer and push it down. Voices come up on
+      // their own defaults, so this is also what first puts them on the owned state -
+      // without it the player and its voices would hold different shapes.
       SAMPLE_ENVELOPE_TYPES.forEach((type) => {
-        this.emitEnvelopeChanged(type);
+        const state = this.getEnvelopeState(type);
+        this.applyEnvelopeState(type, {
+          ...state,
+          shape: setDuration(state.shape, this.#bufferDuration),
+        });
       });
     });
 
     this.voicePool.onMessage("voice-pool:initialized", () => {
+      // Fresh voices start on defaults, so hand them the owned state before they play.
+      SAMPLE_ENVELOPE_TYPES.forEach((type) =>
+        this.applyEnvelopeStateToVoices(type, this.getEnvelopeState(type)),
+      );
       this.sendUpstreamMessage("sample-player:initialized", {});
     });
 
@@ -1120,13 +1133,18 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === ENVELOPES === */
 
-  /** Returns a detached, serializable envelope snapshot. */
+  /**
+   * Returns a detached, serializable envelope snapshot.
+   *
+   * This map is the only copy of envelope state in the instrument. Voices hold a
+   * pushed-down duplicate they can schedule from but never write to, so there is no
+   * second authority to read back from and nothing to invalidate.
+   */
   getEnvelopeState(type: EnvelopeType): EnvelopeState {
     const stored = this.envelopeStates.get(type);
     if (stored) return cloneEnvelopeState(stored);
 
-    const envelope = this.getEnvelope(type);
-    const state = envelope.getState();
+    const state = defaultEnvelopeState(type, this.sampleDuration || 1);
     this.envelopeStates.set(type, state);
     return cloneEnvelopeState(state);
   }
@@ -1188,8 +1206,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   private emitEnvelopeChanged(type: EnvelopeType): void {
-    if (!this.voicePool.allVoices[0]?.getEnvelope(type)) return;
-    this.envelopeStates.delete(type);
     const state = this.getEnvelopeState(type);
     if (type === "filter-env") this.applyPostFilterEnvelope(state);
     this.sendUpstreamMessage("envelope:changed", {
@@ -1211,25 +1227,16 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), enabled: false });
   };
 
-  /** @deprecated Prefer getEnvelopeState() and applyEnvelopeState(). */
-  getEnvelope(envType: EnvelopeType): CustomEnvelope {
-    const firstVoice = this.voicePool.allVoices[0];
-    if (!firstVoice) throw new Error("No voices available in voice pool");
-
-    const envelope = firstVoice.getEnvelope(envType);
-    if (!envelope) throw new Error(`Envelope type '${envType}' not found`);
-
-    return envelope;
-  }
-
   // ponytail: dropped the loop `mode` argument - only "normal" was ever implemented.
   setEnvelopeLoop = (envType: EnvelopeType, loop: boolean) => {
     this.applyEnvelopeState(envType, { ...this.getEnvelopeState(envType), loop });
   };
 
   setEnvelopeSync = (envType: EnvelopeType, sync: boolean) => {
-    this.voicePool.applyToAllVoices((v) => v.syncEnvelopeToPlaybackRate(envType, sync));
-    this.emitEnvelopeChanged(envType);
+    this.applyEnvelopeState(envType, {
+      ...this.getEnvelopeState(envType),
+      playbackRateSync: sync,
+    });
   };
 
   setEnvelopeTimeScale = (envType: EnvelopeType, timeScale: number) => {
@@ -1253,18 +1260,20 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   updateEnvelopePoint(envType: EnvelopeType, index: number, time: number, value: number): void {
-    this.voicePool.applyToAllVoices((v) => v.updateEnvelopePoint(envType, index, time, value));
-    this.emitEnvelopeChanged(envType);
+    this.#editShape(envType, (shape) => updatePoint(shape, index, time, value));
   }
 
   addEnvelopePoint(envType: EnvelopeType, time: number, value: number): void {
-    this.voicePool.applyToAllVoices((v) => v.addEnvelopePoint(envType, time, value));
-    this.emitEnvelopeChanged(envType);
+    this.#editShape(envType, (shape) => addPoint(shape, time, value));
   }
 
   deleteEnvelopePoint(envType: EnvelopeType, index: number): void {
-    this.voicePool.applyToAllVoices((v) => v.deleteEnvelopePoint(envType, index));
-    this.emitEnvelopeChanged(envType);
+    this.#editShape(envType, (shape) => deletePoint(shape, index));
+  }
+
+  #editShape(envType: EnvelopeType, edit: (shape: PointEnvelopeShape) => PointEnvelopeShape): void {
+    const state = this.getEnvelopeState(envType);
+    this.applyEnvelopeState(envType, { ...state, shape: edit(state.shape) });
   }
 
   /**

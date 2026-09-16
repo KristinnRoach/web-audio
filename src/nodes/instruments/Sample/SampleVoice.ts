@@ -17,11 +17,13 @@ import {
 } from "@/utils";
 
 import {
-  CustomEnvelope,
+  defaultEnvelopeState,
+  hasVariation,
+  scaledDuration,
   type EnvelopeState,
   type EnvelopeType,
-  createEnvelope,
 } from "@/nodes/params/envelopes";
+import { VoiceEnvelope } from "./VoiceEnvelope";
 
 import { HarmonicFeedback } from "@/nodes/effects/HarmonicFeedback";
 
@@ -48,7 +50,7 @@ export class SampleVoice {
   #am_gain: GainNode | null = null;
   #feedback: HarmonicFeedback | null = null;
 
-  #envelopes = new Map<EnvelopeType, CustomEnvelope>();
+  #envelopes = new Map<EnvelopeType, VoiceEnvelope>();
 
   #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
@@ -225,27 +227,24 @@ export class SampleVoice {
     this.#envelopes.forEach((env) => env.dispose());
     this.#envelopes.clear();
 
-    const durationSeconds = this.#sampleDurationSeconds || undefined;
-    const ampEnv = createEnvelope(this.context, "amp-env", { durationSeconds });
-    this.#envelopes.set("amp-env", ampEnv);
+    const durationSeconds = this.#sampleDurationSeconds || 1;
+    const types: EnvelopeType[] = this.#chainIncludes("lpf")
+      ? ["amp-env", "pitch-env", "filter-env"]
+      : ["amp-env", "pitch-env"];
 
-    const pitchEnv = createEnvelope(this.context, "pitch-env", {
-      durationSeconds,
-    });
-
-    this.#envelopes.set("pitch-env", pitchEnv);
-
-    if (this.#chainIncludes("lpf")) {
-      const filterEnv = createEnvelope(this.context, "filter-env", {
-        durationSeconds,
-        envPointValueRange: [0, 1],
-        initEnable: false,
-      });
-
-      this.#envelopes.set("filter-env", filterEnv);
+    for (const type of types) {
+      // Envelopes start from defaults; SamplePlayer pushes the real state down as soon
+      // as it has one, which is also what keeps every voice on the same shape.
+      const state = defaultEnvelopeState(type, durationSeconds);
+      const envelope = new VoiceEnvelope(this.context, type, state, (messageType, data) =>
+        this.sendUpstreamMessage(messageType, {
+          ...data,
+          voiceId: this.nodeId,
+          midiNote: this.#midiNote,
+        }),
+      );
+      this.#envelopes.set(type, envelope);
     }
-
-    this.#setupEnvelopeMessageHandling();
   }
 
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
@@ -418,10 +417,10 @@ export class SampleVoice {
 
   applyEnvelopes(timestamp: number, playbackRate: number, velocity?: number, midiNote?: number) {
     this.#envelopes.forEach((env, envType) => {
-      if (!env.isEnabled) return;
-      const param = this.getParam(env.param);
+      if (!env.enabled) return;
+      const param = this.getParam(env.paramName);
       if (!param) return;
-      if (envType === "pitch-env" && !env.hasVariation()) return;
+      if (envType === "pitch-env" && !hasVariation(env.state.shape)) return;
 
       const baseValue = (() => {
         switch (envType) {
@@ -436,24 +435,17 @@ export class SampleVoice {
         }
       })();
 
-      env.triggerEnvelope(param, timestamp, {
-        baseValue,
-        playbackRate,
-        voiceId: this.nodeId,
-        midiNote: midiNote ?? 60,
-      });
+      env.trigger(param, timestamp, { baseValue, playbackRate });
     });
 
     const envDurations = Object.fromEntries(
       Array.from(this.#envelopes, ([envType, env]) => [
         envType,
-        env.syncedToPlaybackRate
-          ? env.baseDuration / playbackRate / env.timeScale
-          : env.baseDuration / env.timeScale,
+        scaledDuration(env.state, 0, env.state.shape.points.length - 1, playbackRate),
       ]),
     );
     const loopEnabled = Object.fromEntries(
-      Array.from(this.#envelopes, ([envType, env]) => [envType, env.loopEnabled]),
+      Array.from(this.#envelopes, ([envType, env]) => [envType, env.state.loop]),
     );
 
     this.sendUpstreamMessage("sample-envelopes:trigger", {
@@ -479,7 +471,7 @@ export class SampleVoice {
   }
 
   #stopEnvelopes() {
-    this.#envelopes.forEach((env) => env.stopCurrentRun());
+    this.#envelopes.forEach((env) => env.stop());
   }
 
   #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
@@ -521,15 +513,8 @@ export class SampleVoice {
 
     // Release all enabled envelopes
     this.#envelopes.forEach((env) => {
-      if (!env.isEnabled) return;
-      const param = this.getParam(env.param);
-      if (!param) return;
-
-      env.releaseEnvelope(param, timestamp, {
-        playbackRate,
-        voiceId: this.nodeId,
-        midiNote: this.#midiNote ?? 60, // not used
-      });
+      if (!env.enabled) return;
+      env.release(timestamp);
     });
 
     this.sendToProcessor({ type: "voice:release", timestamp });
@@ -540,11 +525,11 @@ export class SampleVoice {
     });
 
     // Get longest release time of enabled envelopes
-    const enabledEnvelopes = Array.from(this.#envelopes.values()).filter((env) => env.isEnabled);
+    const enabledEnvelopes = Array.from(this.#envelopes.values()).filter((env) => env.enabled);
 
     const effectiveReleaseTime =
       enabledEnvelopes.length > 0
-        ? Math.max(...enabledEnvelopes.map((env) => env.effectiveReleaseDuration))
+        ? Math.max(...enabledEnvelopes.map((env) => env.releaseDuration(playbackRate)))
         : releaseTime; // Fallback passed in release time
 
     // Stop after the release duration.
@@ -700,13 +685,8 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  enableEnvelope = (envType: EnvelopeType) => {
-    this.#envelopes.get(envType)?.enable();
-  };
-
-  disableEnvelope = (envType: EnvelopeType) => {
-    this.#envelopes.get(envType)?.disable();
-
+  /** A disabled filter envelope leaves the cutoff wherever it stopped, so restore it. */
+  #resetFilterEnvTarget = (envType: EnvelopeType) => {
     if (envType === "filter-env" && this.#chainIncludes("lpf")) {
       const lpf = this.getParam("lpf");
       lpf?.cancelScheduledValues(this.now);
@@ -715,44 +695,22 @@ export class SampleVoice {
     }
   };
 
-  setEnvelopeTimeScale = (envType: EnvelopeType, timeScale: number) => {
-    this.#envelopes.get(envType)?.setTimeScale(timeScale);
-  };
-
-  setEnvelopeSustainPoint = (envType: EnvelopeType, index: number | null) => {
-    const env = this.#envelopes.get(envType);
-    if (env?.isEnabled) env.setSustainPoint(index);
-  };
-
-  setEnvelopeReleasePoint = (envType: EnvelopeType, index: number) => {
-    const env = this.#envelopes.get(envType);
-    if (env?.isEnabled) env.setReleasePoint(index);
-  };
-
-  addEnvelopePoint(envType: EnvelopeType, time: number, value: number) {
-    const env = this.#envelopes.get(envType);
-    if (env?.isEnabled) env.addPoint(time, value);
-  }
-
-  updateEnvelopePoint(envType: EnvelopeType, index: number, time?: number, value?: number) {
-    const env = this.#envelopes.get(envType);
-    if (env?.isEnabled) env.updatePoint(index, time, value);
-  }
-
-  deleteEnvelopePoint(envType: EnvelopeType, index: number) {
-    const env = this.#envelopes.get(envType);
-    if (env?.isEnabled) env.deletePoint(index);
-  }
-
-  getEnvelope = (envType: EnvelopeType): CustomEnvelope | undefined => {
+  getEnvelope = (envType: EnvelopeType): VoiceEnvelope | undefined => {
     return this.#envelopes.get(envType);
   };
 
-  /** @internal */
+  /**
+   * The only way envelope state reaches a voice. `SamplePlayer` owns the single copy
+   * and pushes it down whole, so there is nothing here that can drift out of step with
+   * it, and no second entry point that could mean something different.
+   */
   applyEnvelopeState = (envType: EnvelopeType, state: EnvelopeState) => {
     const envelope = this.#envelopes.get(envType);
-    envelope?.applyState(state);
-    if (envelope && !state.enabled) this.disableEnvelope(envType);
+    if (!envelope) return;
+
+    const wasEnabled = envelope.enabled;
+    envelope.applyState(state);
+    if (wasEnabled && !state.enabled) this.#resetFilterEnvTarget(envType);
   };
 
   get envelopes() {
@@ -930,25 +888,6 @@ export class SampleVoice {
     return this;
   }
 
-  #setupEnvelopeMessageHandling() {
-    this.#envelopes.forEach((env, envType) => {
-      this.#messages.forwardFrom(
-        env,
-        [
-          `${envType}:trigger`,
-          `${envType}:release`,
-          `${envType}:trigger:loop`,
-          `${envType}:created`,
-        ],
-        (msg) => ({
-          ...msg,
-          voiceId: this.nodeId,
-          midiNote: this.#midiNote,
-        }),
-      );
-    });
-  }
-
   #setupWorkletMessageHandling() {
     this.#playerWorklet.port.onmessage = (event: MessageEvent) => {
       let { type, ...data } = event.data;
@@ -1073,7 +1012,7 @@ export class SampleVoice {
   }
 
   get releaseTime() {
-    return this.#envelopes.get("amp-env")!.effectiveReleaseDuration;
+    return this.#envelopes.get("amp-env")!.releaseDuration();
   }
 
   // Setters
@@ -1096,19 +1035,6 @@ export class SampleVoice {
     if (!enabled && this.#state === VoiceState.PLAYING) this.release({});
     return this;
   }
-
-  // ponytail: dropped the loop `mode` argument - only "normal" was ever implemented.
-  setEnvelopeLoop = (envType: EnvelopeType, loop: boolean) => {
-    const env = this.#envelopes.get(envType);
-    env?.setLoopEnabled(loop);
-    return this;
-  };
-
-  syncEnvelopeToPlaybackRate = (envType: EnvelopeType, sync: boolean) => {
-    const env = this.#envelopes.get(envType);
-    env?.syncToPlaybackRate(sync);
-    return this;
-  };
 
   setPlaybackRate(
     rate: number,

@@ -13,10 +13,8 @@ export type { LibNode, LibAudioNode, SampleLoader, GainStages } from "./nodes";
 export type { SamplePlayerOptions } from "./nodes/instruments/Sample/SamplePlayer";
 export type { SampleVoiceChainNode } from "./nodes/instruments/Sample/SampleVoice";
 export type {
-  CustomEnvelope,
   Envelope,
   EnvelopePoint,
-  EnvelopeData,
   EnvelopeState,
   EnvelopeType,
   PointEnvelopeShape,
