@@ -545,7 +545,7 @@ export class SampleVoice {
         ? Math.max(...enabledEnvelopes.map((env) => env.effectiveReleaseDuration))
         : releaseTime; // Fallback passed in release time
 
-    // Stop after release duration // todo: check for redundancy
+    // Stop after the release duration.
     if (this.#releaseTimeout) clearTimeout(this.#releaseTimeout);
     this.#releaseTimeout = setTimeout(
       () => {

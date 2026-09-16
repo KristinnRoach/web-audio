@@ -5,8 +5,7 @@
  * for the idle-but-unloaded voice. `SampleVoice.#hasLoadedAudio` tracks it and
  * gates `trigger()`, so AVAILABLE means "not sounding", not "playable".
  *
- * Past construction, AVAILABLE is written in exactly one place,
- * `SampleVoice.stop()`.
+ * Past construction, `SampleVoice.#transitionTo` is the only state writer.
  */
 export const VoiceState = {
   AVAILABLE: "AVAILABLE",
