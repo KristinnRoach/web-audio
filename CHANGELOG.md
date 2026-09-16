@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.4.2
+
+### Patch Changes
+
+- 5ef0d7a: No longer emits voice:started/voice:releasing/voice:stopped events
+
 ## 0.4.1
 
 ### Patch Changes
