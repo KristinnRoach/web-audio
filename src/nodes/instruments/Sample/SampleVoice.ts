@@ -997,12 +997,10 @@ export class SampleVoice {
           break;
         }
 
+        // Forwarded upstream by the tail call, nothing to do here.
         case "loop:enabled":
-          break;
-
-        case "voice:looped":
-          break;
-
+        case "loop:syncToTempo":
+        case "voice:reset":
         case "voice:playbackDirectionChange":
           break;
 
@@ -1011,24 +1009,6 @@ export class SampleVoice {
             data.position,
             this.context.currentTime,
           );
-          break;
-
-        case "debug:params":
-          console.debug(
-            "Debug params: ",
-            { loopStart: data.loopStart },
-            { loopStartSamples: data.loopStartSamples },
-            { loopEnd: data.loopEnd },
-            { loopEndSamples: data.loopEndSamples },
-          );
-          break;
-
-        case "debug:release":
-          console.debug("SampleVoice release debug:", data);
-          break;
-
-        case "debug:loop":
-          console.log("Loop debug:", data);
           break;
 
         default:
