@@ -60,7 +60,7 @@
     "@vitest/browser-playwright": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "concurrently": "^9.1.2",
-    "jsdom": "^26.0.0",
+    "jsdom": "^30.0.1",
     "playwright": "^1.53.2",
     "typescript": "5.8.3",
     "vite": "catalog:",
