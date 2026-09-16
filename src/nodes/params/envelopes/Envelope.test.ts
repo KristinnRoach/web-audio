@@ -72,7 +72,7 @@ test("treats point times as offsets from the first point, not as a pre-delay", (
   expect(calls.linear).toHaveBeenCalledWith(1, 10 + (0.6 - 0.5));
 });
 
-// The shape `defaultEnvelopeState` builds for amp-env and filter-env: exponential
+// Common amplitude and filter presets use exponential segments that touch zero.
 // throughout, zero at both ends. A zero target throws, a zero start silently holds.
 test("keeps an exponential segment off zero at both ends", () => {
   const { calls, param } = mockParam();
@@ -299,6 +299,26 @@ test("loops up to the sustain point and keeps the release stage out of the loop"
   vi.advanceTimersByTime(50);
   expect(calls.set.mock.calls.length + calls.linear.mock.calls.length).toBe(scheduled);
 
+  env.dispose();
+});
+
+test("loops the whole envelope when no sustain point is set", () => {
+  vi.useFakeTimers();
+  const { calls, param } = mockParam();
+  const clock = { currentTime: 0 };
+  const env = createEnvelopeScheduler(clock as AudioContext, param, {
+    points: [
+      { time: 0, value: 0 },
+      { time: 0.5, value: 1 },
+      { time: 1, value: 0 },
+    ],
+    loop: true,
+  });
+
+  env.trigger(0);
+  clock.currentTime = 0.1;
+  vi.advanceTimersByTime(50);
+  expect(calls.set.mock.calls.some(([, time]) => time === 1)).toBe(true);
   env.dispose();
 });
 

@@ -451,7 +451,7 @@ export class InstrumentBus implements ILibAudioNode {
    *
    * `timeScale` divides every point time, so values above 1 sweep faster. One filter is
    * shared by every note, so there is no per-note playback rate for it to follow - a
-   * sample envelope's `playbackRateSync` has no meaning here and is not read.
+   * per-note playback-rate scaling has no meaning here and is not applied.
    */
   setLpfEnvelope(envelope: Envelope | null, { amount = 0, timeScale = 1 } = {}): this {
     this.#lpfEnvScheduler?.dispose();

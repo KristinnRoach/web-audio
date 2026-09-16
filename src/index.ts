@@ -1,7 +1,7 @@
 // =*=*= Factories =*=*= \\
 export { createSamplePlayer } from "./nodes/instruments/Sample/createSamplePlayer";
 export { createAudioRecorder } from "./nodes/recorder";
-export { defaultEnvelopeState } from "./nodes/params/envelopes";
+export { envelopePresets } from "./nodes/params/envelopes";
 
 // =*=*= Classes =*=*= \\
 export { SamplePlayer } from "./nodes/instruments/Sample/SamplePlayer";
@@ -12,13 +12,8 @@ export type { Recorder, RecorderInput, RecorderStartOptions } from "./nodes/reco
 export type { LibNode, LibAudioNode, SampleLoader, GainStages } from "./nodes";
 export type { SamplePlayerOptions } from "./nodes/instruments/Sample/SamplePlayer";
 export type { SampleVoiceChainNode } from "./nodes/instruments/Sample/SampleVoice";
-export type {
-  Envelope,
-  EnvelopePoint,
-  EnvelopeState,
-  EnvelopeType,
-  PointEnvelopeShape,
-} from "./nodes/params/envelopes";
+export type { Envelope, EnvelopePoint, EnvelopeSettings } from "./nodes/params/envelopes";
+export type { EnvelopeId } from "./nodes/params/envelopes/envelope-targets";
 
 // =*=*= Utilities =*=*= \\
 export { getAudioContext, ensureAudioCtx } from "./context";

@@ -1,20 +1,12 @@
 import {
-  bindEnvelope,
   createEnvelopeScheduler,
   releaseDuration,
   releaseStartTime,
   scaledDuration,
   type EnvelopeScheduler,
-  type EnvelopeState,
-  type EnvelopeType,
+  type EnvelopeSettings,
 } from "@/nodes/params/envelopes";
-
-/** Which voice parameter each envelope type drives. */
-const PARAM_NAME: Record<EnvelopeType, string> = {
-  "amp-env": "envGain",
-  "pitch-env": "playbackRate",
-  "filter-env": "lpf",
-};
+import { ENVELOPE_TARGETS, type EnvelopeId } from "./envelope-targets";
 
 export type TriggerOptions = {
   /** Velocity for an amp envelope, playback rate for pitch, resting cutoff for filter. */
@@ -37,9 +29,10 @@ export class VoiceEnvelope {
   readonly paramName: string;
 
   #context: AudioContext;
-  #type: EnvelopeType;
+  #type: EnvelopeId;
   #emit: EnvelopeEmit;
-  #state: EnvelopeState;
+  #settings: EnvelopeSettings;
+  #playbackRateSync = false;
 
   #scheduler: EnvelopeScheduler | null = null;
 
@@ -48,12 +41,17 @@ export class VoiceEnvelope {
   #autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
   #loopTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(context: AudioContext, type: EnvelopeType, state: EnvelopeState, emit: EnvelopeEmit) {
+  constructor(
+    context: AudioContext,
+    type: EnvelopeId,
+    settings: EnvelopeSettings,
+    emit: EnvelopeEmit,
+  ) {
     this.#context = context;
     this.#type = type;
-    this.#state = state;
+    this.#settings = settings;
     this.#emit = emit;
-    this.paramName = PARAM_NAME[type];
+    this.paramName = ENVELOPE_TARGETS[type].paramName;
 
     emit(`${type}:created`, {});
   }
@@ -62,21 +60,34 @@ export class VoiceEnvelope {
     return this.#type;
   }
 
-  get state(): EnvelopeState {
-    return this.#state;
+  get settings(): EnvelopeSettings {
+    return this.#settings;
   }
 
   get enabled() {
-    return this.#state.enabled;
+    return this.#settings.enabled;
+  }
+
+  get loop() {
+    return !!this.#settings.envelope.loop;
+  }
+
+  duration(playbackRate = 1) {
+    return scaledDuration(
+      this.#settings,
+      0,
+      this.#settings.envelope.points.length - 1,
+      this.#playbackRateSync ? playbackRate : 1,
+    );
   }
 
   /** How long the release tail runs, which is what the voice waits out before freeing. */
   releaseDuration(playbackRate = 1) {
-    return releaseDuration(this.#state, playbackRate);
+    return releaseDuration(this.#settings, this.#playbackRateSync ? playbackRate : 1);
   }
 
   /**
-   * Replaces the state.
+   * Replaces the settings.
    *
    * A running note keeps playing the shape it was triggered with. Reaching into a
    * sounding envelope is its own decision with its own audible consequences (#23), and
@@ -84,35 +95,48 @@ export class VoiceEnvelope {
    * The one exception is switching the loop off, which has to settle an auto-release
    * that was held back while the loop was holding the note.
    */
-  applyState(state: EnvelopeState) {
-    const loopWasOn = this.#state.loop;
-    this.#state = state;
+  applySettings(settings: EnvelopeSettings) {
+    const loopWasOn = this.#settings.envelope.loop;
+    this.#settings = settings;
 
-    if (loopWasOn && !state.loop && this.#autoReleaseSuppressed && !this.#isReleased) {
-      if (state.shape.sustainIndex === null) this.#sendAutoRelease();
+    if (
+      loopWasOn &&
+      !settings.envelope.loop &&
+      this.#autoReleaseSuppressed &&
+      !this.#isReleased &&
+      settings.envelope.sustain === undefined
+    ) {
+      this.#sendAutoRelease();
     }
+  }
+
+  setPlaybackRateSync(sync: boolean) {
+    this.#playbackRateSync = sync;
   }
 
   trigger(param: AudioParam, startTime: number, options: TriggerOptions) {
     this.#isReleased = false;
     this.#autoReleaseSuppressed = false;
 
-    const { envelope, options: schedule } = bindEnvelope(this.#state, this.#type, {
-      baseValue: options.baseValue,
-      playbackRate: options.playbackRate,
-      ceiling: param.maxValue,
-    });
+    const timeScale =
+      this.#settings.timeScale * (this.#playbackRateSync ? options.playbackRate : 1);
+    const target = ENVELOPE_TARGETS[this.#type];
+    const resolved = target.resolve(this.#settings.envelope, options.baseValue, param);
+    const schedule = {
+      amount: resolved.amount,
+      timeScale,
+    };
 
     this.#scheduler?.dispose();
-    this.#scheduler = createEnvelopeScheduler(this.#context, param, envelope);
+    this.#scheduler = createEnvelopeScheduler(this.#context, param, resolved.envelope);
     this.#scheduler.trigger(Math.max(this.#context.currentTime, startTime), schedule);
 
-    const { sustainIndex } = this.#state.shape;
+    const { sustain, loop } = this.#settings.envelope;
     this.#emit(`${this.#type}:trigger`, {
-      duration: releaseStartTime(this.#state, options.playbackRate),
-      sustainEnabled: sustainIndex !== null && !this.#state.loop,
-      loopEnabled: this.#state.loop,
-      sustainPoint: sustainIndex === null ? null : this.#state.shape.points[sustainIndex],
+      duration: releaseStartTime(this.#settings, this.#playbackRateSync ? options.playbackRate : 1),
+      sustainEnabled: sustain !== undefined && !loop,
+      loopEnabled: !!loop,
+      sustainPoint: sustain === undefined ? null : this.#settings.envelope.points[sustain],
       releasePoint: this.#releasePoint,
     });
 
@@ -148,7 +172,8 @@ export class VoiceEnvelope {
   }
 
   get #releasePoint() {
-    return this.#state.shape.points[this.#state.shape.releaseIndex] ?? null;
+    const release = this.#settings.envelope.release ?? this.#settings.envelope.sustain;
+    return release === undefined ? null : (this.#settings.envelope.points[release] ?? null);
   }
 
   /**
@@ -166,16 +191,16 @@ export class VoiceEnvelope {
       () => {
         this.#autoReleaseTimer = null;
         if (this.#isReleased) return;
-        if (this.#state.shape.sustainIndex !== null && !this.#state.loop) return;
+        if (this.#settings.envelope.sustain !== undefined && !this.#settings.envelope.loop) return;
 
-        if (this.#state.loop) {
+        if (this.#settings.envelope.loop) {
           this.#autoReleaseSuppressed = true;
           return;
         }
 
         this.#sendAutoRelease();
       },
-      releaseStartTime(this.#state, playbackRate) * 1000,
+      releaseStartTime(this.#settings, this.#playbackRateSync ? playbackRate : 1) * 1000,
     );
   }
 
@@ -199,16 +224,21 @@ export class VoiceEnvelope {
    */
   #startLoopMessages(startTime: number, playbackRate: number) {
     this.#stopLoopMessages();
-    if (!this.#state.loop) return;
+    if (!this.#settings.envelope.loop) return;
 
-    const { sustainIndex, points } = this.#state.shape;
-    const loopEnd = sustainIndex ?? points.length - 1;
-    const duration = scaledDuration(this.#state, 0, loopEnd, playbackRate);
+    const { sustain, points } = this.#settings.envelope;
+    const loopEnd = sustain ?? points.length - 1;
+    const duration = scaledDuration(
+      this.#settings,
+      0,
+      loopEnd,
+      this.#playbackRateSync ? playbackRate : 1,
+    );
     if (duration <= 0) return;
 
     let cycle = 1;
     const tick = () => {
-      if (this.#isReleased || !this.#state.loop) return this.#stopLoopMessages();
+      if (this.#isReleased || !this.#settings.envelope.loop) return this.#stopLoopMessages();
 
       this.#emit(`${this.#type}:trigger:loop`, { duration });
       cycle++;

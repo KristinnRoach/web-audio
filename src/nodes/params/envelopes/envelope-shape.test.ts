@@ -9,147 +9,103 @@ import {
   setDuration,
   updatePoint,
 } from "./envelope-shape";
-import type { EnvelopeState, PointEnvelopeShape } from "./env-types";
+import type { Envelope, EnvelopeSettings } from "./Envelope";
 
-function shapeOf(overrides: Partial<PointEnvelopeShape> = {}): PointEnvelopeShape {
+function envelopeOf(overrides: Partial<Envelope> = {}): Envelope {
   return {
-    kind: "points",
     points: [
       { time: 0, value: 0, curve: "exponential" },
       { time: 1, value: 1, curve: "exponential" },
       { time: 2, value: 0.5, curve: "exponential" },
       { time: 3, value: 0, curve: "exponential" },
     ],
-    valueRange: [0, 1],
-    sustainIndex: null,
-    releaseIndex: 2,
+    release: 2,
     ...overrides,
   };
 }
 
-const stateOf = (shape: PointEnvelopeShape, overrides: Partial<EnvelopeState> = {}) =>
-  ({
-    enabled: true,
-    timeScale: 1,
-    playbackRateSync: false,
-    loop: false,
-    shape,
-    ...overrides,
-  }) satisfies EnvelopeState;
+const settingsOf = (
+  envelope: Envelope,
+  overrides: Partial<EnvelopeSettings> = {},
+): EnvelopeSettings => ({ enabled: true, timeScale: 1, envelope, ...overrides });
 
-describe("envelope-shape edits", () => {
-  it("never mutates the shape it was given", () => {
-    const shape = shapeOf();
-    const before = JSON.stringify(shape);
+describe("envelope edits", () => {
+  it("never mutates the envelope it was given", () => {
+    const envelope = envelopeOf();
+    const before = JSON.stringify(envelope);
 
-    addPoint(shape, 1.5, 0.8);
-    updatePoint(shape, 1, 1.2);
-    deletePoint(shape, 1);
-    setDuration(shape, 6);
+    addPoint(envelope, 1.5, 0.8);
+    updatePoint(envelope, 1, 1.2);
+    deletePoint(envelope, 1);
+    setDuration(envelope, 6);
 
-    expect(JSON.stringify(shape)).toBe(before);
+    expect(JSON.stringify(envelope)).toBe(before);
   });
 
-  describe("addPoint", () => {
-    it("inserts in time order and carries the markers along", () => {
-      const next = addPoint(shapeOf({ sustainIndex: 1 }), 0.5, 0.3);
-
-      expect(next.points.map((point) => point.time)).toEqual([0, 0.5, 1, 2, 3]);
-      // Both markers sat after the insert, so they follow their own points.
-      expect(next.sustainIndex).toBe(2);
-      expect(next.releaseIndex).toBe(3);
-    });
-
-    it("leaves markers alone when the point lands after them", () => {
-      const next = addPoint(shapeOf({ sustainIndex: 1 }), 2.5, 0.1);
-      expect(next.sustainIndex).toBe(1);
-      expect(next.releaseIndex).toBe(2);
-    });
-
-    it("refuses a point outside the anchors", () => {
-      const shape = shapeOf();
-      expect(addPoint(shape, -1, 0.5)).toBe(shape);
-      expect(addPoint(shape, 4, 0.5)).toBe(shape);
-    });
+  it("inserts in time order and carries markers along", () => {
+    const next = addPoint(envelopeOf({ sustain: 1 }), 0.5, 0.3);
+    expect(next.points.map((point) => point.time)).toEqual([0, 0.5, 1, 2, 3]);
+    expect(next.sustain).toBe(2);
+    expect(next.release).toBe(3);
   });
 
-  describe("updatePoint", () => {
-    /**
-     * The scheduler walks points in order and never re-sorts them, so a crossing edit
-     * would silently break the shape rather than fail loudly.
-     */
-    it("refuses a move across either neighbour", () => {
-      const shape = shapeOf();
-      expect(updatePoint(shape, 2, 0.5)).toBe(shape); // back past point 1
-      expect(updatePoint(shape, 1, 2.5)).toBe(shape); // forward past point 2
-      expect(updatePoint(shape, 1, 1.5).points[1].time).toBe(1.5);
-    });
-
-    it("changes value without touching time", () => {
-      const next = updatePoint(shapeOf(), 1, undefined, 0.25);
-      expect(next.points[1]).toMatchObject({ time: 1, value: 0.25 });
-    });
+  it("refuses points outside the anchors", () => {
+    const envelope = envelopeOf();
+    expect(addPoint(envelope, -1, 0.5)).toBe(envelope);
+    expect(addPoint(envelope, 4, 0.5)).toBe(envelope);
   });
 
-  describe("deletePoint", () => {
-    it("pulls later markers back", () => {
-      const next = deletePoint(shapeOf({ sustainIndex: 1 }), 1);
-      expect(next.points.map((point) => point.time)).toEqual([0, 2, 3]);
-      expect(next.sustainIndex).toBe(null);
-      expect(next.releaseIndex).toBe(1);
-    });
-
-    it("keeps a release stage when the release point itself goes", () => {
-      const next = deletePoint(shapeOf({ releaseIndex: 2 }), 2);
-      expect(next.releaseIndex).toBeLessThan(next.points.length - 1);
-      expect(next.releaseIndex).toBeGreaterThanOrEqual(0);
-    });
-
-    it("refuses to remove an anchor or to drop below two points", () => {
-      const shape = shapeOf();
-      expect(deletePoint(shape, 0)).toBe(shape);
-      expect(deletePoint(shape, 3)).toBe(shape);
-
-      const pair = shapeOf({ points: shape.points.slice(0, 2), releaseIndex: 0 });
-      expect(deletePoint(pair, 1)).toBe(pair);
-    });
+  it("refuses a move across either neighbour", () => {
+    const envelope = envelopeOf();
+    expect(updatePoint(envelope, 2, 0.5)).toBe(envelope);
+    expect(updatePoint(envelope, 1, 2.5)).toBe(envelope);
+    expect(updatePoint(envelope, 1, 1.5).points[1].time).toBe(1.5);
   });
 
-  describe("setDuration", () => {
-    it("scales every point about the first one", () => {
-      const next = setDuration(shapeOf(), 6);
-      expect(next.points.map((point) => point.time)).toEqual([0, 2, 4, 6]);
-      expect(baseDuration(next)).toBe(6);
-    });
+  it("removes interior points and adjusts markers", () => {
+    const next = deletePoint(envelopeOf({ sustain: 1 }), 1);
+    expect(next.points.map((point) => point.time)).toEqual([0, 2, 3]);
+    expect(next.sustain).toBeUndefined();
+    expect(next.release).toBe(1);
+  });
 
-    it("rejects a duration that is not a positive number", () => {
-      expect(() => setDuration(shapeOf(), 0)).toThrow(RangeError);
-      expect(() => setDuration(shapeOf(), NaN)).toThrow(RangeError);
-    });
+  it("refuses to remove anchors or leave fewer than two points", () => {
+    const envelope = envelopeOf();
+    expect(deletePoint(envelope, 0)).toBe(envelope);
+    expect(deletePoint(envelope, 3)).toBe(envelope);
+    const pair = envelopeOf({ points: envelope.points.slice(0, 2), release: 0 });
+    expect(deletePoint(pair, 1)).toBe(pair);
+  });
+
+  it("scales every point about the first one", () => {
+    const next = setDuration(envelopeOf(), 6);
+    expect(next.points.map((point) => point.time)).toEqual([0, 2, 4, 6]);
+    expect(baseDuration(next)).toBe(6);
+    expect(() => setDuration(next, 0)).toThrow(RangeError);
   });
 });
 
-describe("envelope-shape timing", () => {
-  it("divides by timeScale, and by playback rate only when synced", () => {
-    const shape = shapeOf();
-
-    expect(scaledDuration(stateOf(shape), 0, 3)).toBe(3);
-    expect(scaledDuration(stateOf(shape, { timeScale: 2 }), 0, 3)).toBe(1.5);
-    expect(scaledDuration(stateOf(shape, { playbackRateSync: true }), 0, 3, 2)).toBe(1.5);
-    expect(scaledDuration(stateOf(shape, { playbackRateSync: false }), 0, 3, 2)).toBe(3);
+describe("envelope timing", () => {
+  it("combines the stored time scale with a runtime multiplier", () => {
+    const envelope = envelopeOf();
+    expect(scaledDuration(settingsOf(envelope), 0, 3)).toBe(3);
+    expect(scaledDuration(settingsOf(envelope, { timeScale: 2 }), 0, 3)).toBe(1.5);
+    expect(scaledDuration(settingsOf(envelope), 0, 3, 2)).toBe(1.5);
   });
 
-  it("splits the shape at the release point", () => {
-    const state = stateOf(shapeOf());
-    expect(releaseStartTime(state)).toBe(2);
-    expect(releaseDuration(state)).toBe(1);
-    expect(releaseStartTime(state) + releaseDuration(state)).toBe(baseDuration(state.shape));
+  it("splits the envelope at its release point", () => {
+    const settings = settingsOf(envelopeOf());
+    expect(releaseStartTime(settings)).toBe(2);
+    expect(releaseDuration(settings)).toBe(1);
+    expect(releaseStartTime(settings) + releaseDuration(settings)).toBe(
+      baseDuration(settings.envelope),
+    );
   });
 
-  it("returns nothing for a backwards or out-of-range span", () => {
-    const state = stateOf(shapeOf());
-    expect(scaledDuration(state, 2, 1)).toBe(0);
-    expect(scaledDuration(state, 0, 99)).toBe(0);
-    expect(scaledDuration(state, -1, 2)).toBe(0);
+  it("returns zero for an invalid span", () => {
+    const settings = settingsOf(envelopeOf());
+    expect(scaledDuration(settings, 2, 1)).toBe(0);
+    expect(scaledDuration(settings, 0, 99)).toBe(0);
+    expect(scaledDuration(settings, -1, 2)).toBe(0);
   });
 });

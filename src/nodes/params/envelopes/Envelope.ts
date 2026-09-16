@@ -2,18 +2,24 @@ import { cancelAndPinParamValue } from "@/utils";
 
 export type EnvelopeCurve = "step" | "linear" | "exponential";
 
-// Not exported: `env-types` already publishes an `EnvelopePoint` as the stored shape.
-type Point = {
+export type EnvelopePoint = {
   readonly time: number;
   readonly value: number;
   /** Curve from this point to the next one. Defaults to linear. */
   readonly curve?: EnvelopeCurve;
 };
 
+export type PlaybackMode =
+  /** One-shot. Default. */
+  | { readonly type: "once" }
+  /** Hold `at`'s value until release. */
+  | { readonly type: "sustain"; readonly at: number }
+  /** Repeat the full duration. */
+  | { readonly type: "loop" };
+
 /**
- * Three shapes: play through once, hold at a point until release, or loop up to that
- * point until release. `loop` needs `sustain` because the sustain point is where the
- * loop ends, so an envelope cannot ask to loop without saying how far.
+ * Three shapes: play through once, hold at a point until release, or loop until release.
+ * A loop repeats the whole envelope, so it and `sustain` are alternatives, not a pair.
  */
 export type Envelope = {
   /**
@@ -23,7 +29,7 @@ export type Envelope = {
    *
    * Assumed sorted by time. Nothing re-sorts them on the audio path.
    */
-  readonly points: readonly Point[];
+  readonly points: readonly EnvelopePoint[];
   /**
    * Point the release stage starts from. Defaults to `sustain`, and without either
    * there is no release stage and `release()` does nothing.
@@ -34,24 +40,22 @@ export type Envelope = {
    * a lone `sustain` cannot express: `sustain` holds where this one keeps moving.
    */
   readonly release?: number;
-} & (
-  | {
-      readonly sustain?: undefined;
-      readonly loop?: undefined;
-    }
-  | {
-      /** Point held until release. Points after it form the release stage. */
-      readonly sustain: number;
-      /**
-       * Repeats points 0 through `sustain` while the note is held instead of holding
-       * the sustain value. `release()` leaves the loop and plays the release stage.
-       *
-       * Cycle n opens at `triggerTime + n * duration`, so point 0 lands on the trigger
-       * time every pass and external playback lines up by starting at that same time.
-       */
-      readonly loop?: boolean;
-    }
-);
+  /** Point held until release. Points after it form the release stage. */
+  readonly sustain?: number;
+  /**
+   * Repeats the whole envelope while the note is held. Takes the place of `sustain`
+   * rather than combining with it.
+   */
+  readonly loop?: boolean;
+};
+
+/** Serializable settings shared by editors and schedulers. */
+export type EnvelopeSettings = {
+  readonly enabled: boolean;
+  /** Timing multiplier; values above 1 play the envelope faster. */
+  readonly timeScale: number;
+  readonly envelope: Envelope;
+};
 
 /**
  * How the envelope reaches the parameter: `param = base + amount * value`.
@@ -128,7 +132,7 @@ function floorOffZero(value: number, amount: number) {
 }
 
 function valueOf(
-  points: readonly Point[],
+  points: readonly EnvelopePoint[],
   index: number,
   first: number,
   last: number,
@@ -191,7 +195,7 @@ export function scheduleEnvelope(
  * Reading `param.value` only ever answers for now, so it cannot say where a release
  * scheduled in the future should start from. The shape can.
  */
-export function interpolateAtTime(points: readonly Point[], time: number): number {
+export function interpolateAtTime(points: readonly EnvelopePoint[], time: number): number {
   const last = points.length - 1;
   if (last < 0) return 0;
   if (time <= points[0].time) return points[0].value;
@@ -280,19 +284,22 @@ export function createEnvelopeScheduler(
   /**
    * The envelope's value at `time`, wherever the shape has got to by then.
    *
-   * A loop is back at its start every `duration`, and a sustained envelope stops
-   * advancing once it reaches the sustain point. Everything else keeps running, which
-   * is what a release index without a sustain is for.
+   * A loop is back at its start every cycle, and a sustained envelope stops advancing
+   * once it reaches the sustain point. Everything else keeps running, which is what a
+   * release index without a sustain is for.
    */
   const valueAt = (time: number) => {
     const { points, sustain } = envelope;
     if (points.length === 0) return base;
 
     let elapsed = Math.max(0, (time - triggerTime) * timeScale);
-    const held = sustain === undefined ? 0 : points[sustain].time - points[0].time;
 
-    if (envelope.loop && held > 0) elapsed %= held;
-    else if (sustain !== undefined) elapsed = Math.min(elapsed, held);
+    if (envelope.loop) {
+      const cycle = points[points.length - 1].time - points[0].time;
+      if (cycle > 0) elapsed %= cycle;
+    } else if (sustain !== undefined) {
+      elapsed = Math.min(elapsed, points[sustain].time - points[0].time);
+    }
 
     return base + amount * interpolateAtTime(points, points[0].time + elapsed);
   };
@@ -333,13 +340,15 @@ export function createEnvelopeScheduler(
       // overwritten by the envelope's first point a moment later.
       param.cancelScheduledValues(time);
 
-      const { points, sustain } = envelope;
-      // The loop ends at the sustain point, so it covers exactly the range
-      // `scheduleEnvelope` would play, and the release stage after it stays out.
+      const { points } = envelope;
+      // A loop repeats the whole envelope; anything else is scheduled once, sustain
+      // and release included.
       const duration =
-        sustain === undefined ? 0 : (points[sustain].time - points[0].time) / timeScale;
+        envelope.loop && points.length > 0
+          ? (points[points.length - 1].time - points[0].time) / timeScale
+          : 0;
 
-      if (!envelope.loop || sustain === undefined || duration <= 0) {
+      if (duration <= 0) {
         scheduleEnvelope(param, envelope, time, { base, amount, timeScale });
         return;
       }
@@ -351,7 +360,16 @@ export function createEnvelopeScheduler(
       // Cycle 0 is scheduled here rather than left to the refill below, so a trigger
       // further ahead than the lookahead still has its opening pass queued the moment
       // it is triggered, whatever the refill timer does in between.
-      let cycleEnd = scheduleRange(param, envelope, 0, sustain, time, base, amount, timeScale);
+      let cycleEnd = scheduleRange(
+        param,
+        envelope,
+        0,
+        points.length - 1,
+        time,
+        base,
+        amount,
+        timeScale,
+      );
 
       let cycle = 1;
       removeLoop = addLoop(() => {
@@ -365,7 +383,16 @@ export function createEnvelopeScheduler(
           // than the opening setValueAtTime it overwrites the reset and that pass loses
           // its attack, so never open a cycle before the previous one has ended.
           const start = Math.max(time + cycle * duration, cycleEnd);
-          cycleEnd = scheduleRange(param, envelope, 0, sustain, start, base, amount, timeScale);
+          cycleEnd = scheduleRange(
+            param,
+            envelope,
+            0,
+            points.length - 1,
+            start,
+            base,
+            amount,
+            timeScale,
+          );
           cycle++;
         }
       });
