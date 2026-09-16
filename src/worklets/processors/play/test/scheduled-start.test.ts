@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-p
 
 const TEST_SAMPLE_RATE = 48_000;
 const BLOCK_SIZE = 128;
+const TEST_TRIGGER_ID = 7;
 
 type WorkletPort = {
   onmessage: ((event: MessageEvent) => void) | null;
@@ -17,6 +18,7 @@ class MockAudioWorkletProcessor {
 
 type TestProcessor = {
   driftUpdateCounter: number;
+  isPlaying: boolean;
   nextDriftGenerated: boolean;
   pendingStartFrame: number;
   playbackPosition: number;
@@ -44,10 +46,13 @@ function makeParameters(driftAmount = 0): Parameters {
   };
 }
 
-async function createProcessor(startFrame: number) {
+async function createProcessor(
+  startFrame: number,
+  { loop = true, sampleLength = TEST_SAMPLE_RATE } = {},
+) {
   const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
-  const channel = new Float32Array(TEST_SAMPLE_RATE).fill(0.5);
+  const channel = new Float32Array(sampleLength).fill(0.5);
 
   processor.port.onmessage?.({
     data: {
@@ -56,9 +61,15 @@ async function createProcessor(startFrame: number) {
       durationSeconds: 1,
     },
   } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
+  if (loop) {
+    processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
+  }
   processor.port.onmessage?.({
-    data: { type: "voice:start", timestamp: startFrame / TEST_SAMPLE_RATE },
+    data: {
+      type: "voice:start",
+      timestamp: startFrame / TEST_SAMPLE_RATE,
+      triggerId: TEST_TRIGGER_ID,
+    },
   } as MessageEvent);
 
   return processor;
@@ -84,6 +95,7 @@ describe("scheduled sample start", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     setCurrentFrame(0);
+    vi.stubGlobal("currentTime", 0);
   });
 
   it("leaves playback and loop-drift state untouched before the start block", async () => {
@@ -135,5 +147,29 @@ describe("scheduled sample start", () => {
     processor.port.onmessage?.({ data: { type } } as MessageEvent);
 
     expect(processor.pendingStartFrame).toBe(0);
+  });
+
+  it("does not acknowledge a host-requested stop", async () => {
+    const processor = await createProcessor(0);
+    processor.port.postMessage.mockClear();
+
+    processor.port.onmessage?.({ data: { type: "voice:stop" } } as MessageEvent);
+
+    expect(processor.isPlaying).toBe(false);
+    expect(processor.port.postMessage).not.toHaveBeenCalled();
+  });
+
+  it("reports when playback reaches the sample boundary", async () => {
+    vi.stubGlobal("currentTime", 1);
+    const processor = await createProcessor(0, { loop: false, sampleLength: 16 });
+    processor.port.postMessage.mockClear();
+
+    processor.process([], [[new Float32Array(BLOCK_SIZE)]], makeParameters());
+
+    expect(processor.isPlaying).toBe(false);
+    expect(processor.port.postMessage).toHaveBeenCalledWith({
+      type: "voice:ended",
+      triggerId: TEST_TRIGGER_ID,
+    });
   });
 });

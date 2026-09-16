@@ -1,6 +1,5 @@
 import { SampleVoice, type SampleVoiceChainNode } from "./SampleVoice";
 import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
-import { pop } from "@/utils";
 import { VoiceState } from "../VoiceState";
 import { Message, MessageHandler, MessageBus, createMessageBus } from "@/events";
 import { GainStages, LibNode } from "@/nodes/LibNode";
@@ -18,12 +17,6 @@ export class SampleVoicePool implements LibNode {
 
   #allVoices: SampleVoice[] = [];
   #loaded = new Set<NodeID>();
-
-  #available = new Set<SampleVoice>();
-  #playing = new Set<SampleVoice>();
-  #releasing = new Set<SampleVoice>();
-
-  #playingMidiVoiceMap = new Map<MidiValue, SampleVoice>();
 
   #gainReductionScalar = 1; // Reduces gain based on number of playing voices
 
@@ -50,14 +43,12 @@ export class SampleVoicePool implements LibNode {
         });
 
         this.#allVoices.forEach((voice) => {
-          this.#available.add(voice);
           this.#setupMessageHandling(voice);
         });
         this.#initialized = true;
       } catch (error) {
         this.#allVoices.forEach((voice) => voice.dispose());
         this.#allVoices = [];
-        this.#available.clear();
         this.#initPromise = null;
 
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -109,47 +100,8 @@ export class SampleVoicePool implements LibNode {
   #envelopeCreatedMap = new Map<string, Set<SampleVoice>>();
 
   #setupMessageHandling(voice: SampleVoice) {
-    voice.onMessage("voice:started", (msg: Message) => {
-      // Ensure mutual exlusion (idempotent delete)
-      this.#available.delete(msg.voice);
-      this.#releasing.delete(msg.voice);
-
-      this.#playing.add(msg.voice);
-      this.#onVoiceStateChange();
-
-      // noteOn owns MIDI assignment; a delayed acknowledgement may be for
-      // a voice that has already been replaced by another note-on.
-    });
-
-    voice.onMessage("voice:releasing", (msg: Message) => {
-      // Ensure mutual exlusion
-      this.#available.delete(msg.voice);
-      this.#playing.delete(msg.voice);
-
-      this.#releasing.add(msg.voice);
-
-      // // Remove from midiToVoice map, is this voice owns this midinote
-      // if (this.#playingMidiVoiceMap.get(msg.midiNote) === msg.voice) {
-      //   this.#playingMidiVoiceMap.delete(msg.midiNote);
-      // }
-    });
-
-    voice.onMessage("voice:stopped", (msg: Message) => {
-      // Ensure mutual exlusion
-      this.#playing.delete(msg.voice);
-      this.#releasing.delete(msg.voice);
-
-      this.#onVoiceStateChange();
-
-      this.#available.add(msg.voice);
-
-      // Clean up MIDI mapping for this specific voice
-      if (msg.midiNote !== undefined) {
-        const mappedVoice = this.#playingMidiVoiceMap.get(msg.midiNote);
-        if (mappedVoice === msg.voice) {
-          this.#playingMidiVoiceMap.delete(msg.midiNote);
-        }
-      }
+    ["voice:started", "voice:releasing", "voice:stopped"].forEach((type) => {
+      voice.onMessage(type, () => this.#updateVoiceGains());
     });
 
     voice.onMessage("voice:initialized", (msg: Message) => {
@@ -227,28 +179,28 @@ export class SampleVoicePool implements LibNode {
     return this;
   }
 
-  // TODO: Remove or uncomment "playing" logic after testing
-  allocate(
-    available = this.#available,
-    releasing = this.#releasing,
-    // playing = this.#playing
-  ): SampleVoice | undefined {
-    let voice: SampleVoice | undefined = undefined;
+  #oldestVoice(state: VoiceState): SampleVoice | undefined {
+    return this.#allVoices
+      .filter((voice) => voice.state === state)
+      .reduce<SampleVoice | undefined>(
+        (oldest, voice) =>
+          !oldest || voice.triggerTimestamp < oldest.triggerTimestamp ? voice : oldest,
+        undefined,
+      );
+  }
 
-    if (available.size) {
-      voice = pop(available);
-    } else if (releasing.size) {
-      voice = pop(releasing);
-      voice?.stop();
-    }
-    // else if (playing.size) {
-    //   voice = pop(playing);
-    //   voice?.stop();
-    // }
+  allocate(): SampleVoice | undefined {
+    const voice =
+      this.#allVoices.find((candidate) => candidate.state === VoiceState.AVAILABLE) ??
+      this.#oldestVoice(VoiceState.RELEASING) ??
+      this.#oldestVoice(VoiceState.PLAYING);
 
     if (!voice) {
       console.warn("Could not allocate voice");
+      return;
     }
+
+    if (voice.state !== VoiceState.AVAILABLE) voice.stop();
 
     return voice;
   }
@@ -261,38 +213,37 @@ export class SampleVoicePool implements LibNode {
     secondsFromNow = 0,
     glideTime = 0,
   ): MidiValue | null {
-    if (this.playingVoicesCount >= this.#polyphony) {
-      console.log("Pool noteON(): Max polyphony reached, cannot play new note");
-      return null;
-    }
-
     const voice = this.allocate();
     if (!voice) return null;
 
     const success = voice.trigger({
-      midiNote: midiNote,
+      midiNote,
       velocity,
       secondsFromNow,
       glide: { prevMidiNote: this.prevMidiNote, glideTime },
     });
     if (success === null) return null;
 
-    const previousVoice = this.#playingMidiVoiceMap.get(midiNote);
-    if (previousVoice && previousVoice !== voice) {
-      previousVoice.release({ secondsFromNow });
-    }
-    this.#playingMidiVoiceMap.set(midiNote, voice);
+    this.#allVoices.forEach((otherVoice) => {
+      if (
+        otherVoice !== voice &&
+        otherVoice.state === VoiceState.PLAYING &&
+        otherVoice.midiNote === midiNote
+      ) {
+        otherVoice.release({ secondsFromNow });
+      }
+    });
     this.prevMidiNote = midiNote;
     return midiNote;
   }
 
   noteOff(midiNote: MidiValue, secondsFromNow: number = 0, releaseTime?: number) {
-    const voice = this.#playingMidiVoiceMap.get(midiNote);
-    if (!voice) return;
+    const voices = this.#allVoices.filter(
+      (voice) => voice.state === VoiceState.PLAYING && voice.midiNote === midiNote,
+    );
+    if (!voices.length) return;
 
-    if (voice?.state === VoiceState.PLAYING) {
-      voice.release({ secondsFromNow, releaseTime });
-    }
+    voices.forEach((voice) => voice.release({ secondsFromNow, releaseTime }));
 
     return this;
   }
@@ -304,7 +255,6 @@ export class SampleVoicePool implements LibNode {
       }
     });
 
-    this.#playingMidiVoiceMap.clear();
     return this;
   }
 
@@ -313,26 +263,34 @@ export class SampleVoicePool implements LibNode {
   }
 
   applyToActiveVoices(fn: (voice: SampleVoice) => void) {
-    this.#playingMidiVoiceMap.forEach((voice) => fn(voice));
+    this.#allVoices.forEach((voice) => {
+      if (voice.state !== VoiceState.AVAILABLE) fn(voice);
+    });
   }
 
   applyToInactiveVoices(fn: (voice: SampleVoice) => void) {
-    this.#available.forEach((voice) => fn(voice));
+    this.#allVoices.forEach((voice) => {
+      if (voice.state === VoiceState.AVAILABLE) fn(voice);
+    });
   }
 
   applyToActiveNote(midiNote: MidiValue, fn: (voice: SampleVoice) => void) {
-    const voice = this.#playingMidiVoiceMap.get(midiNote);
-    if (voice) {
-      fn(voice);
-    } else {
+    const voices = this.#allVoices.filter(
+      (voice) => voice.state !== VoiceState.AVAILABLE && voice.midiNote === midiNote,
+    );
+    if (!voices.length) {
       console.warn(`No active voice found for midiNote: ${midiNote}`);
+      return;
     }
+    voices.forEach(fn);
   }
 
   #GAIN_REDUCTION_SENSITIVITY = 0.4;
 
   #updateVoiceGains() {
-    const activeCount = this.#playing.size + this.#releasing.size;
+    const activeCount = this.#allVoices.filter(
+      (voice) => voice.state !== VoiceState.AVAILABLE,
+    ).length;
 
     if (activeCount === 0) {
       this.#gainReductionScalar = 1;
@@ -342,37 +300,30 @@ export class SampleVoicePool implements LibNode {
     this.#gainReductionScalar =
       1 / (1 + Math.log10(activeCount) * this.#GAIN_REDUCTION_SENSITIVITY);
 
-    // Apply to all playing voices (skip 'releasing' since they are fading out)
-    [...this.#playing].forEach((voice) => {
-      voice.setMasterGain(this.#gainReductionScalar);
+    this.#allVoices.forEach((voice) => {
+      if (voice.state === VoiceState.PLAYING || voice.state === VoiceState.RELEASING)
+        voice.setMasterGain(this.#gainReductionScalar);
     });
   }
 
-  // Call this whenever voice state changes
-  #onVoiceStateChange() {
-    this.#updateVoiceGains();
-  }
-
   debug() {
+    const releasing = this.releasingVoicesCount;
+    const playing = this.playingVoicesCount;
+    const available = this.availableVoicesCount;
     console.debug(
       `
-      releasing: ${this.#releasing.size}
-      playing: ${this.#playing.size}
-      available: ${this.#available.size}
-      Sum: ${this.#releasing.size + this.#playing.size + this.#available.size}
+      releasing: ${releasing}
+      playing: ${playing}
+      available: ${available}
+      Sum: ${releasing + playing + available}
       Sum should be: ${this.allVoicesCount}
       `,
-      { midiToVoiceMap: this.#playingMidiVoiceMap },
     );
   }
 
   dispose() {
     this.applyToAllVoices((voice) => voice.dispose());
     this.#allVoices = [];
-    this.#playingMidiVoiceMap.clear();
-    this.#available.clear();
-    this.#releasing.clear();
-    this.#playing.clear();
     this.#loaded.clear();
     this.#initialized = false;
     this.#initPromise = null;
@@ -383,20 +334,16 @@ export class SampleVoicePool implements LibNode {
     return this.#initialized;
   }
 
-  get availableVoices() {
-    return this.#available;
-  }
-
   get playingVoicesCount() {
-    return this.#playing.size;
+    return this.#allVoices.filter((voice) => voice.state === VoiceState.PLAYING).length;
   }
 
   get releasingVoicesCount() {
-    return this.#releasing.size;
+    return this.#allVoices.filter((voice) => voice.state === VoiceState.RELEASING).length;
   }
 
   get availableVoicesCount() {
-    return this.#available.size;
+    return this.#allVoices.filter((voice) => voice.state === VoiceState.AVAILABLE).length;
   }
 
   get allVoices() {
@@ -405,9 +352,5 @@ export class SampleVoicePool implements LibNode {
 
   get allVoicesCount() {
     return this.#allVoices.length;
-  }
-
-  get assignedVoicesMidiMap() {
-    return this.#playingMidiVoiceMap;
   }
 }

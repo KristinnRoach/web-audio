@@ -65,6 +65,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       durationSeconds,
       zeroCrossings,
       playbackDirection,
+      triggerId,
     } = event.data;
 
     switch (type) {
@@ -109,6 +110,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case "voice:start":
         this.isReleasing = false;
         this.isPlaying = true;
+        this.triggerId = triggerId;
         this.loopCount = 0;
 
         // will be set in process() using parameters
@@ -117,20 +119,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // Frame this note should sound at. A timestamp that has already passed
         // by the time the message arrives starts the note now.
         this.pendingStartFrame = timestamp ? Math.round(timestamp * sampleRate) : 0;
-
-        this.port.postMessage({
-          type: "voice:started",
-          time: timestamp || currentTime,
-        });
         break;
 
       case "voice:release":
         this.isReleasing = true;
-
-        this.port.postMessage({
-          type: "voice:releasing",
-          time: currentTime,
-        });
         break;
 
       case "voice:stop":
@@ -196,6 +188,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isPlaying = false;
     this.isReleasing = false;
     this.pendingStartFrame = 0;
+    this.triggerId = 0;
     this.loopEnabled = false;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
@@ -230,7 +223,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isReleasing = false;
     this.pendingStartFrame = 0;
     this.playbackPosition = 0;
-    this.port.postMessage({ type: "voice:stopped" });
   }
 
   // Arm click compensation for a loop-wrap discontinuity between the sample
@@ -820,7 +812,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.playbackPosition <= loopRange.loopEndSamples;
 
       if ((shouldStopForward || shouldStopReverse) && !(this.loopEnabled && isWithinLoop)) {
+        const endedTriggerId = this.triggerId;
         this.#stop();
+        this.port.postMessage({
+          type: "voice:ended",
+          triggerId: endedTriggerId,
+        });
         return true;
       }
 

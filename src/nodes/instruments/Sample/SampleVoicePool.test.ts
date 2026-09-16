@@ -1,42 +1,55 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import type { SampleVoice } from "./SampleVoice";
-import type { SamplePlayer } from "./SamplePlayer";
 import type { Message, MessageHandler } from "../../../events";
 import { VoiceState } from "../VoiceState";
 
+const fake = vi.hoisted(() => ({ triggerTimestamp: 0 }));
+
 vi.mock("./createSampleVoice", () => {
   class TestVoice {
-    state: VoiceState = VoiceState.LOADED;
-    currMidiNote: number | null = null;
-    handlers = new Map<string, MessageHandler<Message>[]>();
+    state: VoiceState = VoiceState.AVAILABLE;
+    midiNote: number | null = null;
+    triggerTimestamp = -1;
+    handlers = new Map<string, Set<MessageHandler<Message>>>();
 
     onMessage(type: string, handler: MessageHandler<Message>) {
-      this.handlers.set(type, [...(this.handlers.get(type) ?? []), handler]);
-      return () => {};
+      const handlers = this.handlers.get(type) ?? new Set();
+      handlers.add(handler);
+      this.handlers.set(type, handlers);
+      return () => handlers.delete(handler);
     }
 
-    emit(type: string) {
-      if (type === "voice:started") this.state = VoiceState.PLAYING;
-      if (type === "voice:releasing") this.state = VoiceState.RELEASING;
+    #emit(type: string, midiNote = this.midiNote) {
       this.handlers
         .get(type)
-        ?.forEach((handler) =>
-          handler({ type, senderId: "test", voice: this, midiNote: this.currMidiNote }),
-        );
+        ?.forEach((handler) => handler({ type, senderId: "test", voice: this, midiNote }));
     }
 
     trigger({ midiNote }: { midiNote: number }): number | null {
+      if (this.state !== VoiceState.AVAILABLE) return null;
       this.state = VoiceState.PLAYING;
-      this.currMidiNote = midiNote;
+      this.midiNote = midiNote;
+      this.triggerTimestamp = ++fake.triggerTimestamp;
+      this.#emit("voice:started");
       return midiNote;
     }
 
-    release() {
+    release({ releaseTime = 1 }: { releaseTime?: number } = {}) {
+      if (releaseTime <= 0) return this.stop();
+      if (this.state !== VoiceState.PLAYING) return this;
       this.state = VoiceState.RELEASING;
+      this.#emit("voice:releasing");
       return this;
     }
 
-    stop() {}
+    stop() {
+      if (this.state === VoiceState.AVAILABLE) return this;
+      const midiNote = this.midiNote;
+      this.state = VoiceState.AVAILABLE;
+      this.midiNote = null;
+      this.#emit("voice:stopped", midiNote);
+      return this;
+    }
+
     setMasterGain() {}
     dispose() {}
   }
@@ -47,139 +60,95 @@ vi.mock("./createSampleVoice", () => {
   };
 });
 
-// Deliver acknowledgements explicitly so regressions do not depend on timing.
-function acknowledge(voice: SampleVoice, type: string) {
-  (voice as unknown as { emit(type: string): void }).emit(type);
+async function setup(polyphony = 3) {
+  fake.triggerTimestamp = 0;
+  const { SampleVoicePool } = await import("./SampleVoicePool");
+  const pool = new SampleVoicePool({} as AudioContext, polyphony);
+  await pool.init();
+  return pool;
 }
 
-describe("SampleVoicePool note ownership", () => {
-  async function setup(polyphony = 4) {
-    const { SampleVoicePool } = await import("./SampleVoicePool");
-    const pool = new SampleVoicePool({} as AudioContext, polyphony);
-    await pool.init();
-    return pool;
-  }
-
-  it("releases the previous same-pitch voice and routes note-off to its replacement", async () => {
+describe("SampleVoicePool", () => {
+  it("uses an available voice, then steals the oldest releasing and playing voices", async () => {
     const pool = await setup();
-    pool.noteOn(60);
-    const first = pool.assignedVoicesMidiMap.get(60)!;
-    acknowledge(first, "voice:started");
-    const release = vi.spyOn(first, "release");
+    const [first, second, third] = pool.allVoices;
 
-    pool.noteOn(60, 100, 0.2);
-    const second = pool.assignedVoicesMidiMap.get(60)!;
-    expect(second).not.toBe(first);
-    expect(release).toHaveBeenCalledWith({ secondsFromNow: 0.2 });
-    expect(first.state).toBe(VoiceState.RELEASING);
-    acknowledge(second, "voice:started");
-    pool.noteOff(60);
-    expect(second.state).toBe(VoiceState.RELEASING);
-    pool.dispose();
-  });
-
-  it("maps MIDI note 0 and routes its note-off", async () => {
-    const pool = await setup();
-
-    expect(pool.noteOn(0)).toBe(0);
-    const voice = pool.assignedVoicesMidiMap.get(0)!;
-    const release = vi.spyOn(voice, "release");
-
-    pool.noteOff(0);
-
-    expect(release).toHaveBeenCalledOnce();
-    expect(voice.state).toBe(VoiceState.RELEASING);
-    pool.dispose();
-  });
-
-  it.each([true, false])(
-    "keeps the replacement assigned despite delayed acknowledgements (new first: %s)",
-    async (newFirst) => {
-      const pool = await setup();
-      pool.noteOn(60);
-      const first = pool.assignedVoicesMidiMap.get(60)!;
-      pool.noteOff(60);
-      pool.noteOn(60);
-      const second = pool.assignedVoicesMidiMap.get(60)!;
-
-      if (newFirst) acknowledge(second, "voice:started");
-      acknowledge(first, "voice:started");
-      acknowledge(first, "voice:releasing");
-      expect(pool.assignedVoicesMidiMap.get(60)).toBe(second);
-      pool.noteOff(60);
-      expect(second.state).toBe(VoiceState.RELEASING);
-      pool.dispose();
-    },
-  );
-
-  it("keeps the previous voice when the replacement fails to trigger", async () => {
-    const pool = await setup();
-    pool.noteOn(60);
-    const first = pool.assignedVoicesMidiMap.get(60)!;
-    pool.availableVoices.forEach((voice) => vi.spyOn(voice, "trigger").mockReturnValue(null));
-
-    expect(pool.noteOn(60)).toBeNull();
-    expect(pool.assignedVoicesMidiMap.get(60)).toBe(first);
-    expect(first.state).toBe(VoiceState.PLAYING);
-    pool.dispose();
-  });
-
-  it("allNotesOff reaches unmapped playing and releasing voices, but skips idle voices", async () => {
-    const pool = await setup();
     pool.noteOn(60);
     pool.noteOn(62);
-    const playing = pool.assignedVoicesMidiMap.get(60)!;
-    const releasing = pool.assignedVoicesMidiMap.get(62)!;
+    pool.noteOn(64);
     pool.noteOff(62);
-    const playingRelease = vi.spyOn(playing, "release");
-    const releasingRelease = vi.spyOn(releasing, "release");
-    const idleReleases = [...pool.availableVoices].map((voice) => vi.spyOn(voice, "release"));
-    pool.assignedVoicesMidiMap.clear();
 
-    pool.allNotesOff();
+    const stopSecond = vi.spyOn(second, "stop");
+    pool.noteOn(65);
+    expect(stopSecond).toHaveBeenCalledOnce();
+    expect(second.midiNote).toBe(65);
 
-    expect(playingRelease).toHaveBeenCalledWith({ releaseTime: 0 });
-    expect(releasingRelease).toHaveBeenCalledWith({ releaseTime: 0 });
-    idleReleases.forEach((release) => expect(release).not.toHaveBeenCalled());
-    expect(pool.assignedVoicesMidiMap.size).toBe(0);
+    const stopFirst = vi.spyOn(first, "stop");
+    pool.noteOn(67);
+    expect(stopFirst).toHaveBeenCalledOnce();
+    expect(pool.allVoices.map((voice) => voice.midiNote)).toEqual([67, 65, 64]);
+    expect(third.state).toBe(VoiceState.PLAYING);
+    expect(pool.playingVoicesCount).toBe(3);
+
     pool.dispose();
   });
-});
 
-describe("SampleVoicePool.init", () => {
-  // Pins the invariant SamplePlayer.setPitchEnabled / setPlaybackDirection rely on:
-  // the full fixed pool exists once init() resolves, so fan-out at call time reaches
-  // every voice. If polyphony ever becomes lazy or resizable, those setters must
-  // re-apply their state to voices created later.
-  it("allocates the whole pool before resolving", async () => {
-    const { SampleVoicePool } = await import("./SampleVoicePool");
-    const pool = new SampleVoicePool({} as AudioContext, 16);
+  it("releases an earlier same-note voice and routes note-off to its replacement", async () => {
+    const pool = await setup();
+    const [first, second] = pool.allVoices;
+    const releaseFirst = vi.spyOn(first, "release");
+    const releaseSecond = vi.spyOn(second, "release");
 
-    await pool.init();
+    pool.noteOn(0);
+    pool.noteOn(0, 100, 0.2);
 
-    expect(pool.allVoices).toHaveLength(16);
+    expect(releaseFirst).toHaveBeenCalledWith({ secondsFromNow: 0.2 });
+    expect(first.state).toBe(VoiceState.RELEASING);
+    expect(second.state).toBe(VoiceState.PLAYING);
+
+    pool.noteOff(0, 0.1, 0.4);
+    expect(releaseSecond).toHaveBeenCalledWith({ secondsFromNow: 0.1, releaseTime: 0.4 });
+    expect(pool.playingVoicesCount).toBe(0);
+    expect(pool.releasingVoicesCount).toBe(2);
+
+    pool.dispose();
   });
-});
 
-describe("SamplePlayer.setPitchEnabled", () => {
-  it("fans out to every voice", async () => {
-    vi.stubGlobal("window", {});
-    vi.stubGlobal("AudioContext", class {});
-    vi.stubGlobal("AudioWorkletNode", class {});
-    const { SamplePlayer } = await import("./SamplePlayer");
+  it("releases every playing voice that owns the note", async () => {
+    const pool = await setup();
+    const [first, second, other] = pool.allVoices;
+    first.trigger({ midiNote: 72, velocity: 100 });
+    second.trigger({ midiNote: 72, velocity: 100 });
+    other.trigger({ midiNote: 73, velocity: 100 });
 
-    const voices = [0, 1, 2].map(() => ({
-      enablePitch: vi.fn(),
-      disablePitch: vi.fn(),
-    }));
-    const player = {
-      voicePool: { allVoices: voices as unknown as SampleVoice[] },
-    } as unknown as SamplePlayer;
+    pool.noteOff(72);
 
-    SamplePlayer.prototype.setPitchEnabled.call(player, true);
-    voices.forEach((v) => expect(v.enablePitch).toHaveBeenCalledTimes(1));
+    expect(first.state).toBe(VoiceState.RELEASING);
+    expect(second.state).toBe(VoiceState.RELEASING);
+    expect(other.state).toBe(VoiceState.PLAYING);
+    expect(pool.releasingVoicesCount).toBe(2);
 
-    SamplePlayer.prototype.setPitchEnabled.call(player, false);
-    voices.forEach((v) => expect(v.disablePitch).toHaveBeenCalledTimes(1));
+    pool.dispose();
+  });
+
+  it("targets active and inactive voices from their current state", async () => {
+    const pool = await setup();
+    const [playing, releasing, available] = pool.allVoices;
+    pool.noteOn(60);
+    pool.noteOn(62);
+    pool.noteOff(62);
+
+    const active: typeof pool.allVoices = [];
+    const inactive: typeof pool.allVoices = [];
+    const note: typeof pool.allVoices = [];
+    pool.applyToActiveVoices((voice) => active.push(voice));
+    pool.applyToInactiveVoices((voice) => inactive.push(voice));
+    pool.applyToActiveNote(62, (voice) => note.push(voice));
+
+    expect(active).toEqual([playing, releasing]);
+    expect(inactive).toEqual([available]);
+    expect(note).toEqual([releasing]);
+
+    pool.dispose();
   });
 });

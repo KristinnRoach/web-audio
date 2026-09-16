@@ -7,7 +7,6 @@ import { Message, MessageHandler, createMessageBus, MessageBus } from "@/events"
 
 import {
   assert,
-  cancelAndPinParamValue,
   interpolateLinearToGeometric,
   mapToRange,
   midiToPlaybackRate,
@@ -50,11 +49,17 @@ export class SampleVoice {
 
   #envelopes = new Map<EnvelopeType, CustomEnvelope>();
 
-  #state: VoiceState = VoiceState.NOT_READY;
+  #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
 
-  #activeMidiNote: number | null = null;
+  // Set once `voice:setLayers` is on the wire rather than on the processor's
+  // `voice:loaded` ack: the port preserves order, so a `voice:start` posted in
+  // the round trip still arrives after the layers are in place.
+  #hasLoadedAudio = false;
+
+  #midiNote: number | null = null;
   #startedTimestamp: number = -1;
+  #triggerId = 0;
 
   #sampleDurationSeconds = 0;
 
@@ -192,7 +197,7 @@ export class SampleVoice {
       this.#am_lfo = new LFO(this.context);
       this.#am_lfo.setWaveform("square");
       this.#am_lfo.setDepth(0);
-      this.#am_lfo.setMusicalNote((this.#activeMidiNote ?? 60) + this.#am_lfo_semitone_offset);
+      this.#am_lfo.setMusicalNote((this.#midiNote ?? 60) + this.#am_lfo_semitone_offset);
       this.#am_lfo.connect(this.#am_gain.gain);
     }
 
@@ -252,8 +257,6 @@ export class SampleVoice {
    * leaving the others playable, except layer 0: losing it fails the load.
    */
   async loadLayers(buffers: AudioBuffer[], zeroCrossings?: number[]): Promise<boolean> {
-    this.#state = VoiceState.NOT_READY;
-
     const usable = buffers.filter((buffer) => {
       if (buffer.sampleRate !== this.context.sampleRate) {
         console.warn(
@@ -278,11 +281,16 @@ export class SampleVoice {
       Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)),
     );
 
+    // The processor drops isPlaying when it swaps layers and never echoes a
+    // stop for it, so end the note here or the voice stays PLAYING in silence.
+    this.stop();
+
     this.sendToProcessor({
       type: "voice:setLayers",
       layers,
       durationSeconds: usable[0].duration,
     });
+    this.#hasLoadedAudio = true;
 
     if (zeroCrossings?.length) {
       this.sendToProcessor({
@@ -321,15 +329,22 @@ export class SampleVoice {
 
     const timestamp = this.now + secondsFromNow;
 
-    if (this.#state === VoiceState.PLAYING || this.#state === VoiceState.RELEASING) {
+    // An unloaded voice sounds nothing and cannot complete naturally, so it
+    // must not enter PLAYING.
+    if (!this.#hasLoadedAudio) return null;
+
+    if (this.#state !== VoiceState.AVAILABLE) {
       console.log(`had to stop a playing voice, midinote: ${midiNote}`);
       this.stop(timestamp);
       return null;
     }
 
-    this.#state = VoiceState.PLAYING;
-    this.#startedTimestamp = timestamp;
-    this.#activeMidiNote = midiNote;
+    // A reused voice can still have a stop or release scheduled against the
+    // note it just finished. Left armed, they fire into this note and cut it.
+    this.#transitionTo(VoiceState.PLAYING, {
+      midiNote,
+      startedTimestamp: timestamp,
+    });
 
     const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
     const glideTime = options.glide?.glideTime ?? this.#pitchGlideTime;
@@ -369,6 +384,11 @@ export class SampleVoice {
     this.sendToProcessor({
       type: "voice:start",
       timestamp,
+      triggerId: this.#triggerId,
+    });
+    this.sendUpstreamMessage("voice:started", {
+      voice: this,
+      midiNote: this.#midiNote,
     });
 
     // Apply amp, filter and pitch envelopes if enabled
@@ -391,7 +411,7 @@ export class SampleVoice {
       timestamp,
     });
 
-    return this.#activeMidiNote;
+    return this.#midiNote;
   }
 
   applyEnvelopes(timestamp: number, playbackRate: number, velocity?: number, midiNote?: number) {
@@ -436,7 +456,7 @@ export class SampleVoice {
 
     this.sendUpstreamMessage("sample-envelopes:trigger", {
       voiceId: this.nodeId,
-      midiNote: this.#activeMidiNote,
+      midiNote: this.#midiNote,
       envDurations,
       loopEnabled,
     });
@@ -445,19 +465,55 @@ export class SampleVoice {
   #releaseTimeout: number | null = null;
   #stopTimeout: number | null = null;
 
+  #clearTimeouts() {
+    if (this.#releaseTimeout !== null) {
+      clearTimeout(this.#releaseTimeout);
+      this.#releaseTimeout = null;
+    }
+    if (this.#stopTimeout !== null) {
+      clearTimeout(this.#stopTimeout);
+      this.#stopTimeout = null;
+    }
+  }
+
   #stopEnvelopes() {
     this.#envelopes.forEach((env) => env.stopCurrentRun());
+  }
+
+  #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
+    switch (state) {
+      case VoiceState.AVAILABLE:
+        this.#clearTimeouts();
+        this.#stopEnvelopes();
+        this.#midiNote = null;
+        break;
+
+      case VoiceState.PLAYING:
+        assert(this.#state === VoiceState.AVAILABLE, "Only AVAILABLE voices can play");
+        assert(note, "PLAYING requires note information");
+        this.#clearTimeouts();
+        this.#triggerId++;
+        this.#midiNote = note.midiNote;
+        this.#startedTimestamp = note.startedTimestamp;
+        break;
+
+      case VoiceState.RELEASING:
+        assert(this.#state === VoiceState.PLAYING, "Only PLAYING voices can release");
+        break;
+    }
+
+    this.#state = state;
   }
 
   release({ releaseTime = this.releaseTime, secondsFromNow = 0 }): this {
     // An immediate release must also stop a voice already in its release tail.
     if (releaseTime <= 0) return this.stop(this.now + secondsFromNow);
-    if (this.#state === VoiceState.RELEASING) return this;
+    if (this.#state !== VoiceState.PLAYING) return this;
 
     const envGain = this.getParam("envGain");
     if (!envGain) throw new Error("Cannot release - envGain parameter is null");
 
-    this.#state = VoiceState.RELEASING;
+    this.#transitionTo(VoiceState.RELEASING);
     const timestamp = this.now + secondsFromNow;
     const playbackRate = this.getParam("playbackRate")?.value ?? 1;
 
@@ -470,11 +526,16 @@ export class SampleVoice {
       env.releaseEnvelope(param, timestamp, {
         playbackRate,
         voiceId: this.nodeId,
-        midiNote: this.#activeMidiNote ?? 60, // not used
+        midiNote: this.#midiNote ?? 60, // not used
       });
     });
 
     this.sendToProcessor({ type: "voice:release", timestamp });
+    this.sendUpstreamMessage("voice:releasing", {
+      voiceId: this.nodeId,
+      voice: this,
+      midiNote: this.#midiNote,
+    });
 
     // Get longest release time of enabled envelopes
     const enabledEnvelopes = Array.from(this.#envelopes.values()).filter((env) => env.isEnabled);
@@ -484,12 +545,12 @@ export class SampleVoice {
         ? Math.max(...enabledEnvelopes.map((env) => env.effectiveReleaseDuration))
         : releaseTime; // Fallback passed in release time
 
-    // Stop after release duration // todo: check for redundancy
+    // Stop after the release duration.
     if (this.#releaseTimeout) clearTimeout(this.#releaseTimeout);
     this.#releaseTimeout = setTimeout(
       () => {
         try {
-          if (this.#state === VoiceState.RELEASING || this.#state === VoiceState.PLAYING) {
+          if (this.#state !== VoiceState.AVAILABLE) {
             this.stop();
           }
         } finally {
@@ -502,30 +563,35 @@ export class SampleVoice {
     return this;
   }
 
+  /**
+   * The processor cuts output as soon as it gets `voice:stop`, so a stop is a
+   * hard edge. De-click fading belongs on the processor side, where rendering
+   * actually ends - see issue #65.
+   */
   stop(timestamp = this.now): this {
-    if (this.#state === VoiceState.STOPPED || this.#state === VoiceState.STOPPING) {
-      return this;
-    }
-    this.#state = VoiceState.STOPPING;
+    if (this.#state === VoiceState.AVAILABLE) return this;
+    const midiNote = this.#midiNote;
+    this.#transitionTo(VoiceState.AVAILABLE);
+    this.sendUpstreamMessage("voice:stopped", {
+      voiceId: this.nodeId,
+      voice: this,
+      midiNote,
+    });
 
-    const deClickSeconds = 0.005;
-    const stopAt = Math.max(timestamp, this.now);
-    const envGain = this.getParam("envGain");
-    if (envGain) {
-      // param.value is only accurate for now, so pin now and ramp down to
-      // stopAt. Pinning at a future stopAt holds a stale value and steps the
-      // gain back up mid-release.
-      cancelAndPinParamValue(envGain, this.now);
-      envGain.linearRampToValueAtTime(0, stopAt + deClickSeconds);
-    }
+    const now = this.now;
+    const stopAt = Math.max(timestamp, now);
 
-    if (this.#stopTimeout) clearTimeout(this.#stopTimeout);
+    // Deferred even when stopAt is now, which lets a synchronous
+    // stop()-then-trigger() coalesce into only voice:start.
     this.#stopTimeout = setTimeout(
       () => {
+        // ponytail: the processor ignores this timestamp and stops on receipt,
+        // so a future stopAt is only as accurate as the host timer. Sample
+        // accuracy needs the processor to own stop timing - see issue #65.
         this.sendToProcessor({ type: "voice:stop", timestamp: stopAt });
         this.#stopTimeout = null;
       },
-      Math.max(0, (stopAt + deClickSeconds - this.now) * 1000),
+      (stopAt - now) * 1000,
     );
     return this;
   }
@@ -539,7 +605,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (this.#activeMidiNote === null || !this.#hpf || this.#keytrackHPFAmount <= 0) {
+    if (this.#midiNote === null || !this.#hpf || this.#keytrackHPFAmount <= 0) {
       return;
     }
 
@@ -579,7 +645,7 @@ export class SampleVoice {
       cancelPrevious?: boolean;
     } = {},
   ) {
-    if (this.#activeMidiNote === null || !this.#lpf || this.#keytrackLPFAmount <= 0) {
+    if (this.#midiNote === null || !this.#lpf || this.#keytrackLPFAmount <= 0) {
       return;
     }
 
@@ -814,8 +880,8 @@ export class SampleVoice {
     const timestamp = this.now;
     const glideTime = 0.1;
 
-    if (this.#activeMidiNote !== null) {
-      const rate = midiToPlaybackRate(this.#activeMidiNote);
+    if (this.#midiNote !== null) {
+      const rate = midiToPlaybackRate(this.#midiNote);
       this.getParam("playbackRate")?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
       this.#updateHPFCutoffForPlaybackRate(rate, timestamp, {
         glideTime,
@@ -885,7 +951,7 @@ export class SampleVoice {
         (msg) => ({
           ...msg,
           voiceId: this.nodeId,
-          midiNote: this.#activeMidiNote,
+          midiNote: this.#midiNote,
         }),
       );
     });
@@ -898,7 +964,6 @@ export class SampleVoice {
       switch (type) {
         case "initialized":
           this.#isInitialized = true;
-          this.#state = VoiceState.NOT_READY; // not loaded
 
           this.sendUpstreamMessage("voice:initialized", {
             voice: this,
@@ -907,8 +972,6 @@ export class SampleVoice {
           break;
 
         case "voice:loaded":
-          this.#activeMidiNote = null;
-
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
 
@@ -917,49 +980,22 @@ export class SampleVoice {
             this.setStartPoint(0);
             this.setEndPoint(data.durationSeconds);
           }
-          this.#state = VoiceState.LOADED;
           break;
 
-        case "voice:started":
-          this.#state = VoiceState.PLAYING;
-          data = {
-            voice: this,
-            midiNote: this.#activeMidiNote,
-          };
-          break;
-
-        case "voice:stopped":
-          this.#stopEnvelopes();
-
-          const envGain = this.getParam("envGain");
-          if (envGain) {
-            cancelAndPinParamValue(envGain, this.now, 0);
+        case "voice:ended": {
+          if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
+            return;
           }
-
-          if (this.#releaseTimeout) {
-            clearTimeout(this.#releaseTimeout);
-            this.#releaseTimeout = null;
-          }
-
-          this.#state = VoiceState.STOPPED;
-
+          const midiNote = this.#midiNote;
+          this.#transitionTo(VoiceState.AVAILABLE);
+          type = "voice:stopped";
           data = {
             voiceId: this.nodeId,
             voice: this,
-            midiNote: this.#activeMidiNote,
-          };
-
-          this.#activeMidiNote = null;
-          break;
-
-        case "voice:releasing":
-          this.#state = VoiceState.RELEASING;
-          data = {
-            voiceId: this.nodeId,
-            voice: this,
-            midiNote: this.#activeMidiNote,
+            midiNote,
           };
           break;
+        }
 
         case "loop:enabled":
           break;
@@ -1012,16 +1048,8 @@ export class SampleVoice {
     return endPoint - startPoint;
   }
 
-  get isActive() {
-    return this.#activeMidiNote !== null;
-  }
-
   get feedback() {
     return this.#feedback;
-  }
-
-  get currMidiNote(): number | null {
-    return this.#activeMidiNote;
   }
 
   get hpf() {
@@ -1052,8 +1080,8 @@ export class SampleVoice {
     return this.context.currentTime;
   }
 
-  get activeNoteId(): number | string | null {
-    return this.#activeMidiNote;
+  get midiNote(): number | null {
+    return this.#midiNote;
   }
 
   get triggerTimestamp(): number {
@@ -1099,7 +1127,7 @@ export class SampleVoice {
       value: enabled,
     });
 
-    if (!enabled && this.#activeMidiNote !== null) this.release({});
+    if (!enabled && this.#state === VoiceState.PLAYING) this.release({});
     return this;
   }
 
@@ -1216,8 +1244,8 @@ export class SampleVoice {
     );
     const semitoneOffset = offset * 12; // convert octaves to semitones
     this.#am_lfo_semitone_offset = semitoneOffset;
-    if (this.#am_lfo && this.#activeMidiNote !== null) {
-      this.#am_lfo.setMusicalNote(this.#activeMidiNote + semitoneOffset);
+    if (this.#am_lfo && this.#midiNote !== null) {
+      this.#am_lfo.setMusicalNote(this.#midiNote + semitoneOffset);
     }
   }
 
@@ -1236,8 +1264,7 @@ export class SampleVoice {
     this.#cleanupAmpModLFO();
     this.#envelopes.forEach((env) => env.dispose());
     this.#playerWorklet.port.close();
-    if (this.#releaseTimeout) clearTimeout(this.#releaseTimeout);
-    if (this.#stopTimeout) clearTimeout(this.#stopTimeout);
+    this.#clearTimeouts();
     unregisterNode(this.nodeId);
   }
 
