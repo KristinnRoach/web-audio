@@ -1151,7 +1151,8 @@ export class SampleVoice {
     this.#hpfHz = safeHz;
     if (this.#hpf) {
       // glideTime is a ramp duration; setTargetAtTime wants a time constant (~3 to settle).
-      const timeConstant = options.glideTime ? options.glideTime / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
+      const glideSec = options.glideTime ?? 0;
+      const timeConstant = glideSec > 0 ? glideSec / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
       if (options.cancelPrevious ?? true) this.#hpf.frequency.cancelScheduledValues(atTime);
       this.#hpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;
@@ -1178,7 +1179,8 @@ export class SampleVoice {
     this.#lpfHz = safeHz;
     if (this.#lpf) {
       // glideTime is a ramp duration; setTargetAtTime wants a time constant (~3 to settle).
-      const timeConstant = options.glideTime ? options.glideTime / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
+      const glideSec = options.glideTime ?? 0;
+      const timeConstant = glideSec > 0 ? glideSec / 3 : DEFAULT.CUTOFF_SMOOTHING_SEC;
       if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);
       this.#lpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;
