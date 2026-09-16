@@ -45,7 +45,6 @@ import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeSettings,
   getPostFilterEnvelopeOptions,
-  getSampleEnvelopeEventTypes,
   type SampleEnvelopeId,
 } from "./temporary-sample-envelope-adapters";
 
@@ -292,9 +291,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.voicePool.onMessage("voice-pool:initialized", () => {
       // Fresh voices start on defaults, so hand them the owned state before they play.
-      SAMPLE_ENVELOPE_IDS.forEach((id) =>
-        this.#applyEnvelopeSettingsToVoices(id, this.getEnvelopeSettings(id)),
-      );
+      SAMPLE_ENVELOPE_IDS.forEach((id) => {
+        const settings = this.getEnvelopeSettings(id);
+        this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, settings));
+      });
       this.playbackRateSyncedEnvelopes.forEach((id) =>
         this.voicePool.applyToAllVoices((voice) => voice.setEnvelopePlaybackRateSync(id, true)),
       );
@@ -308,7 +308,6 @@ export class SamplePlayer implements ILibInstrumentNode {
       "voice:stopped",
       "voice:releasing",
       "sample:loaded",
-      ...getSampleEnvelopeEventTypes(),
     ]);
     return this;
   }
@@ -1098,7 +1097,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     const next = cloneEnvelopeSettings(settings);
     this.envelopeSettings.set(id, next);
 
-    this.#applyEnvelopeSettingsToVoices(id, next);
+    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, next));
 
     if (id === "filter-env") {
       this.applyPostFilterEnvelope(next);
@@ -1132,10 +1131,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   /** Restores all envelopes to defaults sized to the current sample. */
   resetEnvelopes(): void {
     SAMPLE_ENVELOPE_IDS.forEach((id) => this.resetEnvelope(id));
-  }
-
-  #applyEnvelopeSettingsToVoices(id: SampleEnvelopeId, settings: EnvelopeSettings): void {
-    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, settings));
   }
 
   /** Envelope types on the current voices; empty until the pool is initialized. */

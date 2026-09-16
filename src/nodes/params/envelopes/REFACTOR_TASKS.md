@@ -7,7 +7,7 @@
 - [x] Keep `SamplePlayer`, `SampleVoice`, and `InstrumentBus` orchestration outside the generic envelope module.
 - [x] Remove the generic module's dependency on sampler envelope IDs and stop exporting a sampler-specific ID as a generic type.
 - [x] Consolidate the per-voice and post-FX filter bindings where this can be done without hiding their different note-lifetime behavior.
-- [ ] Update tests around the generic runtime and sampler adapter boundaries.
+- [x] Update tests around the generic runtime and sampler adapter boundaries.
 - [ ] Run formatting, type checks, unit tests, and browser envelope tests.
 - [ ] Delete this temporary task list when the refactor is complete.
 
@@ -22,5 +22,5 @@ Prefer a small explicit adapter over configuration machinery. Defer any case tha
 
 ## Deferred for review
 
-- Browser tests still describe the removed `VoiceEnvelope`/`ENVELOPE_TARGETS` boundary and will be migrated only after the replacement API is approved.
 - The post-FX filter now uses `EnvelopeRuntime`; shared-note ownership and bus cutoff/depth policy remain in `InstrumentBus`.
+- The full unit suite needs one clean rerun when the host has more temporary disk space; all affected unit tests and the focused browser runtime suite pass.

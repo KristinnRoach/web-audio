@@ -8,25 +8,17 @@ import {
   type EnvelopeSettings,
   type ScheduleOptions,
 } from "./Envelope";
-import { releaseDuration, releaseStartTime, scaledDuration } from "./envelope-shape";
+import { releaseDuration, scaledDuration } from "./envelope-shape";
 
-export type EnvelopeTriggerDetails = {
-  duration: number;
-  sustainEnabled: boolean;
-  loopEnabled: boolean;
-  sustainPoint: Envelope["points"][number] | null;
-  releasePoint: Envelope["points"][number] | null;
-};
-
-export type EnvelopeReleaseDetails = {
-  releasePoint: Envelope["points"][number] | null;
-  remainingDuration: number;
+export type EnvelopePointDetails = {
+  index: number;
+  point: Envelope["points"][number];
+  time: number;
 };
 
 export type EnvelopeRuntimeCallbacks = {
-  onTrigger?: (details: EnvelopeTriggerDetails) => void;
-  onRelease?: (details: EnvelopeReleaseDetails) => void;
-  onLoop?: (details: { duration: number }) => void;
+  onPoint?: (details: EnvelopePointDetails) => void;
+  onComplete?: () => void;
 };
 
 export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, "timeScale"> & {
@@ -34,6 +26,11 @@ export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, "timeScale"> &
   timeScaleMultiplier?: number;
   /** Optional target-specific shape derived from the stored shape for this run. */
   envelope?: Envelope;
+};
+
+type ActiveEnvelopeRun = {
+  envelope: Envelope;
+  timeScale: number;
 };
 
 /**
@@ -45,10 +42,10 @@ export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, "timeScale"> &
 export class EnvelopeRuntime {
   #scheduler: EnvelopeScheduler | null = null;
   #isReleased = false;
-  #autoReleaseSuppressed = false;
-  #autoReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  #pointTimers = new Set<ReturnType<typeof setTimeout>>();
+  #completionTimer: ReturnType<typeof setTimeout> | null = null;
   #loopTimer: ReturnType<typeof setTimeout> | null = null;
-  #timeScaleMultiplier = 1;
+  #activeRun: ActiveEnvelopeRun | null = null;
 
   constructor(
     readonly context: AudioContext,
@@ -74,6 +71,14 @@ export class EnvelopeRuntime {
   }
 
   duration(timeScaleMultiplier = 1) {
+    if (this.#activeRun) {
+      return this.#duration(
+        this.#activeRun.envelope,
+        0,
+        this.#activeRun.envelope.points.length - 1,
+        this.#activeRun.timeScale,
+      );
+    }
     return scaledDuration(
       this.#settings,
       0,
@@ -83,126 +88,102 @@ export class EnvelopeRuntime {
   }
 
   releaseDuration(timeScaleMultiplier = 1) {
+    if (this.#activeRun) {
+      return this.#duration(
+        this.#activeRun.envelope,
+        this.#activeRun.envelope.release,
+        this.#activeRun.envelope.points.length - 1,
+        this.#activeRun.timeScale,
+      );
+    }
     return releaseDuration(this.#settings, timeScaleMultiplier);
   }
 
   applySettings(settings: EnvelopeSettings) {
     assertValidEnvelopeSettings(settings);
-    const loopWasOn = this.#settings.envelope.loop;
     this.#settings = cloneEnvelopeSettings(settings);
-
-    if (
-      loopWasOn &&
-      !settings.envelope.loop &&
-      this.#autoReleaseSuppressed &&
-      !this.#isReleased &&
-      settings.envelope.sustain === undefined
-    ) {
-      this.#sendAutoRelease();
-    }
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
+    this.#clearTimers();
     this.#isReleased = false;
-    this.#autoReleaseSuppressed = false;
-    this.#timeScaleMultiplier = options.timeScaleMultiplier ?? 1;
-
-    const scheduledEnvelope = options.envelope ?? this.#settings.envelope;
+    const sourceEnvelope = options.envelope ?? this.#settings.envelope;
+    const scheduledEnvelope = {
+      ...sourceEnvelope,
+      points: sourceEnvelope.points.map((point) => ({ ...point })),
+    };
+    const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
+    this.#activeRun = { envelope: scheduledEnvelope, timeScale };
     const schedule = {
       base: options.base,
       amount: options.amount,
-      timeScale: this.#settings.timeScale * this.#timeScaleMultiplier,
+      timeScale,
     };
 
     this.#scheduler?.dispose();
     this.#scheduler = createEnvelopeScheduler(this.context, param, scheduledEnvelope);
-    this.#scheduler.trigger(Math.max(this.context.currentTime, startTime), schedule);
+    const scheduledStartTime = Math.max(this.context.currentTime, startTime);
+    this.#scheduler.trigger(scheduledStartTime, schedule);
+    if (this.callbacks.onPoint) {
+      this.#startPointCallbacks(this.#activeRun, scheduledStartTime);
+    }
 
-    const { sustain, loop, points } = this.#settings.envelope;
-    this.callbacks.onTrigger?.({
-      duration: releaseStartTime(this.#settings, this.#timeScaleMultiplier),
-      sustainEnabled: sustain !== undefined && !loop,
-      loopEnabled: !!loop,
-      sustainPoint: sustain === undefined ? null : points[sustain],
-      releasePoint: this.#releasePoint,
-    });
-
-    this.#armAutoRelease();
-    this.#startLoopCallbacks(startTime);
+    if (
+      this.callbacks.onComplete &&
+      scheduledEnvelope.sustain === undefined &&
+      !scheduledEnvelope.loop
+    ) {
+      this.#armCompletion(
+        scheduledStartTime +
+          this.#duration(scheduledEnvelope, 0, scheduledEnvelope.points.length - 1, timeScale),
+      );
+    }
   }
 
   release(startTime: number) {
-    if (this.#isReleased) return;
+    if (this.#isReleased || !this.#activeRun) return;
     this.#isReleased = true;
-    this.#autoReleaseSuppressed = false;
     this.#clearTimers();
 
-    this.#scheduler?.release(Math.max(this.context.currentTime, startTime));
-    this.#sendRelease();
+    const releaseTime = Math.max(this.context.currentTime, startTime);
+    this.#scheduler?.release(releaseTime);
+    const { envelope, timeScale } = this.#activeRun;
+    if (this.callbacks.onPoint) this.#startReleasePointCallbacks(this.#activeRun, releaseTime);
+    if (this.callbacks.onComplete) {
+      this.#armCompletion(
+        releaseTime +
+          this.#duration(envelope, envelope.release, envelope.points.length - 1, timeScale),
+      );
+    }
   }
 
   stop() {
     this.#isReleased = true;
-    this.#autoReleaseSuppressed = false;
     this.#clearTimers();
     this.#scheduler?.dispose();
     this.#scheduler = null;
+    this.#activeRun = null;
   }
 
   dispose() {
     this.stop();
   }
 
-  get #releasePoint() {
-    const release = this.#settings.envelope.release ?? this.#settings.envelope.sustain;
-    return release === undefined ? null : (this.#settings.envelope.points[release] ?? null);
-  }
+  #startPointCallbacks(run: ActiveEnvelopeRun, startTime: number) {
+    const { envelope, timeScale } = run;
+    const end = envelope.loop
+      ? envelope.points.length - 1
+      : (envelope.sustain ?? envelope.points.length - 1);
+    this.#schedulePointRange(envelope, startTime, 0, end, timeScale);
+    if (!envelope.loop) return;
 
-  #armAutoRelease() {
-    this.#clearAutoRelease();
-    this.#autoReleaseTimer = setTimeout(
-      () => {
-        this.#autoReleaseTimer = null;
-        if (this.#isReleased) return;
-        if (this.#settings.envelope.sustain !== undefined && !this.#settings.envelope.loop) return;
-
-        if (this.#settings.envelope.loop) {
-          this.#autoReleaseSuppressed = true;
-          return;
-        }
-
-        this.#sendAutoRelease();
-      },
-      releaseStartTime(this.#settings, this.#timeScaleMultiplier) * 1000,
-    );
-  }
-
-  #sendAutoRelease() {
-    this.#autoReleaseSuppressed = false;
-    this.#isReleased = true;
-    this.#sendRelease();
-  }
-
-  #sendRelease() {
-    this.callbacks.onRelease?.({
-      releasePoint: this.#releasePoint,
-      remainingDuration: this.releaseDuration(this.#timeScaleMultiplier),
-    });
-  }
-
-  #startLoopCallbacks(startTime: number) {
-    this.#stopLoopCallbacks();
-    if (!this.#settings.envelope.loop) return;
-
-    const { sustain, points } = this.#settings.envelope;
-    const loopEnd = sustain ?? points.length - 1;
-    const duration = scaledDuration(this.#settings, 0, loopEnd, this.#timeScaleMultiplier);
+    const duration = this.#duration(envelope, 0, end, timeScale);
     if (duration <= 0) return;
 
     let cycle = 1;
     const tick = () => {
-      if (this.#isReleased || !this.#settings.envelope.loop) return this.#stopLoopCallbacks();
-      this.callbacks.onLoop?.({ duration });
+      if (this.#isReleased || !envelope.loop) return this.#stopLoopCallbacks();
+      this.#schedulePointRange(envelope, startTime + cycle * duration, 0, end, timeScale);
       cycle++;
       this.#loopTimer = setTimeout(
         tick,
@@ -216,20 +197,68 @@ export class EnvelopeRuntime {
     );
   }
 
+  #startReleasePointCallbacks(run: ActiveEnvelopeRun, releaseTime: number) {
+    const { envelope, timeScale } = run;
+    this.#schedulePointRange(
+      envelope,
+      releaseTime,
+      envelope.release + 1,
+      envelope.points.length - 1,
+      timeScale,
+      envelope.release,
+    );
+  }
+
+  #schedulePointRange(
+    envelope: Envelope,
+    startTime: number,
+    from: number,
+    to: number,
+    timeScale: number,
+    fromIndex = from - 1,
+  ) {
+    const fromTime = fromIndex < 0 ? envelope.points[0].time : envelope.points[fromIndex].time;
+    for (let index = from; index <= to; index++) {
+      const time = startTime + (envelope.points[index].time - fromTime) / timeScale;
+      const timer = setTimeout(
+        () => {
+          this.#pointTimers.delete(timer);
+          this.callbacks.onPoint?.({ index, point: envelope.points[index], time });
+        },
+        Math.max(0, (time - this.context.currentTime) * 1000),
+      );
+      this.#pointTimers.add(timer);
+    }
+  }
+
+  #armCompletion(time: number) {
+    this.#completionTimer = setTimeout(
+      () => {
+        this.#completionTimer = null;
+        this.callbacks.onComplete?.();
+      },
+      Math.max(0, (time - this.context.currentTime) * 1000),
+    );
+  }
+
+  #duration(envelope: Envelope, from: number, to: number, timeScale: number) {
+    if (from < 0 || to >= envelope.points.length || from >= to) return 0;
+    return (envelope.points[to].time - envelope.points[from].time) / timeScale;
+  }
+
   #stopLoopCallbacks() {
     if (this.#loopTimer === null) return;
     clearTimeout(this.#loopTimer);
     this.#loopTimer = null;
   }
 
-  #clearAutoRelease() {
-    if (this.#autoReleaseTimer === null) return;
-    clearTimeout(this.#autoReleaseTimer);
-    this.#autoReleaseTimer = null;
-  }
-
   #clearTimers() {
-    this.#clearAutoRelease();
+    this.#pointTimers.forEach((timer) => clearTimeout(timer));
+    this.#pointTimers.clear();
+    if (this.#completionTimer !== null) {
+      clearTimeout(this.#completionTimer);
+      this.#completionTimer = null;
+    }
     this.#stopLoopCallbacks();
   }
 }

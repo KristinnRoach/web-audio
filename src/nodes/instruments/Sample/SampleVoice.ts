@@ -26,7 +26,6 @@ import { samplerParams } from "./sampler-params";
 import {
   createDefaultSampleEnvelopeSettings,
   getSampleEnvelopeBaseValue,
-  getSampleEnvelopeEventType,
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
   getSampleEnvelopeTimeScaleMultiplier,
@@ -239,22 +238,8 @@ export class SampleVoice {
       // Envelopes start from defaults; SamplePlayer pushes the real state down as soon
       // as it has one, which is also what keeps every voice on the same shape.
       const settings = createDefaultSampleEnvelopeSettings(type, durationSeconds);
-      const emit = (event: "trigger" | "trigger:loop" | "release", data: object) =>
-        this.sendUpstreamMessage(getSampleEnvelopeEventType(type, event), {
-          ...data,
-          voiceId: this.nodeId,
-          midiNote: this.#midiNote,
-        });
-      const envelope = new EnvelopeRuntime(this.context, settings, {
-        onTrigger: (details) => emit("trigger", details),
-        onLoop: (details) => emit("trigger:loop", details),
-        onRelease: (details) => emit("release", details),
-      });
+      const envelope = new EnvelopeRuntime(this.context, settings);
       this.#envelopes.set(type, envelope);
-      this.sendUpstreamMessage(getSampleEnvelopeEventType(type, "created"), {
-        voiceId: this.nodeId,
-        midiNote: this.#midiNote,
-      });
     }
   }
 

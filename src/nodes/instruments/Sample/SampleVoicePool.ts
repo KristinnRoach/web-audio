@@ -4,11 +4,6 @@ import { VoiceState } from "../VoiceState";
 import { Message, MessageHandler, MessageBus, createMessageBus } from "@/events";
 import { GainStages, LibNode } from "@/nodes/LibNode";
 import { createSampleVoices } from "./createSampleVoice";
-import {
-  SAMPLE_ENVELOPE_IDS,
-  getSampleEnvelopeEventType,
-  getSampleEnvelopeEventTypes,
-} from "./temporary-sample-envelope-adapters";
 
 export class SampleVoicePool implements LibNode {
   readonly nodeId: NodeID;
@@ -100,7 +95,6 @@ export class SampleVoicePool implements LibNode {
   }
 
   #initializedVoices = new Set<SampleVoice>();
-  #envelopeCreatedMap = new Map<string, Set<SampleVoice>>();
 
   #setupMessageHandling(voice: SampleVoice) {
     voice.onMessage("voice:initialized", (msg: Message) => {
@@ -114,36 +108,9 @@ export class SampleVoicePool implements LibNode {
       }
     });
 
-    // Envelope creation tracking
-    SAMPLE_ENVELOPE_IDS.forEach((envType) => {
-      const createdEvent = getSampleEnvelopeEventType(envType, "created");
-      voice.onMessage(createdEvent, (msg: Message) => {
-        if (!this.#envelopeCreatedMap.has(envType)) {
-          this.#envelopeCreatedMap.set(envType, new Set());
-        }
-        const set = this.#envelopeCreatedMap.get(envType)!;
-        set.add(msg.voice);
-        if (set.size === this.#allVoices.length) {
-          // All voices have created this envelope type
-          this.sendUpstreamMessage(createdEvent, {
-            envType,
-            voiceCount: this.#allVoices.length,
-          });
-        }
-      });
-    });
-
     this.#messages.forwardFrom(
       voice,
-      [
-        "voice:initialized",
-        "voice:started",
-        "voice:stopped",
-        "voice:releasing",
-        "voice:loaded",
-
-        ...getSampleEnvelopeEventTypes(),
-      ],
+      ["voice:initialized", "voice:started", "voice:stopped", "voice:releasing", "voice:loaded"],
       (msg) => {
         if (msg.type === "voice:loaded") {
           this.#loaded.add(msg.senderId);

@@ -23,17 +23,16 @@ export function scaledDuration(
 }
 
 export function releaseStartTime(settings: EnvelopeSettings, timeScaleMultiplier = 1): number {
-  const release = settings.envelope.release ?? settings.envelope.sustain;
-  return release === undefined
-    ? baseDuration(settings.envelope)
-    : scaledDuration(settings, 0, release, timeScaleMultiplier);
+  return scaledDuration(settings, 0, settings.envelope.release, timeScaleMultiplier);
 }
 
 export function releaseDuration(settings: EnvelopeSettings, timeScaleMultiplier = 1): number {
-  const release = settings.envelope.release ?? settings.envelope.sustain;
-  return release === undefined
-    ? 0
-    : scaledDuration(settings, release, lastIndex(settings.envelope), timeScaleMultiplier);
+  return scaledDuration(
+    settings,
+    settings.envelope.release,
+    lastIndex(settings.envelope),
+    timeScaleMultiplier,
+  );
 }
 
 export function hasVariation(envelope: Envelope): boolean {
@@ -64,10 +63,7 @@ export function addPoint(
       envelope.sustain !== undefined && insertAt <= envelope.sustain
         ? envelope.sustain + 1
         : envelope.sustain,
-    release:
-      envelope.release !== undefined && insertAt <= envelope.release
-        ? envelope.release + 1
-        : envelope.release,
+    release: insertAt <= envelope.release ? envelope.release + 1 : envelope.release,
   };
 }
 
@@ -100,13 +96,13 @@ export function deletePoint(envelope: Envelope, index: number): Envelope {
   const end = next.length - 1;
   const shift = (marker: number | undefined) =>
     marker === undefined ? undefined : marker > index ? marker - 1 : marker;
+  const release = envelope.release > index ? envelope.release - 1 : envelope.release;
 
   return {
     ...envelope,
     points: next,
     sustain: envelope.sustain === index ? undefined : shift(envelope.sustain),
-    release:
-      envelope.release === index ? Math.min(index, Math.max(0, end - 1)) : shift(envelope.release),
+    release: envelope.release === index ? Math.min(index, Math.max(0, end - 1)) : release,
   };
 }
 
@@ -138,7 +134,7 @@ export function setSustainPoint(envelope: Envelope, index?: number): Envelope {
   return { ...envelope, sustain: index };
 }
 
-export function setReleasePoint(envelope: Envelope, index?: number): Envelope {
-  if (index !== undefined && (index < 0 || index >= envelope.points.length)) return envelope;
+export function setReleasePoint(envelope: Envelope, index: number): Envelope {
+  if (index < 0 || index >= envelope.points.length) return envelope;
   return { ...envelope, release: index };
 }

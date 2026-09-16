@@ -102,7 +102,7 @@ describe("SamplePlayer envelope settings", () => {
     expect(player.getEnvelopeSettings("amp-env").envelope.points[0].value).toBe(0);
     expect(sendUpstreamMessage).toHaveBeenCalledOnce();
     expect(sendUpstreamMessage).toHaveBeenCalledWith("envelope:changed", {
-      envelopeType: "amp-env",
+      envelopeId: "amp-env",
       settings: expect.objectContaining({ enabled: false }),
     });
   });

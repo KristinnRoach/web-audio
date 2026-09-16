@@ -42,15 +42,14 @@ export type Envelope = {
    */
   readonly points: readonly EnvelopePoint[];
   /**
-   * Point the release stage starts from. Defaults to `sustain`, and without either
-   * there is no release stage and `release()` does nothing.
+   * Point the release stage starts from. Presets normally use the second-last point.
    *
    * Set it without a `sustain` for a shape that plays through on its own while the
    * note is held and still has a tail to jump to on note-off. That is how a sampler
    * amp envelope decays on its own yet still has a release, and it is the one thing
    * a lone `sustain` cannot express: `sustain` holds where this one keeps moving.
    */
-  readonly release?: number;
+  readonly release: number;
   /** Point held until release. Points after it form the release stage. */
   readonly sustain?: number;
   /**
@@ -85,6 +84,8 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
   const validMarker = (index: number | undefined) =>
     index === undefined ||
     (Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length);
+  const validRelease = (index: number) =>
+    Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length;
 
   if (
     typeof settings?.enabled !== "boolean" ||
@@ -104,7 +105,7 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
         (index > 0 && point.time < points[index - 1].time),
     ) ||
     !validMarker(settings.envelope.sustain) ||
-    !validMarker(settings.envelope.release)
+    !validRelease(settings.envelope.release)
   ) {
     throw new TypeError("Invalid envelope settings");
   }
@@ -271,12 +272,6 @@ export function interpolateAtTime(points: readonly EnvelopePoint[], time: number
   return left.value + (right.value - left.value) * t;
 }
 
-/** Where the release stage starts: `release` if given, else `sustain`, else nowhere. */
-function releaseIndexOf(envelope: Envelope) {
-  const index = envelope.release ?? envelope.sustain;
-  return index !== undefined && envelope.points[index] ? index : undefined;
-}
-
 /**
  * Releases an envelope from `holdValue` through the points after its release index.
  *
@@ -292,8 +287,7 @@ export function releaseEnvelope(
   { base = 0, amount = 1, timeScale = 1 }: ScheduleOptions = {},
   holdValue?: number,
 ) {
-  const from = releaseIndexOf(envelope);
-  if (from === undefined) return;
+  const from = envelope.release;
 
   const { points } = envelope;
   const fromTime = points[from].time;

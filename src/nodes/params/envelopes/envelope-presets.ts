@@ -36,7 +36,7 @@ export const envelopePresets = {
           { time: 0, value: 1, curve: "exponential" },
           { time: duration, value: 1, curve: "exponential" },
         ],
-        release: 1,
+        release: 0,
       },
     };
   },

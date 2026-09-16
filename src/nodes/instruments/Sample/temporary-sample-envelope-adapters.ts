@@ -83,22 +83,6 @@ export function resolveSampleEnvelopeTrigger(
   return { envelope: { ...envelope, points } };
 }
 
-export function getSampleEnvelopeEventType(
-  id: SampleEnvelopeId,
-  event: "created" | "trigger" | "trigger:loop" | "release",
-) {
-  return `${id}:${event}`;
-}
-
-export function getSampleEnvelopeEventTypes(): string[] {
-  return SAMPLE_ENVELOPE_IDS.flatMap((id) => [
-    getSampleEnvelopeEventType(id, "created"),
-    getSampleEnvelopeEventType(id, "trigger"),
-    getSampleEnvelopeEventType(id, "trigger:loop"),
-    getSampleEnvelopeEventType(id, "release"),
-  ]);
-}
-
 export function getSampleEnvelopeTimeScaleMultiplier(
   syncToPlaybackRate: boolean,
   playbackRate: number,

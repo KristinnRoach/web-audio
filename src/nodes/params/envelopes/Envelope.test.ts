@@ -39,6 +39,7 @@ test("schedules through sustain, then schedules the remaining points on release"
       { time: 0.8, value: 0 },
     ],
     sustain: 2,
+    release: 2,
   };
 
   scheduleEnvelope(param, envelope, 10);
@@ -63,6 +64,7 @@ test("treats point times as offsets from the first point, not as a pre-delay", (
       { time: 0.9, value: 0.25 },
     ],
     sustain: 2,
+    release: 2,
   };
 
   scheduleEnvelope(param, envelope, 10);
@@ -84,6 +86,7 @@ test("keeps an exponential segment off zero at both ends", () => {
       { time: 1, value: 0, curve: "exponential" },
     ],
     sustain: 2,
+    release: 2,
   };
 
   scheduleEnvelope(param, envelope, 10, { amount: 20000 });
@@ -109,6 +112,7 @@ test("leaves values alone when no exponential segment touches them", () => {
         { time: 0.3, value: 0, curve: "linear" },
       ],
       sustain: 2,
+      release: 2,
     },
     10,
   );
@@ -129,6 +133,7 @@ test("places the shape on the parameter's range with base and amount", () => {
       { time: 0.2, value: 0.5 },
     ],
     sustain: 2,
+    release: 2,
   };
 
   const scheduled = (options?: { base?: number; amount?: number }) => {
@@ -158,6 +163,7 @@ test("keeps an inverted exponential envelope on its own side of zero", () => {
         { time: 0.1, value: 1, curve: "exponential" },
       ],
       sustain: 1,
+      release: 1,
     },
     0,
     { amount: -1 },
@@ -180,6 +186,7 @@ test("anchors every rolling loop cycle to the original trigger time", () => {
       { time: 0.2, value: 0 },
     ],
     sustain: 2,
+    release: 1,
     loop: true,
   };
   const env = createEnvelopeScheduler(context, param, envelope);
@@ -210,6 +217,7 @@ test("scheduler release stops its loop and schedules the scaled release stage", 
       { time: 0.5, value: 0.2 },
     ],
     sustain: 2,
+    release: 2,
     loop: true,
   };
   const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
@@ -241,6 +249,7 @@ test("opens every loop cycle on the trigger time plus a whole number of periods"
       { time: 0.9, value: 0.25 },
     ],
     sustain: 2,
+    release: 2,
     loop: true,
   };
   const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
@@ -260,9 +269,7 @@ test("opens every loop cycle on the trigger time plus a whole number of periods"
   env.dispose();
 });
 
-// loop is the looping counterpart of sustain, not an alternative to it: the loop
-// covers the sustaining portion and release() leaves it for the release stage.
-test("loops up to the sustain point and keeps the release stage out of the loop", () => {
+test("release exits a whole-envelope loop and plays its release tail", () => {
   vi.useFakeTimers();
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };
@@ -273,22 +280,14 @@ test("loops up to the sustain point and keeps the release stage out of the loop"
       { time: 0.4, value: 0.5 },
       { time: 1.4, value: 0 },
     ],
-    sustain: 2,
+    release: 2,
     loop: true,
   };
   const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
 
   env.trigger(0);
 
-  // Period is the sustaining span (0.4 s), not the whole envelope (1.4 s).
-  // Deduped: the pin on trigger writes at the same instant cycle 0 opens.
-  const opens = [...new Set(calls.set.mock.calls.map(([, time]) => time as number))].sort(
-    (a, b) => a - b,
-  );
-  opens.forEach((time, cycle) => expect(time).toBeCloseTo(cycle * 0.4, 10));
-
-  // The release point never lands inside a cycle.
-  expect(calls.linear.mock.calls.some(([value]) => value === 0)).toBe(false);
+  expect(calls.linear.mock.calls.some(([value]) => value === 0)).toBe(true);
 
   // Release exits the loop and plays the tail from wherever the loop was.
   env.release(0.9);
@@ -312,6 +311,7 @@ test("loops the whole envelope when no sustain point is set", () => {
       { time: 0.5, value: 1 },
       { time: 1, value: 0 },
     ],
+    release: 1,
     loop: true,
   });
 
@@ -384,6 +384,7 @@ test("timeScale speeds up both the sustaining stage and the release", () => {
       { time: 0.6, value: 0 },
     ],
     sustain: 2,
+    release: 2,
   };
 
   scheduleEnvelope(param, envelope, 10, { timeScale: 2 });
