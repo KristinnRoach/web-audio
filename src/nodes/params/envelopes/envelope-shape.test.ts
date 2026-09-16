@@ -53,12 +53,16 @@ describe("envelope edits", () => {
     const envelope = envelopeOf();
     expect(addPoint(envelope, -1, 0.5)).toBe(envelope);
     expect(addPoint(envelope, 4, 0.5)).toBe(envelope);
+    expect(addPoint(envelope, Number.NaN, 0.5)).toBe(envelope);
+    expect(addPoint(envelope, Number.POSITIVE_INFINITY, 0.5)).toBe(envelope);
   });
 
   it("refuses a move across either neighbour", () => {
     const envelope = envelopeOf();
     expect(updatePoint(envelope, 2, 0.5)).toBe(envelope);
     expect(updatePoint(envelope, 1, 2.5)).toBe(envelope);
+    expect(updatePoint(envelope, 1, Number.NaN)).toBe(envelope);
+    expect(updatePoint(envelope, 1, Number.NEGATIVE_INFINITY)).toBe(envelope);
     expect(updatePoint(envelope, 1, 1.5).points[1].time).toBe(1.5);
   });
 

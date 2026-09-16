@@ -361,10 +361,12 @@ export class InstrumentBus implements ILibAudioNode {
 
       this.#lpfEnvelope.trigger(cutoff, time, {
         base: this.#lpfCutoffHz,
-        // Keep the peak inside the filter's range. Past Nyquist the browser clamps
-        // and warns, and the top of the sweep is lost either way. Only ever lowers
-        // a positive amount, so a negative one still inverts.
-        amount: Math.min(this.#lpfEnvAmount * ceiling, ceiling - this.#lpfCutoffHz),
+        // Keep both upward and inverted sweeps inside the filter's usable range.
+        amount: clamp(
+          this.#lpfEnvAmount * ceiling,
+          -this.#lpfCutoffHz,
+          ceiling - this.#lpfCutoffHz,
+        ),
         timeScaleMultiplier: midiToPlaybackRate(midiNote),
       });
     }

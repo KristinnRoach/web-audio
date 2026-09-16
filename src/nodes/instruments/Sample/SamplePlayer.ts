@@ -1110,8 +1110,8 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   /**
-   * The post-FX cutoff follows the same envelope definition. It has no per-note
-   * playback rate, so only the envelope's own time scale applies.
+   * The post-FX cutoff follows the same envelope definition. `InstrumentBus.noteOn`
+   * adds the triggering MIDI note's playback rate to the envelope's own time scale.
    */
   private applyPostFilterEnvelope(settings: EnvelopeSettings): void {
     this.setLpfEnvelope(

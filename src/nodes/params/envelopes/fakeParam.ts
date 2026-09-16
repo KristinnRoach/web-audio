@@ -1,22 +1,23 @@
 import { vi } from "vite-plus/test";
+import type { AutomatableParam } from "./Envelope";
 
 export type ScheduledEvent = {
-  type: "set" | "linear" | "exponential" | "target" | "cancel" | "hold";
+  type: "set" | "linear" | "exponential" | "cancel";
   value?: number;
   time: number;
 };
 
-export type FakeParam = AudioParam & {
+export type FakeParam = AutomatableParam & {
   /** Every automation call in the order it arrived. */
   events: ScheduledEvent[];
-  /** Automation that moves the parameter, so cancels and holds are left out. */
+  /** Automation that moves the parameter, so cancellation is left out. */
   ramps(): ScheduledEvent[];
   /** Value of the last scheduled ramp, or undefined when nothing was scheduled. */
   lastValue(): number | undefined;
 };
 
 /**
- * An `AudioParam` that records automation instead of producing sound.
+ * An `AutomatableParam` that records automation instead of producing sound.
  *
  * Tests assert on what was scheduled rather than on which method was reached, so they
  * survive a change of scheduling strategy. The old mocks each listed only the methods
@@ -31,7 +32,7 @@ export function createFakeParam({
   const events: ScheduledEvent[] = [];
   const record = (type: ScheduledEvent["type"]) =>
     vi.fn((...args: number[]) =>
-      type === "cancel" || type === "hold"
+      type === "cancel"
         ? events.push({ type, time: args[0] })
         : events.push({ type, value: args[0], time: args[1] }),
     );
@@ -40,24 +41,17 @@ export function createFakeParam({
     value,
     minValue,
     maxValue,
-    automationRate: "a-rate" as AutomationRate,
-    defaultValue: value,
     setValueAtTime: record("set"),
     linearRampToValueAtTime: record("linear"),
     exponentialRampToValueAtTime: record("exponential"),
-    setTargetAtTime: vi.fn((v: number, t: number) =>
-      events.push({ type: "target", value: v, time: t }),
-    ),
-    setValueCurveAtTime: vi.fn(),
     cancelScheduledValues: record("cancel"),
-    cancelAndHoldAtTime: record("hold"),
     events,
-    ramps: () => events.filter((event) => event.type !== "cancel" && event.type !== "hold"),
+    ramps: () => events.filter((event) => event.type !== "cancel"),
     lastValue: () => {
       const moves = param.ramps();
       return moves.length ? moves[moves.length - 1].value : undefined;
     },
   };
 
-  return param as unknown as FakeParam;
+  return param;
 }

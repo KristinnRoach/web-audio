@@ -87,10 +87,11 @@ describe("loop range clamping", () => {
   it("wraps to startPoint when loopStart sits before it", async () => {
     const processor = await startProcessor();
     // Default loopStart of 0 is outside a playback range starting at 0.5 s.
-    const parameters = makeParameters({ startPoint: 0.5, endPoint: 1 });
+    const parameters = makeParameters({ startPoint: 0.5, endPoint: 1, loopEnd: 0.75 });
 
-    render(processor, parameters, TEST_SAMPLE_RATE / 2 + 100);
+    render(processor, parameters, TEST_SAMPLE_RATE / 4 + 100);
 
     expect(processor.playbackPosition).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
+    expect(processor.playbackPosition).toBeLessThan(TEST_SAMPLE_RATE / 2 + 200);
   });
 });

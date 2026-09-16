@@ -47,6 +47,7 @@ export function addPoint(
   curve: EnvelopePoint["curve"] = "exponential",
 ): Envelope {
   const { points } = envelope;
+  if (!Number.isFinite(time)) return envelope;
   if (points.length >= 2 && (time < points[0].time || time > points[lastIndex(envelope)].time)) {
     return envelope;
   }
@@ -78,6 +79,7 @@ export function updatePoint(
 
   const current = points[index];
   const nextTime = time ?? current.time;
+  if (!Number.isFinite(nextTime)) return envelope;
   const before = points[index - 1];
   const after = points[index + 1];
   if ((before && nextTime <= before.time) || (after && nextTime >= after.time)) return envelope;
