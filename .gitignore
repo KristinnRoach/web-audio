@@ -27,3 +27,6 @@ dist
 .vitest-attachments/
 AGENTS.md
 .claude
+
+# vitest browser failure screenshots
+**/__screenshots__/

@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { CustomEnvelope } from "../CustomEnvelope";
-import type { EnvelopeData } from "../EnvelopeData";
+import { EnvelopeData } from "../EnvelopeData";
+import { createFakeParam, type FakeParam } from "./fakeParam";
 
-// Mock dependencies
 vi.mock("../../../nodes/node-store", () => ({
   createNodeId: vi.fn(() => "test-node-id"),
   deleteNodeId: vi.fn(),
   registerNode: vi.fn(() => "test-node-id"),
+  unregisterNode: vi.fn(),
 }));
 
 vi.mock("@/events", () => ({
@@ -16,215 +17,179 @@ vi.mock("@/events", () => ({
   })),
 }));
 
-describe("CustomEnvelope - #continueFromPoint", () => {
-  let envelope: CustomEnvelope;
-  let mockContext: AudioContext;
-  let mockAudioParam: AudioParam;
-  let mockEnvelopeData: EnvelopeData;
+/**
+ * These assert on what the envelope schedules, not on which AudioParam method it
+ * reaches for. The release stage is the tail after the release point, starting wherever
+ * the shape had got to when the note was let go.
+ */
+function contextAt(currentTime: number) {
+  const context = {
+    currentTime,
+    sampleRate: 44100,
+    getOutputTimestamp: () => ({ contextTime: currentTime, performanceTime: 0 }),
+  };
+  return context as unknown as AudioContext & { currentTime: number };
+}
+
+/** Rises to 1 at 0.5s, half back down by 1.0s, silent at 1.5s. Release point is 2. */
+function shape(sustainIndex?: number) {
+  return new EnvelopeData(
+    [
+      { time: 0, value: 0, curve: "exponential" },
+      { time: 0.5, value: 1, curve: "exponential" },
+      { time: 1.0, value: 0.5, curve: "exponential" },
+      { time: 1.5, value: 0, curve: "exponential" },
+    ],
+    [0, 1],
+    1.5,
+    sustainIndex,
+    2,
+  );
+}
+
+describe("CustomEnvelope release", () => {
+  let context: AudioContext & { currentTime: number };
+  let param: FakeParam;
 
   beforeEach(() => {
-    // Mock AudioContext with writable currentTime
-    mockContext = {
-      get currentTime() {
-        return this._currentTime || 1.0;
-      },
-      set currentTime(value) {
-        this._currentTime = value;
-      },
-      sampleRate: 44100,
-      _currentTime: 1.0,
-    } as unknown as AudioContext;
-
-    // Mock AudioParam
-    mockAudioParam = {
-      value: 0.5,
-      cancelScheduledValues: vi.fn(),
-      setValueAtTime: vi.fn(),
-      linearRampToValueAtTime: vi.fn(),
-      exponentialRampToValueAtTime: vi.fn(),
-      setTargetAtTime: vi.fn(),
-      cancelAndHoldAtTime: vi.fn(),
-      minValue: 0,
-      maxValue: 22050,
-      setValueCurveAtTime: vi.fn(),
-    } as unknown as AudioParam;
-
-    // Mock EnvelopeData
-    mockEnvelopeData = {
-      points: [
-        { time: 0, value: 0, curve: "exponential" },
-        { time: 0.5, value: 1, curve: "exponential" },
-        { time: 1.0, value: 0.5, curve: "exponential" },
-        { time: 1.5, value: 0, curve: "exponential" },
-      ],
-      pointValueRange: [0, 1],
-      durationSeconds: 1.5,
-      interpolateValueAtTime: vi.fn(),
-      hasSharpTransitions: false,
-      sustainPointIndex: 1,
-      releasePointIndex: 2,
-      startPointIndex: 0,
-      endPointIndex: 3,
-    } as unknown as EnvelopeData;
-
-    envelope = new CustomEnvelope(mockContext, "amp-env", mockEnvelopeData);
+    vi.useFakeTimers();
+    context = contextAt(1.0);
+    param = createFakeParam({ value: 0.5, minValue: 0, maxValue: 1 });
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
-  describe("normal operation", () => {
-    it("should apply release curve successfully", () => {
-      // Setup interpolation values
-      vi.mocked(mockEnvelopeData.interpolateValueAtTime)
-        .mockReturnValueOnce(0.5) // start value
-        .mockReturnValueOnce(0) // end value
-        .mockReturnValue(0.25); // curve values
+  it("pins the parameter at the release time and schedules the tail", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape());
 
-      envelope.releaseEnvelope(mockAudioParam, 1.0, {
-        baseValue: 1,
-        playbackRate: 1,
-        voiceId: "test-voice",
-      });
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
+    param.events.length = 0;
 
-      expect(mockAudioParam.cancelScheduledValues).toHaveBeenCalledWith(1.0);
-      expect(mockAudioParam.setValueAtTime).toHaveBeenCalledWith(0.5, 1.0);
-      expect(mockAudioParam.setValueCurveAtTime).toHaveBeenCalled();
-    });
+    envelope.releaseEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
 
-    it("starts release from the held sustain value after reaching the sustain point", () => {
-      vi.mocked(mockEnvelopeData.interpolateValueAtTime).mockImplementation((time) => {
-        if (time === 0.5) return 1;
-        if (time === 1.5) return 0;
-        return 0.5;
-      });
-
-      envelope.triggerEnvelope(mockAudioParam, 1.0, {
-        baseValue: 1,
-        playbackRate: 1,
-      });
-      vi.clearAllMocks();
-
-      (mockContext as any).currentTime = 3.0;
-      envelope.releaseEnvelope(mockAudioParam, 3.0);
-
-      expect(mockEnvelopeData.interpolateValueAtTime).toHaveBeenCalledWith(0.5);
-      expect(mockAudioParam.setValueAtTime).toHaveBeenCalledWith(1, 3.0);
-    });
-
-    it("should send release message with correct data", () => {
-      const sendMessageSpy = vi.spyOn(envelope, "sendUpstreamMessage");
-
-      vi.mocked(mockEnvelopeData.interpolateValueAtTime).mockReturnValue(0.5);
-
-      envelope.releaseEnvelope(mockAudioParam, 1.0, {
-        baseValue: 1,
-        playbackRate: 1,
-        voiceId: "test-voice",
-        midiNote: 64,
-      });
-
-      expect(sendMessageSpy).toHaveBeenCalledWith("amp-env:release", {
-        voiceId: "test-voice",
-        midiNote: 64,
-        releasePoint: {
-          time: expect.any(Number),
-          value: expect.any(Number),
-          curve: expect.any(String),
-        },
-        remainingDuration: expect.any(Number),
-      });
-    });
+    // The tail is the one point after the release point, so it lands on silence.
+    expect(param.events[0]).toMatchObject({ type: "cancel", time: 1.0 });
+    expect(param.events.filter((event) => event.type === "cancel")).toHaveLength(1);
+    expect(param.lastValue()).toBeCloseTo(0);
   });
 
-  describe("edge cases with high timeScale", () => {
-    it("should return early when scaled remaining duration is zero or negative", () => {
-      // Set very high time scale to make duration effectively zero
-      envelope.setTimeScale(10000);
+  it("releases from where the shape had reached, not from the parameter's value", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape(1));
 
-      envelope.releaseEnvelope(mockAudioParam, 1.0, {
-        baseValue: 1,
-        playbackRate: 1,
-      });
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
+    param.events.length = 0;
 
-      // Near-zero releases should pin and ramp safely without scheduling a curve.
-      expect(mockAudioParam.cancelScheduledValues).toHaveBeenCalled();
-      expect(mockAudioParam.setValueAtTime).toHaveBeenCalled();
-      expect(mockAudioParam.linearRampToValueAtTime).toHaveBeenCalled();
-      expect(mockAudioParam.setValueCurveAtTime).not.toHaveBeenCalled();
-    });
+    // Held well past the sustain point at 0.5s, so the shape is holding at 1.
+    context.currentTime = 3.0;
+    envelope.releaseEnvelope(param, 3.0);
+
+    const pinned = param.events.find((event) => event.type === "set");
+    expect(pinned?.value).toBeCloseTo(1);
+    expect(pinned?.time).toBe(3.0);
   });
 
-  describe("safe start time calculation", () => {
-    it("should use current time when start time is in the past", () => {
-      // Now this will work
-      (mockContext as any).currentTime = 2.0;
+  it("hands release off from the current loop phase", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape());
+    envelope.setLoopEnabled(true);
 
-      vi.mocked(mockEnvelopeData.interpolateValueAtTime).mockReturnValue(0.5);
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
+    param.events.length = 0;
 
-      envelope.releaseEnvelope(mockAudioParam, 1.0, {
-        baseValue: 1,
-        playbackRate: 1,
-      });
+    // 2.25s after the trigger, so 0.75s into the third pass of a 1.5s loop. The shape
+    // is on its way down from 1 at 0.5s to 0.5 at 1.0s.
+    context.currentTime = 3.25;
+    envelope.releaseEnvelope(param, 3.25);
 
-      expect(mockAudioParam.cancelScheduledValues).toHaveBeenCalledWith(2.0);
-      expect(mockAudioParam.setValueAtTime).toHaveBeenCalledWith(0.5, 2.0);
+    const pinned = param.events.find((event) => event.type === "set");
+    expect(pinned?.time).toBe(3.25);
+    expect(pinned?.value).toBeGreaterThan(0.5);
+    expect(pinned?.value).toBeLessThan(1);
+  });
+
+  it("scales the release by velocity, because depth rides in the envelope's amount", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape(1));
+
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 0.25, playbackRate: 1 });
+    param.events.length = 0;
+
+    context.currentTime = 3.0;
+    envelope.releaseEnvelope(param, 3.0);
+
+    // Holding at point value 1, scaled by a velocity of 0.25.
+    expect(param.events.find((event) => event.type === "set")?.value).toBeCloseTo(0.25);
+  });
+
+  it("uses the current time when the release is dated in the past", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape());
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
+    param.events.length = 0;
+
+    context.currentTime = 2.0;
+    envelope.releaseEnvelope(param, 1.0);
+
+    expect(param.events.every((event) => event.time >= 2.0)).toBe(true);
+  });
+
+  it("releases only once", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape());
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
+
+    envelope.releaseEnvelope(param, 1.0);
+    const afterFirst = param.events.length;
+    envelope.releaseEnvelope(param, 1.0);
+
+    expect(param.events.length).toBe(afterFirst);
+  });
+
+  it("stays finite when a large timeScale collapses the release to nothing", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape());
+    envelope.setTimeScale(10000);
+
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
+    param.events.length = 0;
+    envelope.releaseEnvelope(param, 1.0);
+
+    expect(param.events.length).toBeGreaterThan(0);
+    expect(param.events.every((event) => Number.isFinite(event.time))).toBe(true);
+    expect(param.ramps().every((event) => Number.isFinite(event.value ?? 0))).toBe(true);
+  });
+
+  it("sends the release message with the release point and remaining duration", () => {
+    const envelope = new CustomEnvelope(context, "amp-env", shape());
+    const sent = vi.spyOn(envelope, "sendUpstreamMessage");
+
+    envelope.triggerEnvelope(param, 1.0, { baseValue: 1, playbackRate: 1 });
+    envelope.releaseEnvelope(param, 1.0, {
+      baseValue: 1,
+      playbackRate: 1,
+      voiceId: "test-voice",
+      midiNote: 64,
+    });
+
+    expect(sent).toHaveBeenCalledWith("amp-env:release", {
+      voiceId: "test-voice",
+      midiNote: 64,
+      releasePoint: {
+        time: expect.any(Number),
+        value: expect.any(Number),
+        curve: expect.any(String),
+      },
+      remainingDuration: expect.any(Number),
     });
   });
 });
 
-describe("CustomEnvelope - auto-release when loop is turned off mid-note", () => {
-  let envelope: CustomEnvelope;
-  let mockContext: AudioContext;
-  let mockAudioParam: AudioParam;
-  let mockEnvelopeData: EnvelopeData;
+describe("CustomEnvelope auto-release when loop is turned off mid-note", () => {
+  let context: AudioContext & { currentTime: number };
+  let param: FakeParam;
 
   beforeEach(() => {
     vi.useFakeTimers();
-
-    mockContext = {
-      currentTime: 1.0,
-      sampleRate: 44100,
-      getOutputTimestamp: () => ({ contextTime: 1.0, performanceTime: 0 }),
-    } as unknown as AudioContext;
-
-    mockAudioParam = {
-      value: 0.5,
-      minValue: 0,
-      maxValue: 1,
-      cancelScheduledValues: vi.fn(),
-      setValueAtTime: vi.fn(),
-      linearRampToValueAtTime: vi.fn(),
-      exponentialRampToValueAtTime: vi.fn(),
-      setTargetAtTime: vi.fn(),
-      cancelAndHoldAtTime: vi.fn(),
-      minValue: 0,
-      maxValue: 22050,
-      setValueCurveAtTime: vi.fn(),
-    } as unknown as AudioParam;
-
-    // No sustain point: without a loop this envelope auto-releases.
-    mockEnvelopeData = {
-      points: [
-        { time: 0, value: 0, curve: "exponential" },
-        { time: 0.5, value: 1, curve: "exponential" },
-        { time: 1.0, value: 0.5, curve: "exponential" },
-        { time: 1.5, value: 0, curve: "exponential" },
-      ],
-      pointValueRange: [0, 1],
-      durationSeconds: 1.5,
-      startTime: 0,
-      endTime: 1.5,
-      interpolateValueAtTime: vi.fn(() => 0.5),
-      hasSharpTransitions: false,
-      sustainPointIndex: null,
-      releasePointIndex: 2,
-      startPointIndex: 0,
-      endPointIndex: 3,
-    } as unknown as EnvelopeData;
-
-    envelope = new CustomEnvelope(mockContext, "amp-env", mockEnvelopeData);
+    context = contextAt(1.0);
+    param = createFakeParam({ value: 0.5, minValue: 0, maxValue: 1 });
   });
 
   afterEach(() => {
@@ -233,39 +198,27 @@ describe("CustomEnvelope - auto-release when loop is turned off mid-note", () =>
   });
 
   it("suppresses auto-release while looping, then releases once the loop is switched off", () => {
-    const sendMessageSpy = vi.spyOn(envelope, "sendUpstreamMessage");
+    // No sustain point: without a loop holding it, this envelope auto-releases.
+    const envelope = new CustomEnvelope(context, "amp-env", shape());
+    const sent = vi.spyOn(envelope, "sendUpstreamMessage");
 
     envelope.setLoopEnabled(true);
-    envelope.triggerEnvelope(mockAudioParam, 1.0, {
+    envelope.triggerEnvelope(param, 1.0, {
       baseValue: 1,
       playbackRate: 1,
       voiceId: "test-voice",
       midiNote: 64,
     });
 
-    // Past the release deadline - the loop is still holding the note.
+    // Past the release deadline; the loop is still holding the note.
     vi.advanceTimersByTime(2000);
-    expect(sendMessageSpy).not.toHaveBeenCalledWith("amp-env:release", expect.anything());
+    expect(sent).not.toHaveBeenCalledWith("amp-env:release", expect.anything());
 
     envelope.setLoopEnabled(false);
 
-    expect(sendMessageSpy).toHaveBeenCalledWith(
+    expect(sent).toHaveBeenCalledWith(
       "amp-env:release",
       expect.objectContaining({ voiceId: "test-voice", midiNote: 64 }),
     );
-  });
-
-  it("hands release off from the current loop phase", () => {
-    vi.mocked(mockEnvelopeData.interpolateValueAtTime).mockImplementation((time) => time);
-
-    envelope.setLoopEnabled(true);
-    envelope.triggerEnvelope(mockAudioParam, 1.0);
-    vi.clearAllMocks();
-
-    (mockContext as any).currentTime = 3.25;
-    envelope.releaseEnvelope(mockAudioParam, 3.25);
-
-    expect(mockEnvelopeData.interpolateValueAtTime).toHaveBeenCalledWith(0.75);
-    expect(mockAudioParam.setValueAtTime).toHaveBeenCalledWith(0.75, 3.25);
   });
 });

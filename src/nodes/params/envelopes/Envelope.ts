@@ -306,10 +306,16 @@ export function createEnvelopeScheduler(
 
   const release = (time = context.currentTime) => {
     if (!triggered) return;
-    // Read the shape before stop() pins the param, so a future-dated release hands off
-    // the value the envelope will actually have reached rather than today's.
+    // Read the shape before anything touches the param, so a future-dated release hands
+    // off the value the envelope will actually have reached rather than today's.
     const holdValue = valueAt(time);
-    stop(time);
+
+    // Deliberately not stop(): its pin would write the param's stale value at exactly
+    // the instant releaseEnvelope pins the right one. The second cancel drops the first
+    // write so the timeline ends up correct either way, but only one of them is true.
+    triggered = false;
+    stopLoop();
+
     releaseEnvelope(param, envelope, time, { base, amount, timeScale }, holdValue);
   };
 
@@ -321,7 +327,11 @@ export function createEnvelopeScheduler(
       amount = options.amount ?? 1;
       timeScale = options.timeScale ?? 1;
       triggerTime = time;
-      cancelAndPinParamValue(param, time);
+
+      // Clear only. Every scheduling path below opens with its own setValueAtTime at
+      // this same instant, so pinning here would write the param's stale value and be
+      // overwritten by the envelope's first point a moment later.
+      param.cancelScheduledValues(time);
 
       const { points, sustain } = envelope;
       // The loop ends at the sustain point, so it covers exactly the range

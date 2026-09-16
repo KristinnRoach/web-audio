@@ -1,132 +1,82 @@
 import { describe, it, expect, vi } from "vite-plus/test";
 import { CustomEnvelope } from "../CustomEnvelope";
+import { EnvelopeData } from "../EnvelopeData";
+import { createFakeParam } from "./fakeParam";
 
-// Mock AudioContext to bypass compatibility issues
-const mockAudioContext = {
-  currentTime: 0,
-  createGain: () => ({ connect: () => {}, gain: { setValueAtTime: () => {} } }),
-  createOscillator: () => ({
-    connect: () => {},
-    start: () => {},
-    stop: () => {},
-  }),
-} as unknown as AudioContext;
+vi.mock("../../../nodes/node-store", () => ({
+  createNodeId: vi.fn(() => "test-node-id"),
+  deleteNodeId: vi.fn(),
+  registerNode: vi.fn(() => "test-node-id"),
+  unregisterNode: vi.fn(),
+}));
 
-describe("CustomEnvelope Audio Discontinuity Test", () => {
-  it("should NOT create audio discontinuity when baseValue != 1 and startFromValue is used", () => {
-    // This test specifically targets the issue described in the suggestion
-    const mockAudioParam = {
-      value: 0.8, // Current AudioParam value
-      minValue: 0,
-      maxValue: 1,
-      setValueAtTime: vi.fn(),
-      setValueCurveAtTime: vi.fn(),
-      cancelScheduledValues: vi.fn(),
-      cancelAndHoldAtTime: vi.fn(),
-      linearRampToValueAtTime: vi.fn(),
-      exponentialRampToValueAtTime: vi.fn(),
-      setTargetAtTime: vi.fn(),
-      cancelAndHoldAtTime: vi.fn(),
-      minValue: 0,
-      maxValue: 22050,
-    };
+vi.mock("@/events", () => ({
+  createMessageBus: vi.fn(() => ({
+    onMessage: vi.fn(),
+    sendMessage: vi.fn(),
+  })),
+}));
 
-    const envelope = new CustomEnvelope(
-      mockAudioContext,
-      "amp-env",
-      undefined,
-      [
-        { time: 0, value: 0.5, curve: "exponential" }, // Different from AudioParam current value
-        { time: 1, value: 1.0, curve: "exponential" },
-      ],
-      [0, 1],
-      1,
+const context = { currentTime: 0, sampleRate: 44100 } as unknown as AudioContext;
+
+/**
+ * What a trigger does to a parameter that is already moving.
+ *
+ * These replace a pair of tests written against the old value-curve generator, which
+ * overwrote the first sample of every curve with the parameter's current value. That
+ * gave roughly one sample of ramp out of the old value, so the shape effectively began
+ * with a 1-2 ms glide. The scheduler steps to the first point instead.
+ *
+ * The step is the contract now, so it is what gets pinned down here. Whether the
+ * missing glide is audible when retriggering a voice mid-flight is an ear question,
+ * not a test question.
+ */
+describe("CustomEnvelope trigger handoff", () => {
+  function envelopeOf(type: "amp-env" | "filter-env") {
+    return new CustomEnvelope(
+      context,
+      type,
+      new EnvelopeData(
+        [
+          { time: 0, value: 0, curve: "exponential" },
+          { time: 0.1, value: 1, curve: "exponential" },
+          { time: 1, value: 0, curve: "exponential" },
+        ],
+        [0, 1],
+        1,
+      ),
     );
+  }
 
-    // Trigger envelope with baseValue that would cause discontinuity
-    envelope.triggerEnvelope(mockAudioParam as any, 0, {
-      baseValue: 2, // THIS IS THE PROBLEM - this will multiply the startFromValue
-      playbackRate: 1,
-    });
+  it("starts from the envelope's own first value, whatever the parameter was doing", () => {
+    const param = createFakeParam({ value: 0.73, minValue: 0, maxValue: 1 });
+    envelopeOf("amp-env").triggerEnvelope(param, 0, { baseValue: 1, playbackRate: 1 });
 
-    const curveCall = mockAudioParam.setValueCurveAtTime.mock.calls[0];
-    const curve = curveCall[0] as Float32Array;
-
-    const currentParamValue = mockAudioParam.value; // 0.8
-    const firstCurveValue = curve[0]; // Should be 0.8, but might be 0.8 * 2 = 1.6!
-
-    console.log("=== DISCONTINUITY BUG TEST ===");
-    console.log("Current AudioParam value:", currentParamValue);
-    console.log("First curve value:", firstCurveValue);
-    console.log("BaseValue applied:", 2);
-    console.log("Expected (no discontinuity):", currentParamValue);
-    console.log("Actual:", firstCurveValue);
-
-    const jump = Math.abs(firstCurveValue - currentParamValue);
-    const percentageJump = (jump / currentParamValue) * 100;
-
-    console.log("Value jump:", jump);
-    console.log("Percentage jump:", percentageJump.toFixed(2) + "%");
-
-    // This test should FAIL if the bug exists
-    // The curve should start from the current AudioParam value WITHOUT baseValue multiplication
-    expect(firstCurveValue).toBeCloseTo(currentParamValue, 5); // Should be 0.8, not 1.6
-    expect(percentageJump).toBeCloseTo(0, 2); // No jump at all for smooth audio
+    // Exponential segments cannot start at zero, so the first point is floored rather
+    // than written as 0. It must still be far below the parameter's stale 0.73.
+    const first = param.ramps()[0];
+    expect(first.time).toBe(0);
+    expect(first.value).toBeLessThan(0.01);
   });
 
-  it("should demonstrate the filter envelope discontinuity issue", () => {
-    const mockAudioParam = {
-      value: 5000, // Current filter frequency
-      minValue: 20,
-      maxValue: 20000,
-      setValueAtTime: vi.fn(),
-      setValueCurveAtTime: vi.fn(),
-      cancelScheduledValues: vi.fn(),
-      cancelAndHoldAtTime: vi.fn(),
-      linearRampToValueAtTime: vi.fn(),
-      exponentialRampToValueAtTime: vi.fn(),
-      setTargetAtTime: vi.fn(),
-      cancelAndHoldAtTime: vi.fn(),
-      minValue: 0,
-      maxValue: 22050,
-    };
+  it("clears prior automation exactly once, at the trigger time", () => {
+    const param = createFakeParam({ value: 0.73, minValue: 0, maxValue: 1 });
+    envelopeOf("amp-env").triggerEnvelope(param, 0, { baseValue: 1, playbackRate: 1 });
 
-    const envelope = new CustomEnvelope(
-      mockAudioContext,
-      "filter-env",
-      undefined,
-      [
-        { time: 0, value: 2000, curve: "exponential" },
-        { time: 1, value: 8000, curve: "exponential" },
-      ],
-      [20, 20000],
-      1,
-    );
+    const cancels = param.events.filter((event) => event.type === "cancel");
+    expect(cancels).toHaveLength(1);
+    expect(cancels[0].time).toBe(0);
+  });
 
-    // Trigger with baseValue that affects filter frequency
-    envelope.triggerEnvelope(mockAudioParam as any, 0, {
-      baseValue: 1.5, // Frequency modulation
-      playbackRate: 1,
-    });
+  it("keeps a filter sweep monotonic in Hz with no jump back through the base", () => {
+    const param = createFakeParam({ value: 5000, minValue: 20, maxValue: 20000 });
+    envelopeOf("filter-env").triggerEnvelope(param, 0, { baseValue: 1000, playbackRate: 1 });
 
-    const curveCall = mockAudioParam.setValueCurveAtTime.mock.calls[0];
-    const curve = curveCall[0] as Float32Array;
-
-    const currentParamValue = mockAudioParam.value; // 5000 Hz
-    const firstCurveValue = curve[0]; // Might be 5000 * 1.5 = 7500 Hz!
-
-    console.log("=== FILTER DISCONTINUITY TEST ===");
-    console.log("Current filter frequency:", currentParamValue, "Hz");
-    console.log("First curve frequency:", firstCurveValue, "Hz");
-
-    const jump = Math.abs(firstCurveValue - currentParamValue);
-    const percentageJump = (jump / currentParamValue) * 100;
-
-    console.log("Frequency jump:", jump, "Hz");
-    console.log("Percentage jump:", percentageJump.toFixed(2) + "%");
-
-    // For filter frequencies, even small percentage jumps can be audible
-    expect(firstCurveValue).toBeCloseTo(currentParamValue, 5); // Should start smoothly
-    expect(percentageJump).toBeLessThan(1); // Less than 1% jump for smooth audio
+    const values = param.ramps().map((event) => event.value ?? 0);
+    // 0 rests on the cutoff, 1 reaches the ceiling, and every step stays inside them.
+    expect(values[0]).toBeCloseTo(1000, 0);
+    expect(Math.max(...values)).toBeLessThanOrEqual(param.maxValue);
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(param.minValue);
+    expect(values.every((value) => Number.isFinite(value) && value > 0)).toBe(true);
   });
 });
