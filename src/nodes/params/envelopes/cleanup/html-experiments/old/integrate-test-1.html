@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MotionPathHelper Test</title>
+    <style>
+      body {
+        background: #1a1a1a;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+      }
+
+      .test-section {
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 20px 0;
+      }
+
+      svg {
+        width: 100%;
+        height: 300px;
+        background: #1a1a1a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        overflow: visible;
+      }
+
+      button {
+        background: #4ade80;
+        color: #000;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin: 5px;
+      }
+
+      button:hover {
+        background: #22c55e;
+      }
+
+      .status {
+        background: #333;
+        padding: 10px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        margin: 10px 0;
+        min-height: 60px;
+      }
+
+      .envelope-path {
+        stroke: #4ade80;
+        stroke-width: 3;
+        fill: none;
+      }
+
+      .grid-line {
+        stroke: #333;
+        stroke-width: 1;
+      }
+
+      .test-result {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+
+      .success {
+        background: rgba(74, 222, 128, 0.2);
+        color: #4ade80;
+      }
+
+      .error {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+      }
+
+      .warning {
+        background: rgba(251, 191, 36, 0.2);
+        color: #fbbf24;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>MotionPathHelper Integration Test</h1>
+      <p>
+        Testing different ways to load and use GSAP's MotionPathHelper plugin
+      </p>
+
+      <div class="test-section">
+        <h3>Test 1: Direct CDN Load</h3>
+        <button id="test1">Test CDN MotionPathHelper</button>
+        <div class="status" id="status1">Click to test CDN loading...</div>
+      </div>
+
+      <div class="test-section">
+        <h3>Test 2: Alternative CDN Sources</h3>
+        <button id="test2">Test Alternative CDNs</button>
+        <div class="status" id="status2">
+          Click to test alternative sources...
+        </div>
+      </div>
+
+      <div class="test-section">
+        <h3>Test 3: Check Available GSAP Features</h3>
+        <button id="test3">Inspect GSAP Object</button>
+        <div class="status" id="status3">
+          Click to inspect what's available in GSAP...
+        </div>
+      </div>
+
+      <div class="test-section">
+        <h3>Visual Test Area</h3>
+        <svg viewBox="0 0 500 300" xmlns="http://www.w3.org/2000/svg">
+          <!-- Grid -->
+          <defs>
+            <pattern
+              id="grid"
+              width="50"
+              height="30"
+              patternUnits="userSpaceOnUse"
+            >
+              <path d="M 50 0 L 0 0 0 30" fill="none" class="grid-line" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+
+          <!-- Test paths for MotionPathHelper -->
+          <g id="test-group">
+            <path
+              id="envelopePath"
+              class="envelope-path"
+              d="M50,250 C150,50 250,200 450,50"
+            />
+          </g>
+        </svg>
+
+        <button id="enableHelper">Try MotionPathHelper</button>
+        <div class="status" id="visualStatus">SVG ready for testing...</div>
+      </div>
+    </div>
+
+    <!-- Test different loading strategies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+      let testResults = {
+        cdnLoad: false,
+        altSources: false,
+        gsapFeatures: [],
+        helperWorking: false,
+      };
+
+      // Test 1: Try loading MotionPathHelper from various CDNs
+      document.getElementById('test1').addEventListener('click', async () => {
+        const status = document.getElementById('status1');
+        status.innerHTML = 'Testing CDN sources...<br>';
+
+        const cdnSources = [
+          'https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MotionPathPlugin.min.js',
+          'https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MotionPathHelper.min.js',
+          'https://unpkg.com/gsap@3.13.0/dist/MotionPathPlugin.min.js',
+          'https://unpkg.com/gsap@3.13.0/dist/MotionPathHelper.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/MotionPathPlugin.min.js',
+        ];
+
+        for (const src of cdnSources) {
+          try {
+            const response = await fetch(src, { method: 'HEAD' });
+            const available = response.ok;
+            status.innerHTML += `${src}: ${available ? '✅ Available' : '❌ Not found'}<br>`;
+
+            if (available) {
+              // Try to load it
+              const script = document.createElement('script');
+              script.src = src;
+              script.onload = () => {
+                status.innerHTML += `✅ Successfully loaded: ${src}<br>`;
+                testResults.cdnLoad = true;
+              };
+              script.onerror = () => {
+                status.innerHTML += `❌ Failed to execute: ${src}<br>`;
+              };
+              document.head.appendChild(script);
+              break; // Try one at a time
+            }
+          } catch (error) {
+            status.innerHTML += `❌ Error checking ${src}: ${error.message}<br>`;
+          }
+        }
+      });
+
+      // Test 2: Check what's actually available in current GSAP
+      document.getElementById('test3').addEventListener('click', () => {
+        const status = document.getElementById('status3');
+
+        if (typeof gsap === 'undefined') {
+          status.innerHTML = '❌ GSAP not loaded';
+          return;
+        }
+
+        status.innerHTML = 'GSAP object inspection:<br>';
+        status.innerHTML += `Version: ${gsap.version || 'unknown'}<br>`;
+        status.innerHTML += `Available properties: ${Object.keys(gsap).join(', ')}<br><br>`;
+
+        // Check for MotionPath related features
+        const motionPathFeatures = [
+          'MotionPathPlugin',
+          'MotionPathHelper',
+          'registerPlugin',
+          'plugins',
+        ];
+
+        motionPathFeatures.forEach((feature) => {
+          const available =
+            gsap[feature] !== undefined || window[feature] !== undefined;
+          status.innerHTML += `${feature}: ${available ? '✅ Available' : '❌ Not found'}<br>`;
+          if (available) testResults.gsapFeatures.push(feature);
+        });
+
+        // Check if registerPlugin exists and what plugins are registered
+        if (gsap.registerPlugin) {
+          status.innerHTML += '<br>registerPlugin function exists ✅<br>';
+          try {
+            status.innerHTML += `Registered plugins: ${JSON.stringify(gsap.plugins || {})}<br>`;
+          } catch (e) {
+            status.innerHTML += 'Could not inspect registered plugins<br>';
+          }
+        }
+      });
+
+      // Test 3: Alternative sources
+      document.getElementById('test2').addEventListener('click', () => {
+        const status = document.getElementById('status2');
+        status.innerHTML = 'Trying alternative approaches...<br>';
+
+        // Try loading from unpkg with different versions
+        const alternatives = [
+          'https://unpkg.com/gsap@latest/dist/MotionPathPlugin.min.js',
+          'https://unpkg.com/gsap/dist/MotionPathPlugin.min.js',
+        ];
+
+        alternatives.forEach((src, index) => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.onload = () => {
+            status.innerHTML += `✅ Alternative ${index + 1} loaded successfully<br>`;
+            testResults.altSources = true;
+          };
+          script.onerror = () => {
+            status.innerHTML += `❌ Alternative ${index + 1} failed<br>`;
+          };
+          document.head.appendChild(script);
+        });
+      });
+
+      // Test the actual MotionPathHelper functionality
+      document.getElementById('enableHelper').addEventListener('click', () => {
+        const status = document.getElementById('visualStatus');
+
+        try {
+          // First check if we can access MotionPathPlugin
+          if (window.MotionPathPlugin) {
+            gsap.registerPlugin(MotionPathPlugin);
+            status.innerHTML += 'MotionPathPlugin registered ✅<br>';
+          }
+
+          if (window.MotionPathHelper) {
+            gsap.registerPlugin(MotionPathHelper);
+            status.innerHTML += 'MotionPathHelper registered ✅<br>';
+
+            // Try to create MotionPathHelper
+            const dummy = document.createElement('div');
+            dummy.id = 'dummy-element';
+            dummy.style.position = 'absolute';
+            dummy.style.width = '10px';
+            dummy.style.height = '10px';
+            dummy.style.background = 'red';
+            document.body.appendChild(dummy);
+
+            const tween = gsap.to('#dummy-element', {
+              motionPath: {
+                path: '#envelopePath',
+                align: '#envelopePath',
+                alignOrigin: [0.5, 0.5],
+              },
+              duration: 1,
+              paused: true,
+            });
+
+            const helper = MotionPathHelper.create('#dummy-element');
+
+            status.innerHTML += '🎉 MotionPathHelper created successfully!<br>';
+            status.innerHTML +=
+              'You should see interactive handles on the path above.<br>';
+            testResults.helperWorking = true;
+          } else {
+            status.innerHTML += '❌ MotionPathHelper not available<br>';
+
+            // Try manual workaround
+            status.innerHTML +=
+              'Attempting to use basic MotionPath features...<br>';
+
+            const testElement = document.querySelector('#test-group');
+            gsap.to(testElement, {
+              x: 100,
+              y: 50,
+              duration: 2,
+              ease: 'power2.inOut',
+            });
+
+            status.innerHTML += '✅ Basic GSAP animation working<br>';
+          }
+        } catch (error) {
+          status.innerHTML += `❌ Error: ${error.message}<br>`;
+          console.error('MotionPathHelper test error:', error);
+        }
+      });
+
+      // Summary after all tests
+      setTimeout(() => {
+        const summaryDiv = document.createElement('div');
+        summaryDiv.className = 'test-section';
+        summaryDiv.innerHTML = `
+                <h3>Test Summary</h3>
+                <div id="final-summary">Run tests above to see summary...</div>
+            `;
+        document.querySelector('.container').appendChild(summaryDiv);
+      }, 1000);
+    </script>
+  </body>
+</html>
