@@ -47,5 +47,6 @@ export type { KeymapKey } from "./io/mapping/keymap";
 export type { KeyMap } from "./io/types";
 
 // =*=*= Constants =*=*= \\
+export { DEFAULT } from "./constants";
 export { SUPPORTED_WAVEFORMS } from "./utils";
 export type { SupportedWaveform } from "./utils";

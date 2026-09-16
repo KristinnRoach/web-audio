@@ -9,6 +9,7 @@ import { Message, MessageBus, MessageHandler, createMessageBus } from "@/events"
 
 import { clamp, clampHz, mapToRange, maxSafeHz } from "@/utils";
 
+import { DEFAULT } from "@/constants";
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from "./defaults";
 
 import { DattorroReverb } from "@/nodes/effects/DattorroReverb";
@@ -101,7 +102,7 @@ export class InstrumentBus implements ILibAudioNode {
         const lpf = new LibAudioNode<BiquadFilterNode>(
           new BiquadFilterNode(this.#context, {
             type: "lowpass",
-            Q: 0.5,
+            Q: DEFAULT.LPF_Q,
             frequency: maxSafeHz(this.#context.sampleRate),
           }),
           this.#context,
@@ -111,7 +112,7 @@ export class InstrumentBus implements ILibAudioNode {
         const hpf = new LibAudioNode<BiquadFilterNode>(
           new BiquadFilterNode(this.#context, {
             type: "highpass",
-            Q: 0.707,
+            Q: DEFAULT.HPF_Q,
             frequency: 20,
           }),
           this.#context,
@@ -359,13 +360,21 @@ export class InstrumentBus implements ILibAudioNode {
 
   setHpfCutoff(hz: number): this {
     const safeHz = clampHz(hz, this.context.sampleRate);
-    this.getNode("hpf")?.audioNode.frequency.setTargetAtTime(safeHz, this.now, 0.1);
+    this.getNode("hpf")?.audioNode.frequency.setTargetAtTime(
+      safeHz,
+      this.now,
+      DEFAULT.CUTOFF_SMOOTHING_SEC,
+    );
     return this;
   }
 
   setLpfCutoff(hz: number): this {
     const safeHz = clampHz(hz, this.context.sampleRate);
-    this.getNode("lpf")?.audioNode.frequency.setTargetAtTime(safeHz, this.now, 0.1);
+    this.getNode("lpf")?.audioNode.frequency.setTargetAtTime(
+      safeHz,
+      this.now,
+      DEFAULT.CUTOFF_SMOOTHING_SEC,
+    );
     return this;
   }
 
