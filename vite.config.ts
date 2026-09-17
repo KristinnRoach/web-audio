@@ -37,6 +37,21 @@ export default defineConfig({
     ],
     rules: {
       'vite-plus/prefer-vite-plus-imports': 'error',
+      // fakeParam imports `vite-plus/test`, so it must never be reachable from the
+      // bundle. Its own folder reaches it as './fakeParam'; anywhere else has to spell
+      // a `test/` segment, which is what this catches.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/test/fakeParam', '**/test/fakeParam.ts'],
+              message:
+                'createFakeParam is a test double and stays in envelopes/test/. Importing it elsewhere pulls vite-plus/test towards the bundle.',
+            },
+          ],
+        },
+      ],
     },
     options: {
       typeAware: true,
@@ -58,7 +73,9 @@ export default defineConfig({
     audioWorkletPlugin(),
     dts({
       include: ['src'],
-      exclude: ['**/*.test.ts', '**/__tests__/**'],
+      // `**/test/**` keeps helpers that are not themselves *.test.ts out of the types,
+      // fakeParam.ts being the one that would otherwise slip through.
+      exclude: ['**/*.test.ts', '**/__tests__/**', '**/test/**'],
       outDir: 'dist',
       rollupTypes: true,
     }),

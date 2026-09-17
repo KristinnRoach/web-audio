@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { envelopePresets } from './envelope-presets';
+import { envelopePresets } from '../envelope-presets';
 
 describe('envelopePresets', () => {
   it('creates a detached amplitude envelope at the requested duration', () => {

@@ -1,5 +1,5 @@
 import { vi } from 'vite-plus/test';
-import type { AutomatableParam } from './Envelope';
+import type { AutomatableParam } from '../Envelope';
 
 export type ScheduledEvent = {
   type: 'set' | 'linear' | 'exponential' | 'cancel';
@@ -17,12 +17,19 @@ export type FakeParam = AutomatableParam & {
 };
 
 /**
- * An `AutomatableParam` that records automation instead of producing sound.
+ * An `AutomatableParam` that records automation instead of producing sound. The one
+ * param double the envelope tests use; reach for this rather than a local `vi.fn` mock.
  *
- * Tests assert on what was scheduled rather than on which method was reached, so they
- * survive a change of scheduling strategy. The old mocks each listed only the methods
- * one implementation happened to call, which is why swapping the scheduler broke them
- * before a single behavior had changed.
+ * Everything lands in one ordered list, which is what per-method spies cannot give you:
+ * a loop cycle's opening `setValueAtTime` and the previous cycle's closing ramp go to
+ * different spies, and which of them came first is the whole question.
+ *
+ * Only the four methods the scheduler actually calls are recorded. A scheduler that
+ * reached for `setValueCurveAtTime` would record nothing and leave `ramps()` short, so
+ * add the method here rather than reading that silence as a pass.
+ *
+ * `cancelScheduledValues` is how `cancelAndPinParamValue` pins a value, standing in for
+ * `cancelAndHoldAtTime`, which Firefox has not shipped. A `cancel` event is that hold.
  */
 export function createFakeParam({
   value = 0,

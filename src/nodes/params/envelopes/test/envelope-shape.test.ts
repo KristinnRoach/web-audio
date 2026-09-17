@@ -8,8 +8,8 @@ import {
   scaledDuration,
   setDuration,
   updatePoint,
-} from './envelope-shape';
-import type { Envelope, EnvelopeSettings } from './Envelope';
+} from '../envelope-shape';
+import type { Envelope, EnvelopeSettings } from '../Envelope';
 
 function envelopeOf(overrides: Partial<Envelope> = {}): Envelope {
   return {

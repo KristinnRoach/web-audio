@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createFakeParam } from './fakeParam';
-import { EnvelopeRuntime } from './EnvelopeRuntime';
-import type { EnvelopeSettings } from './Envelope';
+import { EnvelopeRuntime } from '../EnvelopeRuntime';
+import type { EnvelopeSettings } from '../Envelope';
 
 function contextAt(currentTime: number) {
   return { currentTime, sampleRate: 44100 } as AudioContext & { currentTime: number };
