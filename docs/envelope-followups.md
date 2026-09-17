@@ -6,8 +6,10 @@ not a decision already made. Order is roughly by risk, not by effort.
 ## Note ownership
 
 - `SamplePlayer` releases one voice per pitch, `InstrumentBus` counts note-ons. The pedal
-  path now unwinds the bus count per release; the two still model holding differently.
-  Pick one rule. `SamplePlayer.ts:636`, `SamplePlayer.ts:822`, `InstrumentBus.ts:339,375`.
+  path now unwinds the bus count per release, but that loop is unreachable today: the pedal
+  turns hold mode on, `release()` returns early while hold is on, and pedal-up runs
+  `releaseAll` before the queue is read. Tracked in #67; the counting is preparation, not a
+  live fix. `SamplePlayer.ts:637,780,817`, `InstrumentBus.ts:339,375`.
 - `InstrumentBus.setLpfEnvelope` scales time by an arbitrary held note:
   `Array.from(#heldNotes.keys()).pop()`. Undefined which note wins with a chord down.
   `InstrumentBus.ts:474`.
@@ -43,7 +45,8 @@ not a decision already made. Order is roughly by risk, not by effort.
 
 ## Tests
 
-- The pedal repeat-release fix has no test. A unit test needs a constructed `SamplePlayer`;
+- The pedal repeat-release fix has no test, and cannot have a meaningful one until #67 makes
+  the queue reachable. A unit test needs a constructed `SamplePlayer`;
   the private fields make `Object.create(prototype)` call sites throw, and no harness builds
   a real one. Either add a browser test or extract the sustain bookkeeping.
 - `fakeParam` no longer records `setValueCurveAtTime`. Fine while `AutomatableParam`
