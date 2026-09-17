@@ -106,7 +106,7 @@ export class HarmonicFeedback implements ILibAudioNode {
     const scaled = seconds * this.#pitchMultiplier;
     const clamped = clamp(scaled, this.#MIN_DELAY_TIME, this.#MAX_DELAY_TIME);
 
-    if (glideTime === 0 || !isFinite(glideTime)) {
+    if (glideTime <= 0 || !isFinite(glideTime)) {
       this.getAudioParam('delayTime')!.setValueAtTime(clamped, timestamp);
       return this;
     } else {
@@ -136,12 +136,12 @@ export class HarmonicFeedback implements ILibAudioNode {
       this.#MAX_DELAY_TIME,
     );
 
-    if (glideTime === 0 || !isFinite(glideTime)) {
+    if (glideTime <= 0 || !isFinite(glideTime)) {
       delayParam.setValueAtTime(newDelayTime, timestamp);
       return this;
     } else {
+      // seconds / 3: setTargetAtTime wants a time constant, ~95% settled after 3
       delayParam.setTargetAtTime(newDelayTime, timestamp, glideTime / 3);
-      // divide seconds by 3 for timeConstant
     }
 
     return this;
