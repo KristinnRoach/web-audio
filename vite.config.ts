@@ -25,10 +25,9 @@ export default defineConfig({
   },
   fmt: {
     singleQuote: true,
-    ignorePatterns: ['src/nodes/params/envelopes/cleanup/**'],
   },
   lint: {
-    ignorePatterns: ['src/nodes/params/envelopes/cleanup/**', '**/*.browser.test.ts'],
+    ignorePatterns: ['**/*.browser.test.ts'],
     jsPlugins: [
       {
         name: 'vite-plus',
