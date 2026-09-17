@@ -49,6 +49,7 @@ export class EnvelopeRuntime {
   #completionTimer: ReturnType<typeof setTimeout> | null = null;
   #loopTimer: ReturnType<typeof setTimeout> | null = null;
   #activeRun: ActiveEnvelopeRun | null = null;
+  #runHasOwnShape = false;
 
   constructor(
     readonly context: AudioContext,
@@ -152,12 +153,37 @@ export class EnvelopeRuntime {
   applySettings(settings: EnvelopeSettings) {
     assertValidEnvelopeSettings(settings);
     this.#settings = cloneEnvelopeSettings(settings);
+
+    // The one edit the running note picks up. Everything else - timing, curves, the
+    // sustain index itself - still waits for the next trigger or loop boundary.
+    //
+    // Skipped for a run triggered with its own shape, where the points are on a scale
+    // the stored settings do not share: the sampler's filter envelope plays Hz mapped
+    // from normalized settings, so forwarding the stored value would set a cutoff of
+    // 0.3 Hz. Those runs pick the edit up on the next trigger, as before.
+    const { sustain } = settings.envelope;
+    if (sustain !== undefined && !this.#runHasOwnShape) {
+      this.setSustainValue(settings.envelope.points[sustain].value);
+    }
+  }
+
+  /**
+   * Moves the sustain point's value on the running note.
+   *
+   * The exception to "a run's inputs are fixed once they are on the timeline": the hold
+   * is an absence of events, so it can be edited in place. Everything else still waits
+   * for a seam. Edits the run only; `applySettings` is what changes the stored shape.
+   */
+  setSustainValue(value: number, glide?: number) {
+    if (this.#isReleased) return;
+    this.#scheduler?.setSustainValue(value, this.context.currentTime, glide);
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
     this.#clearTimers();
     this.#isReleased = false;
     const sourceEnvelope = options.envelope ?? this.#settings.envelope;
+    this.#runHasOwnShape = options.envelope !== undefined;
     const scheduledEnvelope = {
       ...sourceEnvelope,
       points: sourceEnvelope.points.map((point) => ({ ...point })),

@@ -138,6 +138,8 @@ export type EnvelopeTriggerOptions = ScheduleOptions & { fromPoint?: number };
 export type EnvelopeScheduler = {
   trigger(time?: number, options?: EnvelopeTriggerOptions): void;
   release(time?: number): void;
+  /** Moves the sustain point's value on a run that is holding it; see the implementation. */
+  setSustainValue(value: number, time?: number, glide?: number): void;
   stop(time?: number): void;
   dispose(): void;
 };
@@ -381,6 +383,53 @@ export function createEnvelopeScheduler(
     releaseEnvelope(param, envelope, time, { base, amount, timeScale }, holdValue);
   };
 
+  /**
+   * Moves the sustain point's value mid-note.
+   *
+   * The one envelope input that is still editable once the run is on the timeline: a
+   * sustained run schedules points 0..sustain and stops, so the hold is not an event
+   * but the absence of events, and nothing after it has to be rescheduled.
+   *
+   * The point is mutated in place because `valueAt` and `releaseEnvelope` read the same
+   * object; without that the note-off handoff would pin the old value and jump. The run
+   * owns that clone (`EnvelopeRuntime.trigger`), so nobody else sees the write.
+   *
+   * A run that has not reached its sustain point yet is left alone. Up to that instant
+   * the points between here and sustain are still queued, and cancelling to write the new
+   * value takes the attack peak with them - the parameter heads straight for the sustain
+   * value from wherever it had got to. Those edits wait for the next trigger, like every
+   * other envelope edit. Rescheduling the remainder would lift that restriction.
+   *
+   * The cancel is what makes a fast drag safe: a second ramp ending before the first one
+   * would otherwise re-target the old value on the way past.
+   *
+   * ponytail: releasing mid-glide pins the shape's value, which is the glide's target
+   * rather than where it has actually got to, so a note-off inside the glide window can
+   * step by up to the edit distance. Inaudible while `glide` stays short. Track the
+   * pending glide in `valueAt` if a long one is ever wanted.
+   */
+  const setSustainValue = (value: number, time = context.currentTime, glide = 0.02) => {
+    const { points, sustain } = envelope;
+    if (!triggered || sustain === undefined || envelope.loop) return;
+    if (points[sustain].value === value) return;
+
+    const sustainTime = triggerTime + (points[sustain].time - points[0].time) / timeScale;
+
+    if (time < sustainTime) return;
+
+    // Read the outgoing shape before mutating it, the same ordering release() follows.
+    const holdValue = valueAt(time);
+    (points[sustain] as { value: number }).value = value;
+
+    cancelAndPinParamValue(param, time, holdValue);
+    schedulePoint(
+      param,
+      valueOf(points, sustain, 0, sustain, base, amount),
+      time + glide,
+      "linear",
+    );
+  };
+
   return {
     trigger(time = context.currentTime, options = {}) {
       stopLoop();
@@ -462,6 +511,7 @@ export function createEnvelopeScheduler(
       });
     },
     release,
+    setSustainValue,
     stop,
     dispose() {
       stop();
