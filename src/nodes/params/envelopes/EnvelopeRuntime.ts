@@ -220,6 +220,13 @@ export class EnvelopeRuntime {
     this.#clearTimers();
     this.#isReleased = false;
     const sourceEnvelope = options.envelope ?? this.#settings.envelope;
+    // The constructor and applySettings both validate; trigger was the one entry point
+    // that took a caller-supplied shape on trust. An out-of-range sustain index throws
+    // inside the scheduler instead, which is a worse place to find out. The stored
+    // enabled/timeScale are already valid, so this checks the new shape and nothing else.
+    if (options.envelope) {
+      assertValidEnvelopeSettings({ ...this.#settings, envelope: options.envelope });
+    }
     this.#runHasOwnShape = options.envelope !== undefined;
     const scheduledEnvelope = {
       ...sourceEnvelope,

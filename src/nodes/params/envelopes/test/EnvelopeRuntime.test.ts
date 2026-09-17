@@ -280,6 +280,31 @@ describe('live sustain value', () => {
   });
 });
 
+describe('EnvelopeRuntime.trigger validation', () => {
+  it('rejects a caller-supplied shape with an out-of-range sustain', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const bad = { ...settingsOf().envelope, sustain: 9 };
+
+    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: bad })).toThrow(
+      'Invalid envelope settings',
+    );
+  });
+
+  it('still accepts a valid caller-supplied shape', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const mapped = settingsOf().envelope;
+
+    expect(() =>
+      runtime.trigger(createFakeParam(), 0, {
+        envelope: {
+          ...mapped,
+          points: mapped.points.map((p) => ({ ...p, value: p.value * 8000 })),
+        },
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe('EnvelopeRuntime.position', () => {
   // settingsOf() points sit at 0, 0.5, 1 and 1.5.
   const at = (settings: EnvelopeSettings, currentTime: number, multiplier?: number) => {
