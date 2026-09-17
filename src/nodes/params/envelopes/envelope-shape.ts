@@ -1,4 +1,4 @@
-import type { Envelope, EnvelopePoint, EnvelopeSettings } from "./Envelope";
+import type { Envelope, EnvelopePoint, EnvelopeSettings } from './Envelope';
 
 const clonePoints = (points: readonly EnvelopePoint[]) => points.map((point) => ({ ...point }));
 const lastIndex = (envelope: Envelope) => envelope.points.length - 1;
@@ -44,7 +44,7 @@ export function addPoint(
   envelope: Envelope,
   time: number,
   value: number,
-  curve: EnvelopePoint["curve"] = "exponential",
+  curve: EnvelopePoint['curve'] = 'exponential',
 ): Envelope {
   const { points } = envelope;
   if (!Number.isFinite(time)) return envelope;
@@ -110,7 +110,7 @@ export function deletePoint(envelope: Envelope, index: number): Envelope {
 
 export function setDuration(envelope: Envelope, seconds: number): Envelope {
   if (!Number.isFinite(seconds) || seconds <= 0) {
-    throw new RangeError("Envelope duration must be greater than zero");
+    throw new RangeError('Envelope duration must be greater than zero');
   }
 
   const { points } = envelope;

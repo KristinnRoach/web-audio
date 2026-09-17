@@ -3,7 +3,7 @@
 // AnalyserNode it cannot miss a transient between reads.
 
 registerProcessor(
-  "level-meter-processor",
+  'level-meter-processor',
   class extends AudioWorkletProcessor {
     constructor(options) {
       super();

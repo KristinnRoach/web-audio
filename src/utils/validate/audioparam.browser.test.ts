@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vite-plus/test";
-import { cancelAndPinParamValue } from "./audioparam";
+import { describe, it, expect } from 'vite-plus/test';
+import { cancelAndPinParamValue } from './audioparam';
 
 const SR = 48000;
 const CANCEL_AT = 0.25; // midpoint of the curve, so the correct hold value is 0.5
@@ -30,8 +30,8 @@ async function renderPinnedMidCurve(apply: (p: AudioParam) => void) {
   return Math.max(...data.subarray(CANCEL_AT * SR)); // curve descends, so any peak > 0.5 is the glitch
 }
 
-describe("cancelAndPinParamValue", () => {
-  it("holds a partially-rendered setValueCurveAtTime without replaying curve[0]", async () => {
+describe('cancelAndPinParamValue', () => {
+  it('holds a partially-rendered setValueCurveAtTime without replaying curve[0]', async () => {
     const pinned = await renderPinnedMidCurve((p) => cancelAndPinParamValue(p, CANCEL_AT));
     expect(pinned).toBeCloseTo(0.5, 2);
 
@@ -41,11 +41,11 @@ describe("cancelAndPinParamValue", () => {
     } else {
       console.warn(
         `\n*** cancelAndHoldAtTime NO LONGER GLITCHES (peak ${native.toFixed(3)}, expected ~1.0).\n` +
-          "*** If Firefox has shipped it too, calls that pass no holdValue can\n" +
-          "*** swap to cancelAndHoldAtTime directly. Calls that pass one are\n" +
-          "*** pinning a value the automation would not produce on its own, so\n" +
-          "*** check each before converting it.\n" +
-          "*** See the notes in src/utils/validate/audioparam.ts\n",
+          '*** If Firefox has shipped it too, calls that pass no holdValue can\n' +
+          '*** swap to cancelAndHoldAtTime directly. Calls that pass one are\n' +
+          '*** pinning a value the automation would not produce on its own, so\n' +
+          '*** check each before converting it.\n' +
+          '*** See the notes in src/utils/validate/audioparam.ts\n',
       );
     }
   });

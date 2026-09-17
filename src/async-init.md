@@ -20,13 +20,13 @@ export interface LibNode {
 ```typescript
 class NodeName implements LibNode {
   readonly nodeId: NodeID;
-  readonly nodeType = "node-name" as const;
+  readonly nodeType = 'node-name' as const;
 
   constructor(
     private context: AudioContext,
     ...args
   ) {
-    this.nodeId = createNodeId("node-name");
+    this.nodeId = createNodeId('node-name');
     // Only synchronous setup here
   }
 
@@ -78,7 +78,7 @@ const [nodeA, nodeB] = await Promise.all([createNodeA(context), createNodeB(cont
 try {
   const node = await createComplexNode(context);
 } catch (error) {
-  console.error("Node creation failed:", error);
+  console.error('Node creation failed:', error);
 }
 ```
 

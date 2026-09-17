@@ -7,13 +7,13 @@ class RandomNoiseProcessor extends AudioWorkletProcessor {
     this.alpha = this.hpfHz / (this.hpfHz + sampleRate / (2 * Math.PI));
 
     this.port.onmessage = (event) => {
-      if (event.data.type === "setHpfHz") {
+      if (event.data.type === 'setHpfHz') {
         this.hpfHz = event.data.value;
         this.alpha = this.calculateAlpha(this.hpfHz);
       }
     };
     // Signal to node that processor is initialized
-    this.port.postMessage({ type: "initialized" });
+    this.port.postMessage({ type: 'initialized' });
   }
 
   calculateAlpha(frequency) {
@@ -35,7 +35,7 @@ class RandomNoiseProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor("random-noise-processor", RandomNoiseProcessor);
+registerProcessor('random-noise-processor', RandomNoiseProcessor);
 
 // class RandomNoiseProcessor extends AudioWorkletProcessor {
 //   process(inputs, outputs, parameters) {

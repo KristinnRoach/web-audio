@@ -1,4 +1,4 @@
-import { NodeID } from "@/nodes/node-store";
+import { NodeID } from '@/nodes/node-store';
 
 export interface Message {
   readonly type: string;
@@ -9,8 +9,8 @@ export interface Message {
 export type MessageHandler<T> = (data: T) => void;
 
 export interface MessageBus<T extends Message> {
-  sendMessage(type: T["type"], data: Omit<T, "type" | "senderId">): void;
-  onMessage<K extends T["type"]>(type: K, handler: MessageHandler<T>): () => void;
+  sendMessage(type: T['type'], data: Omit<T, 'type' | 'senderId'>): void;
+  onMessage<K extends T['type']>(type: K, handler: MessageHandler<T>): () => void;
 
   forwardFrom(
     source: {

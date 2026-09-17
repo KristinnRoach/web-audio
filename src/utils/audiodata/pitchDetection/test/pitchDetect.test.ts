@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vite-plus/test";
-import { detectSinglePitchAC } from "../";
+import { describe, it, expect } from 'vite-plus/test';
+import { detectSinglePitchAC } from '../';
 
 // Helper to create mock AudioBuffer
 function createMockAudioBuffer(data: Float32Array, sampleRate = 44100): AudioBuffer {
@@ -9,7 +9,7 @@ function createMockAudioBuffer(data: Float32Array, sampleRate = 44100): AudioBuf
     numberOfChannels: 1,
     duration: data.length / sampleRate,
     getChannelData: (channel: number) => {
-      if (channel !== 0) throw new Error("Only channel 0 supported in mock");
+      if (channel !== 0) throw new Error('Only channel 0 supported in mock');
       return data;
     },
   } as AudioBuffer;
@@ -34,8 +34,8 @@ function createSeededRandom(seed: number): () => number {
   };
 }
 
-describe("detectSinglePitchAC", () => {
-  it("should detect 440Hz A4 note", async () => {
+describe('detectSinglePitchAC', () => {
+  it('should detect 440Hz A4 note', async () => {
     const testSignal = generateSineWave(440, 44100, 0.2);
     const buffer = createMockAudioBuffer(testSignal);
 
@@ -47,7 +47,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBeGreaterThan(0.5);
   });
 
-  it("should detect 220Hz A3 note", async () => {
+  it('should detect 220Hz A3 note', async () => {
     const testSignal = generateSineWave(220, 44100, 0.2);
     const buffer = createMockAudioBuffer(testSignal);
 
@@ -58,7 +58,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBeGreaterThan(0.5);
   });
 
-  it("should handle low amplitude signals", async () => {
+  it('should handle low amplitude signals', async () => {
     const testSignal = generateSineWave(440, 44100, 0.1);
     // Reduce amplitude
     for (let i = 0; i < testSignal.length; i++) {
@@ -73,7 +73,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBeLessThanOrEqual(1);
   });
 
-  it("should score noise low on periodicity", async () => {
+  it('should score noise low on periodicity', async () => {
     const noiseSignal = new Float32Array(4410); // 0.1 second at 44.1kHz
     const random = createSeededRandom(0xdecafbad);
     // Generate white noise
@@ -88,7 +88,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBeLessThan(0.3); // Noise barely repeats at any period
   });
 
-  it("should handle a peak at the maximum lag without NaN", async () => {
+  it('should handle a peak at the maximum lag without NaN', async () => {
     const signal = new Float32Array(4410);
     const maxLag = Math.floor(44100 / 30) - 1;
     signal[0] = 1;
@@ -104,7 +104,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBeLessThanOrEqual(1);
   });
 
-  it("should return finite periodicity for fully clipped input", async () => {
+  it('should return finite periodicity for fully clipped input', async () => {
     const silentSignal = new Float32Array(4410);
     const buffer = createMockAudioBuffer(silentSignal);
 
@@ -115,7 +115,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBe(0);
   });
 
-  it("should handle very short buffers", async () => {
+  it('should handle very short buffers', async () => {
     const shortSignal = new Float32Array(100);
     // Add some signal to avoid NaN
     for (let i = 0; i < shortSignal.length; i++) {
@@ -130,7 +130,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBeGreaterThanOrEqual(0);
   });
 
-  it("should return periodicity between 0 and 1", async () => {
+  it('should return periodicity between 0 and 1', async () => {
     const testSignal = generateSineWave(330, 44100, 0.15);
     const buffer = createMockAudioBuffer(testSignal);
 
@@ -140,7 +140,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBeLessThanOrEqual(1);
   });
 
-  it("should handle different sample rates", async () => {
+  it('should handle different sample rates', async () => {
     const testSignal = generateSineWave(440, 48000, 0.1);
     const buffer = createMockAudioBuffer(testSignal, 48000);
 
@@ -150,7 +150,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.frequency).toBeLessThan(462);
   });
 
-  it("should handle silent input", async () => {
+  it('should handle silent input', async () => {
     const silentSignal = new Float32Array(4410);
     const buffer = createMockAudioBuffer(silentSignal);
 
@@ -160,7 +160,7 @@ describe("detectSinglePitchAC", () => {
     expect(result.periodicity).toBe(0);
   });
 
-  it("always returns a finite positive frequency on degenerate input", async () => {
+  it('always returns a finite positive frequency on degenerate input', async () => {
     // Inputs that push bestLag onto the search boundary or leave the peak flat,
     // where the quadratic interpolation offset would otherwise blow up
     const dc = new Float32Array(4410).fill(0.5);

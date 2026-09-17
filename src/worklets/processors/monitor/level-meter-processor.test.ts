@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vite-plus/test";
+import { describe, it, expect, beforeAll } from 'vite-plus/test';
 
 let MeterProcessor: any;
 
@@ -9,7 +9,7 @@ beforeAll(async () => {
     port = { postMessage: (_: unknown) => {} };
   };
   g.registerProcessor = (_name: string, ctor: any) => (MeterProcessor = ctor);
-  await import("./level-meter-processor.js");
+  await import('./level-meter-processor.js');
 });
 
 const run = (blocks: number[][], processorOptions = {}) => {
@@ -20,19 +20,19 @@ const run = (blocks: number[][], processorOptions = {}) => {
   return reports;
 };
 
-describe("level-meter-processor", () => {
+describe('level-meter-processor', () => {
   const blockOf = (value: number) => Array.from({ length: 128 }, () => value);
   // 48000 samples/s * 0.1s = 4800 samples = 37.5 blocks of 128
   const blocksPerReport = 38;
 
-  it("reports peak and rms of the window", () => {
+  it('reports peak and rms of the window', () => {
     const reports = run(Array.from({ length: blocksPerReport }, () => blockOf(0.5)));
     expect(reports).toHaveLength(1);
     expect(reports[0].peak).toBeCloseTo(0.5);
     expect(reports[0].rms).toBeCloseTo(0.5);
   });
 
-  it("counts every clipped sample, not just the ones near a report boundary", () => {
+  it('counts every clipped sample, not just the ones near a report boundary', () => {
     const clipping = blockOf(1.5);
     const blocks = Array.from({ length: blocksPerReport }, (_, i) =>
       i === 0 ? clipping : blockOf(0),
@@ -42,7 +42,7 @@ describe("level-meter-processor", () => {
     expect(reports[0].peak).toBeCloseTo(1.5);
   });
 
-  it("carries clipCount across windows while peak resets", () => {
+  it('carries clipCount across windows while peak resets', () => {
     const blocks = [
       ...Array.from({ length: blocksPerReport }, () => blockOf(1.5)),
       ...Array.from({ length: blocksPerReport }, () => blockOf(0.1)),
@@ -54,7 +54,7 @@ describe("level-meter-processor", () => {
     expect(reports[1].peak).toBeCloseTo(0.1);
   });
 
-  it("reports on frames, not channel samples, so stereo keeps the same interval", () => {
+  it('reports on frames, not channel samples, so stereo keeps the same interval', () => {
     const reports: any[] = [];
     const meter = new MeterProcessor({ processorOptions: {} });
     meter.port = { postMessage: (data: any) => reports.push(data) };
@@ -66,7 +66,7 @@ describe("level-meter-processor", () => {
     expect(reports[0].rms).toBeCloseTo(0.5);
   });
 
-  it("survives a disconnected input", () => {
+  it('survives a disconnected input', () => {
     const meter = new MeterProcessor({});
     expect(meter.process([[]])).toBe(true);
     expect(meter.process([])).toBe(true);

@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vite-plus/test";
-import type { Message, MessageHandler } from "../../../events";
-import { VoiceState } from "../VoiceState";
+import { describe, expect, it, vi } from 'vite-plus/test';
+import type { Message, MessageHandler } from '../../../events';
+import { VoiceState } from '../VoiceState';
 
 const fake = vi.hoisted(() => ({ triggerTimestamp: 0 }));
 
-vi.mock("./createSampleVoice", () => {
+vi.mock('./createSampleVoice', () => {
   class TestVoice {
     state: VoiceState = VoiceState.AVAILABLE;
     midiNote: number | null = null;
@@ -21,7 +21,7 @@ vi.mock("./createSampleVoice", () => {
     #emit(type: string, midiNote = this.midiNote) {
       this.handlers
         .get(type)
-        ?.forEach((handler) => handler({ type, senderId: "test", voice: this, midiNote }));
+        ?.forEach((handler) => handler({ type, senderId: 'test', voice: this, midiNote }));
     }
 
     trigger({ midiNote }: { midiNote: number }): number | null {
@@ -29,7 +29,7 @@ vi.mock("./createSampleVoice", () => {
       this.state = VoiceState.PLAYING;
       this.midiNote = midiNote;
       this.triggerTimestamp = ++fake.triggerTimestamp;
-      this.#emit("voice:started");
+      this.#emit('voice:started');
       return midiNote;
     }
 
@@ -37,7 +37,7 @@ vi.mock("./createSampleVoice", () => {
       if (releaseTime <= 0) return this.stop();
       if (this.state !== VoiceState.PLAYING) return this;
       this.state = VoiceState.RELEASING;
-      this.#emit("voice:releasing");
+      this.#emit('voice:releasing');
       return this;
     }
 
@@ -46,7 +46,7 @@ vi.mock("./createSampleVoice", () => {
       const midiNote = this.midiNote;
       this.state = VoiceState.AVAILABLE;
       this.midiNote = null;
-      this.#emit("voice:stopped", midiNote);
+      this.#emit('voice:stopped', midiNote);
       return this;
     }
 
@@ -61,14 +61,14 @@ vi.mock("./createSampleVoice", () => {
 
 async function setup(polyphony = 3) {
   fake.triggerTimestamp = 0;
-  const { SampleVoicePool } = await import("./SampleVoicePool");
+  const { SampleVoicePool } = await import('./SampleVoicePool');
   const pool = new SampleVoicePool({} as AudioContext, polyphony);
   await pool.init();
   return pool;
 }
 
-describe("SampleVoicePool", () => {
-  it("uses an available voice, then steals the oldest releasing and playing voices", async () => {
+describe('SampleVoicePool', () => {
+  it('uses an available voice, then steals the oldest releasing and playing voices', async () => {
     const pool = await setup();
     const [first, second, third] = pool.allVoices;
 
@@ -77,12 +77,12 @@ describe("SampleVoicePool", () => {
     pool.noteOn(64);
     pool.noteOff(62);
 
-    const stopSecond = vi.spyOn(second, "stop");
+    const stopSecond = vi.spyOn(second, 'stop');
     pool.noteOn(65);
     expect(stopSecond).toHaveBeenCalledOnce();
     expect(second.midiNote).toBe(65);
 
-    const stopFirst = vi.spyOn(first, "stop");
+    const stopFirst = vi.spyOn(first, 'stop');
     pool.noteOn(67);
     expect(stopFirst).toHaveBeenCalledOnce();
     expect(pool.allVoices.map((voice) => voice.midiNote)).toEqual([67, 65, 64]);
@@ -92,11 +92,11 @@ describe("SampleVoicePool", () => {
     pool.dispose();
   });
 
-  it("releases an earlier same-note voice and routes note-off to its replacement", async () => {
+  it('releases an earlier same-note voice and routes note-off to its replacement', async () => {
     const pool = await setup();
     const [first, second] = pool.allVoices;
-    const releaseFirst = vi.spyOn(first, "release");
-    const releaseSecond = vi.spyOn(second, "release");
+    const releaseFirst = vi.spyOn(first, 'release');
+    const releaseSecond = vi.spyOn(second, 'release');
 
     pool.noteOn(0);
     pool.noteOn(0, 100, 0.2);
@@ -113,7 +113,7 @@ describe("SampleVoicePool", () => {
     pool.dispose();
   });
 
-  it("releases every playing voice that owns the note", async () => {
+  it('releases every playing voice that owns the note', async () => {
     const pool = await setup();
     const [first, second, other] = pool.allVoices;
     first.trigger({ midiNote: 72, velocity: 100 });
@@ -130,7 +130,7 @@ describe("SampleVoicePool", () => {
     pool.dispose();
   });
 
-  it("targets active and inactive voices from their current state", async () => {
+  it('targets active and inactive voices from their current state', async () => {
     const pool = await setup();
     const [playing, releasing, available] = pool.allVoices;
     pool.noteOn(60);

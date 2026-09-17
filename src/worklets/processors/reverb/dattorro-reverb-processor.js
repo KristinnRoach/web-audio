@@ -13,18 +13,18 @@ CONNECTION WITH THE SOFTWARE OR THE DISTRIBUTION OF THE SOFTWARE.
 class DattorroReverb extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      ["preDelay", 0, 0, sampleRate - 1, "k-rate"],
-      ["bandwidth", 0.9999, 0, 1, "k-rate"],
-      ["inputDiffusion1", 0.75, 0, 1, "k-rate"],
-      ["inputDiffusion2", 0.625, 0, 1, "k-rate"],
-      ["decay", 0.5, 0, 1, "k-rate"],
-      ["decayDiffusion1", 0.7, 0, 0.999999, "k-rate"],
-      ["decayDiffusion2", 0.5, 0, 0.999999, "k-rate"],
-      ["damping", 0.005, 0, 1, "k-rate"],
-      ["excursionRate", 0.5, 0, 2, "k-rate"],
-      ["excursionDepth", 0.7, 0, 2, "k-rate"],
-      ["wet", 0.3, 0, 1, "k-rate"],
-      ["dry", 0.6, 0, 1, "k-rate"],
+      ['preDelay', 0, 0, sampleRate - 1, 'k-rate'],
+      ['bandwidth', 0.9999, 0, 1, 'k-rate'],
+      ['inputDiffusion1', 0.75, 0, 1, 'k-rate'],
+      ['inputDiffusion2', 0.625, 0, 1, 'k-rate'],
+      ['decay', 0.5, 0, 1, 'k-rate'],
+      ['decayDiffusion1', 0.7, 0, 0.999999, 'k-rate'],
+      ['decayDiffusion2', 0.5, 0, 0.999999, 'k-rate'],
+      ['damping', 0.005, 0, 1, 'k-rate'],
+      ['excursionRate', 0.5, 0, 2, 'k-rate'],
+      ['excursionDepth', 0.7, 0, 2, 'k-rate'],
+      ['wet', 0.3, 0, 1, 'k-rate'],
+      ['dry', 0.6, 0, 1, 'k-rate'],
     ].map(
       (x) =>
         new Object({
@@ -65,7 +65,7 @@ class DattorroReverb extends AudioWorkletProcessor {
       (x) => Math.round(x * sampleRate),
     );
     // Signal to node that processor is initialized
-    this.port.postMessage({ type: "initialized" });
+    this.port.postMessage({ type: 'initialized' });
   }
 
   makeDelay(length) {
@@ -227,4 +227,4 @@ class DattorroReverb extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor("dattorro-reverb-processor", DattorroReverb);
+registerProcessor('dattorro-reverb-processor', DattorroReverb);

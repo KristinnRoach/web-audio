@@ -1,5 +1,5 @@
 // Empty import to import the Keyboard interface from input/types
-import {} from "../../io/types";
+import {} from '../../io/types';
 
 type AudioEnvironment = {
   readonly workletSupported: boolean;
@@ -12,7 +12,7 @@ class Environment {
 
   constructor() {
     try {
-      if (typeof window === "undefined" || typeof AudioContext === "undefined") {
+      if (typeof window === 'undefined' || typeof AudioContext === 'undefined') {
         console.error(`Environment util: Window or AudioContext is undefined`);
         return;
       }
@@ -22,13 +22,13 @@ class Environment {
       const ctx = new AudioContextConstructor();
 
       // Keyboard capabilities
-      const hasKeyboardAPI = typeof navigator !== "undefined" && "keyboard" in navigator;
+      const hasKeyboardAPI = typeof navigator !== 'undefined' && 'keyboard' in navigator;
       const hasModifierState =
-        typeof KeyboardEvent !== "undefined" &&
-        typeof KeyboardEvent.prototype.getModifierState === "function";
+        typeof KeyboardEvent !== 'undefined' &&
+        typeof KeyboardEvent.prototype.getModifierState === 'function';
 
       this.#capabilities = {
-        workletSupported: typeof ctx.audioWorklet === "object",
+        workletSupported: typeof ctx.audioWorklet === 'object',
         keyboardAPISupported: hasKeyboardAPI,
         modifierStateSupported: hasModifierState,
       };

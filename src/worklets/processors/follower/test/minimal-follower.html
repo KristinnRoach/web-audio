@@ -16,12 +16,12 @@
       let oscGain;
       let follower;
 
-      document.getElementById("start-button").addEventListener("click", async () => {
+      document.getElementById('start-button').addEventListener('click', async () => {
         if (osc) {
           osc.stop();
           osc = null;
         }
-        const fileInput = document.getElementById("audio-upload");
+        const fileInput = document.getElementById('audio-upload');
         if (!fileInput.files.length) return;
 
         const file = fileInput.files[0];
@@ -31,7 +31,7 @@
         ctx = new AudioContext();
 
         // Load the worklet processor
-        await ctx.audioWorklet.addModule("../envelope-follower-processor.js");
+        await ctx.audioWorklet.addModule('../envelope-follower-processor.js');
 
         // Decode and create source
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
@@ -40,7 +40,7 @@
         const srcGain = ctx.createGain();
 
         // Create envelope follower node
-        follower = new AudioWorkletNode(ctx, "envelope-follower-processor");
+        follower = new AudioWorkletNode(ctx, 'envelope-follower-processor');
 
         // Connect source -> follower
         src.connect(follower);

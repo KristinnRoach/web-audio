@@ -1,5 +1,5 @@
 // js-test-processor.js - Simple sine wave oscillator processor (JavaScript version)
-import { midiToFreq, softClip, generateSineWave, advancePhase } from "./utils";
+import { midiToFreq, softClip, generateSineWave, advancePhase } from './utils';
 
 class JsTestOscillatorProcessor extends AudioWorkletProcessor {
   // Default values
@@ -21,21 +21,21 @@ class JsTestOscillatorProcessor extends AudioWorkletProcessor {
     const { type, payload } = event.data;
 
     switch (type) {
-      case "setNote":
+      case 'setNote':
         this.midiNote = payload;
         this.frequency = midiToFreq(this.midiNote);
         break;
-      case "setVolume":
+      case 'setVolume':
         this.amplitude = payload;
         break;
-      case "setDistortion":
+      case 'setDistortion':
         this.distortionAmount = payload;
         break;
     }
 
     // Send confirmation back to main thread
     this.port.postMessage({
-      type: "paramChanged",
+      type: 'paramChanged',
       payload: { param: type, value: payload },
     });
   }
@@ -67,4 +67,4 @@ class JsTestOscillatorProcessor extends AudioWorkletProcessor {
 }
 
 // Register the processor
-registerProcessor("js-test-oscillator", JsTestOscillatorProcessor);
+registerProcessor('js-test-oscillator', JsTestOscillatorProcessor);

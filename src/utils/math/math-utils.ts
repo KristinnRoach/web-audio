@@ -8,7 +8,7 @@ export const clamp = (
   } = { warn: false },
 ) => {
   if (options.warn && (value < min || value > max)) {
-    const paramName = options.name ? `(${options.name})` : "";
+    const paramName = options.name ? `(${options.name})` : '';
     console.warn(
       `Value${paramName} ${value} is outside range [${min}, ${max}], clamping to ${value < min ? min : max}`,
     );
@@ -30,7 +30,7 @@ export const mapToRange = (
 ) => {
   // Check if input is out of bounds
   if (value < inMin || value > inMax) {
-    const paramName = options.name ? `(${options.name})` : "";
+    const paramName = options.name ? `(${options.name})` : '';
     if (options.warn) {
       console.warn(
         `Input value${paramName} ${value} is outside nominal range [${inMin}, ${inMax}]`,

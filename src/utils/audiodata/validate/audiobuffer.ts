@@ -26,7 +26,7 @@ export function isValidAudioBuffer(
   }
 
   if (buffer.numberOfChannels < minChannels || buffer.numberOfChannels > maxChannels) {
-    console.warn("Invalid number of audio channels.");
+    console.warn('Invalid number of audio channels.');
     return false;
   }
 
@@ -79,7 +79,7 @@ export function isValidAudioBuffer(
     `);
     }
   } else {
-    console.warn("Invalid Buffer: No non-zero data.");
+    console.warn('Invalid Buffer: No non-zero data.');
   }
 
   return hasNonZeroData;

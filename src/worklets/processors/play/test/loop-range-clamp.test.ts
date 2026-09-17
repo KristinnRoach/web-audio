@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
 
@@ -47,18 +47,18 @@ function makeParameters(overrides: Record<string, number> = {}): Parameters {
 }
 
 async function startProcessor() {
-  const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
+  const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
   processor.port.onmessage?.({
     data: {
-      type: "voice:setBuffer",
+      type: 'voice:setBuffer',
       buffer: [new Float32Array(TEST_SAMPLE_RATE)],
       durationSeconds: 1,
     },
   } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: "voice:start" } } as MessageEvent);
+  processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+  processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
   return processor;
 }
@@ -71,20 +71,20 @@ function render(processor: TestProcessor, parameters: Parameters, frames: number
 
 // The loop is a subrange of the playback range: loop points clamp into it instead
 // of being dropped for the whole range.
-describe("loop range clamping", () => {
+describe('loop range clamping', () => {
   beforeAll(() => {
-    vi.stubGlobal("AudioWorkletProcessor", MockAudioWorkletProcessor);
-    vi.stubGlobal("sampleRate", TEST_SAMPLE_RATE);
-    vi.stubGlobal("currentTime", 0);
-    vi.stubGlobal("currentFrame", 0);
-    vi.stubGlobal("registerProcessor", vi.fn());
+    vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
+    vi.stubGlobal('sampleRate', TEST_SAMPLE_RATE);
+    vi.stubGlobal('currentTime', 0);
+    vi.stubGlobal('currentFrame', 0);
+    vi.stubGlobal('registerProcessor', vi.fn());
   });
 
   afterAll(() => {
     vi.unstubAllGlobals();
   });
 
-  it("wraps to startPoint when loopStart sits before it", async () => {
+  it('wraps to startPoint when loopStart sits before it', async () => {
     const processor = await startProcessor();
     // Default loopStart of 0 is outside a playback range starting at 0.5 s.
     const parameters = makeParameters({ startPoint: 0.5, endPoint: 1, loopEnd: 0.75 });

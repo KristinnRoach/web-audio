@@ -1,8 +1,8 @@
-import { vi } from "vite-plus/test";
-import type { AutomatableParam } from "./Envelope";
+import { vi } from 'vite-plus/test';
+import type { AutomatableParam } from './Envelope';
 
 export type ScheduledEvent = {
-  type: "set" | "linear" | "exponential" | "cancel";
+  type: 'set' | 'linear' | 'exponential' | 'cancel';
   value?: number;
   time: number;
 };
@@ -30,9 +30,9 @@ export function createFakeParam({
   maxValue = 22050,
 }: { value?: number; minValue?: number; maxValue?: number } = {}): FakeParam {
   const events: ScheduledEvent[] = [];
-  const record = (type: ScheduledEvent["type"]) =>
+  const record = (type: ScheduledEvent['type']) =>
     vi.fn((...args: number[]) =>
-      type === "cancel"
+      type === 'cancel'
         ? events.push({ type, time: args[0] })
         : events.push({ type, value: args[0], time: args[1] }),
     );
@@ -41,12 +41,12 @@ export function createFakeParam({
     value,
     minValue,
     maxValue,
-    setValueAtTime: record("set"),
-    linearRampToValueAtTime: record("linear"),
-    exponentialRampToValueAtTime: record("exponential"),
-    cancelScheduledValues: record("cancel"),
+    setValueAtTime: record('set'),
+    linearRampToValueAtTime: record('linear'),
+    exponentialRampToValueAtTime: record('exponential'),
+    cancelScheduledValues: record('cancel'),
     events,
-    ramps: () => events.filter((event) => event.type !== "cancel"),
+    ramps: () => events.filter((event) => event.type !== 'cancel'),
     lastValue: () => {
       const moves = param.ramps();
       return moves.length ? moves[moves.length - 1].value : undefined;

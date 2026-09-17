@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vite-plus/test";
-import { findClosest } from "../index";
-import { ValueSnapper } from "../../../nodes/params/helpers/ValueSnapper";
+import { describe, it, expect } from 'vite-plus/test';
+import { findClosest } from '../index';
+import { ValueSnapper } from '../../../nodes/params/helpers/ValueSnapper';
 
-describe("findClosest ValueSnapper Integration", () => {
+describe('findClosest ValueSnapper Integration', () => {
   // Mock the exact reduce pattern from ValueSnapper.snapToValue
   const snapToValueOriginal = (target: number, allowedValues: number[]): number => {
     if (allowedValues.length === 0) return target;
@@ -16,7 +16,7 @@ describe("findClosest ValueSnapper Integration", () => {
   const snapToValueWithFindClosest = (target: number, allowedValues: number[]): number => {
     if (allowedValues.length === 0) return target;
 
-    return findClosest(allowedValues, target, "any", (x) => x);
+    return findClosest(allowedValues, target, 'any', (x) => x);
   };
 
   // Proposed replacement using findClosest with default parameter
@@ -26,8 +26,8 @@ describe("findClosest ValueSnapper Integration", () => {
     return findClosest(allowedValues, target); // No need for (x) => x!
   };
 
-  describe("Behavioral Compatibility", () => {
-    it("produces identical results for typical ValueSnapper use cases", () => {
+  describe('Behavioral Compatibility', () => {
+    it('produces identical results for typical ValueSnapper use cases', () => {
       const testCases = [
         // Musical scale values (common in ValueSnapper)
         {
@@ -75,7 +75,7 @@ describe("findClosest ValueSnapper Integration", () => {
       });
     });
 
-    it("handles empty arrays identically", () => {
+    it('handles empty arrays identically', () => {
       const target = 42;
       const emptyArray: number[] = [];
 
@@ -88,7 +88,7 @@ describe("findClosest ValueSnapper Integration", () => {
       expect(findClosestResult).toBe(target);
     });
 
-    it("handles tie-breaking identically", () => {
+    it('handles tie-breaking identically', () => {
       // Test cases where target is exactly between two values
       const testCases = [
         { values: [10, 30], target: 20 }, // Exactly between
@@ -108,8 +108,8 @@ describe("findClosest ValueSnapper Integration", () => {
     });
   });
 
-  describe("Performance Characteristics", () => {
-    it("demonstrates performance improvement for realistic ValueSnapper scales", () => {
+  describe('Performance Characteristics', () => {
+    it('demonstrates performance improvement for realistic ValueSnapper scales', () => {
       // Generate a realistic musical scale with multiple octaves
       const generateChromaticScale = (startNote = 27.5, octaves = 8) => {
         const notes: number[] = [];
@@ -170,8 +170,8 @@ describe("findClosest ValueSnapper Integration", () => {
     });
   });
 
-  describe("Real ValueSnapper Integration", () => {
-    it("works with actual ValueSnapper instance", () => {
+  describe('Real ValueSnapper Integration', () => {
+    it('works with actual ValueSnapper instance', () => {
       const snapper = new ValueSnapper();
 
       // Set up a pentatonic scale
@@ -182,7 +182,7 @@ describe("findClosest ValueSnapper Integration", () => {
       const originalResult = snapper.snapToValue(350);
 
       // Test what findClosest would return
-      const findClosestResult = findClosest(pentatonicFreqs, 350, "any", (x) => x);
+      const findClosestResult = findClosest(pentatonicFreqs, 350, 'any', (x) => x);
       const findClosestDefaultResult = findClosest(pentatonicFreqs, 350);
 
       expect(findClosestResult).toBe(originalResult);
@@ -190,7 +190,7 @@ describe("findClosest ValueSnapper Integration", () => {
       expect(findClosestResult).toBe(329.63); // Should snap to E4
     });
 
-    it("handles normalized ranges correctly", () => {
+    it('handles normalized ranges correctly', () => {
       const snapper = new ValueSnapper();
 
       // Test with normalized values (common ValueSnapper use case)
@@ -201,7 +201,7 @@ describe("findClosest ValueSnapper Integration", () => {
 
       testTargets.forEach((target) => {
         const originalResult = snapper.snapToValue(target);
-        const findClosestResult = findClosest(normalizedValues, target, "any", (x) => x);
+        const findClosestResult = findClosest(normalizedValues, target, 'any', (x) => x);
         const findClosestDefaultResult = findClosest(normalizedValues, target);
 
         expect(findClosestResult).toBe(originalResult);
@@ -209,7 +209,7 @@ describe("findClosest ValueSnapper Integration", () => {
       });
     });
 
-    it("works with default parameter (no getValue needed)", () => {
+    it('works with default parameter (no getValue needed)', () => {
       const snapper = new ValueSnapper();
 
       const testCases = [
@@ -230,8 +230,8 @@ describe("findClosest ValueSnapper Integration", () => {
     });
   });
 
-  describe("Edge Cases and Robustness", () => {
-    it("handles floating point precision like original", () => {
+  describe('Edge Cases and Robustness', () => {
+    it('handles floating point precision like original', () => {
       const values = [0.1, 0.2, 0.3]; // Known floating point precision issues
       const target = 0.15;
 
@@ -243,7 +243,7 @@ describe("findClosest ValueSnapper Integration", () => {
       expect(findClosestDefaultResult).toBe(originalResult);
     });
 
-    it("handles very small and very large values", () => {
+    it('handles very small and very large values', () => {
       const testCases = [
         { values: [1e-10, 1e-9, 1e-8], target: 5e-10 },
         { values: [1e10, 1e11, 1e12], target: 5e10 },
@@ -259,7 +259,7 @@ describe("findClosest ValueSnapper Integration", () => {
       });
     });
 
-    it("maintains array sorting assumption", () => {
+    it('maintains array sorting assumption', () => {
       // ValueSnapper explicitly sorts its arrays, but let's verify findClosest
       // works correctly with the sorted arrays it will receive
       const unsorted = [5, 1, 3, 2, 4];
@@ -267,7 +267,7 @@ describe("findClosest ValueSnapper Integration", () => {
 
       const target = 2.5;
 
-      const sortedResult = findClosest(sorted, target, "any", (x) => x);
+      const sortedResult = findClosest(sorted, target, 'any', (x) => x);
       const originalSortedResult = snapToValueOriginal(target, sorted);
 
       expect(sortedResult).toBe(originalSortedResult);
@@ -275,17 +275,17 @@ describe("findClosest ValueSnapper Integration", () => {
     });
   });
 
-  describe("Memory and Performance Safety", () => {
-    it("does not modify input arrays", () => {
+  describe('Memory and Performance Safety', () => {
+    it('does not modify input arrays', () => {
       const originalArray = [1, 2, 3, 4, 5];
       const arrayCopy = [...originalArray];
 
-      findClosest(originalArray, 3.5, "any", (x) => x);
+      findClosest(originalArray, 3.5, 'any', (x) => x);
 
       expect(originalArray).toEqual(arrayCopy);
     });
 
-    it("reads a logarithmic number of elements per call", () => {
+    it('reads a logarithmic number of elements per call', () => {
       // ponytail: counting element reads instead of wall-clock time - a ms
       // threshold flakes on shared CI runners, this fails only if the search
       // stops being logarithmic.
@@ -299,7 +299,7 @@ describe("findClosest ValueSnapper Integration", () => {
       };
 
       for (let i = 0; i < calls; i++) {
-        findClosest(values, Math.random() * 1000, "any", countingAccessor);
+        findClosest(values, Math.random() * 1000, 'any', countingAccessor);
       }
 
       // log2(1000) ~ 10 probes, plus the endpoints and the two final candidates

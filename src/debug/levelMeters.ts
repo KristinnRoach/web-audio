@@ -1,5 +1,5 @@
-import { GainStages } from "@/nodes/LibNode";
-import { initProcessors } from "@/worklets/init-processors";
+import { GainStages } from '@/nodes/LibNode';
+import { initProcessors } from '@/worklets/init-processors';
 
 export interface LevelReading {
   /** Highest absolute sample in the last reported window. */
@@ -55,14 +55,14 @@ export async function monitorLevels(
   }));
 
   const context = points[0]?.sources[0]?.context as AudioContext | undefined;
-  if (!context) throw new Error("monitorLevels: no stages to monitor");
+  if (!context) throw new Error('monitorLevels: no stages to monitor');
 
   await initProcessors(context);
 
   const latest = new Map<string, LevelReading>();
 
   const taps = points.map(({ label, sources }) => {
-    const meter = new AudioWorkletNode(context, "level-meter-processor", {
+    const meter = new AudioWorkletNode(context, 'level-meter-processor', {
       numberOfInputs: 1,
       numberOfOutputs: 0,
       processorOptions: options,

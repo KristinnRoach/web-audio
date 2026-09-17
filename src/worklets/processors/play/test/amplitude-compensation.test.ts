@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vite-plus/test";
+import { describe, it, expect } from 'vite-plus/test';
 
-describe("Amplitude compensation edge cases", () => {
+describe('Amplitude compensation edge cases', () => {
   // Simulate the amplitude compensation logic
   function calculateMakeupGain(rmsAmplitude: number, targetAmplitude = 0.3) {
     let makeupGain = 1.0;
@@ -14,14 +14,14 @@ describe("Amplitude compensation edge cases", () => {
     return makeupGain;
   }
 
-  describe("calculateMakeupGain", () => {
-    it("should return 1.0 for RMS at or above target", () => {
+  describe('calculateMakeupGain', () => {
+    it('should return 1.0 for RMS at or above target', () => {
       expect(calculateMakeupGain(0.3)).toBe(1.0);
       expect(calculateMakeupGain(0.5)).toBe(1.0);
       expect(calculateMakeupGain(1.0)).toBe(1.0);
     });
 
-    it("should calculate correct gain for normal RMS values", () => {
+    it('should calculate correct gain for normal RMS values', () => {
       // RMS = 0.15, target = 0.3, gain = 2.0
       expect(calculateMakeupGain(0.15)).toBe(2.0);
 
@@ -29,7 +29,7 @@ describe("Amplitude compensation edge cases", () => {
       expect(calculateMakeupGain(0.2)).toBeCloseTo(1.5, 5);
     });
 
-    it("should handle very small RMS values without producing huge gains", () => {
+    it('should handle very small RMS values without producing huge gains', () => {
       // Without the floor, 0.3 / 0.0001 = 3000 -> clamped to 2.0
       // With floor of 0.001, 0.3 / 0.001 = 300 -> clamped to 2.0
       expect(calculateMakeupGain(0.0001)).toBe(2.0);
@@ -37,7 +37,7 @@ describe("Amplitude compensation edge cases", () => {
       expect(calculateMakeupGain(1e-10)).toBe(2.0);
     });
 
-    it("should handle zero RMS gracefully", () => {
+    it('should handle zero RMS gracefully', () => {
       // With floor, 0.3 / 0.001 = 300 -> clamped to 2.0
       expect(calculateMakeupGain(0)).toBe(2.0);
     });
@@ -47,7 +47,7 @@ describe("Amplitude compensation edge cases", () => {
       expect(calculateMakeupGain(-0.1)).toBe(2.0);
     });
 
-    it("should respect the maximum gain limit", () => {
+    it('should respect the maximum gain limit', () => {
       // All very small values should result in 2.0 max gain
       const smallValues = [0.001, 0.0001, 0.00001, 0, -1];
       smallValues.forEach((value) => {
@@ -55,7 +55,7 @@ describe("Amplitude compensation edge cases", () => {
       });
     });
 
-    it("should produce stable gain values for near-zero RMS", () => {
+    it('should produce stable gain values for near-zero RMS', () => {
       // Test that we don't get wildly different gains for tiny differences
       const gain1 = calculateMakeupGain(0.0001);
       const gain2 = calculateMakeupGain(0.0002);
@@ -67,7 +67,7 @@ describe("Amplitude compensation edge cases", () => {
       expect(gain3).toBe(2.0);
     });
 
-    it("should handle RMS just above the floor threshold", () => {
+    it('should handle RMS just above the floor threshold', () => {
       // RMS = 0.002 (above floor of 0.001)
       // gain = 0.3 / 0.002 = 150 -> clamped to 2.0
       expect(calculateMakeupGain(0.002)).toBe(2.0);
@@ -82,7 +82,7 @@ describe("Amplitude compensation edge cases", () => {
     });
   });
 
-  describe("Behavior with different floor values", () => {
+  describe('Behavior with different floor values', () => {
     function calculateMakeupGainWithFloor(rmsAmplitude: number, floor = 1e-3) {
       const targetAmplitude = 0.3;
       let makeupGain = 1.0;
@@ -94,7 +94,7 @@ describe("Amplitude compensation edge cases", () => {
       return makeupGain;
     }
 
-    it("should produce different results with different floor values", () => {
+    it('should produce different results with different floor values', () => {
       const rms = 0.00001; // Very small RMS
 
       // With floor = 0.001, gain = 0.3/0.001 = 300 -> 2.0

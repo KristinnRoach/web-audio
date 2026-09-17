@@ -1,6 +1,6 @@
-import { NOTE_NAMES, ROOT_NOTES, NOTE_FREQUENCIES, NOTE_NAMES_WITH_OCTAVE } from "../constants";
-import { midiToFrequency, frequencyToMidi } from "./core-utils";
-import type { Note } from "../types";
+import { NOTE_NAMES, ROOT_NOTES, NOTE_FREQUENCIES, NOTE_NAMES_WITH_OCTAVE } from '../constants';
+import { midiToFrequency, frequencyToMidi } from './core-utils';
+import type { Note } from '../types';
 
 export const findClosestNote = (freq: number) => {
   const closestNoteFreq = NOTE_FREQUENCIES.reduce((closest, current) =>
@@ -89,11 +89,11 @@ export function createNoteNameToFreqMap(): Record<string, number> {
 function addEnharmonicEquivalents(noteMap: Record<string, number>): void {
   // This function is already correct
   const enharmonicPairs = [
-    ["C#", "Db"],
-    ["D#", "Eb"],
-    ["F#", "Gb"],
-    ["G#", "Ab"],
-    ["A#", "Bb"],
+    ['C#', 'Db'],
+    ['D#', 'Eb'],
+    ['F#', 'Gb'],
+    ['G#', 'Ab'],
+    ['A#', 'Bb'],
   ];
 
   // For each octave where we have data

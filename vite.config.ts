@@ -1,16 +1,16 @@
 /// <reference types="node" />
 
-import { defineConfig, lazyPlugins } from "vite-plus";
-import { resolve } from "path";
-import { fileURLToPath } from "url";
-import dts from "vite-plugin-dts";
-import { buildProcessors } from "./build-processors.js";
+import { defineConfig, lazyPlugins } from 'vite-plus';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
+import dts from 'vite-plugin-dts';
+import { buildProcessors } from './build-processors.js';
 
 function audioWorkletPlugin() {
   let built = false;
 
   return {
-    name: "build-audio-worklets",
+    name: 'build-audio-worklets',
     async buildStart() {
       if (built) return;
       built = true;
@@ -21,21 +21,22 @@ function audioWorkletPlugin() {
 
 export default defineConfig({
   staged: {
-    "*": "vp check --fix",
+    '*': 'vp check --fix',
   },
   fmt: {
-    ignorePatterns: ["src/nodes/params/envelopes/cleanup/**"],
+    singleQuote: true,
+    ignorePatterns: ['src/nodes/params/envelopes/cleanup/**'],
   },
   lint: {
-    ignorePatterns: ["src/nodes/params/envelopes/cleanup/**", "**/*.browser.test.ts"],
+    ignorePatterns: ['src/nodes/params/envelopes/cleanup/**', '**/*.browser.test.ts'],
     jsPlugins: [
       {
-        name: "vite-plus",
-        specifier: "vite-plus/oxlint-plugin",
+        name: 'vite-plus',
+        specifier: 'vite-plus/oxlint-plugin',
       },
     ],
     rules: {
-      "vite-plus/prefer-vite-plus-imports": "error",
+      'vite-plus/prefer-vite-plus-imports': 'error',
     },
     options: {
       typeAware: true,
@@ -43,51 +44,51 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
+    environment: 'node',
     globals: true,
-    include: ["src/**/*.test.ts"],
-    exclude: ["**/*.browser.test.ts", "node_modules/**"],
+    include: ['src/**/*.test.ts'],
+    exclude: ['**/*.browser.test.ts', 'node_modules/**'],
     coverage: {
-      reporter: ["text", "html"],
+      reporter: ['text', 'html'],
     },
     testTimeout: 10000,
   },
-  base: "./",
+  base: './',
   plugins: lazyPlugins(() => [
     audioWorkletPlugin(),
     dts({
-      include: ["src"],
-      exclude: ["**/*.test.ts", "**/__tests__/**"],
-      outDir: "dist",
+      include: ['src'],
+      exclude: ['**/*.test.ts', '**/__tests__/**'],
+      outDir: 'dist',
       rollupTypes: true,
     }),
   ]),
 
   build: {
-    outDir: "dist",
+    outDir: 'dist',
     emptyOutDir: false, // necessary to prevent worklets being erased (when using build-processors.js)
     // assetsInlineLimit: 0, // Prevent inlining (not needed when using build-processors.js)
 
     lib: {
       entry: {
-        index: resolve(import.meta.dirname, "src/index.ts"),
-        io: resolve(import.meta.dirname, "src/io/index.ts"),
-        components: resolve(import.meta.dirname, "src/components/index.ts"),
-        debug: resolve(import.meta.dirname, "src/debug/index.ts"),
+        index: resolve(import.meta.dirname, 'src/index.ts'),
+        io: resolve(import.meta.dirname, 'src/io/index.ts'),
+        components: resolve(import.meta.dirname, 'src/components/index.ts'),
+        debug: resolve(import.meta.dirname, 'src/debug/index.ts'),
       },
-      name: "@kidlib/web-audio",
-      formats: ["es"],
+      name: '@kidlib/web-audio',
+      formats: ['es'],
       fileName: (_format, entryName) => `${entryName}.js`,
     },
     rollupOptions: {
-      external: ["webmidi"],
+      external: ['webmidi'],
     },
     // output: { globals: {}, }, // skoða
   },
   resolve: {
     // extensions: ['.js', '.ts'], // TOdo: henda
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
 });

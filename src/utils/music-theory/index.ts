@@ -1,16 +1,16 @@
 /** MUSIC THEORY & MIDI */
 
 /** Types */
-export * from "./types";
+export * from './types';
 
 /** Constants */
-export * from "./constants";
+export * from './constants';
 
 /** Core utilities */
-export * from "./utils/core-utils";
+export * from './utils/core-utils';
 
 /** Note utilities */
-export * from "./utils/note-utils";
+export * from './utils/note-utils';
 
 /** Scale utilities */
-export * from "./utils/scale-utils";
+export * from './utils/scale-utils';

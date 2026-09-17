@@ -12,13 +12,13 @@ export function midiToFrequency(midiNote: number, a4Frequency = 440): number {
 //  */
 export function frequencyToMidi(
   frequency: number,
-  quantize: "semitones" | "scale" | "none" = "semitones",
+  quantize: 'semitones' | 'scale' | 'none' = 'semitones',
   referenceFreq = 440,
   scale?: number[], // [0, 2, 4, 5, 7, 9, 11] for major scale
 ): number {
   const midiFloat = 12 * Math.log2(frequency / referenceFreq) + 69;
 
-  if (quantize === "scale" && scale) {
+  if (quantize === 'scale' && scale) {
     const octave = Math.floor(midiFloat / 12);
     const semitone = ((midiFloat % 12) + 12) % 12; // Handle negative
 
@@ -30,7 +30,7 @@ export function frequencyToMidi(
     return octave * 12 + closest;
   }
 
-  return quantize === "semitones" ? Math.round(midiFloat) : midiFloat;
+  return quantize === 'semitones' ? Math.round(midiFloat) : midiFloat;
 }
 
 /**
@@ -79,7 +79,7 @@ export function playbackRateToFrequency(playbackRate: number, sourceFreq: number
  * Validates if a number is a valid MIDI value (0-127)
  */
 export function isMidiValue(value?: number): boolean {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 127;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 127;
 }
 
 /**

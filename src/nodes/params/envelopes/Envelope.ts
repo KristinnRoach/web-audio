@@ -1,6 +1,6 @@
-import { cancelAndPinParamValue } from "@/utils";
+import { cancelAndPinParamValue } from '@/utils';
 
-export type EnvelopeCurve = "step" | "linear" | "exponential";
+export type EnvelopeCurve = 'step' | 'linear' | 'exponential';
 
 /** The automation surface an envelope needs; native `AudioParam` is one implementation. */
 export type AutomatableParam = {
@@ -22,11 +22,11 @@ export type EnvelopePoint = {
 
 export type PlaybackMode =
   /** One-shot. Default. */
-  | { readonly type: "once" }
+  | { readonly type: 'once' }
   /** Hold `at`'s value until release. */
-  | { readonly type: "sustain"; readonly at: number }
+  | { readonly type: 'sustain'; readonly at: number }
   /** Repeat the full duration. */
-  | { readonly type: "loop" };
+  | { readonly type: 'loop' };
 
 /**
  * Three shapes: play through once, hold at a point until release, or loop until release.
@@ -88,26 +88,26 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
     Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length;
 
   if (
-    typeof settings?.enabled !== "boolean" ||
+    typeof settings?.enabled !== 'boolean' ||
     !Number.isFinite(settings?.timeScale) ||
     settings.timeScale <= 0 ||
     !Array.isArray(points) ||
     points.length < 2 ||
-    (settings.envelope.loop !== undefined && typeof settings.envelope.loop !== "boolean") ||
+    (settings.envelope.loop !== undefined && typeof settings.envelope.loop !== 'boolean') ||
     points.some(
       (point, index) =>
         !Number.isFinite(point.time) ||
         !Number.isFinite(point.value) ||
         (point.curve !== undefined &&
-          point.curve !== "step" &&
-          point.curve !== "linear" &&
-          point.curve !== "exponential") ||
+          point.curve !== 'step' &&
+          point.curve !== 'linear' &&
+          point.curve !== 'exponential') ||
         (index > 0 && point.time < points[index - 1].time),
     ) ||
     !validMarker(settings.envelope.sustain) ||
     !validRelease(settings.envelope.release)
   ) {
-    throw new TypeError("Invalid envelope settings");
+    throw new TypeError('Invalid envelope settings');
   }
 }
 
@@ -164,8 +164,8 @@ function addLoop(fill: () => void) {
 }
 
 function schedulePoint(param: AutomatableParam, value: number, time: number, curve: EnvelopeCurve) {
-  if (curve === "step") param.setValueAtTime(value, time);
-  else if (curve === "exponential") param.exponentialRampToValueAtTime(value, time);
+  if (curve === 'step') param.setValueAtTime(value, time);
+  else if (curve === 'exponential') param.exponentialRampToValueAtTime(value, time);
   else param.linearRampToValueAtTime(value, time);
 }
 
@@ -205,8 +205,8 @@ function valueOf(
 ) {
   const value = base + amount * points[index].value;
   const exponential =
-    (index > first && points[index - 1].curve === "exponential") ||
-    (index < last && points[index].curve === "exponential");
+    (index > first && points[index - 1].curve === 'exponential') ||
+    (index < last && points[index].curve === 'exponential');
 
   return exponential ? floorOffZero(value, amount) : value;
 }
@@ -232,7 +232,7 @@ function scheduleRange(
       param,
       valueOf(points, index, from, to, base, amount),
       last,
-      points[index - 1].curve ?? "linear",
+      points[index - 1].curve ?? 'linear',
     );
   }
 
@@ -273,10 +273,10 @@ export function interpolateAtTime(points: readonly EnvelopePoint[], time: number
   const span = right.time - left.time;
   if (span <= 0) return right.value;
 
-  if (left.curve === "step") return left.value;
+  if (left.curve === 'step') return left.value;
 
   const t = (time - left.time) / span;
-  if (left.curve === "exponential" && left.value > 0 && right.value > 0) {
+  if (left.curve === 'exponential' && left.value > 0 && right.value > 0) {
     return left.value * Math.pow(right.value / left.value, t);
   }
   return left.value + (right.value - left.value) * t;
@@ -301,7 +301,7 @@ export function releaseEnvelope(
 
   const { points } = envelope;
   const fromTime = points[from].time;
-  const exponentialOut = points[from].curve === "exponential";
+  const exponentialOut = points[from].curve === 'exponential';
 
   // An exponential first segment cannot leave zero, so the handoff is floored the same
   // way the point values are. Without a holdValue there is nothing to floor yet.
@@ -315,7 +315,7 @@ export function releaseEnvelope(
       param,
       valueOf(points, index, from, points.length - 1, base, amount),
       releaseTime + (points[index].time - fromTime) / timeScale,
-      points[index - 1].curve ?? "linear",
+      points[index - 1].curve ?? 'linear',
     );
   }
 }
@@ -426,7 +426,7 @@ export function createEnvelopeScheduler(
       param,
       valueOf(points, sustain, 0, sustain, base, amount),
       time + glide,
-      "linear",
+      'linear',
     );
   };
 

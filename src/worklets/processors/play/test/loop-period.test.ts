@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const SR = 48_000;
 
@@ -45,13 +45,13 @@ function makeSample() {
 // An envelope synced to a sample loop is scheduled at absolute times derived from
 // (loopEnd - loopStart) / playbackRate. That only stays in phase if the processor's
 // real wrap period is the same number, for any loop points a knob can land on.
-describe("loop period", () => {
+describe('loop period', () => {
   beforeAll(() => {
-    vi.stubGlobal("AudioWorkletProcessor", MockAudioWorkletProcessor);
-    vi.stubGlobal("sampleRate", SR);
-    vi.stubGlobal("currentTime", 0);
-    vi.stubGlobal("currentFrame", 0);
-    vi.stubGlobal("registerProcessor", vi.fn());
+    vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
+    vi.stubGlobal('sampleRate', SR);
+    vi.stubGlobal('currentTime', 0);
+    vi.stubGlobal('currentFrame', 0);
+    vi.stubGlobal('registerProcessor', vi.fn());
   });
 
   afterAll(() => vi.unstubAllGlobals());
@@ -62,15 +62,15 @@ describe("loop period", () => {
     [0.137, 0.611, 1],
     [0.137, 0.611, 0.83],
     [0.371, 0.833, 1.27],
-  ])("wraps every (%s..%s)/%s seconds", async (loopStart, loopEnd, rate) => {
-    const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
+  ])('wraps every (%s..%s)/%s seconds', async (loopStart, loopEnd, rate) => {
+    const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
     const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
     processor.port.onmessage?.({
-      data: { type: "voice:setBuffer", buffer: [makeSample()], durationSeconds: 2 },
+      data: { type: 'voice:setBuffer', buffer: [makeSample()], durationSeconds: 2 },
     } as MessageEvent);
-    processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
-    processor.port.onmessage?.({ data: { type: "voice:start" } } as MessageEvent);
+    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+    processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
     const parameters = makeParameters({
       startPoint: loopStart,
@@ -86,7 +86,7 @@ describe("loop period", () => {
     let previous = processor.playbackPosition;
 
     for (let frame = 0; frame < SR * 4; frame++) {
-      vi.stubGlobal("currentFrame", frame);
+      vi.stubGlobal('currentFrame', frame);
       processor.process([], [output], parameters);
       if (processor.playbackPosition < previous && previous > 0) wraps.push(frame / SR);
       previous = processor.playbackPosition;

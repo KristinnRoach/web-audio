@@ -6,7 +6,7 @@ const CLIP_OUTPUT_CEILING = 0.3;
 
 class Distortion {
   constructor() {
-    this.limitingMode = "hard-clipping";
+    this.limitingMode = 'hard-clipping';
   }
 
   applyDrive(sample, driveAmount) {
@@ -26,15 +26,15 @@ class Distortion {
     // clippingThreshold's minValue keeps these divisions away from zero.
     let clippedSample;
     switch (this.limitingMode) {
-      case "soft-clipping":
+      case 'soft-clipping':
         clippedSample = CLIP_OUTPUT_CEILING * Math.tanh(sample / clipThreshold);
         break;
 
-      case "hard-clipping":
+      case 'hard-clipping':
         clippedSample = CLIP_OUTPUT_CEILING * Math.max(-1, Math.min(1, sample / clipThreshold));
         break;
 
-      case "bypass":
+      case 'bypass':
       default:
         // Nothing was clipped, so there is no ceiling to normalize against.
         clippedSample = sample;
@@ -53,32 +53,32 @@ class Distortion {
 }
 
 registerProcessor(
-  "distortion-processor",
+  'distortion-processor',
   class extends AudioWorkletProcessor {
     static get parameterDescriptors() {
       return [
         {
-          name: "distortionDrive",
+          name: 'distortionDrive',
           defaultValue: 0,
           minValue: 0,
           maxValue: 1,
-          automationRate: "a-rate",
+          automationRate: 'a-rate',
         },
         {
-          name: "clippingAmount",
+          name: 'clippingAmount',
           defaultValue: 0,
           minValue: 0,
           maxValue: 1,
-          automationRate: "a-rate",
+          automationRate: 'a-rate',
         },
         {
-          name: "clippingThreshold",
+          name: 'clippingThreshold',
           defaultValue: 0.5,
           // Non-zero: applyClipping divides by this, and 0 yields NaN, which
           // permanently silences every downstream node.
           minValue: 0.001,
           maxValue: 1,
-          automationRate: "k-rate",
+          automationRate: 'k-rate',
         },
       ];
     }
@@ -88,18 +88,18 @@ registerProcessor(
       this.distortion = new Distortion();
       this.setupMessageHandling();
       // Signal to node that processor is initialized
-      this.port.postMessage({ type: "initialized" });
+      this.port.postMessage({ type: 'initialized' });
     }
 
     setupMessageHandling() {
       this.port.onmessage = (event) => {
         switch (event.data.type) {
-          case "setLimitingMode":
+          case 'setLimitingMode':
             this.distortion.setLimitingMode(event.data.mode);
             break;
 
           default:
-            console.warn("distortion-processor: Unsupported message");
+            console.warn('distortion-processor: Unsupported message');
             break;
         }
       };

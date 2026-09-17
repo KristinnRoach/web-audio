@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { createFakeParam } from "./fakeParam";
-import { EnvelopeRuntime } from "./EnvelopeRuntime";
-import type { EnvelopeSettings } from "./Envelope";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { createFakeParam } from './fakeParam';
+import { EnvelopeRuntime } from './EnvelopeRuntime';
+import type { EnvelopeSettings } from './Envelope';
 
 function contextAt(currentTime: number) {
   return { currentTime, sampleRate: 44100 } as AudioContext & { currentTime: number };
@@ -24,18 +24,18 @@ function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings
   };
 }
 
-describe("EnvelopeRuntime callbacks", () => {
+describe('EnvelopeRuntime callbacks', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("does not create callback timers when it has no callbacks", () => {
+  it('does not create callback timers when it has no callbacks', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
     runtime.trigger(createFakeParam(), 0);
 
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("reports scheduled points and completion", () => {
+  it('reports scheduled points and completion', () => {
     const onPoint = vi.fn();
     const onComplete = vi.fn();
     const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint, onComplete });
@@ -48,7 +48,7 @@ describe("EnvelopeRuntime callbacks", () => {
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
-  it("keeps callbacks on the active shape after settings change", () => {
+  it('keeps callbacks on the active shape after settings change', () => {
     const context = contextAt(0);
     const onPoint = vi.fn();
     const onComplete = vi.fn();
@@ -79,21 +79,21 @@ describe("EnvelopeRuntime callbacks", () => {
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
-  it("requires a release point", () => {
+  it('requires a release point', () => {
     const settings = settingsOf() as unknown as {
       enabled: boolean;
       timeScale: number;
-      envelope: { points: EnvelopeSettings["envelope"]["points"] };
+      envelope: { points: EnvelopeSettings['envelope']['points'] };
     };
     delete (settings.envelope as { release?: number }).release;
 
     expect(() => new EnvelopeRuntime(contextAt(0), settings as EnvelopeSettings)).toThrow(
-      "Invalid envelope settings",
+      'Invalid envelope settings',
     );
   });
 });
 
-describe("EnvelopeRuntime live settings handover", () => {
+describe('EnvelopeRuntime live settings handover', () => {
   const looping = settingsOf({
     envelope: {
       points: [
@@ -106,7 +106,7 @@ describe("EnvelopeRuntime live settings handover", () => {
     },
   });
 
-  it("has no boundary to hand over on unless a loop is running", () => {
+  it('has no boundary to hand over on unless a loop is running', () => {
     const idle = new EnvelopeRuntime(contextAt(0), looping);
     expect(idle.nextCycleTime()).toBeNull();
 
@@ -127,7 +127,7 @@ describe("EnvelopeRuntime live settings handover", () => {
     expect(runtime.nextCycleTime()).toBe(4);
   });
 
-  it("re-triggers at the boundary without disturbing the cycle still playing", () => {
+  it('re-triggers at the boundary without disturbing the cycle still playing', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, looping);
@@ -150,7 +150,7 @@ describe("EnvelopeRuntime live settings handover", () => {
   });
 });
 
-describe("EnvelopeRuntime repeated handovers", () => {
+describe('EnvelopeRuntime repeated handovers', () => {
   const looping = settingsOf({
     envelope: {
       points: [
@@ -163,7 +163,7 @@ describe("EnvelopeRuntime repeated handovers", () => {
     },
   });
 
-  it("keeps every edit during a drag on the same boundary", () => {
+  it('keeps every edit during a drag on the same boundary', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, looping);
@@ -182,11 +182,11 @@ describe("EnvelopeRuntime repeated handovers", () => {
   });
 });
 
-describe("live sustain value", () => {
+describe('live sustain value', () => {
   const sustaining = () =>
     settingsOf({ envelope: { ...settingsOf().envelope, sustain: 1, release: 1 } });
 
-  it("glides to the new value and releases from it", () => {
+  it('glides to the new value and releases from it', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
@@ -195,16 +195,16 @@ describe("live sustain value", () => {
     // Parked on sustain: point 1 lands at 0.5.
     context.currentTime = 1;
     runtime.setSustainValue(0.25);
-    expect(param.ramps().at(-1)).toEqual({ type: "linear", value: 0.25, time: 1.02 });
+    expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 0.25, time: 1.02 });
 
     // The tail has to hand off from the edited value, not the one captured at trigger.
     // The glide's own pin sits at this same instant, so it is the last write that counts.
     runtime.release(1);
-    const pins = param.ramps().filter((event) => event.type === "set" && event.time === 1);
+    const pins = param.ramps().filter((event) => event.type === 'set' && event.time === 1);
     expect(pins.at(-1)?.value).toBe(0.25);
   });
 
-  it("picks the edit up from applySettings while the note is held", () => {
+  it('picks the edit up from applySettings while the note is held', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
@@ -222,10 +222,10 @@ describe("live sustain value", () => {
       },
     });
 
-    expect(param.ramps().at(-1)).toEqual({ type: "linear", value: 0.25, time: 1.02 });
+    expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 0.25, time: 1.02 });
   });
 
-  it("leaves the queued shape alone when the run has not reached sustain", () => {
+  it('leaves the queued shape alone when the run has not reached sustain', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
@@ -249,7 +249,7 @@ describe("live sustain value", () => {
     expect(param.events.length).toBe(queued + 1); // the trigger's own cancel, nothing more
   });
 
-  it("writes nothing when the sustain value is unchanged", () => {
+  it('writes nothing when the sustain value is unchanged', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
@@ -262,7 +262,7 @@ describe("live sustain value", () => {
     expect(param.events.length).toBe(before);
   });
 
-  it("leaves a run playing its own mapped shape alone", () => {
+  it('leaves a run playing its own mapped shape alone', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());

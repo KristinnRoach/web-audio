@@ -1,13 +1,13 @@
-import { SampleVoice, type SampleVoiceChainNode } from "./SampleVoice";
-import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
-import { VoiceState } from "../VoiceState";
-import { Message, MessageHandler, MessageBus, createMessageBus } from "@/events";
-import { GainStages, LibNode } from "@/nodes/LibNode";
-import { createSampleVoices } from "./createSampleVoice";
+import { SampleVoice, type SampleVoiceChainNode } from './SampleVoice';
+import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
+import { VoiceState } from '../VoiceState';
+import { Message, MessageHandler, MessageBus, createMessageBus } from '@/events';
+import { GainStages, LibNode } from '@/nodes/LibNode';
+import { createSampleVoices } from './createSampleVoice';
 
 export class SampleVoicePool implements LibNode {
   readonly nodeId: NodeID;
-  readonly nodeType = "pool";
+  readonly nodeType = 'pool';
   #messages: MessageBus<Message>;
   #context: AudioContext;
   #initialized = false;
@@ -97,12 +97,12 @@ export class SampleVoicePool implements LibNode {
   #initializedVoices = new Set<SampleVoice>();
 
   #setupMessageHandling(voice: SampleVoice) {
-    voice.onMessage("voice:initialized", (msg: Message) => {
+    voice.onMessage('voice:initialized', (msg: Message) => {
       this.#initializedVoices.add(msg.voice);
 
       if (this.#initializedVoices.size === this.#allVoices.length) {
         // All voices initialized message
-        this.sendUpstreamMessage("voice-pool:initialized", {
+        this.sendUpstreamMessage('voice-pool:initialized', {
           voiceCount: this.#allVoices.length,
         });
       }
@@ -110,14 +110,14 @@ export class SampleVoicePool implements LibNode {
 
     this.#messages.forwardFrom(
       voice,
-      ["voice:initialized", "voice:started", "voice:stopped", "voice:releasing", "voice:loaded"],
+      ['voice:initialized', 'voice:started', 'voice:stopped', 'voice:releasing', 'voice:loaded'],
       (msg) => {
-        if (msg.type === "voice:loaded") {
+        if (msg.type === 'voice:loaded') {
           this.#loaded.add(msg.senderId);
 
           // Only send 'sample:loaded' when all voices are loaded
           if (this.#loaded.size === this.#allVoices.length) {
-            return { ...msg, type: "sample:loaded" };
+            return { ...msg, type: 'sample:loaded' };
           }
           return null;
         }
@@ -150,7 +150,7 @@ export class SampleVoicePool implements LibNode {
       this.#oldestVoice(VoiceState.PLAYING);
 
     if (!voice) {
-      console.warn("Could not allocate voice");
+      console.warn('Could not allocate voice');
       return;
     }
 

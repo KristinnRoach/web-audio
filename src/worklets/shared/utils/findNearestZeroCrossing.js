@@ -1,4 +1,4 @@
-import { findClosest, findClosestIdx } from "@/utils/search/findClosest";
+import { findClosest, findClosestIdx } from '@/utils/search/findClosest';
 
 function crossingSlope(samples, position) {
   const center = Math.round(position);
@@ -23,7 +23,7 @@ function crossingSlope(samples, position) {
 export function findNearestZeroCrossing(
   zeroCrossings,
   position,
-  direction = "any",
+  direction = 'any',
   maxDistance = null,
 ) {
   if (!zeroCrossings?.length) return position;

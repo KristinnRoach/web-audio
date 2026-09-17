@@ -23,7 +23,7 @@ declare var sampleRate: number;
 
 interface AudioParamDescriptor {
   name: string;
-  automationRate?: "a-rate" | "k-rate";
+  automationRate?: 'a-rate' | 'k-rate';
   minValue?: number;
   maxValue?: number;
   defaultValue?: number;

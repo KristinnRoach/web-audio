@@ -1,7 +1,7 @@
-import { LibNode, NodeType } from "./LibNode";
-import { registerNode, unregisterNode, NodeID } from "./node-store";
-import { MessageBus, MessageHandler, Message, createMessageBus } from "@/events";
-import { InstrumentBus } from "./master/InstrumentBus";
+import { LibNode, NodeType } from './LibNode';
+import { registerNode, unregisterNode, NodeID } from './node-store';
+import { MessageBus, MessageHandler, Message, createMessageBus } from '@/events';
+import { InstrumentBus } from './master/InstrumentBus';
 
 /** Adapter interface for web native and Audiolib's custom audio nodes */
 export interface ILibAudioNode<T extends AudioNode | AudioWorkletNode = AudioNode> extends LibNode {
@@ -103,11 +103,11 @@ export class LibAudioNode<
   // === CONNECTIONS ===
 
   connect(destination: ILibAudioNode | AudioNode): void {
-    const target = "input" in destination ? destination.input : destination;
+    const target = 'input' in destination ? destination.input : destination;
     this.#outputNode.connect(target as AudioNode);
 
     // Track by NodeID if it's a LibAudioNode
-    if ("nodeId" in destination) {
+    if ('nodeId' in destination) {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
@@ -115,10 +115,10 @@ export class LibAudioNode<
 
   disconnect(destination?: ILibAudioNode | AudioNode): void {
     if (destination) {
-      const target = "input" in destination ? destination.input : destination;
+      const target = 'input' in destination ? destination.input : destination;
       this.#outputNode.disconnect(target as AudioNode);
 
-      if ("nodeId" in destination) {
+      if ('nodeId' in destination) {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }
@@ -148,7 +148,7 @@ export class LibAudioNode<
 
   setParam(name: string, value: number, timestamp = this.now): void {
     // Try AudioWorkletNode parameters first
-    if ("parameters" in this.#audioNode) {
+    if ('parameters' in this.#audioNode) {
       const param = (this.#audioNode as AudioWorkletNode).parameters.get(name);
       if (param) {
         param.setValueAtTime(value, timestamp);

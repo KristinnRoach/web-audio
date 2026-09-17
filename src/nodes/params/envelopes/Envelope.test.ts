@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it, test, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, test, vi } from 'vite-plus/test';
 import {
   createEnvelopeScheduler,
   interpolateAtTime,
   releaseEnvelope,
   scheduleEnvelope,
   type Envelope,
-} from "./Envelope";
+} from './Envelope';
 
 afterEach(() => vi.useRealTimers());
 
@@ -29,12 +29,12 @@ function mockParam() {
   return { calls, param };
 }
 
-test("schedules through sustain, then schedules the remaining points on release", () => {
+test('schedules through sustain, then schedules the remaining points on release', () => {
   const { calls, param } = mockParam();
   const envelope: Envelope = {
     points: [
       { time: 0, value: 0 },
-      { time: 0.1, value: 1, curve: "exponential" },
+      { time: 0.1, value: 1, curve: 'exponential' },
       { time: 0.3, value: 0.5 },
       { time: 0.8, value: 0 },
     ],
@@ -55,7 +55,7 @@ test("schedules through sustain, then schedules the remaining points on release"
   expect(calls.linear).toHaveBeenCalledWith(0, 20.5);
 });
 
-test("treats point times as offsets from the first point, not as a pre-delay", () => {
+test('treats point times as offsets from the first point, not as a pre-delay', () => {
   const { calls, param } = mockParam();
   const envelope: Envelope = {
     points: [
@@ -76,14 +76,14 @@ test("treats point times as offsets from the first point, not as a pre-delay", (
 
 // Common amplitude and filter presets use exponential segments that touch zero.
 // throughout, zero at both ends. A zero target throws, a zero start silently holds.
-test("keeps an exponential segment off zero at both ends", () => {
+test('keeps an exponential segment off zero at both ends', () => {
   const { calls, param } = mockParam();
   const envelope: Envelope = {
     points: [
-      { time: 0, value: 0, curve: "exponential" },
-      { time: 0.005, value: 1, curve: "exponential" },
-      { time: 0.9, value: 0.5, curve: "exponential" },
-      { time: 1, value: 0, curve: "exponential" },
+      { time: 0, value: 0, curve: 'exponential' },
+      { time: 0.005, value: 1, curve: 'exponential' },
+      { time: 0.9, value: 0.5, curve: 'exponential' },
+      { time: 1, value: 0, curve: 'exponential' },
     ],
     sustain: 2,
     release: 2,
@@ -100,16 +100,16 @@ test("keeps an exponential segment off zero at both ends", () => {
   expect(calls.exponential).toHaveBeenCalledWith(1e-4 * 20000, 20.1);
 });
 
-test("leaves values alone when no exponential segment touches them", () => {
+test('leaves values alone when no exponential segment touches them', () => {
   const { calls, param } = mockParam();
 
   scheduleEnvelope(
     param,
     {
       points: [
-        { time: 0, value: 0, curve: "linear" },
-        { time: 0.02, value: 1, curve: "exponential" },
-        { time: 0.3, value: 0, curve: "linear" },
+        { time: 0, value: 0, curve: 'linear' },
+        { time: 0.02, value: 1, curve: 'exponential' },
+        { time: 0.3, value: 0, curve: 'linear' },
       ],
       sustain: 2,
       release: 2,
@@ -152,15 +152,15 @@ test("places the shape on the parameter's range with base and amount", () => {
   expect(scheduled({ base: 1, amount: -0.5 })).toEqual([1, 0.5, 0.75]);
 });
 
-test("keeps an inverted exponential envelope on its own side of zero", () => {
+test('keeps an inverted exponential envelope on its own side of zero', () => {
   const { calls, param } = mockParam();
 
   scheduleEnvelope(
     param,
     {
       points: [
-        { time: 0, value: 0, curve: "exponential" },
-        { time: 0.1, value: 1, curve: "exponential" },
+        { time: 0, value: 0, curve: 'exponential' },
+        { time: 0.1, value: 1, curve: 'exponential' },
       ],
       sustain: 1,
       release: 1,
@@ -174,7 +174,7 @@ test("keeps an inverted exponential envelope on its own side of zero", () => {
   expect(calls.exponential).toHaveBeenCalledWith(-1, 0.1);
 });
 
-test("anchors every rolling loop cycle to the original trigger time", () => {
+test('anchors every rolling loop cycle to the original trigger time', () => {
   vi.useFakeTimers();
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };
@@ -205,7 +205,7 @@ test("anchors every rolling loop cycle to the original trigger time", () => {
   env.dispose();
 });
 
-test("scheduler release stops its loop and schedules the scaled release stage", () => {
+test('scheduler release stops its loop and schedules the scaled release stage', () => {
   vi.useFakeTimers();
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };
@@ -238,7 +238,7 @@ test("scheduler release stops its loop and schedules the scaled release stage", 
 // A sampler lines buffer playback up with the envelope by starting both at one
 // timestamp, so every cycle must open on that timestamp plus a whole number of
 // periods. No pre-loop stage, and no dependence on where point 0 sits in time.
-test("opens every loop cycle on the trigger time plus a whole number of periods", () => {
+test('opens every loop cycle on the trigger time plus a whole number of periods', () => {
   vi.useFakeTimers();
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };
@@ -269,7 +269,7 @@ test("opens every loop cycle on the trigger time plus a whole number of periods"
   env.dispose();
 });
 
-test("release exits a whole-envelope loop and plays its release tail", () => {
+test('release exits a whole-envelope loop and plays its release tail', () => {
   vi.useFakeTimers();
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };
@@ -301,7 +301,7 @@ test("release exits a whole-envelope loop and plays its release tail", () => {
   env.dispose();
 });
 
-test("loops the whole envelope when no sustain point is set", () => {
+test('loops the whole envelope when no sustain point is set', () => {
   vi.useFakeTimers();
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };
@@ -327,21 +327,21 @@ test("loops the whole envelope when no sustain point is set", () => {
  * the future start from where the envelope will actually be, rather than from
  * `param.value`, which only ever answers for now.
  */
-describe("interpolateAtTime", () => {
+describe('interpolateAtTime', () => {
   const points = [
-    { time: 0, value: 0, curve: "linear" as const },
-    { time: 1, value: 1, curve: "exponential" as const },
-    { time: 2, value: 0.25, curve: "step" as const },
+    { time: 0, value: 0, curve: 'linear' as const },
+    { time: 1, value: 1, curve: 'exponential' as const },
+    { time: 2, value: 0.25, curve: 'step' as const },
     { time: 3, value: 0 },
   ];
 
-  it("clamps outside the shape instead of extrapolating", () => {
+  it('clamps outside the shape instead of extrapolating', () => {
     expect(interpolateAtTime(points, -5)).toBe(0);
     expect(interpolateAtTime(points, 99)).toBe(0);
     expect(interpolateAtTime([], 1)).toBe(0);
   });
 
-  it("returns point values exactly on the points", () => {
+  it('returns point values exactly on the points', () => {
     expect(interpolateAtTime(points, 0)).toBe(0);
     expect(interpolateAtTime(points, 1)).toBe(1);
     expect(interpolateAtTime(points, 2)).toBe(0.25);
@@ -353,15 +353,15 @@ describe("interpolateAtTime", () => {
     expect(interpolateAtTime(points, 2.5)).toBe(0.25); // step holds the left value
   });
 
-  it("falls back to linear where an exponential segment touches zero", () => {
+  it('falls back to linear where an exponential segment touches zero', () => {
     const throughZero = [
-      { time: 0, value: 0, curve: "exponential" as const },
+      { time: 0, value: 0, curve: 'exponential' as const },
       { time: 1, value: 1 },
     ];
     expect(interpolateAtTime(throughZero, 0.5)).toBeCloseTo(0.5);
   });
 
-  it("survives coincident point times", () => {
+  it('survives coincident point times', () => {
     const stacked = [
       { time: 0, value: 0 },
       { time: 1, value: 0.5 },
@@ -374,7 +374,7 @@ describe("interpolateAtTime", () => {
 
 // timeScale divides point times, so it is the same knob a sampler uses to make the
 // envelope stretch with playback rate. It has to reach the release stage too.
-test("timeScale speeds up both the sustaining stage and the release", () => {
+test('timeScale speeds up both the sustaining stage and the release', () => {
   const { calls, param } = mockParam();
   const envelope: Envelope = {
     points: [
@@ -398,7 +398,7 @@ test("timeScale speeds up both the sustaining stage and the release", () => {
 // A sampler amp envelope decays on its own while the note is held and still has a
 // tail on note-off. A lone sustain cannot express that: it holds where this keeps
 // moving. So the release index has to work without one.
-test("a release index without a sustain plays through and still has a tail", () => {
+test('a release index without a sustain plays through and still has a tail', () => {
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };
   const envelope: Envelope = {
@@ -429,7 +429,7 @@ test("a release index without a sustain plays through and still has a tail", () 
 
 // Loop switched on while a note is parked on its sustain point: the first pass carries
 // on from there, and the full cycles after it sit on the grid point 0 would have had.
-test("opens a fromPoint run mid-shape and anchors its cycles on point 0", () => {
+test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => {
   vi.useFakeTimers();
   const { calls, param } = mockParam();
   const clock = { currentTime: 0 };

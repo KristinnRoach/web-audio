@@ -1,7 +1,7 @@
 import {
   findNearestSlopeMatchedZeroCrossing,
   findNearestZeroCrossing,
-} from "@/worklets/shared/utils/findNearestZeroCrossing.js";
+} from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 
 /**
  * Owns the private timeline and correction state for zero-crossing duration preservation.
@@ -80,7 +80,7 @@ export class DurationPreserver {
 
     if (!this.#resetPending) return null;
 
-    const direction = playbackRate < 0 ? "left" : "right";
+    const direction = playbackRate < 0 ? 'left' : 'right';
     const outgoingPosition = findNearestZeroCrossing(zeroCrossings, playbackPosition, direction);
 
     if (Math.abs(outgoingPosition - playbackPosition) > Math.abs(playbackRate)) return null;

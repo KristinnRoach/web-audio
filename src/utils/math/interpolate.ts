@@ -24,22 +24,22 @@ export function interpolate(
     inputRange: { min: number; max: number };
     outputRange: { min: number; max: number };
     curve?:
-      | "linear"
-      | "power1"
-      | "power2"
-      | "power3"
-      | "power4"
-      | "expo"
-      | "log"
-      | "sine"
-      | "circ"
+      | 'linear'
+      | 'power1'
+      | 'power2'
+      | 'power3'
+      | 'power4'
+      | 'expo'
+      | 'log'
+      | 'sine'
+      | 'circ'
       | number;
   },
 ): number {
-  const { inputRange, outputRange, curve = "linear" } = options;
+  const { inputRange, outputRange, curve = 'linear' } = options;
 
   if (value > inputRange.max || value < inputRange.min) {
-    console.warn("interpolate: Value outside of input range, will be clamped");
+    console.warn('interpolate: Value outside of input range, will be clamped');
   }
 
   // Clamp value within bounds
@@ -48,35 +48,35 @@ export function interpolate(
 
   // Apply easing curve
   switch (curve) {
-    case "linear":
+    case 'linear':
       // t remains unchanged
       break;
-    case "power1":
+    case 'power1':
       t = Math.pow(t, 1 / 1.5);
       break;
-    case "power2":
+    case 'power2':
       t = Math.pow(t, 1 / 2);
       break;
-    case "power3":
+    case 'power3':
       t = Math.pow(t, 1 / 3);
       break;
-    case "power4":
+    case 'power4':
       t = Math.pow(t, 1 / 4);
       break;
-    case "expo":
+    case 'expo':
       t = t === 0 ? 0 : Math.pow(2, 10 * (t - 1));
       break;
-    case "log":
+    case 'log':
       t = Math.log(1 + 9 * t) / Math.log(10);
       break;
-    case "sine":
+    case 'sine':
       t = 1 - Math.cos((t * Math.PI) / 2);
       break;
-    case "circ":
+    case 'circ':
       t = 1 - Math.sqrt(1 - t * t);
       break;
     default:
-      if (typeof curve === "number") {
+      if (typeof curve === 'number') {
         t = Math.pow(t, 1 / curve);
       }
       break;
@@ -122,18 +122,18 @@ export function interpolateLinearToGeometric(
     inputRange: { min: number; max: number };
     outputRange: { min: number; max: number };
     blend?: number;
-    curve?: "linear" | "smooth" | "steep" | "gentle" | number;
+    curve?: 'linear' | 'smooth' | 'steep' | 'gentle' | number;
   },
 ): number {
-  const { inputRange, outputRange, blend = 1, curve = "linear" } = options;
+  const { inputRange, outputRange, blend = 1, curve = 'linear' } = options;
 
   if (value > inputRange.max || value < inputRange.min) {
-    console.warn("interpolateLinearToGeometric: Value outside of input range, will be clamped");
+    console.warn('interpolateLinearToGeometric: Value outside of input range, will be clamped');
   }
 
   if (outputRange.min <= 0) {
     console.warn(
-      "interpolateLinearToGeometric: Output min must be > 0 for geometric interpolation",
+      'interpolateLinearToGeometric: Output min must be > 0 for geometric interpolation',
     );
   }
 
@@ -144,13 +144,13 @@ export function interpolateLinearToGeometric(
 
   // Apply power curve adjustment
   const power =
-    typeof curve === "number"
+    typeof curve === 'number'
       ? curve
-      : curve === "smooth"
+      : curve === 'smooth'
         ? 2
-        : curve === "steep"
+        : curve === 'steep'
           ? 3
-          : curve === "gentle"
+          : curve === 'gentle'
             ? 1.5
             : 1;
 

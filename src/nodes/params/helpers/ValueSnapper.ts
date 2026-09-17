@@ -1,6 +1,6 @@
-import { createScale, offsetPeriodsBySemitones } from "@/utils/music-theory/utils/scale-utils";
-import type { NormalizeOptions } from "@/nodes/params/param-types";
-import { findClosest, ROOT_NOTES } from "@/utils";
+import { createScale, offsetPeriodsBySemitones } from '@/utils/music-theory/utils/scale-utils';
+import type { NormalizeOptions } from '@/nodes/params/param-types';
+import { findClosest, ROOT_NOTES } from '@/utils';
 
 /** Clamps to the `from` range, then maps linearly onto the `to` range. */
 const normalizeRange = (
@@ -37,7 +37,7 @@ export class ValueSnapper {
   #allowedValues: number[] = [];
   #allowedPeriods: number[] = [];
 
-  #currentRootNote: keyof typeof ROOT_NOTES = "C";
+  #currentRootNote: keyof typeof ROOT_NOTES = 'C';
   #currentScalePattern: number[] = [];
 
   // Preserved across setRootNote
@@ -128,7 +128,7 @@ export class ValueSnapper {
     target: number,
     allowedValues = this.#allowedValues,
     tolerance?: number,
-    preferDirection: "left" | "right" | "any" = "any",
+    preferDirection: 'left' | 'right' | 'any' = 'any',
   ): number {
     if (allowedValues.length === 0) return target;
 

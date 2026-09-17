@@ -1,7 +1,7 @@
 // FeedbackDelay.js
 
-import { compressSingleSample } from "../../shared/utils/compress-utils";
-import { DelayBuffer } from "./DelayBuffer";
+import { compressSingleSample } from '../../shared/utils/compress-utils';
+import { DelayBuffer } from './DelayBuffer';
 
 const AUTO_GAIN_THRESHOLD = 0.8;
 const SAFETY_GAIN_COMPENSATION = 0.2;
@@ -99,7 +99,7 @@ export class FeedbackDelay {
     const compressedFeedback = compressSingleSample(feedbackSample, 0.5, 4.0, {
       enabled: true, // limiter enabled
       outputRange: { min: -0.99, max: 0.99 },
-      type: "soft", // soft clip
+      type: 'soft', // soft clip
     });
 
     if (this.autoGainEnabled && feedbackAmount > AUTO_GAIN_THRESHOLD) {

@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
-import { normalizeAudioBuffer } from "../normalizeAudioBuffer";
+import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { normalizeAudioBuffer } from '../normalizeAudioBuffer';
 
-describe("normalizeAudioBuffer amplitude analysis", () => {
+describe('normalizeAudioBuffer amplitude analysis', () => {
   let audioContext: AudioContext;
 
   beforeEach(() => {
@@ -10,7 +10,7 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
   });
 
   afterEach(async () => {
-    if (audioContext && audioContext.state !== "closed") {
+    if (audioContext && audioContext.state !== 'closed') {
       await audioContext.close();
     }
     audioContext = null as any;
@@ -67,20 +67,20 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     return buffer;
   }
 
-  it("should normalize quiet audio to target peak (0.9 by default)", () => {
+  it('should normalize quiet audio to target peak (0.9 by default)', () => {
     // Create a quiet buffer with peak at 0.1
     const quietBuffer = createTestBuffer(0.1);
 
     // Analyze before normalization
     const statsBefore = analyzeAmplitude(quietBuffer);
-    console.log("Before normalization:", statsBefore);
+    console.log('Before normalization:', statsBefore);
 
     // Normalize
     const normalizedBuffer = normalizeAudioBuffer(audioContext, quietBuffer);
 
     // Analyze after normalization
     const statsAfter = analyzeAmplitude(normalizedBuffer);
-    console.log("After normalization:", statsAfter);
+    console.log('After normalization:', statsAfter);
 
     // The peak should be very close to 0.9 (default target)
     expect(statsAfter.peak).toBeCloseTo(0.9, 5);
@@ -91,7 +91,7 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     expect(statsAfter.rms / statsBefore.rms).toBeCloseTo(expectedGain, 5);
   });
 
-  it("should normalize loud audio to target peak", () => {
+  it('should normalize loud audio to target peak', () => {
     // Create a loud buffer with peak at 0.95
     const loudBuffer = createTestBuffer(0.95);
 
@@ -112,7 +112,7 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     expect(statsAfter.peak / statsBefore.peak).toBeCloseTo(expectedGain, 5);
   });
 
-  it("should handle custom target peak values", () => {
+  it('should handle custom target peak values', () => {
     const buffer = createTestBuffer(0.3);
     const targetPeak = 0.7;
 
@@ -128,7 +128,7 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     expect(statsAfter.peak / statsBefore.peak).toBeCloseTo(expectedGain, 5);
   });
 
-  it("should handle very quiet audio (simulating recorded audio)", () => {
+  it('should handle very quiet audio (simulating recorded audio)', () => {
     // Simulate very quiet recorded audio with peak at 0.05
     const veryQuietBuffer = createTestBuffer(0.05);
 
@@ -136,10 +136,10 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     const normalizedBuffer = normalizeAudioBuffer(audioContext, veryQuietBuffer);
     const statsAfter = analyzeAmplitude(normalizedBuffer);
 
-    console.log("Very quiet audio test:");
-    console.log("  Before - Peak:", statsBefore.peak, "RMS:", statsBefore.rms);
-    console.log("  After - Peak:", statsAfter.peak, "RMS:", statsAfter.rms);
-    console.log("  Gain applied:", statsAfter.peak / statsBefore.peak);
+    console.log('Very quiet audio test:');
+    console.log('  Before - Peak:', statsBefore.peak, 'RMS:', statsBefore.rms);
+    console.log('  After - Peak:', statsAfter.peak, 'RMS:', statsAfter.rms);
+    console.log('  Gain applied:', statsAfter.peak / statsBefore.peak);
 
     // Should boost to 0.9
     expect(statsAfter.peak).toBeCloseTo(0.9, 5);
@@ -149,7 +149,7 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     expect(statsAfter.peak / statsBefore.peak).toBeCloseTo(expectedGain, 5);
   });
 
-  it("should handle silence without errors", () => {
+  it('should handle silence without errors', () => {
     // Create a silent buffer
     const silentBuffer = audioContext.createBuffer(1, 44100, 44100);
     // All samples are already 0 by default
@@ -163,7 +163,7 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     expect(statsAfter.rms).toBe(0);
   });
 
-  it("should analyze realistic dynamic range compression", () => {
+  it('should analyze realistic dynamic range compression', () => {
     // Create a buffer with varying amplitudes (simulating dynamic audio)
     const sampleRate = audioContext.sampleRate;
     const length = sampleRate * 2; // 2 seconds
@@ -183,10 +183,10 @@ describe("normalizeAudioBuffer amplitude analysis", () => {
     const normalizedBuffer = normalizeAudioBuffer(audioContext, buffer);
     const statsAfter = analyzeAmplitude(normalizedBuffer);
 
-    console.log("Dynamic audio test:");
-    console.log("  Before - Peak:", statsBefore.peak, "RMS:", statsBefore.rms);
-    console.log("  After - Peak:", statsAfter.peak, "RMS:", statsAfter.rms);
-    console.log("  Gain applied:", statsAfter.peak / statsBefore.peak);
+    console.log('Dynamic audio test:');
+    console.log('  Before - Peak:', statsBefore.peak, 'RMS:', statsBefore.rms);
+    console.log('  After - Peak:', statsAfter.peak, 'RMS:', statsAfter.rms);
+    console.log('  Gain applied:', statsAfter.peak / statsBefore.peak);
 
     // Peak should be normalized to 0.9
     expect(statsAfter.peak).toBeCloseTo(0.9, 5);

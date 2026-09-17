@@ -3,5 +3,5 @@ export interface AudioParamDescriptor {
   defaultValue?: number;
   minValue?: number;
   maxValue?: number;
-  automationRate: "a-rate" | "k-rate";
+  automationRate: 'a-rate' | 'k-rate';
 }

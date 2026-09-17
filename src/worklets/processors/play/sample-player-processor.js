@@ -1,6 +1,6 @@
-import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from "./sample-player-paramdescriptors.ts";
-import { findNearestZeroCrossing } from "@/worklets/shared/utils/findNearestZeroCrossing.js";
-import { DurationPreserver } from "./duration-preservation.js";
+import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
+import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
+import { DurationPreserver } from './duration-preservation.js';
 
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== PARAMETER DESCRIPTORS =====
@@ -45,7 +45,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Initialize all playback state
     this.#resetState();
     // Signal to node that processor is initialized
-    this.port.postMessage({ type: "initialized" });
+    this.port.postMessage({ type: 'initialized' });
   }
 
   /** Authority layer. All range and duration math reads through this. */
@@ -69,13 +69,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = event.data;
 
     switch (type) {
-      case "voice:reset":
+      case 'voice:reset':
         this.#resetState();
-        this.port.postMessage({ type: "voice:reset" });
+        this.port.postMessage({ type: 'voice:reset' });
         break;
 
-      case "voice:setBuffer":
-      case "voice:setLayers": {
+      case 'voice:setBuffer':
+      case 'voice:setLayers': {
         // Both messages replace the entire layer set, so state resets exactly
         // once and there is no partially-loaded window to get wrong.
         this.#resetState();
@@ -90,14 +90,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.layerGain = this.layers.length ? 1 / this.layers.length : 1;
 
         this.port.postMessage({
-          type: "voice:loaded",
+          type: 'voice:loaded',
           durationSeconds,
           time: currentTime,
         });
         break;
       }
 
-      case "voice:setZeroCrossings":
+      case 'voice:setZeroCrossings':
         this.zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * sampleRate);
 
         // Set min/max zero crossings for parameter constraints
@@ -107,7 +107,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         }
         break;
 
-      case "voice:start":
+      case 'voice:start':
         this.isReleasing = false;
         this.isPlaying = true;
         this.triggerId = triggerId;
@@ -121,29 +121,29 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.pendingStartFrame = timestamp ? Math.round(timestamp * sampleRate) : 0;
         break;
 
-      case "voice:release":
+      case 'voice:release':
         this.isReleasing = true;
         break;
 
-      case "voice:stop":
+      case 'voice:stop':
         this.#stop();
         break;
 
-      case "setLoopEnabled":
+      case 'setLoopEnabled':
         this.loopEnabled = value;
 
         this.port.postMessage({
-          type: "loop:enabled",
+          type: 'loop:enabled',
           enabled: value,
         });
         break;
 
-      case "setPanDriftEnabled":
+      case 'setPanDriftEnabled':
         this.panDriftEnabled = value;
         break;
 
-      case "voice:setPlaybackDirection": {
-        const reverse = playbackDirection === "reverse";
+      case 'voice:setPlaybackDirection': {
+        const reverse = playbackDirection === 'reverse';
 
         // Reverse interpolation reads ~1 sample behind forward at the same
         // position; shift so the emitted value stays continuous across the flip.
@@ -153,30 +153,30 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.reversePlayback = reverse;
 
         this.port.postMessage({
-          type: "voice:playbackDirectionChange",
+          type: 'voice:playbackDirectionChange',
           playbackDirection,
         });
         break;
       }
 
-      case "voice:usePlaybackPosition":
+      case 'voice:usePlaybackPosition':
         this.usePlaybackPosition = value;
         break;
 
-      case "syncLoopToTempo":
+      case 'syncLoopToTempo':
         this.syncLoopToTempo = value;
 
         this.port.postMessage({
-          type: "loop:syncToTempo",
+          type: 'loop:syncToTempo',
           enabled: value,
         });
         break;
 
-      case "setKeytrackLoopAmount":
+      case 'setKeytrackLoopAmount':
         this.keytrackLoopAmount = Math.max(0, Math.min(1, value));
         break;
 
-      case "setPreserveDuration":
+      case 'setPreserveDuration':
         this.durationPreserver.setEnabled(value, this.playbackPosition);
         break;
     }
@@ -243,7 +243,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
   }
 
-  #findNearestZeroCrossing(position, direction = "any", maxDistance = null) {
+  #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
     return findNearestZeroCrossing(this.zeroCrossings, position, direction, maxDistance);
   }
 
@@ -368,8 +368,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         ? Math.min(bufferLength, params.endPointSamples)
         : bufferLength;
 
-    const snappedStart = this.#findNearestZeroCrossing(start, "right"); // Snap forward
-    const snappedEnd = this.#findNearestZeroCrossing(end, "left"); // Snap backward
+    const snappedStart = this.#findNearestZeroCrossing(start, 'right'); // Snap forward
+    const snappedEnd = this.#findNearestZeroCrossing(end, 'left'); // Snap backward
 
     return {
       startSamples: snappedStart,
@@ -444,7 +444,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration)
     if (!isAudioRate) {
-      calcLoopStart = this.#findNearestZeroCrossing(calcLoopStart, "right");
+      calcLoopStart = this.#findNearestZeroCrossing(calcLoopStart, 'right');
     }
 
     // Apply drift to loop end position
@@ -495,7 +495,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Skip the snap when the end sits in the silent tail: zero crossings only exist
     // inside the buffer, so snapping there would erase the padding.
     if (!isAudioRate && calcLoopEnd <= playbackRange.endSamples) {
-      calcLoopEnd = Math.max(calcLoopStart + 1, this.#findNearestZeroCrossing(calcLoopEnd, "left"));
+      calcLoopEnd = Math.max(calcLoopStart + 1, this.#findNearestZeroCrossing(calcLoopEnd, 'left'));
     }
 
     const loopDuration = calcLoopEnd - calcLoopStart;
@@ -648,7 +648,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // Case 2: output is array of Float32Arrays (stereo/multi-channel output)
       outputChannels = output;
     } else {
-      console.error("Unexpected output structure:", {
+      console.error('Unexpected output structure:', {
         outputType: typeof output,
         isArray: Array.isArray(output),
         constructor: output?.constructor?.name,
@@ -823,7 +823,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         const endedTriggerId = this.triggerId;
         this.#stop();
         this.port.postMessage({
-          type: "voice:ended",
+          type: 'voice:ended',
           triggerId: endedTriggerId,
         });
         return true;
@@ -933,7 +933,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (this.usePlaybackPosition) {
       const normalizedPosition = this.#samplesToNormalized(this.playbackPosition);
       this.port.postMessage({
-        type: "voice:position",
+        type: 'voice:position',
         position: normalizedPosition,
       });
     }
@@ -942,4 +942,4 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor("sample-player-processor", SamplePlayerProcessor);
+registerProcessor('sample-player-processor', SamplePlayerProcessor);
