@@ -7,12 +7,12 @@ import {
   type EnvelopeScheduler,
   type EnvelopeSettings,
   type ScheduleOptions,
-} from "./Envelope";
-import { releaseDuration, scaledDuration } from "./envelope-shape";
+} from './Envelope';
+import { releaseDuration, scaledDuration } from './envelope-shape';
 
 export type EnvelopePointDetails = {
   index: number;
-  point: Envelope["points"][number];
+  point: Envelope['points'][number];
   time: number;
 };
 
@@ -21,7 +21,7 @@ export type EnvelopeRuntimeCallbacks = {
   onComplete?: () => void;
 };
 
-export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, "timeScale"> & {
+export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> & {
   /** Additional timing multiplier supplied by the host, such as a playback rate. */
   timeScaleMultiplier?: number;
   /** Optional target-specific shape derived from the stored shape for this run. */
