@@ -326,6 +326,22 @@ describe('EnvelopeRuntime.position', () => {
     expect(at(sustained, 1.2).position()).toBeCloseTo(0.5);
   });
 
+  it('stays at 0 on a loop whose points share one time', () => {
+    const flat = settingsOf({
+      envelope: {
+        points: [
+          { time: 0, value: 0 },
+          { time: 0, value: 1 },
+        ],
+        release: 0,
+        loop: true,
+      },
+    });
+    // Coincident times pass validation, so the cycle has zero extent. There is nowhere to
+    // advance to, and trigger schedules it as a one-shot rather than looping it.
+    expect(at(flat, 5).position()).toBe(0);
+  });
+
   it('wraps into the cycle while looping', () => {
     const looping = settingsOf({ envelope: { ...settingsOf().envelope, loop: true } });
     // Cycle is 1.5 long, so 1.75 of wall clock is 0.25 into the second pass.

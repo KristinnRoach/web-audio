@@ -386,8 +386,10 @@ export function createEnvelopeScheduler(
     let elapsed = Math.max(0, (time - triggerTime) * timeScale);
 
     if (envelope.loop) {
+      // A zero-extent cycle has nowhere to advance to, and `trigger` already declines to
+      // loop it. Answering 0 keeps the two in agreement instead of counting up forever.
       const cycle = points[points.length - 1].time - points[0].time;
-      if (cycle > 0) elapsed %= cycle;
+      elapsed = cycle > 0 ? elapsed % cycle : 0;
     } else if (sustain !== undefined) {
       elapsed = Math.min(elapsed, points[sustain].time - points[0].time);
     }
