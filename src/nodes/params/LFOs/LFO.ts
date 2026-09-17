@@ -3,8 +3,8 @@ import {
   createWave,
   WaveformOptions,
   isCustomLibWaveform,
-} from "@/utils/audiodata/generate/generateWaveform";
-import { maxSafeHz } from "@/utils";
+} from '@/utils/audiodata/generate/generateWaveform';
+import { maxSafeHz } from '@/utils';
 
 export class LFO {
   #context: AudioContext;
@@ -16,7 +16,7 @@ export class LFO {
 
   // Mirrors what was last applied to the oscillator, so a replacement
   // oscillator can be built with the same settings.
-  #waveform: OscillatorType | PeriodicWave = "sine";
+  #waveform: OscillatorType | PeriodicWave = 'sine';
   #frequency = 1;
 
   constructor(context: AudioContext) {
@@ -84,7 +84,7 @@ export class LFO {
     if (waveform instanceof PeriodicWave) {
       this.#waveform = waveform;
       this.#oscillator.setPeriodicWave(waveform);
-    } else if (typeof waveform === "string" && isCustomLibWaveform(waveform)) {
+    } else if (typeof waveform === 'string' && isCustomLibWaveform(waveform)) {
       // It's a custom library waveform string
       const periodicWave = createWave(this.#context, waveform, customWaveOptions);
       this.#waveform = periodicWave;

@@ -1,14 +1,14 @@
-import { ILibAudioNode } from "../LibAudioNode";
-import { NodeType } from "@/nodes/LibNode";
-import { getAudioContext } from "@/context";
-import { registerNode, unregisterNode } from "@/nodes/node-store";
-import { clamp, interpolate, mapToRange } from "@/utils";
-import { createFeedbackDelay } from "@/worklets/worklet-factory";
-import { FbDelayWorklet } from "@/worklets/worklet-types";
+import { ILibAudioNode } from '../LibAudioNode';
+import { NodeType } from '@/nodes/LibNode';
+import { getAudioContext } from '@/context';
+import { registerNode, unregisterNode } from '@/nodes/node-store';
+import { clamp, interpolate, mapToRange } from '@/utils';
+import { createFeedbackDelay } from '@/worklets/worklet-factory';
+import { FbDelayWorklet } from '@/worklets/worklet-types';
 
 export class HarmonicFeedback implements ILibAudioNode {
   readonly nodeId: NodeID;
-  readonly nodeType: NodeType = "harmonic-feedback";
+  readonly nodeType: NodeType = 'harmonic-feedback';
   #initialized = false;
   #context: AudioContext;
 
@@ -107,26 +107,26 @@ export class HarmonicFeedback implements ILibAudioNode {
     const clamped = clamp(scaled, this.#MIN_DELAY_TIME, this.#MAX_DELAY_TIME);
 
     if (glideTime <= 0 || !isFinite(glideTime)) {
-      this.getAudioParam("delayTime")!.setValueAtTime(clamped, timestamp);
+      this.getAudioParam('delayTime')!.setValueAtTime(clamped, timestamp);
       return this;
     } else {
-      this.getAudioParam("delayTime")!.linearRampToValueAtTime(clamped, timestamp + glideTime);
+      this.getAudioParam('delayTime')!.linearRampToValueAtTime(clamped, timestamp + glideTime);
     }
     return this;
   }
 
   setDelayMultiplier(value: number, timestamp = this.now, glideTime = 0.75) {
-    if (!(typeof value === "number") || !isFinite(value)) {
-      console.warn("setDelayMultiplier:Invalid multiplier:", value);
+    if (!(typeof value === 'number') || !isFinite(value)) {
+      console.warn('setDelayMultiplier:Invalid multiplier:', value);
       return;
     }
 
     const safeMultiplier = clamp(value, 0.25, 4, {
       warn: true,
-      name: "pitchDelayMultiplier",
+      name: 'pitchDelayMultiplier',
     });
 
-    const delayParam = this.getAudioParam("delayTime")!;
+    const delayParam = this.getAudioParam('delayTime')!;
 
     this.#pitchMultiplier = safeMultiplier;
 
@@ -151,16 +151,16 @@ export class HarmonicFeedback implements ILibAudioNode {
     const interpolated = interpolate(amount, {
       inputRange: { min: 0, max: 1 },
       outputRange: { min: Math.max(0.001, this.#MIN_FB), max: this.#MAX_FB },
-      curve: "power4",
+      curve: 'power4',
     });
 
-    this.#delay.parameters.get("feedbackAmount")!.setValueAtTime(interpolated, timestamp);
+    this.#delay.parameters.get('feedbackAmount')!.setValueAtTime(interpolated, timestamp);
     return this;
   }
 
   setAutoGain(enabled: boolean, amount: number): this {
     this.#delay.port.postMessage({
-      type: "setAutoGain",
+      type: 'setAutoGain',
       enabled: enabled,
       amount,
     });
@@ -169,17 +169,17 @@ export class HarmonicFeedback implements ILibAudioNode {
 
   setDecay(amount: number, timestamp = this.now): this {
     const mappedAmount = mapToRange(amount, 0, 1, this.#MIN_DECAY, this.#MAX_DECAY);
-    this.getAudioParam("decay")!.setValueAtTime(mappedAmount, timestamp);
+    this.getAudioParam('decay')!.setValueAtTime(mappedAmount, timestamp);
     return this;
   }
 
   setLowpassCutoff(freqHz: number) {
     if (freqHz > 16000 || freqHz < 100) {
-      console.warn("Feedback lowpass cutoff out of bounds");
+      console.warn('Feedback lowpass cutoff out of bounds');
       return;
     }
 
-    this.getAudioParam("lowpass")!.setTargetAtTime(freqHz, this.now, 0.1);
+    this.getAudioParam('lowpass')!.setTargetAtTime(freqHz, this.now, 0.1);
   }
 
   #triggerDecay(): this {
@@ -188,10 +188,10 @@ export class HarmonicFeedback implements ILibAudioNode {
     }
 
     this.#decayActive = true;
-    const currentFeedbackAmount = this.getAudioParam("feedbackAmount")!.value;
+    const currentFeedbackAmount = this.getAudioParam('feedbackAmount')!.value;
 
     this.#delay.port.postMessage({
-      type: "triggerDecay",
+      type: 'triggerDecay',
       baseFeedbackAmount: currentFeedbackAmount,
     });
 
@@ -201,7 +201,7 @@ export class HarmonicFeedback implements ILibAudioNode {
   #stopDecay(): this {
     this.#decayActive = false;
     this.#delay.port.postMessage({
-      type: "stopDecay",
+      type: 'stopDecay',
     });
     return this;
   }
@@ -209,10 +209,10 @@ export class HarmonicFeedback implements ILibAudioNode {
   // === CONNECTIONS ===
 
   connect(destination: ILibAudioNode | AudioNode): void {
-    const target = "input" in destination ? destination.input : destination;
+    const target = 'input' in destination ? destination.input : destination;
     this.#postGain.connect(target as AudioNode);
 
-    if ("nodeId" in destination) {
+    if ('nodeId' in destination) {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
@@ -220,9 +220,9 @@ export class HarmonicFeedback implements ILibAudioNode {
 
   disconnect(destination?: ILibAudioNode | AudioNode): void {
     if (destination) {
-      const target = "input" in destination ? destination.input : destination;
+      const target = 'input' in destination ? destination.input : destination;
       this.#postGain.disconnect(target as AudioNode);
-      if ("nodeId" in destination) {
+      if ('nodeId' in destination) {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }
@@ -244,16 +244,16 @@ export class HarmonicFeedback implements ILibAudioNode {
 
   setParam(name: string, value: number, time = this.now): void {
     switch (name) {
-      case "feedback":
+      case 'feedback':
         this.setFeedbackAmount(value, time);
         break;
-      case "delayTime":
+      case 'delayTime':
         this.setDelay(value, time);
         break;
-      case "amount":
+      case 'amount':
         this.setAmountMacro(value);
         break;
-      case "decay":
+      case 'decay':
         this.setDecay(value, time);
         break;
       default:

@@ -1,1 +1,1 @@
-export type AllocationStrategyType = "RoundRobin" | "LRU";
+export type AllocationStrategyType = 'RoundRobin' | 'LRU';

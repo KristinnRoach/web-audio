@@ -1,19 +1,19 @@
 // SamplePlayer.ts - Refactored with Composition Pattern
 
-import { Message, MessageHandler } from "@/events";
-import { trimAudioBuffer, type FadeMs } from "@/utils/audiodata/process/trimBuffer";
-import { clamp, ROOT_NOTES } from "@/utils";
+import { Message, MessageHandler } from '@/events';
+import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
+import { clamp, ROOT_NOTES } from '@/utils';
 
 import {
   preProcessAudioBuffer,
   PreProcessOptions,
   PreProcessResults,
-} from "@/nodes/preprocessor/Preprocessor";
+} from '@/nodes/preprocessor/Preprocessor';
 
-import { isValidAudioBuffer, isMidiValue } from "@/utils";
+import { isValidAudioBuffer, isMidiValue } from '@/utils';
 
-import { MacroParam, NormalizeOptions } from "@/nodes/params";
-import { GainStages } from "@/nodes/LibNode";
+import { MacroParam, NormalizeOptions } from '@/nodes/params';
+import { GainStages } from '@/nodes/LibNode';
 
 import {
   isValidSamplerParamValue,
@@ -21,72 +21,39 @@ import {
   type SamplerParams,
   type SamplerParamKey,
   type SamplerParamDescriptor,
-} from "./sampler-params";
+} from './sampler-params';
 
-import { LFO } from "@/nodes/params/LFOs/LFO";
-import { createInstrumentBus, type InstrumentBus } from "@/nodes/master/createInstrumentBus";
-import { BusNodeName } from "@/nodes/master/InstrumentBus";
-import { SampleVoicePool } from "./SampleVoicePool";
-import { CustomEnvelope, defaultEnvelopeState } from "@/nodes/params";
-import { type EnvelopeState, type EnvelopeType } from "@/nodes/params/envelopes";
-import { ILibInstrumentNode } from "@/nodes/LibAudioNode";
-import { registerNode, unregisterNode, NodeID } from "@/nodes/node-store";
-import { createMessageBus, MessageBus } from "@/events";
-import { CustomLibWaveform, WaveformOptions } from "@/utils/audiodata/generate/generateWaveform";
-import { createSampleVoicePool } from "./createSampleVoicePool";
-import { getAudioContext } from "@/context";
-import type { SampleVoiceChainNode } from "./SampleVoice";
+import { LFO } from '@/nodes/params/LFOs/LFO';
+import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
+import { BusNodeName } from '@/nodes/master/InstrumentBus';
+import { SampleVoicePool } from './SampleVoicePool';
+import {
+  assertValidEnvelopeSettings,
+  cloneEnvelopeSettings,
+  setDuration,
+  type Envelope,
+  type EnvelopeSettings,
+} from '@/nodes/params/envelopes';
+import { ILibInstrumentNode } from '@/nodes/LibAudioNode';
+import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
+import { createMessageBus, MessageBus } from '@/events';
+import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
+import { createSampleVoicePool } from './createSampleVoicePool';
+import { getAudioContext } from '@/context';
+import type { SampleVoiceChainNode } from './SampleVoice';
+import {
+  SAMPLE_ENVELOPE_IDS,
+  createDefaultSampleEnvelopeSettings,
+  getPostFilterEnvelopeOptions,
+  type SampleEnvelopeId,
+} from './temporary-sample-envelope-adapters';
 
-function cloneEnvelopeState(state: EnvelopeState): EnvelopeState {
-  return {
-    ...state,
-    shape: {
-      ...state.shape,
-      points: state.shape.points.map((point) => ({ ...point })),
-      valueRange: [...state.shape.valueRange],
-    },
-  };
-}
-
-const SAMPLE_ENVELOPE_TYPES = [
-  "amp-env",
-  "pitch-env",
-  "filter-env",
-] as const satisfies readonly EnvelopeType[];
-
-function validateEnvelopeState(state: EnvelopeState): void {
-  const points = state?.shape?.points;
-  if (
-    typeof state?.enabled !== "boolean" ||
-    typeof state?.loop !== "boolean" ||
-    typeof state?.playbackRateSync !== "boolean" ||
-    !Number.isFinite(state?.timeScale) ||
-    state.timeScale <= 0 ||
-    state?.shape?.kind !== "points" ||
-    !Array.isArray(points) ||
-    points.length < 2 ||
-    !Array.isArray(state.shape.valueRange) ||
-    state.shape.valueRange.length !== 2 ||
-    !state.shape.valueRange.every(Number.isFinite) ||
-    state.shape.valueRange[0] >= state.shape.valueRange[1] ||
-    points.some(
-      (point, index) =>
-        !Number.isFinite(point.time) ||
-        !Number.isFinite(point.value) ||
-        (point.curve !== undefined && point.curve !== "linear" && point.curve !== "exponential") ||
-        (index > 0 && point.time < points[index - 1].time),
-    ) ||
-    (state.shape.sustainIndex !== null &&
-      (!Number.isInteger(state.shape.sustainIndex) ||
-        state.shape.sustainIndex < 0 ||
-        state.shape.sustainIndex >= points.length)) ||
-    !Number.isInteger(state.shape.releaseIndex) ||
-    state.shape.releaseIndex < 0 ||
-    state.shape.releaseIndex >= points.length
-  ) {
-    throw new TypeError("Invalid envelope state");
-  }
-}
+/**
+ * Filter envelope depth, normalized against the filter's usable range.
+ *
+ * 0.13 is roughly the 3 kHz this was fixed at before, at a 48 kHz sample rate.
+ */
+const DEFAULT_FILTER_ENV_AMOUNT = 0.13;
 
 export type SamplePlayerOptions = {
   context?: AudioContext;
@@ -97,14 +64,15 @@ export type SamplePlayerOptions = {
 
 export class SamplePlayer implements ILibInstrumentNode {
   public readonly nodeId: NodeID;
-  readonly nodeType = "sample-player" as const;
+  readonly nodeType = 'sample-player' as const;
   readonly context: AudioContext;
   #messages: MessageBus<Message>;
 
   #initialized = false;
   #initPromise: Promise<void> | null = null;
   #isLoaded = false;
-  private readonly envelopeStates = new Map<EnvelopeType, EnvelopeState>();
+  private readonly envelopeSettings = new Map<SampleEnvelopeId, EnvelopeSettings>();
+  private readonly playbackRateSyncedEnvelopes = new Set<SampleEnvelopeId>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
   #initialAudioBuffer: AudioBuffer | null = null;
@@ -138,6 +106,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
+  #filterEnvAmount: number = DEFAULT_FILTER_ENV_AMOUNT;
   #loopTempoSync = false; // TODO: Implement!
   #MAX_TEMPO = 300;
   #MIN_TEMPO = 20;
@@ -154,10 +123,10 @@ export class SamplePlayer implements ILibInstrumentNode {
   outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
-  #sustainedNotes = new Set<MidiValue>();
+  #sustainedNotes = new Map<MidiValue, number>();
 
   constructor(options: SamplePlayerOptions = {}) {
-    this.nodeId = registerNode("sample-player", this);
+    this.nodeId = registerNode('sample-player', this);
     this.context = options.context ?? getAudioContext();
 
     // Synchronus setup
@@ -239,12 +208,12 @@ export class SamplePlayer implements ILibInstrumentNode {
   // === CONNECTIONS ===
 
   public connect(destination: ILibInstrumentNode | AudioNode): void {
-    const target = "input" in destination && destination.input ? destination.input : destination;
+    const target = 'input' in destination && destination.input ? destination.input : destination;
 
     this.#masterOut.connect(target as AudioNode);
 
     // Track the connection by NodeID if possible
-    if ("nodeId" in destination) {
+    if ('nodeId' in destination) {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
@@ -252,9 +221,9 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   public disconnect(destination?: ILibInstrumentNode | AudioNode): void {
     if (destination) {
-      const target = "input" in destination ? destination.input : destination;
+      const target = 'input' in destination ? destination.input : destination;
       this.#masterOut.disconnect(target as AudioNode);
-      if ("nodeId" in destination) {
+      if ('nodeId' in destination) {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }
@@ -305,72 +274,65 @@ export class SamplePlayer implements ILibInstrumentNode {
   /* === MESSAGES === */
 
   #setupMessageHandling(): this {
-    this.voicePool.onMessage("sample:loaded", () => {
+    this.voicePool.onMessage('sample:loaded', () => {
       this.#isLoaded = true;
-      this.envelopeStates.forEach((state, type) => {
-        this.applyEnvelopeStateToVoices(type, state);
-        // Update envelope durations to match the new buffer duration
-        this.voicePool.applyToAllVoices((voice) => {
-          voice.getEnvelope(type)?.setDuration(this.#bufferDuration);
-        });
-      });
 
-      SAMPLE_ENVELOPE_TYPES.forEach((type) => {
-        this.emitEnvelopeChanged(type);
+      // Rescale every shape to the new buffer and push it down. Voices come up on
+      // their own defaults, so this is also what first puts them on the owned state -
+      // without it the player and its voices would hold different shapes.
+      SAMPLE_ENVELOPE_IDS.forEach((id) => {
+        const settings = this.getEnvelopeSettings(id);
+        this.applyEnvelopeSettings(id, {
+          ...settings,
+          envelope: setDuration(settings.envelope, this.#bufferDuration),
+        });
       });
     });
 
-    this.voicePool.onMessage("voice-pool:initialized", () => {
-      this.sendUpstreamMessage("sample-player:initialized", {});
+    this.voicePool.onMessage('voice-pool:initialized', () => {
+      // Fresh voices start on defaults, so hand them the owned state before they play.
+      SAMPLE_ENVELOPE_IDS.forEach((id) => {
+        const settings = this.getEnvelopeSettings(id);
+        this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, settings));
+      });
+      this.playbackRateSyncedEnvelopes.forEach((id) =>
+        this.voicePool.applyToAllVoices((voice) => voice.setEnvelopePlaybackRateSync(id, true)),
+      );
+      this.sendUpstreamMessage('sample-player:initialized', {});
     });
 
     // Forward voice pool messages upstream
     this.#messages.forwardFrom(this.voicePool, [
-      "voice-pool:initialized",
-      "voice:started",
-      "voice:stopped",
-      "voice:releasing",
-      "sample:loaded",
-
-      "amp-env:created",
-      "amp-env:trigger",
-      "amp-env:trigger:loop",
-      "amp-env:release",
-
-      "pitch-env:created",
-      "pitch-env:trigger",
-      "pitch-env:trigger:loop",
-      "pitch-env:release",
-
-      "filter-env:created",
-      "filter-env:trigger",
-      "filter-env:trigger:loop",
-      "filter-env:release",
+      'voice-pool:initialized',
+      'voice:started',
+      'voice:stopped',
+      'voice:releasing',
+      'sample:loaded',
     ]);
     return this;
   }
 
   /* === MACROS === */
 
-  getMacrosAudioParam(paramName: "loopStart" | "loopEnd") {
+  getMacrosAudioParam(paramName: 'loopStart' | 'loopEnd') {
     switch (paramName) {
-      case "loopStart":
+      case 'loopStart':
         return this.#macroLoopStart.audioParam;
-      case "loopEnd":
+      case 'loopEnd':
         return this.#macroLoopEnd.audioParam;
       default:
-        throw new Error("Unknown macro parameter");
+        throw new Error('Unknown macro parameter');
     }
   }
 
-  getMacro(paramName: "loopStart" | "loopEnd") {
+  getMacro(paramName: 'loopStart' | 'loopEnd') {
     switch (paramName) {
-      case "loopStart":
+      case 'loopStart':
         return this.#macroLoopStart;
-      case "loopEnd":
+      case 'loopEnd':
         return this.#macroLoopEnd;
       default:
-        throw new Error("Unknown macro parameter");
+        throw new Error('Unknown macro parameter');
     }
   }
 
@@ -378,19 +340,19 @@ export class SamplePlayer implements ILibInstrumentNode {
     const voices = this.voicePool.allVoices;
 
     voices.forEach((voice) => {
-      const loopStartParam = voice.getParam("loopStart");
-      const loopEndParam = voice.getParam("loopEnd");
+      const loopStartParam = voice.getParam('loopStart');
+      const loopEndParam = voice.getParam('loopEnd');
 
       if (loopStartParam) {
-        this.#macroLoopStart.addTarget(loopStartParam, "loopStart");
+        this.#macroLoopStart.addTarget(loopStartParam, 'loopStart');
       } else {
-        console.error("loopStart param is null!");
+        console.error('loopStart param is null!');
       }
 
       if (loopEndParam) {
-        this.#macroLoopEnd.addTarget(loopEndParam, "loopEnd");
+        this.#macroLoopEnd.addTarget(loopEndParam, 'loopEnd');
       } else {
-        console.error("loopEnd param is null!");
+        console.error('loopEnd param is null!');
       }
     });
 
@@ -407,15 +369,15 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === LFOs === */
 
-  setModulationAmount = (modType: "AM" | "FM", amount: number) =>
+  setModulationAmount = (modType: 'AM' | 'FM', amount: number) =>
     this.voicePool.applyToAllVoices((v) => v.setModulationAmount(modType, amount));
 
   setAMModOctaveOffset = (offset: number) =>
     this.voicePool.applyToAllVoices((v) => v.setAMModOctaveOffset(offset));
 
   setModulationWaveform(
-    modType: "AM" | "FM" = "AM",
-    waveform: CustomLibWaveform | OscillatorType | PeriodicWave = "triangle",
+    modType: 'AM' | 'FM' = 'AM',
+    waveform: CustomLibWaveform | OscillatorType | PeriodicWave = 'triangle',
     customWaveOptions: WaveformOptions = {},
   ) {
     this.voicePool.applyToAllVoices((v) =>
@@ -423,8 +385,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     );
   }
 
-  syncLFOsToNoteFreq(lfoId: "gain-lfo" | "pitch-lfo", enabled: boolean) {
-    if (lfoId === "gain-lfo") {
+  syncLFOsToNoteFreq(lfoId: 'gain-lfo' | 'pitch-lfo', enabled: boolean) {
+    if (lfoId === 'gain-lfo') {
       if (enabled === true) {
         this.#gainLFO?.storeCurrentValues();
       } else {
@@ -434,7 +396,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       this.#syncGainLFOToMidiNote = enabled;
     }
-    if (lfoId === "pitch-lfo") {
+    if (lfoId === 'pitch-lfo') {
       if (enabled === true) {
         this.#pitchLFO?.storeCurrentValues();
       } else {
@@ -448,14 +410,14 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #setupLFOs() {
     this.#gainLFO = new LFO(this.context);
-    this.#gainLFO.setWaveform("sine");
+    this.#gainLFO.setWaveform('sine');
 
     this.#pitchLFO = new LFO(this.context);
     const wobbleWave = this.#pitchLFO.getPitchWobbleWaveform();
     this.#pitchLFO.setWaveform(wobbleWave);
 
     // Connections
-    this.#connectLFOToAllVoices(this.#pitchLFO, "playbackRate");
+    this.#connectLFOToAllVoices(this.#pitchLFO, 'playbackRate');
     this.#gainLFO.connect(this.outBus.input.gain);
     // this.#connectLFOToAllVoices(this.#gainLFO, 'playbackPosition');
   }
@@ -504,7 +466,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer[] | null> {
     if (this.#isLoading) {
-      throw new Error("A sample load is already in progress");
+      throw new Error('A sample load is already in progress');
     }
     this.#isLoading = true;
     let unsubscribe: (() => void) | undefined;
@@ -590,7 +552,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#zeroCrossings = newZeroCrossings;
 
       const loadedPromise = new Promise<void>((resolve) => {
-        unsubscribe = this.voicePool.onMessage("sample:loaded", () => {
+        unsubscribe = this.voicePool.onMessage('sample:loaded', () => {
           resolve();
         });
       });
@@ -599,7 +561,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#resetMacros();
 
       const defaultScaleOptions = {
-        rootNote: "C" as keyof typeof ROOT_NOTES,
+        rootNote: 'C' as keyof typeof ROOT_NOTES,
         scale: [0],
         lowestOctave: 0,
         highestOctave: 5,
@@ -627,7 +589,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   async cropSample(
     startSeconds = this.getStartPoint(),
     endSeconds = this.getEndPoint(),
-    fadeMs: FadeMs = { in: "default", out: "default" },
+    fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
     const buffer = this.#audiobuffer;
     if (!buffer) return null;
@@ -677,7 +639,10 @@ export class SamplePlayer implements ILibInstrumentNode {
     const transposedMidiNote = midiNote + this.#transposedBySemitones;
 
     if (this.#sustainPedalPressed) {
-      this.#sustainedNotes.add(transposedMidiNote);
+      this.#sustainedNotes.set(
+        transposedMidiNote,
+        (this.#sustainedNotes.get(transposedMidiNote) ?? 0) + 1,
+      );
       return this;
     }
 
@@ -685,13 +650,15 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#sustainedNotes.delete(transposedMidiNote);
 
     this.voicePool.noteOff(transposedMidiNote);
-    this.sendUpstreamMessage("note:off", { transposedMidiNote });
+    this.outBus.noteOff(transposedMidiNote);
+    this.sendUpstreamMessage('note:off', { transposedMidiNote });
     return this;
   }
 
   releaseAll(releaseTime?: number): this {
     this.#sustainedNotes.clear();
     this.voicePool?.allNotesOff(releaseTime);
+    this.outBus?.releaseAll();
     return this;
   }
 
@@ -761,7 +728,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setSampleStartPoint(seconds: number): this {
     this.voicePool.applyToAllVoices((voice) => voice.setStartPoint(seconds));
 
-    this.sendUpstreamMessage("start-point:updated", {
+    this.sendUpstreamMessage('start-point:updated', {
       startPoint: seconds,
     });
     return this;
@@ -770,7 +737,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setSampleEndPoint(seconds: number): this {
     this.voicePool.applyToAllVoices((voice) => voice.setEndPoint(seconds));
 
-    this.sendUpstreamMessage("end-point:updated", {
+    this.sendUpstreamMessage('end-point:updated', {
       endPoint: seconds,
     });
     return this;
@@ -796,7 +763,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     voices.forEach((v) => v.setLoopEnabled(enabled));
     this.#loopEnabled = enabled;
 
-    this.sendUpstreamMessage("loop:enabled", { enabled });
+    this.sendUpstreamMessage('loop:enabled', { enabled });
     return this;
   }
 
@@ -806,7 +773,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#loopLocked = locked;
     this.setLoopEnabled(locked);
 
-    this.sendUpstreamMessage("loop:locked", { locked });
+    this.sendUpstreamMessage('loop:locked', { locked });
     return this;
   }
 
@@ -816,7 +783,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.#holdEnabled = enabled;
     if (!enabled) this.releaseAll(0.1);
-    this.sendUpstreamMessage("hold:enabled", { enabled });
+    this.sendUpstreamMessage('hold:enabled', { enabled });
     return this;
   }
 
@@ -826,7 +793,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#holdLocked = locked;
     if (locked === false) this.releaseAll();
 
-    this.sendUpstreamMessage("hold:locked", { locked });
+    this.sendUpstreamMessage('hold:locked', { locked });
     return this;
   }
 
@@ -852,9 +819,11 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
 
     if (!pressed) {
-      for (const note of this.#sustainedNotes) {
+      for (const [note, count] of this.#sustainedNotes) {
         this.voicePool.noteOff(note);
-        this.sendUpstreamMessage("note:off", { transposedMidiNote: note });
+        // One outBus release per held release: InstrumentBus counts note-ons.
+        for (let i = 0; i < count; i++) this.outBus.noteOff(note);
+        this.sendUpstreamMessage('note:off', { transposedMidiNote: note });
       }
       this.#sustainedNotes.clear();
     }
@@ -865,7 +834,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   sustainPedalOn = (): this => this.setSustainPedal(true);
   sustainPedalOff = (): this => this.setSustainPedal(false);
 
-  setPlaybackDirection(direction: "forward" | "reverse"): this {
+  setPlaybackDirection(direction: 'forward' | 'reverse'): this {
     this.voicePool.applyToAllVoices((voice) => voice.setPlaybackDirection(direction));
     return this;
   }
@@ -890,15 +859,15 @@ export class SamplePlayer implements ILibInstrumentNode {
   readonly MIN_LOOP_DURATION_SECONDS = 1 / 523.25; // C5 = 523.25 Hz, C6 = 1046.502
 
   setLoopStart = (seconds: number, rampTime: number = this.getLoopRampDuration()) => {
-    return this.setLoopPoint("start", seconds, this.loopEnd, rampTime);
+    return this.setLoopPoint('start', seconds, this.loopEnd, rampTime);
   };
 
   setLoopEnd = (seconds: number, rampTime: number = this.getLoopRampDuration()) => {
-    return this.setLoopPoint("end", this.loopStart, seconds, rampTime);
+    return this.setLoopPoint('end', this.loopStart, seconds, rampTime);
   };
 
   setLoopDuration = (seconds: number, rampTime: number = this.getLoopRampDuration()) =>
-    this.setLoopPoint("end", this.loopStart, this.loopStart + seconds, rampTime);
+    this.setLoopPoint('end', this.loopStart, this.loopStart + seconds, rampTime);
 
   debugcounter = 0;
 
@@ -908,7 +877,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.voicePool.applyToAllVoices((voice) => voice.setTempo(bpm));
 
-    this.sendUpstreamMessage("tempo:updated", { bpm });
+    this.sendUpstreamMessage('tempo:updated', { bpm });
     return this;
   }
 
@@ -932,17 +901,17 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   setLoopPoint(
-    loopPoint: "start" | "end",
+    loopPoint: 'start' | 'end',
     loopStartSeconds: number,
     loopEndSeconds: number,
     rampDuration: number = this.getLoopRampDuration(),
   ) {
     let loopStart =
-      loopPoint === "start"
+      loopPoint === 'start'
         ? clamp(loopStartSeconds, this.MIN_LOOP_DURATION_SECONDS / 2, loopEndSeconds)
         : loopStartSeconds;
 
-    if (loopPoint === "start" && loopStart === this.loopStart) return this;
+    if (loopPoint === 'start' && loopStart === this.loopStart) return this;
 
     let loopEnd = clamp(
       loopEndSeconds,
@@ -950,11 +919,11 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#bufferDuration - this.MIN_LOOP_DURATION_SECONDS / 2,
     );
 
-    if (loopPoint === "end" && loopEnd === this.loopEnd) return this;
+    if (loopPoint === 'end' && loopEnd === this.loopEnd) return this;
 
     const targetLoopDuration = loopEnd - loopStart;
 
-    if (loopPoint === "start" && loopStart !== this.loopStart) {
+    if (loopPoint === 'start' && loopStart !== this.loopStart) {
       // handle tempo loop sync for loop start
       if (this.#loopTempoSync) {
         const beatDuration = 60 / this.#tempo;
@@ -967,7 +936,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       }
 
       this.#macroLoopStart.ramp(loopStart, rampDuration, loopEnd);
-    } else if (loopPoint === "end" && loopEnd !== this.loopEnd) {
+    } else if (loopPoint === 'end' && loopEnd !== this.loopEnd) {
       // handle tempo loop sync for loop end
       if (this.#loopTempoSync) {
         const beatDuration = 60 / this.#tempo;
@@ -982,7 +951,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#macroLoopEnd.ramp(loopEnd, rampDuration, loopStart);
     }
 
-    this.sendUpstreamMessage("loop-points:updated", {
+    this.sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -995,7 +964,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#macroLoopStart.setValue(loopStart, timestamp);
     this.#macroLoopEnd.setValue(loopEnd, timestamp);
 
-    this.sendUpstreamMessage("loop-points:updated", {
+    this.sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -1005,22 +974,22 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   setParam(name: string, value: number): this {
     switch (name) {
-      case "startPoint":
+      case 'startPoint':
         this.setSampleStartPoint(value);
         break;
-      case "endPoint":
+      case 'endPoint':
         this.setSampleEndPoint(value);
         break;
-      case "glideTime":
+      case 'glideTime':
         this.setGlideTime(value);
         break;
-      case "loopStart":
+      case 'loopStart':
         this.setLoopStart(value);
         break;
-      case "loopEnd":
+      case 'loopEnd':
         this.setLoopEnd(value);
         break;
-      case "loopRampDuration":
+      case 'loopRampDuration':
         this.setLoopRampDuration(value);
         break;
       default:
@@ -1046,9 +1015,9 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   getAudioParam(name: string): AudioParam | null {
     switch (name) {
-      case "loopStart":
+      case 'loopStart':
         return this.#macroLoopStart.audioParam;
-      case "loopEnd":
+      case 'loopEnd':
         return this.#macroLoopEnd.audioParam;
       default:
         console.warn(`Parameter '${name}' not found on SamplePlayer`);
@@ -1078,21 +1047,21 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   getParameterValue(name: string): number | undefined {
     switch (name) {
-      case "loopStart":
+      case 'loopStart':
         return this.loopStart;
-      case "loopEnd":
+      case 'loopEnd':
         return this.loopEnd;
-      case "loopRampDuration":
+      case 'loopRampDuration':
         return this.getLoopRampDuration();
-      case "startPoint":
+      case 'startPoint':
         return this.getStartPoint();
-      case "endPoint":
+      case 'endPoint':
         return this.getEndPoint();
-      case "glideTime":
+      case 'glideTime':
         return this.getGlideTime();
-      case "hpfCutoff":
+      case 'hpfCutoff':
         return this.getHpfCutoff();
-      case "lpfCutoff":
+      case 'lpfCutoff':
         return this.getLpfCutoff();
       default:
         console.warn(`Unknown parameter: ${name}`);
@@ -1109,123 +1078,75 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === ENVELOPES === */
 
-  /** Returns a detached, serializable envelope snapshot. */
-  getEnvelopeState(type: EnvelopeType): EnvelopeState {
-    const stored = this.envelopeStates.get(type);
-    if (stored) return cloneEnvelopeState(stored);
+  /**
+   * Returns detached, serializable envelope settings.
+   *
+   * This map is the only copy of envelope settings in the instrument. Voices hold a
+   * pushed-down duplicate they can schedule from but never write to, so there is no
+   * second authority to read back from and nothing to invalidate.
+   */
+  getEnvelopeSettings(id: SampleEnvelopeId): EnvelopeSettings {
+    const stored = this.envelopeSettings.get(id);
+    if (stored) return cloneEnvelopeSettings(stored);
 
-    const envelope = this.getEnvelope(type);
-    const state = envelope.getState();
-    this.envelopeStates.set(type, state);
-    return cloneEnvelopeState(state);
+    const settings = createDefaultSampleEnvelopeSettings(id, this.sampleDuration || 1);
+    this.envelopeSettings.set(id, settings);
+    return cloneEnvelopeSettings(settings);
   }
 
   /** Applies a complete snapshot and emits one `envelope:changed` message. */
-  applyEnvelopeState(type: EnvelopeType, state: EnvelopeState): void {
-    validateEnvelopeState(state);
+  applyEnvelopeSettings(id: SampleEnvelopeId, settings: EnvelopeSettings): void {
+    assertValidEnvelopeSettings(settings);
 
-    const nextState = cloneEnvelopeState(state);
-    this.envelopeStates.set(type, nextState);
-    this.applyEnvelopeStateToVoices(type, nextState);
-    this.sendUpstreamMessage("envelope:changed", {
-      envelopeType: type,
-      state: cloneEnvelopeState(nextState),
+    const next = cloneEnvelopeSettings(settings);
+    this.envelopeSettings.set(id, next);
+
+    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, next));
+
+    if (id === 'filter-env') {
+      this.applyPostFilterEnvelope(next);
+    }
+
+    this.sendUpstreamMessage('envelope:changed', {
+      envelopeId: id,
+      settings: cloneEnvelopeSettings(next),
     });
+  }
+
+  /**
+   * The post-FX cutoff follows the same envelope definition. `InstrumentBus.noteOn`
+   * adds the triggering MIDI note's playback rate to the envelope's own time scale.
+   */
+  private applyPostFilterEnvelope(settings: EnvelopeSettings): void {
+    this.setLpfEnvelope(
+      settings.envelope,
+      getPostFilterEnvelopeOptions(settings, this.#filterEnvAmount),
+    );
   }
 
   /** Restores one envelope to defaults sized to the current authority sample. */
-  resetEnvelope(type: EnvelopeType): void {
-    this.applyEnvelopeState(type, defaultEnvelopeState(type, this.sampleDuration || 1));
+  resetEnvelope(id: SampleEnvelopeId): void {
+    this.applyEnvelopeSettings(
+      id,
+      createDefaultSampleEnvelopeSettings(id, this.sampleDuration || 1),
+    );
   }
 
-  /** Restores all sample envelopes to defaults sized to the current authority sample. */
+  /** Restores all envelopes to defaults sized to the current sample. */
   resetEnvelopes(): void {
-    SAMPLE_ENVELOPE_TYPES.forEach((type) => this.resetEnvelope(type));
-  }
-
-  private applyEnvelopeStateToVoices(type: EnvelopeType, state: EnvelopeState): void {
-    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeState(type, state));
-  }
-
-  private emitEnvelopeChanged(type: EnvelopeType): void {
-    if (type !== "amp-env" && type !== "pitch-env" && type !== "filter-env") return;
-    if (!this.voicePool.allVoices[0]?.getEnvelope(type)) return;
-    this.envelopeStates.delete(type);
-    this.sendUpstreamMessage("envelope:changed", {
-      envelopeType: type,
-      state: this.getEnvelopeState(type),
-    });
+    SAMPLE_ENVELOPE_IDS.forEach((id) => this.resetEnvelope(id));
   }
 
   /** Envelope types on the current voices; empty until the pool is initialized. */
-  get availableEnvelopeTypes(): EnvelopeType[] {
+  get availableEnvelopeIds(): SampleEnvelopeId[] {
     return [...(this.voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
   }
 
-  enableEnvelope = (envType: EnvelopeType) => {
-    this.voicePool.applyToAllVoices((voice) => voice.enableEnvelope(envType));
-    this.emitEnvelopeChanged(envType);
+  setEnvelopeSync = (id: SampleEnvelopeId, sync: boolean) => {
+    if (sync) this.playbackRateSyncedEnvelopes.add(id);
+    else this.playbackRateSyncedEnvelopes.delete(id);
+    this.voicePool.applyToAllVoices((voice) => voice.setEnvelopePlaybackRateSync(id, sync));
   };
-
-  disableEnvelope = (envType: EnvelopeType) => {
-    this.voicePool.applyToAllVoices((voice) => voice.disableEnvelope(envType));
-    this.emitEnvelopeChanged(envType);
-  };
-
-  /** @deprecated Prefer getEnvelopeState() and applyEnvelopeState(). */
-  getEnvelope(envType: EnvelopeType): CustomEnvelope {
-    const firstVoice = this.voicePool.allVoices[0];
-    if (!firstVoice) throw new Error("No voices available in voice pool");
-
-    const envelope = firstVoice.getEnvelope(envType);
-    if (!envelope) throw new Error(`Envelope type '${envType}' not found`);
-
-    return envelope;
-  }
-
-  setEnvelopeLoop = (
-    envType: EnvelopeType,
-    loop: boolean,
-    mode: "normal" | "ping-pong" | "reverse" = "normal",
-  ) => {
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeLoop(envType, loop, mode));
-    this.emitEnvelopeChanged(envType);
-  };
-
-  setEnvelopeSync = (envType: EnvelopeType, sync: boolean) => {
-    this.voicePool.applyToAllVoices((v) => v.syncEnvelopeToPlaybackRate(envType, sync));
-    this.emitEnvelopeChanged(envType);
-  };
-
-  setEnvelopeTimeScale = (envType: EnvelopeType, timeScale: number) => {
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeTimeScale(envType, timeScale));
-    this.emitEnvelopeChanged(envType);
-  };
-
-  setEnvelopeSustainPoint(envType: EnvelopeType, index: number | null) {
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeSustainPoint(envType, index));
-    this.emitEnvelopeChanged(envType);
-  }
-
-  setEnvelopeReleasePoint(envType: EnvelopeType, index: number) {
-    this.voicePool.applyToAllVoices((v) => v.setEnvelopeReleasePoint(envType, index));
-    this.emitEnvelopeChanged(envType);
-  }
-
-  updateEnvelopePoint(envType: EnvelopeType, index: number, time: number, value: number): void {
-    this.voicePool.applyToAllVoices((v) => v.updateEnvelopePoint(envType, index, time, value));
-    this.emitEnvelopeChanged(envType);
-  }
-
-  addEnvelopePoint(envType: EnvelopeType, time: number, value: number): void {
-    this.voicePool.applyToAllVoices((v) => v.addEnvelopePoint(envType, time, value));
-    this.emitEnvelopeChanged(envType);
-  }
-
-  deleteEnvelopePoint(envType: EnvelopeType, index: number): void {
-    this.voicePool.applyToAllVoices((v) => v.deleteEnvelopePoint(envType, index));
-    this.emitEnvelopeChanged(envType);
-  }
 
   /**
    * Named tap points covering the whole instrument, from inside the voices
@@ -1254,25 +1175,37 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.outBus.setSendAmount(effect, amount);
   };
 
-  setLpfCutoff = (hz: number, preOrPostFx: "pre" | "post" | "all" = "all") => {
+  setLpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' | 'all' = 'all') => {
     this.#lpfCutoff = hz;
-    if (preOrPostFx === "pre" || preOrPostFx === "all") {
+    if (preOrPostFx === 'pre' || preOrPostFx === 'all') {
       this.voicePool.applyToAllVoices((v) => {
         v.setLpfCutoff(hz);
       });
     }
-    if (preOrPostFx === "post" || preOrPostFx === "all") {
+    if (preOrPostFx === 'post' || preOrPostFx === 'all') {
       this.outBus.setLpfCutoff(hz);
     }
   };
 
-  setHpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "post") => {
+  /**
+   * Envelope for the post-FX lowpass cutoff. See `InstrumentBus.setLpfEnvelope`.
+   * Set `setLpfCutoff` low first - it is the base the sweep starts from, and it
+   * defaults to wide open, where a sweep upwards is inaudible.
+   */
+  setLpfEnvelope = (
+    envelope: Envelope | null,
+    options: { amount?: number; timeScale?: number } = {},
+  ) => {
+    this.outBus.setLpfEnvelope(envelope, options);
+  };
+
+  setHpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' = 'post') => {
     this.#hpfCutoff = hz;
-    if (preOrPostFx === "pre") {
+    if (preOrPostFx === 'pre') {
       this.voicePool.applyToAllVoices((v) => {
         v.setHpfCutoff(hz);
       });
-    } else if (preOrPostFx === "post") {
+    } else if (preOrPostFx === 'post') {
       this.outBus.setHpfCutoff(hz);
     }
   };
@@ -1300,29 +1233,29 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   setFeedbackAmount = (amount: number) => {
     amount = clamp(amount, 0, 1);
-    if (this.#feedbackMode === "monophonic" || this.#feedbackMode === "double-trouble") {
+    if (this.#feedbackMode === 'monophonic' || this.#feedbackMode === 'double-trouble') {
       this.outBus.setFeedbackAmount(amount);
     }
 
-    if (this.#feedbackMode === "polyphonic" || this.#feedbackMode === "double-trouble") {
+    if (this.#feedbackMode === 'polyphonic' || this.#feedbackMode === 'double-trouble') {
       this.voicePool.applyToAllVoices((voice) => {
         voice.feedback?.setAmountMacro(amount);
       });
     }
   };
 
-  #feedbackMode: "monophonic" | "polyphonic" | "double-trouble" = "monophonic";
+  #feedbackMode: 'monophonic' | 'polyphonic' | 'double-trouble' = 'monophonic';
 
-  setFeedbackMode(mode: "monophonic" | "polyphonic" | "double-trouble") {
+  setFeedbackMode(mode: 'monophonic' | 'polyphonic' | 'double-trouble') {
     this.#feedbackMode = mode;
 
-    if (mode === "monophonic") {
+    if (mode === 'monophonic') {
       let currAmount = this.voicePool.allVoices[0].feedback?.currentAmount ?? 0;
       this.voicePool.applyToAllVoices((voice) => {
         voice.feedback?.setAmountMacro(0);
       });
       this.outBus.setFeedbackAmount(currAmount);
-    } else if (mode === "polyphonic") {
+    } else if (mode === 'polyphonic') {
       const monoFx = this.outBus.getFeedback();
       const currAmount = monoFx.currentAmount;
 
@@ -1332,7 +1265,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         voice.feedback?.setAmountMacro(currAmount);
       });
     } else {
-      console.info("Feedback mode set to double-trouble, radical!");
+      console.info('Feedback mode set to double-trouble, radical!');
     }
   }
 

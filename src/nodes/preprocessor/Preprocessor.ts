@@ -1,12 +1,12 @@
 // Preprocessor.ts
-import { normalizeAudioBuffer } from "@/utils/audiodata/process/normalizeAudioBuffer";
-import { compressAudioBuffer } from "@/utils/audiodata/process/compressAudioBuffer";
-import { shouldCompress } from "@/utils/audiodata/process/shouldCompress";
-import { detectThresholdCrossing } from "@/utils/audiodata/process/detectSilence";
-import { trimAudioBuffer, type FadeMs } from "@/utils/audiodata/process/trimBuffer";
-import { detectSinglePitchAC } from "@/utils/audiodata/pitchDetection";
-import { findClosestNote, frequencyToMidi } from "@/utils";
-import { findZeroCrossings } from "@/utils";
+import { normalizeAudioBuffer } from '@/utils/audiodata/process/normalizeAudioBuffer';
+import { compressAudioBuffer } from '@/utils/audiodata/process/compressAudioBuffer';
+import { shouldCompress } from '@/utils/audiodata/process/shouldCompress';
+import { detectThresholdCrossing } from '@/utils/audiodata/process/detectSilence';
+import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
+import { detectSinglePitchAC } from '@/utils/audiodata/pitchDetection';
+import { findClosestNote, frequencyToMidi } from '@/utils';
+import { findZeroCrossings } from '@/utils';
 
 export type PreProcessOptions = {
   skipPreProcessing?: boolean;
@@ -37,7 +37,7 @@ export const DEFAULT_PRE_PROCESS_OPTIONS: PreProcessOptions = {
   normalize: { enabled: true, maxAmplitudePeak: 0.99 }, // amplitude range [-1, 1]
   compress: { enabled: false }, // TODO: Remove or replace with proper compression (e.g. offline audiocontext native node)
   trimSilence: { enabled: true, threshold: 0.005 },
-  fadeMs: { in: "default", out: "default" },
+  fadeMs: { in: 'default', out: 'default' },
   tune: { detectPitch: true, autotune: true, targetMidiNote: 60, minPeriodicity: 0.35 },
   hpf: { auto: true },
   getZeroCrossings: true,
@@ -70,7 +70,7 @@ export async function preProcessAudioBuffer(
     if (getZeroCrossings) {
       // ? Consider running zero detection on all channels and returning array of arrays
       const zeroes = findZeroCrossings(buffer.getChannelData(0), {
-        unit: "seconds",
+        unit: 'seconds',
         sampleRate: buffer.sampleRate,
       });
       finalResults.zeroCrossings = zeroes;
@@ -115,9 +115,9 @@ export async function preProcessAudioBuffer(
 
   // Apply HPF first (before normalization) to avoid filter-induced clipping
   if (hpf) {
-    if ("cutoff" in hpf) {
+    if ('cutoff' in hpf) {
       processed = await applyHighPassFilter(processed, hpf.cutoff ?? 80);
-    } else if ("auto" in hpf && hpf.auto) {
+    } else if ('auto' in hpf && hpf.auto) {
       // For auto HPF, we need pitch detection first
       const tempPitch = await detectPitch(prePitchDetection);
       const usable =
@@ -165,7 +165,7 @@ export async function preProcessAudioBuffer(
     }
   }
 
-  if (tune?.detectPitch || tune?.autotune || (hpf && "auto" in hpf && hpf.auto)) {
+  if (tune?.detectPitch || tune?.autotune || (hpf && 'auto' in hpf && hpf.auto)) {
     const detectedPitch = await detectPitch(prePitchDetection);
     // Use target MIDI note 60 (C4) or a provided target note
     const targetMidiNote = tune?.targetMidiNote || 60;
@@ -188,10 +188,10 @@ export async function preProcessAudioBuffer(
       results.detectedPitch.periodicity < minPeriodicity
     ) {
       console.info(
-        `Skipped autotune: input is not periodic enough (${results.detectedPitch?.periodicity.toFixed(3) ?? "n/a"} < ${minPeriodicity})`,
+        `Skipped autotune: input is not periodic enough (${results.detectedPitch?.periodicity.toFixed(3) ?? 'n/a'} < ${minPeriodicity})`,
       );
     } else if (Math.abs(results.detectedPitch.transpositionSemitones!) < 0.1) {
-      console.info("Skipped autotune - detected pitch is already C");
+      console.info('Skipped autotune - detected pitch is already C');
     } else {
       processed = resampleForPitch(ctx, processed, results.detectedPitch.transpositionSemitones!);
     }
@@ -203,7 +203,7 @@ export async function preProcessAudioBuffer(
 
   if (getZeroCrossings) {
     const zeroes = findZeroCrossings(processed.getChannelData(0), {
-      unit: "seconds",
+      unit: 'seconds',
       sampleRate: processed.sampleRate,
     });
     results.zeroCrossings = zeroes;
@@ -263,7 +263,7 @@ function resampleForPitch(ctx: AudioContext, buffer: AudioBuffer, semitones: num
 async function detectPitch(buffer: AudioBuffer) {
   const { frequency, periodicity } = await detectSinglePitchAC(buffer);
   const targetNoteInfo = findClosestNote(frequency);
-  const midiFloat = frequencyToMidi(frequency, "none");
+  const midiFloat = frequencyToMidi(frequency, 'none');
 
   console.table({
     frequency,
@@ -299,7 +299,7 @@ async function applyHighPassFilter(
   const source = offlineCtx.createBufferSource();
   const filter = offlineCtx.createBiquadFilter();
 
-  filter.type = "highpass";
+  filter.type = 'highpass';
   filter.frequency.value = cutoff;
   filter.Q.value = q;
 

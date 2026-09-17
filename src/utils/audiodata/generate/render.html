@@ -177,7 +177,7 @@
                               </g>
                             </g>`;
         // Insert the eyesPath just before </svg>
-        return svgContent.replace("</svg>", `${eyesGroup}</svg>`);
+        return svgContent.replace('</svg>', `${eyesGroup}</svg>`);
       }
 
       function convertToWormLogoFormat(
@@ -293,18 +293,18 @@
       function copySVGToClipboard(svgString, waveformName, button) {
         // Minify SVG string: remove line breaks, extra spaces, and comments
         let minified = svgString
-          .replace(/\n+/g, "")
-          .replace(/>\s+</g, "><")
-          .replace(/\s{2,}/g, " ")
-          .replace(/<!--.*?-->/g, "");
+          .replace(/\n+/g, '')
+          .replace(/>\s+</g, '><')
+          .replace(/\s{2,}/g, ' ')
+          .replace(/<!--.*?-->/g, '');
         navigator.clipboard.writeText(minified).then(() => {
           // Brief visual feedback
           const originalText = button.textContent;
-          button.textContent = "Copied!";
-          button.style.backgroundColor = "#28a745";
+          button.textContent = 'Copied!';
+          button.style.backgroundColor = '#28a745';
           setTimeout(() => {
             button.textContent = originalText;
-            button.style.backgroundColor = "#6c757d";
+            button.style.backgroundColor = '#6c757d';
           }, 1500);
         });
       }
@@ -313,10 +313,10 @@
       function downloadFile(url, filename) {
         return new Promise((resolve) => {
           setTimeout(() => {
-            const link = document.createElement("a");
+            const link = document.createElement('a');
             link.href = url;
             link.download = filename;
-            link.style.display = "none";
+            link.style.display = 'none';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -327,38 +327,38 @@
 
       // All supported waveforms
       const SUPPORTED_WAVEFORMS = [
-        "sine",
-        "sawtooth",
-        "square",
-        "triangle",
-        "pulse",
-        "bandlimited-sawtooth",
-        "supersaw",
-        "warm-pad",
-        "metallic",
-        "formant",
-        "white-noise",
-        "pink-noise",
-        "brown-noise",
-        "colored-noise",
-        "random-harmonic",
-        "custom-function",
+        'sine',
+        'sawtooth',
+        'square',
+        'triangle',
+        'pulse',
+        'bandlimited-sawtooth',
+        'supersaw',
+        'warm-pad',
+        'metallic',
+        'formant',
+        'white-noise',
+        'pink-noise',
+        'brown-noise',
+        'colored-noise',
+        'random-harmonic',
+        'custom-function',
       ];
 
       // Custom waveforms that need special handling
       const CUSTOM_WAVEFORMS = [
-        "pulse",
-        "bandlimited-sawtooth",
-        "supersaw",
-        "warm-pad",
-        "metallic",
-        "formant",
-        "white-noise",
-        "pink-noise",
-        "brown-noise",
-        "colored-noise",
-        "random-harmonic",
-        "custom-function",
+        'pulse',
+        'bandlimited-sawtooth',
+        'supersaw',
+        'warm-pad',
+        'metallic',
+        'formant',
+        'white-noise',
+        'pink-noise',
+        'brown-noise',
+        'colored-noise',
+        'random-harmonic',
+        'custom-function',
       ];
 
       function isCustomLibWaveform(waveform) {
@@ -381,20 +381,20 @@
         const imag = new Float32Array(harmonics + 1);
 
         switch (type) {
-          case "sine":
+          case 'sine':
             imag[1] = 1;
             break;
-          case "square":
+          case 'square':
             for (let n = 1; n <= harmonics; n += 2) {
               imag[n] = 1 / n;
             }
             break;
-          case "sawtooth":
+          case 'sawtooth':
             for (let n = 1; n <= harmonics; n++) {
               imag[n] = (n % 2 === 1 ? 1 : -1) / n;
             }
             break;
-          case "triangle":
+          case 'triangle':
             for (let n = 1; n <= harmonics; n += 2) {
               imag[n] = (n % 4 === 1 ? 1 : -1) / (n * n);
             }
@@ -644,39 +644,39 @@
       // Main waveform creation function
       function createWave(type, options = {}) {
         switch (type) {
-          case "pulse":
+          case 'pulse':
             return createPulseWave(options.dutyCycle, options.harmonics);
-          case "bandlimited-sawtooth":
+          case 'bandlimited-sawtooth':
             return createBandlimitedSawtooth(options.harmonics, options.rolloff);
-          case "supersaw":
+          case 'supersaw':
             return createSupersaw(options.voices, options.detune, options.harmonics);
-          case "warm-pad":
+          case 'warm-pad':
             return createWarmPad(options.brightness, options.harmonics);
-          case "metallic":
+          case 'metallic':
             return createMetallicWave(options.inharmonicity, options.harmonics);
-          case "formant":
+          case 'formant':
             return createFormantWave(
               options.formantFreqs,
               options.formantBandwidths,
               options.fundamentalFreq,
               options.harmonics,
             );
-          case "white-noise":
+          case 'white-noise':
             return createWhiteNoise(options.harmonics, options.seed);
-          case "pink-noise":
+          case 'pink-noise':
             return createPinkNoise(options.harmonics, options.seed);
-          case "brown-noise":
+          case 'brown-noise':
             return createBrownNoise(options.harmonics, options.seed);
-          case "colored-noise":
+          case 'colored-noise':
             return createColoredNoise(options.slope, options.harmonics, options.seed);
-          case "random-harmonic":
+          case 'random-harmonic':
             return createRandomHarmonicWave(
               options.chaos,
               options.harmonicDensity,
               options.harmonics,
               options.seed,
             );
-          case "custom-function":
+          case 'custom-function':
             return createCustomFunctionWave(options.waveFunction, options.harmonics);
           default:
             throw new Error(`Invalid waveform type: ${type}`);
@@ -694,10 +694,10 @@
           }
         }
 
-        writeString(view, 0, "RIFF");
+        writeString(view, 0, 'RIFF');
         view.setUint32(4, 36 + samples.length * 2, true);
-        writeString(view, 8, "WAVE");
-        writeString(view, 12, "fmt ");
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
         view.setUint32(16, 16, true);
         view.setUint16(20, 1, true);
         view.setUint16(22, 1, true);
@@ -705,14 +705,14 @@
         view.setUint32(28, sampleRate * 2, true);
         view.setUint16(32, 2, true);
         view.setUint16(34, 16, true);
-        writeString(view, 36, "data");
+        writeString(view, 36, 'data');
         view.setUint32(40, samples.length * 2, true);
 
         for (let i = 0; i < samples.length; i++) {
           let s = Math.max(-1, Math.min(1, samples[i]));
           view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
         }
-        return new Blob([buffer], { type: "audio/wav" });
+        return new Blob([buffer], { type: 'audio/wav' });
       }
 
       // Render waveform to audio samples
@@ -766,18 +766,18 @@
       // UI event handlers
       let generatedWaveforms = [];
 
-      document.getElementById("exportBtn").onclick = async () => {
-        const nCycles = parseInt(document.getElementById("numCycles").value, 10);
-        const waveformList = document.getElementById("waveformList");
-        const downloadAllBtn = document.getElementById("downloadAllBtn");
+      document.getElementById('exportBtn').onclick = async () => {
+        const nCycles = parseInt(document.getElementById('numCycles').value, 10);
+        const waveformList = document.getElementById('waveformList');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
 
-        waveformList.innerHTML = "<p>Generating waveforms...</p>";
+        waveformList.innerHTML = '<p>Generating waveforms...</p>';
         downloadAllBtn.disabled = true;
         generatedWaveforms = [];
 
         // Small delay to show loading message
         setTimeout(() => {
-          waveformList.innerHTML = "";
+          waveformList.innerHTML = '';
 
           for (const waveform of SUPPORTED_WAVEFORMS) {
             try {
@@ -788,20 +788,20 @@
               // Use lower targetCount for noisy waveforms
               let targetCount = 256;
               if (
-                ["brown-noise", "colored-noise", "white-noise", "pink-noise"].includes(waveform)
+                ['brown-noise', 'colored-noise', 'white-noise', 'pink-noise'].includes(waveform)
               ) {
                 targetCount = 26;
               }
 
               if (
                 [
-                  "random-harmonic",
-                  "metallic",
-                  "sawtooth",
-                  "square",
-                  "pulse",
-                  "bandlimited-sawtooth",
-                  "supersaw",
+                  'random-harmonic',
+                  'metallic',
+                  'sawtooth',
+                  'square',
+                  'pulse',
+                  'bandlimited-sawtooth',
+                  'supersaw',
                 ].includes(waveform)
               ) {
                 targetCount = 25;
@@ -817,7 +817,7 @@
               let waveStrokeWidth = 30;
 
               if (
-                ["brown-noise", "colored-noise", "white-noise", "pink-noise"].includes(waveform)
+                ['brown-noise', 'colored-noise', 'white-noise', 'pink-noise'].includes(waveform)
               ) {
                 waveStrokeWidth = 23.9;
               }
@@ -840,8 +840,8 @@
               });
 
               // Update comparison section with first waveform (sine wave)
-              if (waveform === "sine") {
-                document.getElementById("logoComparison").innerHTML = `
+              if (waveform === 'sine') {
+                document.getElementById('logoComparison').innerHTML = `
                     <h3>Generated Sine Wave</h3>
                     <div style="width: 1024px; height: 1024px; border: 1px solid #ddd; background: white;">
                       ${waveformSVG}
@@ -849,8 +849,8 @@
                   `;
               }
 
-              const div = document.createElement("div");
-              div.className = "waveform-item";
+              const div = document.createElement('div');
+              div.className = 'waveform-item';
               div.innerHTML = `
                   <strong>${waveform}</strong>
                   <div class="waveform-visual">${waveformSVG}</div>
@@ -865,8 +865,8 @@
                 `;
 
               // Add click handler for copy button
-              const copyBtn = div.querySelector(".copy-svg-btn");
-              copyBtn.addEventListener("click", function () {
+              const copyBtn = div.querySelector('.copy-svg-btn');
+              copyBtn.addEventListener('click', function () {
                 const waveformData = generatedWaveforms.find((w) => w.name === `${waveform}.wav`);
                 if (waveformData) {
                   copySVGToClipboard(waveformData.svg, waveform, this);
@@ -876,8 +876,8 @@
               waveformList.appendChild(div);
             } catch (error) {
               console.error(`Error generating ${waveform}:`, error);
-              const div = document.createElement("div");
-              div.className = "waveform-item";
+              const div = document.createElement('div');
+              div.className = 'waveform-item';
               div.innerHTML = `<strong>${waveform}</strong> - Error: ${error.message}`;
               waveformList.appendChild(div);
             }
@@ -890,13 +890,13 @@
         }, 10);
       };
 
-      document.getElementById("downloadAllBtn").onclick = async () => {
+      document.getElementById('downloadAllBtn').onclick = async () => {
         if (generatedWaveforms.length === 0) {
-          alert("Please generate waveforms first!");
+          alert('Please generate waveforms first!');
           return;
         }
 
-        const downloadAllBtn = document.getElementById("downloadAllBtn");
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
         downloadAllBtn.disabled = true;
 
         const total = generatedWaveforms.length;
@@ -918,7 +918,7 @@
         }
 
         downloadAllBtn.disabled = false;
-        downloadAllBtn.textContent = "Download All Files";
+        downloadAllBtn.textContent = 'Download All Files';
       };
     </script>
   </body>

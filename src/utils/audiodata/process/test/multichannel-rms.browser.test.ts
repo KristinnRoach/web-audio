@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vite-plus/test";
+import { describe, it, expect } from 'vite-plus/test';
 
-describe("Multi-channel RMS calculation", () => {
-  it("should correctly calculate RMS across all channels", () => {
+describe('Multi-channel RMS calculation', () => {
+  it('should correctly calculate RMS across all channels', () => {
     // Create a mock AudioContext
     const audioContext = new AudioContext();
 
@@ -81,7 +81,7 @@ describe("Multi-channel RMS calculation", () => {
     expect(stats.crestFactor).not.toBeCloseTo(1.667, 2); // Should NOT use wrong RMS
   });
 
-  it("should handle single-channel audio correctly", () => {
+  it('should handle single-channel audio correctly', () => {
     const audioContext = new AudioContext();
     const buffer = audioContext.createBuffer(1, 100, 44100);
 

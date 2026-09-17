@@ -1,6 +1,6 @@
 // createSampleVoicePool.ts
-import { SampleVoicePool } from "./SampleVoicePool";
-import type { SampleVoiceChainNode } from "./SampleVoice";
+import { SampleVoicePool } from './SampleVoicePool';
+import type { SampleVoiceChainNode } from './SampleVoice';
 
 export async function createSampleVoicePool(
   context: AudioContext,

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
 const AUDIO_RATE_LOOP_SAMPLES = 192;
@@ -46,13 +46,13 @@ function makeParameters(loopLengthSamples: number, playbackRate: number): Parame
 async function renderThroughFirstWrap({
   loopLengthSamples,
   playbackRate,
-  playbackDirection = "forward",
+  playbackDirection = 'forward',
 }: {
   loopLengthSamples: number;
   playbackRate: number;
-  playbackDirection?: "forward" | "reverse";
+  playbackDirection?: 'forward' | 'reverse';
 }): Promise<TestProcessor> {
-  const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
+  const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
   const channel = new Float32Array(loopLengthSamples);
   channel[0] = -0.25;
@@ -60,21 +60,21 @@ async function renderThroughFirstWrap({
 
   processor.port.onmessage?.({
     data: {
-      type: "voice:setBuffer",
+      type: 'voice:setBuffer',
       buffer: [channel],
       durationSeconds: loopLengthSamples / TEST_SAMPLE_RATE,
     },
   } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
-  if (playbackDirection === "reverse") {
+  processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+  if (playbackDirection === 'reverse') {
     processor.port.onmessage?.({
-      data: { type: "voice:setPlaybackDirection", playbackDirection },
+      data: { type: 'voice:setPlaybackDirection', playbackDirection },
     } as MessageEvent);
   }
-  processor.port.onmessage?.({ data: { type: "voice:start" } } as MessageEvent);
+  processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
   const framesToFirstWrap =
-    playbackDirection === "forward"
+    playbackDirection === 'forward'
       ? Math.ceil(loopLengthSamples / playbackRate) + 1
       : Math.ceil((loopLengthSamples - 1) / playbackRate) + 1;
 
@@ -88,20 +88,20 @@ async function renderThroughFirstWrap({
   return processor;
 }
 
-describe("high-rate audio-loop click compensation", () => {
+describe('high-rate audio-loop click compensation', () => {
   beforeAll(() => {
-    vi.stubGlobal("AudioWorkletProcessor", MockAudioWorkletProcessor);
-    vi.stubGlobal("sampleRate", TEST_SAMPLE_RATE);
-    vi.stubGlobal("currentTime", 0);
-    vi.stubGlobal("currentFrame", 0);
-    vi.stubGlobal("registerProcessor", vi.fn());
+    vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
+    vi.stubGlobal('sampleRate', TEST_SAMPLE_RATE);
+    vi.stubGlobal('currentTime', 0);
+    vi.stubGlobal('currentFrame', 0);
+    vi.stubGlobal('registerProcessor', vi.fn());
   });
 
   afterAll(() => {
     vi.unstubAllGlobals();
   });
 
-  it("does not arm compensation for a forward high-rate audio loop", async () => {
+  it('does not arm compensation for a forward high-rate audio loop', async () => {
     const processor = await renderThroughFirstWrap({
       loopLengthSamples: AUDIO_RATE_LOOP_SAMPLES,
       playbackRate: 2,
@@ -110,17 +110,17 @@ describe("high-rate audio-loop click compensation", () => {
     expect(processor.applyClickCompensation).toBe(false);
   });
 
-  it("does not arm compensation for a reverse high-rate audio loop", async () => {
+  it('does not arm compensation for a reverse high-rate audio loop', async () => {
     const processor = await renderThroughFirstWrap({
       loopLengthSamples: AUDIO_RATE_LOOP_SAMPLES,
       playbackRate: 2,
-      playbackDirection: "reverse",
+      playbackDirection: 'reverse',
     });
 
     expect(processor.applyClickCompensation).toBe(false);
   });
 
-  it("keeps compensation at unity rate for an audio loop", async () => {
+  it('keeps compensation at unity rate for an audio loop', async () => {
     const processor = await renderThroughFirstWrap({
       loopLengthSamples: AUDIO_RATE_LOOP_SAMPLES,
       playbackRate: 1,
@@ -129,7 +129,7 @@ describe("high-rate audio-loop click compensation", () => {
     expect(processor.applyClickCompensation).toBe(true);
   });
 
-  it("keeps compensation for a longer loop above unity rate", async () => {
+  it('keeps compensation for a longer loop above unity rate', async () => {
     const processor = await renderThroughFirstWrap({
       loopLengthSamples: LONG_LOOP_SAMPLES,
       playbackRate: 2,

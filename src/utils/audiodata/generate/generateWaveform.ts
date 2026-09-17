@@ -7,32 +7,32 @@
 
 /** Custom Audiolib waveform */
 const CUSTOM_WAVEFORMS = [
-  "pulse",
-  "bandlimited-sawtooth",
-  "supersaw",
-  "warm-pad",
-  "metallic",
-  "formant",
-  "white-noise",
-  "pink-noise",
-  "brown-noise",
-  "colored-noise",
-  "random-harmonic",
-  "custom-function",
+  'pulse',
+  'bandlimited-sawtooth',
+  'supersaw',
+  'warm-pad',
+  'metallic',
+  'formant',
+  'white-noise',
+  'pink-noise',
+  'brown-noise',
+  'colored-noise',
+  'random-harmonic',
+  'custom-function',
 ] as const;
 
 export type CustomLibWaveform = (typeof CUSTOM_WAVEFORMS)[number];
 
 /** Union type of all supported waveforms */
-export type SupportedWaveform = "sine" | "sawtooth" | "square" | "triangle" | CustomLibWaveform;
+export type SupportedWaveform = 'sine' | 'sawtooth' | 'square' | 'triangle' | CustomLibWaveform;
 
 /** All supported oscillator waveforms */
 export const SUPPORTED_WAVEFORMS: readonly SupportedWaveform[] = [
   // Default web audio waveforms
-  "sine",
-  "sawtooth",
-  "square",
-  "triangle",
+  'sine',
+  'sawtooth',
+  'square',
+  'triangle',
 
   // Custom audiolib waveforms
   ...CUSTOM_WAVEFORMS,
@@ -95,68 +95,68 @@ export function createWave(
   options: WaveformOptions = {},
 ): PeriodicWave {
   switch (type) {
-    case "pulse":
+    case 'pulse':
       return createPulseWave(audioContext, {
         dutyCycle: options.dutyCycle,
         harmonics: options.harmonics,
       });
-    case "bandlimited-sawtooth":
+    case 'bandlimited-sawtooth':
       return createBandlimitedSawtooth(audioContext, {
         harmonics: options.harmonics,
         rolloff: options.rolloff,
       });
-    case "supersaw":
+    case 'supersaw':
       return createSupersaw(audioContext, {
         voices: options.voices,
         detune: options.detune,
         harmonics: options.harmonics,
       });
-    case "warm-pad":
+    case 'warm-pad':
       return createWarmPad(audioContext, {
         brightness: options.brightness,
         harmonics: options.harmonics,
       });
-    case "metallic":
+    case 'metallic':
       return createMetallicWave(audioContext, {
         inharmonicity: options.inharmonicity,
         harmonics: options.harmonics,
       });
-    case "formant":
+    case 'formant':
       return createFormantWave(audioContext, {
         formantFreqs: options.formantFreqs,
         formantBandwidths: options.formantBandwidths,
         fundamentalFreq: options.fundamentalFreq,
         harmonics: options.harmonics,
       });
-    case "white-noise":
+    case 'white-noise':
       return createWhiteNoise(audioContext, {
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case "pink-noise":
+    case 'pink-noise':
       return createPinkNoise(audioContext, {
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case "brown-noise":
+    case 'brown-noise':
       return createBrownNoise(audioContext, {
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case "colored-noise":
+    case 'colored-noise':
       return createColoredNoise(audioContext, {
         slope: options.slope,
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case "random-harmonic":
+    case 'random-harmonic':
       return createRandomHarmonicWave(audioContext, {
         chaos: options.chaos,
         harmonicDensity: options.harmonicDensity,
         harmonics: options.harmonics,
         seed: options.seed,
       });
-    case "custom-function":
+    case 'custom-function':
       return createWaveFromFunction(
         audioContext,
         options.waveFunction || ((phase) => Math.sin(phase)),
@@ -165,7 +165,7 @@ export function createWave(
         },
       );
     default:
-      throw new Error("Invalid waveform type");
+      throw new Error('Invalid waveform type');
   }
 }
 

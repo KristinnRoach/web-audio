@@ -3,7 +3,7 @@ type Failure<E> = { data: null; error: E };
 type Result<T, E = Error> = Success<T> | Failure<E>;
 
 function isPromiseLike<T>(value: any): value is PromiseLike<T> {
-  return typeof value === "object" && value !== null && typeof value.then === "function";
+  return typeof value === 'object' && value !== null && typeof value.then === 'function';
 }
 
 /**
@@ -22,8 +22,8 @@ export async function tryCatch<T, E = Error>(
   errorMessage?: string,
   logError: boolean = true,
 ): Promise<Result<T, E>> {
-  if (typeof fn !== "function") {
-    throw new Error("tryCatch argument must be a function");
+  if (typeof fn !== 'function') {
+    throw new Error('tryCatch argument must be a function');
   }
 
   try {

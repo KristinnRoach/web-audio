@@ -1,39 +1,39 @@
 // feedback-delay-processor.js
 
-import { FeedbackDelay } from "./FeedbackDelay";
+import { FeedbackDelay } from './FeedbackDelay';
 
 registerProcessor(
-  "feedback-delay-processor",
+  'feedback-delay-processor',
   class extends AudioWorkletProcessor {
     static get parameterDescriptors() {
       return [
         {
-          name: "feedbackAmount",
+          name: 'feedbackAmount',
           defaultValue: 0.5,
           minValue: 0,
           maxValue: 1,
-          automationRate: "k-rate",
+          automationRate: 'k-rate',
         },
         {
-          name: "delayTime",
+          name: 'delayTime',
           defaultValue: 0.5,
           minValue: 0.00012656238799684143, // <- B8 natural in seconds (highest note period that works)
           maxValue: 2,
-          automationRate: "k-rate",
+          automationRate: 'k-rate',
         },
         {
-          name: "decay", // feedback decay time factor
+          name: 'decay', // feedback decay time factor
           defaultValue: 1,
           minValue: 0,
           maxValue: 1,
-          automationRate: "k-rate",
+          automationRate: 'k-rate',
         },
         {
-          name: "lowpass",
+          name: 'lowpass',
           defaultValue: 10000,
           minValue: 100,
           maxValue: 16000,
-          automationRate: "k-rate",
+          automationRate: 'k-rate',
         },
       ];
     }
@@ -46,21 +46,21 @@ registerProcessor(
       this.baseFeedbackAmount = 0.5;
       this.setupMessageHandling();
       // Signal to node that processor is initialized
-      this.port.postMessage({ type: "initialized" });
+      this.port.postMessage({ type: 'initialized' });
     }
 
     setupMessageHandling() {
       this.port.onmessage = (event) => {
         switch (event.data.type) {
-          case "setAutoGain":
+          case 'setAutoGain':
             this.feedbackDelay.setAutoGain(event.data.enabled, event.data.amount);
             break;
-          case "triggerDecay":
+          case 'triggerDecay':
             this.decayStartTime = currentTime;
             this.decayActive = true;
             this.baseFeedbackAmount = event.data.baseFeedbackAmount || 0.5;
             break;
-          case "stopDecay":
+          case 'stopDecay':
             this.decayActive = false;
             this.decayStartTime = null;
             break;

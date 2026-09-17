@@ -5,7 +5,7 @@ export function normalizeRange(
   targetMin: number,
   targetMax: number,
 ): number {
-  if (inputMin === inputMax) throw new Error("Input range must not be zero.");
+  if (inputMin === inputMax) throw new Error('Input range must not be zero.');
   const ratio = (value - inputMin) / (inputMax - inputMin);
   return ratio * (targetMax - targetMin) + targetMin;
 }

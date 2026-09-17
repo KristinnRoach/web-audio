@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
 const BLOCK_SIZE = 128;
@@ -50,23 +50,23 @@ async function createProcessor(
   startFrame: number,
   { loop = true, sampleLength = TEST_SAMPLE_RATE } = {},
 ) {
-  const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
+  const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
   const channel = new Float32Array(sampleLength).fill(0.5);
 
   processor.port.onmessage?.({
     data: {
-      type: "voice:setBuffer",
+      type: 'voice:setBuffer',
       buffer: [channel],
       durationSeconds: 1,
     },
   } as MessageEvent);
   if (loop) {
-    processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
+    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
   }
   processor.port.onmessage?.({
     data: {
-      type: "voice:start",
+      type: 'voice:start',
       timestamp: startFrame / TEST_SAMPLE_RATE,
       triggerId: TEST_TRIGGER_ID,
     },
@@ -76,16 +76,16 @@ async function createProcessor(
 }
 
 function setCurrentFrame(frame: number) {
-  vi.stubGlobal("currentFrame", frame);
+  vi.stubGlobal('currentFrame', frame);
 }
 
-describe("scheduled sample start", () => {
+describe('scheduled sample start', () => {
   beforeAll(() => {
-    vi.stubGlobal("AudioWorkletProcessor", MockAudioWorkletProcessor);
-    vi.stubGlobal("sampleRate", TEST_SAMPLE_RATE);
-    vi.stubGlobal("currentTime", 0);
-    vi.stubGlobal("currentFrame", 0);
-    vi.stubGlobal("registerProcessor", vi.fn());
+    vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
+    vi.stubGlobal('sampleRate', TEST_SAMPLE_RATE);
+    vi.stubGlobal('currentTime', 0);
+    vi.stubGlobal('currentFrame', 0);
+    vi.stubGlobal('registerProcessor', vi.fn());
   });
 
   afterAll(() => {
@@ -95,11 +95,11 @@ describe("scheduled sample start", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     setCurrentFrame(0);
-    vi.stubGlobal("currentTime", 0);
+    vi.stubGlobal('currentTime', 0);
   });
 
-  it("leaves playback and loop-drift state untouched before the start block", async () => {
-    const random = vi.spyOn(Math, "random");
+  it('leaves playback and loop-drift state untouched before the start block', async () => {
+    const random = vi.spyOn(Math, 'random');
     const processor = await createProcessor(BLOCK_SIZE * 2);
     const output = new Float32Array(BLOCK_SIZE);
 
@@ -113,7 +113,7 @@ describe("scheduled sample start", () => {
     expect(processor.pendingStartFrame).toBe(BLOCK_SIZE * 2);
   });
 
-  it("starts at the scheduled sample within a render block", async () => {
+  it('starts at the scheduled sample within a render block', async () => {
     const startOffset = 64;
     const processor = await createProcessor(startOffset);
     const output = new Float32Array(BLOCK_SIZE);
@@ -129,7 +129,7 @@ describe("scheduled sample start", () => {
     expect(processor.pendingStartFrame).toBe(0);
   });
 
-  it("starts immediately when the scheduled frame has already passed", async () => {
+  it('starts immediately when the scheduled frame has already passed', async () => {
     const processor = await createProcessor(32);
     const output = new Float32Array(BLOCK_SIZE);
     setCurrentFrame(64);
@@ -141,7 +141,7 @@ describe("scheduled sample start", () => {
     expect(processor.pendingStartFrame).toBe(0);
   });
 
-  it.each(["voice:reset", "voice:stop"])("clears a pending start on %s", async (type) => {
+  it.each(['voice:reset', 'voice:stop'])('clears a pending start on %s', async (type) => {
     const processor = await createProcessor(BLOCK_SIZE * 2);
 
     processor.port.onmessage?.({ data: { type } } as MessageEvent);
@@ -149,18 +149,18 @@ describe("scheduled sample start", () => {
     expect(processor.pendingStartFrame).toBe(0);
   });
 
-  it("does not acknowledge a host-requested stop", async () => {
+  it('does not acknowledge a host-requested stop', async () => {
     const processor = await createProcessor(0);
     processor.port.postMessage.mockClear();
 
-    processor.port.onmessage?.({ data: { type: "voice:stop" } } as MessageEvent);
+    processor.port.onmessage?.({ data: { type: 'voice:stop' } } as MessageEvent);
 
     expect(processor.isPlaying).toBe(false);
     expect(processor.port.postMessage).not.toHaveBeenCalled();
   });
 
-  it("reports when playback reaches the sample boundary", async () => {
-    vi.stubGlobal("currentTime", 1);
+  it('reports when playback reaches the sample boundary', async () => {
+    vi.stubGlobal('currentTime', 1);
     const processor = await createProcessor(0, { loop: false, sampleLength: 16 });
     processor.port.postMessage.mockClear();
 
@@ -168,7 +168,7 @@ describe("scheduled sample start", () => {
 
     expect(processor.isPlaying).toBe(false);
     expect(processor.port.postMessage).toHaveBeenCalledWith({
-      type: "voice:ended",
+      type: 'voice:ended',
       triggerId: TEST_TRIGGER_ID,
     });
   });

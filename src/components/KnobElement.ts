@@ -9,7 +9,7 @@ export type KnobElementOptions = {
   curve?: number;
   snapThresholds?: Array<{ maxValue: number; increment: number }>;
   disabled?: boolean;
-  borderStyle?: "currentState" | "fullCircle";
+  borderStyle?: 'currentState' | 'fullCircle';
   width?: number;
   height?: number;
   color?: string;
@@ -20,12 +20,12 @@ export type KnobChangeEventDetail = {
   value: number;
   rotation: number;
   percentage: number;
-  source: "user" | "programmatic";
+  source: 'user' | 'programmatic';
 };
 
 declare global {
   interface HTMLElementEventMap {
-    "knob-change": CustomEvent<KnobChangeEventDetail>;
+    'knob-change': CustomEvent<KnobChangeEventDetail>;
   }
 }
 
@@ -43,7 +43,7 @@ export class KnobElement extends HTMLElement {
     snapIncrement: 1,
     curve: 1,
     disabled: false,
-    borderStyle: "currentState",
+    borderStyle: 'currentState',
   };
 
   private currentValue: number = 0;
@@ -70,20 +70,20 @@ export class KnobElement extends HTMLElement {
   // Observed attributes
   static get observedAttributes(): string[] {
     return [
-      "min-value",
-      "max-value",
-      "default-value",
-      "min-rotation",
-      "max-rotation",
-      "snap-increment",
-      "allowed-values",
-      "value",
-      "disabled",
-      "width",
-      "height",
-      "border-style",
-      "curve",
-      "color",
+      'min-value',
+      'max-value',
+      'default-value',
+      'min-rotation',
+      'max-rotation',
+      'snap-increment',
+      'allowed-values',
+      'value',
+      'disabled',
+      'width',
+      'height',
+      'border-style',
+      'curve',
+      'color',
     ];
   }
 
@@ -102,7 +102,7 @@ export class KnobElement extends HTMLElement {
     this.setValue(this.config.defaultValue ?? this.config.minValue);
 
     this.createDraggable();
-    this.addEventListener("keydown", this.handleKeyDown);
+    this.addEventListener('keydown', this.handleKeyDown);
   }
 
   disconnectedCallback(): void {
@@ -112,7 +112,7 @@ export class KnobElement extends HTMLElement {
   attributeChangedCallback(name: string, oldValue: string, newValue: string): void {
     if (oldValue !== newValue) {
       // Handle min/max changes BEFORE updating config
-      if (name === "max-value" || name === "min-value") {
+      if (name === 'max-value' || name === 'min-value') {
         const oldMin = this.config.minValue;
         const oldMax = this.config.maxValue;
 
@@ -123,7 +123,7 @@ export class KnobElement extends HTMLElement {
         // Scale current value from old range to new range
         let scaledValue: number;
 
-        if (name === "max-value") {
+        if (name === 'max-value') {
           scaledValue = KnobElement.mapRange(
             oldMin, // old min
             parseFloat(oldValue), // old max
@@ -152,15 +152,15 @@ export class KnobElement extends HTMLElement {
       this.updateConfigFromAttributes();
       this.updateBorder();
 
-      if (name === "width" || name === "height") return;
-      if (name === "border-style") return;
+      if (name === 'width' || name === 'height') return;
+      if (name === 'border-style') return;
 
-      if (name === "color") {
+      if (name === 'color') {
         this.updateColorFromAttribute();
         return;
       }
 
-      if (name === "curve") {
+      if (name === 'curve') {
         this.createUtilityFunctions();
         this.setValue(this.currentValue); // Refresh with new curve
         return;
@@ -171,8 +171,8 @@ export class KnobElement extends HTMLElement {
   private injectGlobalStyles(): void {
     if (KnobElement.stylesInjected) return;
 
-    const styleElement = document.createElement("style");
-    styleElement.id = "knob-element-styles";
+    const styleElement = document.createElement('style');
+    styleElement.id = 'knob-element-styles';
     styleElement.textContent = `
       knob-element {
         display: block;
@@ -231,9 +231,9 @@ export class KnobElement extends HTMLElement {
     };
 
     // Get allowedValues first to potentially override min/max
-    const allowedValues = getJsonValue<number[]>("allowed-values");
-    let minValue = getNumericValue("min-value", 0);
-    let maxValue = getNumericValue("max-value", 100);
+    const allowedValues = getJsonValue<number[]>('allowed-values');
+    let minValue = getNumericValue('min-value', 0);
+    let maxValue = getNumericValue('max-value', 100);
 
     // If allowedValues are provided, sort them and set min/max automatically
     if (allowedValues && allowedValues.length > 0) {
@@ -242,18 +242,18 @@ export class KnobElement extends HTMLElement {
       const autoMaxValue = sortedValues[sortedValues.length - 1];
 
       // Log if manually set min/max/snap don't match allowedValues
-      if (this.hasAttribute("min-value") && minValue !== autoMinValue) {
+      if (this.hasAttribute('min-value') && minValue !== autoMinValue) {
         console.debug(
           `KnobElement: min-value (${minValue}) doesn't match first allowedValue (${autoMinValue}). Using ${autoMinValue}.`,
         );
       }
-      if (this.hasAttribute("max-value") && maxValue !== autoMaxValue) {
+      if (this.hasAttribute('max-value') && maxValue !== autoMaxValue) {
         console.debug(
           `KnobElement: max-value (${maxValue}) doesn't match last allowedValue (${autoMaxValue}). Using ${autoMaxValue}.`,
         );
       }
-      if (this.hasAttribute("snap-thresholds")) {
-        console.debug("KnobElement: allowedValues overrides snap-increment and snap-thresholds.");
+      if (this.hasAttribute('snap-thresholds')) {
+        console.debug('KnobElement: allowedValues overrides snap-increment and snap-thresholds.');
       }
 
       minValue = autoMinValue;
@@ -263,19 +263,19 @@ export class KnobElement extends HTMLElement {
     this.config = {
       minValue,
       maxValue,
-      defaultValue: getNumericValue("default-value", 0),
-      minRotation: getNumericValue("min-rotation", -150),
-      maxRotation: getNumericValue("max-rotation", 150),
-      snapIncrement: getNumericValue("snap-increment", 1),
-      curve: getNumericValue("curve", 1),
+      defaultValue: getNumericValue('default-value', 0),
+      minRotation: getNumericValue('min-rotation', -150),
+      maxRotation: getNumericValue('max-rotation', 150),
+      snapIncrement: getNumericValue('snap-increment', 1),
+      curve: getNumericValue('curve', 1),
 
-      borderStyle: getStringValue<"currentState" | "fullCircle">("border-style", "currentState"),
+      borderStyle: getStringValue<'currentState' | 'fullCircle'>('border-style', 'currentState'),
 
       allowedValues: allowedValues ? [...allowedValues].sort((a, b) => a - b) : undefined,
 
       snapThresholds:
-        getJsonValue<Array<{ maxValue: number; increment: number }>>("snap-thresholds"),
-      disabled: this.hasAttribute("disabled"),
+        getJsonValue<Array<{ maxValue: number; increment: number }>>('snap-thresholds'),
+      disabled: this.hasAttribute('disabled'),
     };
 
     this.updateDimensions();
@@ -283,28 +283,28 @@ export class KnobElement extends HTMLElement {
   }
 
   private updateAccessibility(): void {
-    this.setAttribute("role", "slider");
-    this.setAttribute("aria-valuemin", String(this.config.minValue));
-    this.setAttribute("aria-valuemax", String(this.config.maxValue));
-    this.setAttribute("aria-valuenow", String(this.currentValue));
-    this.setAttribute("aria-disabled", String(Boolean(this.config.disabled)));
+    this.setAttribute('role', 'slider');
+    this.setAttribute('aria-valuemin', String(this.config.minValue));
+    this.setAttribute('aria-valuemax', String(this.config.maxValue));
+    this.setAttribute('aria-valuenow', String(this.currentValue));
+    this.setAttribute('aria-disabled', String(Boolean(this.config.disabled)));
     this.tabIndex = this.config.disabled ? -1 : 0;
   }
 
   private updateDimensions(): void {
-    const width = this.getAttribute("width");
-    const height = this.getAttribute("height");
+    const width = this.getAttribute('width');
+    const height = this.getAttribute('height');
 
     if (width || height) {
-      const size = width || height || "120";
-      this.style.setProperty("--knob-size", `${size}px`);
+      const size = width || height || '120';
+      this.style.setProperty('--knob-size', `${size}px`);
     }
   }
 
   private updateColorFromAttribute(): void {
-    const color = this.getAttribute("color");
+    const color = this.getAttribute('color');
     if (color) {
-      this.style.setProperty("--knob-stroke", color);
+      this.style.setProperty('--knob-stroke', color);
     }
   }
 
@@ -321,19 +321,19 @@ export class KnobElement extends HTMLElement {
                 />
       </svg>
   `;
-    this.pathElement = this.querySelector(".knob-path") as SVGPathElement;
+    this.pathElement = this.querySelector('.knob-path') as SVGPathElement;
   }
 
   private cleanup(): void {
-    this.removeEventListener("keydown", this.handleKeyDown);
+    this.removeEventListener('keydown', this.handleKeyDown);
 
     if (this.dragHandlers) {
-      this.removeEventListener("mousedown", this.dragHandlers.start);
-      this.removeEventListener("touchstart", this.dragHandlers.start);
-      document.removeEventListener("mousemove", this.dragHandlers.move);
-      document.removeEventListener("mouseup", this.dragHandlers.end);
-      document.removeEventListener("touchmove", this.dragHandlers.move);
-      document.removeEventListener("touchend", this.dragHandlers.end);
+      this.removeEventListener('mousedown', this.dragHandlers.start);
+      this.removeEventListener('touchstart', this.dragHandlers.start);
+      document.removeEventListener('mousemove', this.dragHandlers.move);
+      document.removeEventListener('mouseup', this.dragHandlers.end);
+      document.removeEventListener('touchmove', this.dragHandlers.move);
+      document.removeEventListener('touchend', this.dragHandlers.end);
     }
   }
 
@@ -423,16 +423,16 @@ export class KnobElement extends HTMLElement {
     if (this.config.disabled) return;
 
     const direction =
-      event.key === "ArrowUp" || event.key === "ArrowRight"
+      event.key === 'ArrowUp' || event.key === 'ArrowRight'
         ? 1
-        : event.key === "ArrowDown" || event.key === "ArrowLeft"
+        : event.key === 'ArrowDown' || event.key === 'ArrowLeft'
           ? -1
           : 0;
 
     let nextValue: number;
-    if (event.key === "Home") {
+    if (event.key === 'Home') {
       nextValue = this.config.minValue;
-    } else if (event.key === "End") {
+    } else if (event.key === 'End') {
       nextValue = this.config.maxValue;
     } else if (direction && this.config.allowedValues?.length) {
       const values = this.config.allowedValues;
@@ -442,7 +442,7 @@ export class KnobElement extends HTMLElement {
           : ([...values].reverse().find((value) => value < this.currentValue) ?? values[0]);
     } else if (direction) {
       const range = this.config.maxValue - this.config.minValue;
-      const hasSnapIncrement = this.hasAttribute("snap-increment") && this.config.snapIncrement > 0;
+      const hasSnapIncrement = this.hasAttribute('snap-increment') && this.config.snapIncrement > 0;
       const increment = hasSnapIncrement ? this.config.snapIncrement : range * 0.01;
       const value = this.currentValue + direction * increment;
       nextValue = hasSnapIncrement ? this.applySnapping(value) : value;
@@ -452,12 +452,12 @@ export class KnobElement extends HTMLElement {
 
     event.preventDefault();
     event.stopPropagation();
-    this.updateValue(nextValue, "user");
+    this.updateValue(nextValue, 'user');
   };
 
   private createDraggable(): void {
     const pointerLockSupported =
-      "pointerLockElement" in document && "requestPointerLock" in HTMLElement.prototype;
+      'pointerLockElement' in document && 'requestPointerLock' in HTMLElement.prototype;
 
     let isDragging = false;
     let startY = 0;
@@ -493,7 +493,7 @@ export class KnobElement extends HTMLElement {
 
       // Check for double-click BEFORE starting drag or pointer lock
       if (timeDiff < this.DOUBLE_CLICK_THRESHOLD && timeDiff > 0) {
-        this.updateValue(this.config.defaultValue, "user");
+        this.updateValue(this.config.defaultValue, 'user');
         return; // Exit early, don't start dragging
       }
 
@@ -502,9 +502,9 @@ export class KnobElement extends HTMLElement {
       isDragging = true;
       startRotation = this.currentRotation;
       totalDeltaY = 0;
-      isFineControl = "shiftKey" in e && e.shiftKey;
+      isFineControl = 'shiftKey' in e && e.shiftKey;
 
-      const isTouchEvent = "touches" in e;
+      const isTouchEvent = 'touches' in e;
 
       if (isTouchEvent) {
         startY = e.touches[0].clientY;
@@ -522,8 +522,8 @@ export class KnobElement extends HTMLElement {
         return;
       }
 
-      const currentY = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
-      const fineControl = "shiftKey" in e && e.shiftKey;
+      const currentY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      const fineControl = 'shiftKey' in e && e.shiftKey;
       if (fineControl !== isFineControl) {
         isFineControl = fineControl;
         startRotation = this.currentRotation;
@@ -555,7 +555,7 @@ export class KnobElement extends HTMLElement {
       const snappedValue = this.applySnapping(rawValue);
 
       this.currentValue = snappedValue;
-      this.setAttribute("aria-valuenow", String(this.currentValue));
+      this.setAttribute('aria-valuenow', String(this.currentValue));
 
       if (snappedValue !== rawValue) {
         this.currentRotation = this.valueToRotation(snappedValue);
@@ -564,7 +564,7 @@ export class KnobElement extends HTMLElement {
       }
 
       this.updateBorder();
-      this.dispatchChangeEvent("user");
+      this.dispatchChangeEvent('user');
       e.preventDefault();
     };
 
@@ -586,21 +586,21 @@ export class KnobElement extends HTMLElement {
     };
 
     // Event listeners
-    this.addEventListener("mousedown", handleStart);
-    this.addEventListener("touchstart", handleStart, { passive: false });
+    this.addEventListener('mousedown', handleStart);
+    this.addEventListener('touchstart', handleStart, { passive: false });
 
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleEnd);
-    document.addEventListener("touchmove", handleMove, { passive: false });
-    document.addEventListener("touchend", handleEnd);
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchmove', handleMove, { passive: false });
+    document.addEventListener('touchend', handleEnd);
   }
 
   private updateBorder(): void {
     if (!this.pathElement) return;
 
-    const borderStyle = this.getAttribute("border-style") || "currentState";
+    const borderStyle = this.getAttribute('border-style') || 'currentState';
 
-    if (borderStyle === "currentState") {
+    if (borderStyle === 'currentState') {
       const r = 48;
       const cx = 50;
       const cy = 50;
@@ -617,13 +617,13 @@ export class KnobElement extends HTMLElement {
       const largeArc = Math.abs(totalAngle) > 180 ? 1 : 0;
 
       const pathData = `M${cx},${cy} L${startX},${startY} A${r},${r},0,${largeArc},1,${endX},${endY} Z`;
-      this.pathElement.setAttribute("d", pathData);
+      this.pathElement.setAttribute('d', pathData);
     } else {
-      this.pathElement.setAttribute("d", `M50,2 A48,48,0,1,1,49.9,2 Z`);
+      this.pathElement.setAttribute('d', `M50,2 A48,48,0,1,1,49.9,2 Z`);
     }
   }
 
-  private dispatchChangeEvent(source: "user" | "programmatic" = "programmatic"): void {
+  private dispatchChangeEvent(source: 'user' | 'programmatic' = 'programmatic'): void {
     const percentage = KnobElement.mapRange(
       this.config.minValue,
       this.config.maxValue,
@@ -632,7 +632,7 @@ export class KnobElement extends HTMLElement {
       this.currentValue,
     );
 
-    const event = new CustomEvent<KnobChangeEventDetail>("knob-change", {
+    const event = new CustomEvent<KnobChangeEventDetail>('knob-change', {
       detail: {
         value: this.currentValue,
         rotation: this.currentRotation,
@@ -647,10 +647,10 @@ export class KnobElement extends HTMLElement {
 
   // Public API
   public setValue(value: number): void {
-    this.updateValue(value, "programmatic");
+    this.updateValue(value, 'programmatic');
   }
 
-  private updateValue(value: number, source: "user" | "programmatic"): void {
+  private updateValue(value: number, source: 'user' | 'programmatic'): void {
     // todo: animate?: boolean
     if (!this.valueToRotation || !this.pathElement) return;
 
@@ -659,7 +659,7 @@ export class KnobElement extends HTMLElement {
     this.currentRotation = this.valueToRotation(this.currentValue);
 
     this.updateBorder();
-    this.setAttribute("aria-valuenow", String(this.currentValue));
+    this.setAttribute('aria-valuenow', String(this.currentValue));
     this.dispatchChangeEvent(source);
   }
 
@@ -714,14 +714,14 @@ export class KnobElement extends HTMLElement {
 
   public setDisabled(disabled: boolean): void {
     if (disabled) {
-      this.setAttribute("disabled", "");
+      this.setAttribute('disabled', '');
     } else {
-      this.removeAttribute("disabled");
+      this.removeAttribute('disabled');
     }
   }
 
   public isDisabled(): boolean {
-    return this.hasAttribute("disabled");
+    return this.hasAttribute('disabled');
   }
 
   public getPercentage(): number {

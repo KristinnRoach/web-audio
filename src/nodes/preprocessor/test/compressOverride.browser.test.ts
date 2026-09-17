@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
-import { preProcessAudioBuffer, type PreProcessOptions } from "../Preprocessor";
+import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { preProcessAudioBuffer, type PreProcessOptions } from '../Preprocessor';
 
-describe("Preprocessor explicit compression settings", () => {
+describe('Preprocessor explicit compression settings', () => {
   let ctx: AudioContext;
 
   beforeEach(() => {
@@ -9,7 +9,7 @@ describe("Preprocessor explicit compression settings", () => {
   });
 
   afterEach(async () => {
-    if (ctx && ctx.state !== "closed") await ctx.close();
+    if (ctx && ctx.state !== 'closed') await ctx.close();
     ctx = null as any;
   });
 
@@ -44,7 +44,7 @@ describe("Preprocessor explicit compression settings", () => {
     getZeroCrossings: false,
   };
 
-  async function peakWith(compress: NonNullable<PreProcessOptions["compress"]>) {
+  async function peakWith(compress: NonNullable<PreProcessOptions['compress']>) {
     const { audiobuffer } = await preProcessAudioBuffer(ctx, steadySine(), {
       ...baseOptions,
       compress,
@@ -52,7 +52,7 @@ describe("Preprocessor explicit compression settings", () => {
     return peakOf(audiobuffer);
   }
 
-  it("compresses when settings are given, even if the analysis would skip", async () => {
+  it('compresses when settings are given, even if the analysis would skip', async () => {
     const off = await peakWith({ enabled: false });
     const auto = await peakWith({ enabled: true });
     const manual = await peakWith({ enabled: true, threshold: 0.2, ratio: 8 });

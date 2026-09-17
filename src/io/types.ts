@@ -11,7 +11,7 @@ declare global {
   }
 }
 
-export type ModifierKey = "space" | "caps" | "meta" | "shift" | "ctrl" | "alt";
+export type ModifierKey = 'space' | 'caps' | 'meta' | 'shift' | 'ctrl' | 'alt';
 // needed to add space and just simplified for flexibility for now by using string
 
 export type PressedModifiers = Partial<Record<ModifierKey, boolean>>;

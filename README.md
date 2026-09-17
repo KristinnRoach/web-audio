@@ -12,11 +12,11 @@ pnpm add @kidlib/web-audio
 ## Usage
 
 ```ts
-import { createSamplePlayer } from "@kidlib/web-audio";
-import { inputController } from "@kidlib/web-audio/io";
-import { registerKnobElement } from "@kidlib/web-audio/components";
+import { createSamplePlayer } from '@kidlib/web-audio';
+import { inputController } from '@kidlib/web-audio/io';
+import { registerKnobElement } from '@kidlib/web-audio/components';
 
-const response = await fetch("/samples/kick.wav");
+const response = await fetch('/samples/kick.wav');
 if (!response.ok) {
   throw new Error(`Failed to fetch sample: ${response.status} ${response.statusText}`);
 }

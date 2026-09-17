@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vite-plus/test";
-import { detectSinglePitchAC } from "../";
+import { describe, it, expect } from 'vite-plus/test';
+import { detectSinglePitchAC } from '../';
 
 const SAMPLE_RATE = 48000;
 const DURATION = 0.5;
@@ -11,7 +11,7 @@ function createMockAudioBuffer(data: Float32Array, sampleRate = SAMPLE_RATE): Au
     numberOfChannels: 1,
     duration: data.length / sampleRate,
     getChannelData: (channel: number) => {
-      if (channel !== 0) throw new Error("Only channel 0 supported in mock");
+      if (channel !== 0) throw new Error('Only channel 0 supported in mock');
       return data;
     },
   } as AudioBuffer;
@@ -37,18 +37,18 @@ function semitoneErrorIgnoringOctaves(detectedHz: number, expectedHz: number): n
   return Math.min(wrapped, 12 - wrapped);
 }
 
-describe("detectSinglePitchAC - prominent pitch in a mixture", () => {
+describe('detectSinglePitchAC - prominent pitch in a mixture', () => {
   // Autocorrelation peaks at the common period of a mixture, which is longer than
   // either note. Before sub-harmonic correction these resolved to 55Hz / 82Hz at
   // periodicity >0.99 - the right-sounding answer only when the common period
   // happened to be an exact octave below the dominant note.
   const mixtures: Array<[string, number, number, number]> = [
-    ["A3 over C#4", 220, 277.18, -12],
-    ["C#4 over A3", 277.18, 220, -12],
-    ["E4 over B3", 329.63, 246.94, -12],
-    ["B3 over E4", 246.94, 329.63, -12],
-    ["B3 over E4 (quieter second note)", 246.94, 329.63, -20],
-    ["C4 over G4", 261.63, 392, -12],
+    ['A3 over C#4', 220, 277.18, -12],
+    ['C#4 over A3', 277.18, 220, -12],
+    ['E4 over B3', 329.63, 246.94, -12],
+    ['B3 over E4', 246.94, 329.63, -12],
+    ['B3 over E4 (quieter second note)', 246.94, 329.63, -20],
+    ['C4 over G4', 261.63, 392, -12],
   ];
 
   for (const [name, dominantHz, otherHz, db] of mixtures) {
@@ -63,7 +63,7 @@ describe("detectSinglePitchAC - prominent pitch in a mixture", () => {
     });
   }
 
-  it("detects the sustained note over a short blip of another", async () => {
+  it('detects the sustained note over a short blip of another', async () => {
     const sustainedHz = 277.18;
     const blipHz = 220;
     const buffer = render((t) => sine(sustainedHz)(t) + (t < 0.06 ? sine(blipHz)(t) : 0));
@@ -74,7 +74,7 @@ describe("detectSinglePitchAC - prominent pitch in a mixture", () => {
   });
 });
 
-describe("detectSinglePitchAC - single notes stay accurate", () => {
+describe('detectSinglePitchAC - single notes stay accurate', () => {
   // Sub-harmonic correction must not pull a correct estimate up an octave
   for (const freq of [98, 146.83, 220, 329.63, 523.25]) {
     it(`detects a decaying harmonic tone at ${freq}Hz`, async () => {
@@ -101,7 +101,7 @@ describe("detectSinglePitchAC - single notes stay accurate", () => {
   }
 });
 
-describe("detectSinglePitchAC - a short strong sound does not hide a sustained one", () => {
+describe('detectSinglePitchAC - a short strong sound does not hide a sustained one', () => {
   const SUSTAINED_HZ = 220;
 
   /** Full-scale broadband click, then nothing */
@@ -113,9 +113,9 @@ describe("detectSinglePitchAC - a short strong sound does not hide a sustained o
   // survives, detection rails at MAX_Hz, and periodicity still clears the autotune
   // gate. Referenced against a quantile, the sustain sets the threshold instead.
   for (const [name, clickMs, sustainAmp] of [
-    ["5ms click over a 0.15 sustain", 5, 0.15],
-    ["5ms click over a 0.05 sustain", 5, 0.05],
-    ["20ms click over a 0.15 sustain", 20, 0.15],
+    ['5ms click over a 0.15 sustain', 5, 0.15],
+    ['5ms click over a 0.05 sustain', 5, 0.05],
+    ['20ms click over a 0.15 sustain', 20, 0.15],
   ] as const) {
     it(`detects the sustained pitch under a ${name}`, async () => {
       const buffer = render((t) => click(clickMs)(t) + sine(SUSTAINED_HZ, sustainAmp)(t));
@@ -126,7 +126,7 @@ describe("detectSinglePitchAC - a short strong sound does not hide a sustained o
     });
   }
 
-  it("ignores NaN samples rather than letting them set the reference", async () => {
+  it('ignores NaN samples rather than letting them set the reference', async () => {
     const samples = Math.floor(DURATION * SAMPLE_RATE);
     const data = new Float32Array(samples);
     for (let i = 0; i < samples; i++)

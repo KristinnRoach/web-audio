@@ -11,7 +11,7 @@ export type AppSample = {
   isLoaded?: boolean; // todo: follow up
 
   name?: string;
-  type?: "tonal" | "percussive" | "texture"; // revisit later
+  type?: 'tonal' | 'percussive' | 'texture'; // revisit later
 
   mimeType?: unknown; // encoding format ??
 

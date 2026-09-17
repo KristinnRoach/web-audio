@@ -1,5 +1,5 @@
 // createSampleVoice.ts
-import { SampleVoice, type SampleVoiceChainNode } from "./SampleVoice";
+import { SampleVoice, type SampleVoiceChainNode } from './SampleVoice';
 
 export async function createSampleVoice(
   context: AudioContext,

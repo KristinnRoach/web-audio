@@ -1,1 +1,1 @@
-export * from "./findClosest";
+export * from './findClosest';

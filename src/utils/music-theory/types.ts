@@ -23,4 +23,4 @@ export type Scale = {
 /**
  * Type for note root names (C, C#, Db, etc.)
  */
-export type NoteRoot = keyof typeof import("./constants/notes").ROOTS;
+export type NoteRoot = keyof typeof import('./constants/notes').ROOTS;

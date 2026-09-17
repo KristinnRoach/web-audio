@@ -79,7 +79,7 @@ export const compressSingleSample = (
   input: number,
   threshold = 0.75,
   ratio = 4.0,
-  limiter = { enabled: true, type: "soft", outputRange: { min: -1, max: 1 } },
+  limiter = { enabled: true, type: 'soft', outputRange: { min: -1, max: 1 } },
 ): number => {
   const { min, max } = limiter.outputRange;
 
@@ -89,9 +89,9 @@ export const compressSingleSample = (
   }
 
   if (limiter.enabled) {
-    if (limiter.type === "soft") {
+    if (limiter.type === 'soft') {
       x = cheapSoftClipSingleSample(x, Math.abs(max));
-    } else if (limiter.type === "hard") {
+    } else if (limiter.type === 'hard') {
       x = Math.max(min, Math.min(max, x));
     }
   }

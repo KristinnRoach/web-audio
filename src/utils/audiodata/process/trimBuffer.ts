@@ -8,7 +8,7 @@ export function applyFade(
   channelData: Float32Array,
   startSample: number,
   lengthSamples: number,
-  fadeType: "in" | "out",
+  fadeType: 'in' | 'out',
 ) {
   const endSample = Math.min(startSample + lengthSamples, channelData.length);
 
@@ -17,7 +17,7 @@ export function applyFade(
     // Raised cosine: slope is continuous at both ends, so short fades don't
     // click the way a linear ramp's abrupt slope change does.
     const ramp = 0.5 - 0.5 * Math.cos(Math.PI * progress);
-    channelData[i] *= fadeType === "in" ? ramp : 1 - ramp;
+    channelData[i] *= fadeType === 'in' ? ramp : 1 - ramp;
   }
 }
 
@@ -35,7 +35,7 @@ export function minFadeSamples(sampleRate: number) {
  * Fade length per side, in milliseconds. "default" is the shortest fade that
  * still hides a cut at the buffer's sample rate; 0 skips that side.
  */
-export type FadeMs = { in: number | "default"; out: number | "default" };
+export type FadeMs = { in: number | 'default'; out: number | 'default' };
 
 /**
  * Copy samples [start, end) into a new buffer, fading each edge so the cut
@@ -54,8 +54,8 @@ export function trimAudioBuffer(
   const newLength = end - start;
   const trimmedBuffer = ctx.createBuffer(numChannels, newLength, buffer.sampleRate);
 
-  const toSamples = (ms: number | "default") =>
-    ms === "default"
+  const toSamples = (ms: number | 'default') =>
+    ms === 'default'
       ? minFadeSamples(buffer.sampleRate)
       : Math.max(0, Math.floor((ms / 1000) * buffer.sampleRate));
 
@@ -74,8 +74,8 @@ export function trimAudioBuffer(
     // Fade only if the ramps fit. Equal is fine: they abut, they don't overlap,
     // and a disabled side contributes 0, so one fade may fill the whole buffer.
     if (fadeInSamples + fadeOutSamples <= newLength) {
-      if (fadeInSamples > 0) applyFade(output, 0, fadeInSamples, "in");
-      if (fadeOutSamples > 0) applyFade(output, newLength - fadeOutSamples, fadeOutSamples, "out");
+      if (fadeInSamples > 0) applyFade(output, 0, fadeInSamples, 'in');
+      if (fadeOutSamples > 0) applyFade(output, newLength - fadeOutSamples, fadeOutSamples, 'out');
     }
   }
 

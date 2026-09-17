@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
 // Both loop lengths stay under PITCH_PRESERVATION_THRESHOLD (floor(48000 * 0.061) = 2928)
@@ -54,25 +54,25 @@ function makeParameters(
   };
 }
 
-async function startProcessor(playbackDirection: "forward" | "reverse") {
-  const { SamplePlayerProcessor } = await import("../sample-player-processor.js");
+async function startProcessor(playbackDirection: 'forward' | 'reverse') {
+  const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
   processor.enableLoopSmoothing = false;
   processor.port.onmessage?.({
     data: {
-      type: "voice:setBuffer",
+      type: 'voice:setBuffer',
       buffer: [new Float32Array(TEST_SAMPLE_RATE)],
       durationSeconds: 1,
     },
   } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: "setLoopEnabled", value: true } } as MessageEvent);
-  if (playbackDirection === "reverse") {
+  processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+  if (playbackDirection === 'reverse') {
     processor.port.onmessage?.({
-      data: { type: "voice:setPlaybackDirection", playbackDirection },
+      data: { type: 'voice:setPlaybackDirection', playbackDirection },
     } as MessageEvent);
   }
-  processor.port.onmessage?.({ data: { type: "voice:start" } } as MessageEvent);
+  processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
   return processor;
 }
@@ -87,21 +87,21 @@ function render(processor: TestProcessor, parameters: Parameters, frames: number
 // between blocks. The wrap carries the fractional overshoot to keep the loop period
 // exact; when the overshoot exceeds the whole loop it has to fall back to a plain snap
 // or the playhead lands outside the loop entirely.
-describe("loop wrap with an overshoot larger than the loop", () => {
+describe('loop wrap with an overshoot larger than the loop', () => {
   beforeAll(() => {
-    vi.stubGlobal("AudioWorkletProcessor", MockAudioWorkletProcessor);
-    vi.stubGlobal("sampleRate", TEST_SAMPLE_RATE);
-    vi.stubGlobal("currentTime", 0);
-    vi.stubGlobal("currentFrame", 0);
-    vi.stubGlobal("registerProcessor", vi.fn());
+    vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
+    vi.stubGlobal('sampleRate', TEST_SAMPLE_RATE);
+    vi.stubGlobal('currentTime', 0);
+    vi.stubGlobal('currentFrame', 0);
+    vi.stubGlobal('registerProcessor', vi.fn());
   });
 
   afterAll(() => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps the playhead inside the loop when loopEnd moves behind it", async () => {
-    const processor = await startProcessor("forward");
+  it('keeps the playhead inside the loop when loopEnd moves behind it', async () => {
+    const processor = await startProcessor('forward');
 
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES);
     render(processor, wide, WIDE_LOOP_SAMPLES - 99);
@@ -114,8 +114,8 @@ describe("loop wrap with an overshoot larger than the loop", () => {
     expect(processor.playbackPosition).toBeCloseTo(1);
   });
 
-  it("keeps the playhead inside the loop when loopStart moves past it in reverse", async () => {
-    const processor = await startProcessor("reverse");
+  it('keeps the playhead inside the loop when loopStart moves past it in reverse', async () => {
+    const processor = await startProcessor('reverse');
 
     // End the playback range at the loop end so reverse starts inside the loop
     // rather than descending the whole buffer to reach it.

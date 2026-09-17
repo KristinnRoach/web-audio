@@ -8,9 +8,9 @@
  * Past construction, `SampleVoice.#transitionTo` is the only state writer.
  */
 export const VoiceState = {
-  AVAILABLE: "AVAILABLE",
-  PLAYING: "PLAYING",
-  RELEASING: "RELEASING",
+  AVAILABLE: 'AVAILABLE',
+  PLAYING: 'PLAYING',
+  RELEASING: 'RELEASING',
 } as const;
 
 export type VoiceState = (typeof VoiceState)[keyof typeof VoiceState];

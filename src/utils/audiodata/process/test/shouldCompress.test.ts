@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
-import { shouldCompress, needsCompression } from "../shouldCompress";
+import { describe, it, expect, beforeEach, afterEach } from 'vite-plus/test';
+import { shouldCompress, needsCompression } from '../shouldCompress';
 
-describe("shouldCompress edge cases", () => {
+describe('shouldCompress edge cases', () => {
   let audioContext: AudioContext | null = null;
 
   beforeEach(() => {
@@ -28,8 +28,8 @@ describe("shouldCompress edge cases", () => {
     audioContext = null;
   });
 
-  describe("shouldCompress", () => {
-    it("should handle empty buffer without crashing", () => {
+  describe('shouldCompress', () => {
+    it('should handle empty buffer without crashing', () => {
       const buffer = audioContext!.createBuffer(1, 0, 44100);
       const result = shouldCompress(buffer);
 
@@ -37,7 +37,7 @@ describe("shouldCompress edge cases", () => {
       expect(result.shouldCompress).toBe(false);
     });
 
-    it("should handle silent buffer (all zeros)", () => {
+    it('should handle silent buffer (all zeros)', () => {
       const buffer = audioContext!.createBuffer(2, 1000, 44100);
       // Buffer is already filled with zeros by default
 
@@ -47,7 +47,7 @@ describe("shouldCompress edge cases", () => {
       expect(result.shouldCompress).toBe(false);
     });
 
-    it("should handle buffer with DC offset", () => {
+    it('should handle buffer with DC offset', () => {
       const buffer = audioContext!.createBuffer(1, 1000, 44100);
       const data = buffer.getChannelData(0);
 
@@ -63,7 +63,7 @@ describe("shouldCompress edge cases", () => {
       expect(result.shouldCompress).toBe(false); // crest factor < 5.5
     });
 
-    it("should handle very small buffer", () => {
+    it('should handle very small buffer', () => {
       const buffer = audioContext!.createBuffer(1, 1, 44100);
       const data = buffer.getChannelData(0);
       data[0] = 0.7;
@@ -74,7 +74,7 @@ describe("shouldCompress edge cases", () => {
       expect(result.shouldCompress).toBe(false);
     });
 
-    it("should correctly identify dynamic audio needing compression", () => {
+    it('should correctly identify dynamic audio needing compression', () => {
       const buffer = audioContext!.createBuffer(1, 1000, 44100);
       const data = buffer.getChannelData(0);
 
@@ -92,15 +92,15 @@ describe("shouldCompress edge cases", () => {
     });
   });
 
-  describe("needsCompression", () => {
-    it("should handle empty buffer without crashing", () => {
+  describe('needsCompression', () => {
+    it('should handle empty buffer without crashing', () => {
       const buffer = audioContext!.createBuffer(1, 0, 44100);
       const result = needsCompression(buffer);
 
       expect(result).toBe(false);
     });
 
-    it("should not read out of bounds on small buffers", () => {
+    it('should not read out of bounds on small buffers', () => {
       // Create a buffer smaller than the default sample size
       const buffer = audioContext!.createBuffer(2, 100, 44100);
       const data0 = buffer.getChannelData(0);
@@ -115,11 +115,11 @@ describe("shouldCompress edge cases", () => {
       // This should not throw or produce NaN
       const result = needsCompression(buffer);
 
-      expect(typeof result).toBe("boolean");
+      expect(typeof result).toBe('boolean');
       expect(result).not.toBeNaN();
     });
 
-    it("should handle buffer where samplesToCheck exceeds data length", () => {
+    it('should handle buffer where samplesToCheck exceeds data length', () => {
       // The function tries to check 10% of buffer.length or 44100 samples
       // Create a buffer where 10% would be larger than actual channel data
       const buffer = audioContext!.createBuffer(1, 500, 44100);
@@ -133,10 +133,10 @@ describe("shouldCompress edge cases", () => {
       // Should not crash or read out of bounds
       const result = needsCompression(buffer);
 
-      expect(typeof result).toBe("boolean");
+      expect(typeof result).toBe('boolean');
     });
 
-    it("should handle multi-channel buffer correctly", () => {
+    it('should handle multi-channel buffer correctly', () => {
       const buffer = audioContext!.createBuffer(2, 1000, 44100);
 
       // Fill both channels with dynamic data
@@ -154,7 +154,7 @@ describe("shouldCompress edge cases", () => {
       expect(result).toBe(true);
     });
 
-    it("should handle buffer with NaN or Infinity values gracefully", () => {
+    it('should handle buffer with NaN or Infinity values gracefully', () => {
       const buffer = audioContext!.createBuffer(1, 100, 44100);
       const data = buffer.getChannelData(0);
 
@@ -170,7 +170,7 @@ describe("shouldCompress edge cases", () => {
       const result = needsCompression(buffer);
 
       // The result will be based on how NaN/Infinity propagate through math
-      expect(typeof result).toBe("boolean");
+      expect(typeof result).toBe('boolean');
     });
   });
 });
