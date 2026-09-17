@@ -16,7 +16,11 @@ import {
   maxSafeHz,
 } from "@/utils";
 
-import { EnvelopeRuntime, type EnvelopeSettings } from "@/nodes/params/envelopes";
+import {
+  applyOnNextEnvLoopCycle,
+  EnvelopeRuntime,
+  type EnvelopeSettings,
+} from "@/nodes/params/envelopes";
 
 import { HarmonicFeedback } from "@/nodes/effects/HarmonicFeedback";
 
@@ -28,7 +32,6 @@ import {
   getSampleEnvelopeBaseValue,
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
-  getSampleEnvelopeTimeScaleMultiplier,
   resolveSampleEnvelopeTrigger,
   shouldTriggerSampleEnvelope,
   type SampleEnvelopeId,
@@ -414,12 +417,18 @@ export class SampleVoice {
   /** Trigger inputs of the current note, kept so a settings edit can restart from them. */
   #lastTrigger: { playbackRate: number; velocity?: number } | null = null;
 
+  /** Envelopes synced to playback rate stretch with the note; the rest keep their own timing. */
+  #timeScaleMultiplier(envType: SampleEnvelopeId, playbackRate: number) {
+    return this.#playbackRateSyncedEnvelopes.has(envType) ? playbackRate : 1;
+  }
+
   #triggerEnvelope(
     envType: SampleEnvelopeId,
     env: EnvelopeRuntime,
     timestamp: number,
     playbackRate: number,
     velocity?: number,
+    fromPoint = 0,
   ) {
     if (!shouldTriggerSampleEnvelope(envType, env.settings)) return;
     const param = this.getParam(getSampleEnvelopeParamName(envType));
@@ -431,12 +440,9 @@ export class SampleVoice {
       filterCutoff: this.#keytrackedLpfHz(playbackRate),
     });
     const target = resolveSampleEnvelopeTrigger(envType, env.settings.envelope, baseValue, param);
-    const timeScaleMultiplier = getSampleEnvelopeTimeScaleMultiplier(
-      this.#playbackRateSyncedEnvelopes.has(envType),
-      playbackRate,
-    );
+    const timeScaleMultiplier = this.#timeScaleMultiplier(envType, playbackRate);
 
-    env.trigger(param, timestamp, { ...target, timeScaleMultiplier });
+    env.trigger(param, timestamp, { ...target, timeScaleMultiplier, fromPoint });
   }
 
   applyEnvelopes(timestamp: number, playbackRate: number, velocity?: number) {
@@ -448,12 +454,7 @@ export class SampleVoice {
     const envDurations = Object.fromEntries(
       Array.from(this.#envelopes, ([envType, env]) => [
         envType,
-        env.duration(
-          getSampleEnvelopeTimeScaleMultiplier(
-            this.#playbackRateSyncedEnvelopes.has(envType),
-            playbackRate,
-          ),
-        ),
+        env.duration(this.#timeScaleMultiplier(envType, playbackRate)),
       ]),
     );
     const loopEnabled = Object.fromEntries(
@@ -543,12 +544,7 @@ export class SampleVoice {
       enabledEnvelopes.length > 0
         ? Math.max(
             ...enabledEnvelopes.map(([envType, env]) =>
-              env.releaseDuration(
-                getSampleEnvelopeTimeScaleMultiplier(
-                  this.#playbackRateSyncedEnvelopes.has(envType),
-                  playbackRate,
-                ),
-              ),
+              env.releaseDuration(this.#timeScaleMultiplier(envType, playbackRate)),
             ),
           )
         : releaseTime; // Fallback passed in release time
@@ -729,27 +725,54 @@ export class SampleVoice {
     const envelope = this.#envelopes.get(envType);
     if (!envelope) return;
 
-    const wasEnabled = envelope.enabled;
-    envelope.applySettings(settings);
-    if (wasEnabled && !settings.enabled) {
+    if (envelope.enabled && !settings.enabled) {
+      envelope.applySettings(settings);
       envelope.stop();
       this.#resetFilterEnvTarget(envType);
       return;
     }
 
-    // Hand over on the next loop boundary, where point 0 comes round anyway, so the
-    // swap is inaudible. A non-looping run has no such seam and returns null, so it
-    // keeps its current shape and picks the edit up on the next note.
-    const at = envelope.nextCycleTime();
-    if (at === null || !this.#lastTrigger) return;
+    // Loop switched on mid-note has no cycle boundary to hand over on: the run is not
+    // looping yet. Resume from the point it has reached instead, so the shape carries on
+    // into its first full cycle rather than snapping back to point 0.
+    const resumeFrom = settings.envelope.loop && !envelope.loop ? envelope.currentPoint() : null;
+    if (resumeFrom !== null) {
+      envelope.applySettings(settings);
+      this.#retriggerAt(envType, envelope, this.now, resumeFrom);
+      return;
+    }
 
-    const { playbackRate, velocity } = this.#lastTrigger;
-    this.#triggerEnvelope(envType, envelope, at, playbackRate, velocity);
+    applyOnNextEnvLoopCycle(
+      envelope,
+      () => envelope.applySettings(settings),
+      (at) => this.#retriggerAt(envType, envelope, at),
+    );
   };
 
+  /** Restarts an envelope from the current note's trigger inputs, for a live edit. */
+  #retriggerAt(envType: SampleEnvelopeId, envelope: EnvelopeRuntime, at: number, fromPoint = 0) {
+    if (!this.#lastTrigger) return;
+    const { playbackRate, velocity } = this.#lastTrigger;
+    this.#triggerEnvelope(envType, envelope, at, playbackRate, velocity, fromPoint);
+  }
+
+  /**
+   * The sync flag is read at trigger time, so a running envelope only takes the new
+   * time scale on a re-trigger; hand it over on the next loop boundary like a shape edit.
+   */
   setEnvelopePlaybackRateSync = (envType: SampleEnvelopeId, sync: boolean) => {
-    if (sync) this.#playbackRateSyncedEnvelopes.add(envType);
-    else this.#playbackRateSyncedEnvelopes.delete(envType);
+    const apply = () => {
+      if (sync) this.#playbackRateSyncedEnvelopes.add(envType);
+      else this.#playbackRateSyncedEnvelopes.delete(envType);
+    };
+
+    const envelope = this.#envelopes.get(envType);
+    if (!envelope) {
+      apply();
+      return;
+    }
+
+    applyOnNextEnvLoopCycle(envelope, apply, (at) => this.#retriggerAt(envType, envelope, at));
   };
 
   get envelopes() {

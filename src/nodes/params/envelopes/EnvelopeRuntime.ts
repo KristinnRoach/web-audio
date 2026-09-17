@@ -26,6 +26,8 @@ export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, "timeScale"> &
   timeScaleMultiplier?: number;
   /** Optional target-specific shape derived from the stored shape for this run. */
   envelope?: Envelope;
+  /** Point index the first pass opens at; see `EnvelopeTriggerOptions.fromPoint`. */
+  fromPoint?: number;
 };
 
 type ActiveEnvelopeRun = {
@@ -69,6 +71,29 @@ export class EnvelopeRuntime {
 
   get loop() {
     return !!this.#settings.envelope.loop;
+  }
+
+  /**
+   * Index of the last point a non-looping run has reached, or null when there is no
+   * such run. A sustained run stops advancing at its sustain point, so once it is
+   * parked there that is the answer for as long as the note is held.
+   *
+   * ponytail: snaps to a point rather than reporting the exact phase, so resuming from
+   * it is only sample-accurate once the run has settled on sustain - mid-attack it is
+   * off by up to one segment. Split the segment if a toggle mid-attack ever needs to be
+   * click-free.
+   */
+  currentPoint(): number | null {
+    const run = this.#activeRun;
+    if (!run || this.#isReleased || run.envelope.loop) return null;
+
+    const { points, sustain } = run.envelope;
+    const last = sustain ?? points.length - 1;
+    const elapsed = (this.context.currentTime - run.startTime) * run.timeScale;
+
+    let index = 0;
+    while (index < last && points[index + 1].time - points[0].time <= elapsed) index++;
+    return index;
   }
 
   duration(timeScaleMultiplier = 1) {
@@ -139,11 +164,16 @@ export class EnvelopeRuntime {
     };
     const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
     const scheduledStartTime = Math.max(this.context.currentTime, startTime);
-    this.#activeRun = { envelope: scheduledEnvelope, timeScale, startTime: scheduledStartTime };
+    const fromPoint = scheduledEnvelope.loop ? (options.fromPoint ?? 0) : 0;
+    // A run opening mid-shape is anchored on where point 0 would have been, so cycle
+    // boundaries and durations are read off the same grid as a run that started there.
+    const anchor = scheduledStartTime - this.#duration(scheduledEnvelope, 0, fromPoint, timeScale);
+    this.#activeRun = { envelope: scheduledEnvelope, timeScale, startTime: anchor };
     const schedule = {
       base: options.base,
       amount: options.amount,
       timeScale,
+      fromPoint,
     };
 
     // Stop the outgoing run *at the handover*, not at `now`: that cancels its queued
@@ -156,7 +186,7 @@ export class EnvelopeRuntime {
     this.#scheduler.trigger(scheduledStartTime, schedule);
 
     if (this.callbacks.onPoint) {
-      this.#startPointCallbacks(this.#activeRun, scheduledStartTime);
+      this.#startPointCallbacks(this.#activeRun, scheduledStartTime, fromPoint);
     }
 
     if (
@@ -200,7 +230,7 @@ export class EnvelopeRuntime {
     this.stop();
   }
 
-  #startPointCallbacks(run: ActiveEnvelopeRun, startTime: number) {
+  #startPointCallbacks(run: ActiveEnvelopeRun, startTime: number, fromPoint = 0) {
     const { envelope, timeScale } = run;
 
     const end = envelope.loop
@@ -209,7 +239,10 @@ export class EnvelopeRuntime {
     const duration = this.#duration(envelope, 0, end, timeScale);
     if (duration <= 0) return;
 
-    this.#schedulePointCallbackCycle(envelope, startTime, 0, end, timeScale);
+    // `run.startTime` is the anchor: `startTime` for a run opening at point 0, earlier
+    // for one resuming mid-shape. Cycles after the first are read off the anchor.
+    const anchor = run.startTime;
+    this.#schedulePointCallbackCycle(envelope, startTime, fromPoint, end, timeScale, fromPoint);
 
     let cycle = 1;
     const tick = () => {
@@ -217,18 +250,18 @@ export class EnvelopeRuntime {
         return this.#clearLoopTimers();
       }
 
-      this.#schedulePointCallbackCycle(envelope, startTime + cycle * duration, 0, end, timeScale);
+      this.#schedulePointCallbackCycle(envelope, anchor + cycle * duration, 0, end, timeScale);
 
       cycle++;
       this.#loopTimer = setTimeout(
         tick,
-        Math.max(0, (startTime + cycle * duration - this.context.currentTime) * 1000),
+        Math.max(0, (anchor + cycle * duration - this.context.currentTime) * 1000),
       );
     };
 
     this.#loopTimer = setTimeout(
       tick,
-      Math.max(0, (startTime + duration - this.context.currentTime) * 1000),
+      Math.max(0, (anchor + duration - this.context.currentTime) * 1000),
     );
   }
 
@@ -298,4 +331,25 @@ export class EnvelopeRuntime {
     }
     this.#clearLoopTimers();
   }
+}
+
+/**
+ * Applies an envelope edit at the seam where it is inaudible.
+ *
+ * A looping run is back at point 0 every cycle, so re-triggering exactly on a boundary
+ * is continuous by construction. `apply` runs immediately either way; `retrigger` only
+ * runs when there is a boundary to hand over on. Anything else - idle, one-shot,
+ * sustained - has no such seam and picks the edit up on its next trigger.
+ *
+ * The boundary is read before `apply` so the answer describes the run that is actually
+ * playing, not the edit replacing it.
+ */
+export function applyOnNextEnvLoopCycle(
+  runtime: EnvelopeRuntime,
+  apply: () => void,
+  retrigger: (at: number) => void,
+): void {
+  const at = runtime.nextCycleTime();
+  apply();
+  if (at !== null) retrigger(at);
 }

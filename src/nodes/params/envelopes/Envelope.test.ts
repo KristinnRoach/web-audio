@@ -426,3 +426,45 @@ test("a release index without a sustain plays through and still has a tail", () 
 
   env.dispose();
 });
+
+// Loop switched on while a note is parked on its sustain point: the first pass carries
+// on from there, and the full cycles after it sit on the grid point 0 would have had.
+test("opens a fromPoint run mid-shape and anchors its cycles on point 0", () => {
+  vi.useFakeTimers();
+  const { calls, param } = mockParam();
+  const clock = { currentTime: 0 };
+  const envelope: Envelope = {
+    points: [
+      { time: 0, value: 0 },
+      { time: 0.2, value: 1 },
+      { time: 0.4, value: 0.5 },
+      { time: 1, value: 0 },
+    ],
+    sustain: 1,
+    release: 2,
+    loop: true,
+  };
+  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+
+  env.trigger(4, { fromPoint: 1 });
+
+  // The opening pass runs sustain -> end: no attack, and nothing scheduled before 4.
+  expect(calls.set).toHaveBeenCalledWith(1, 4);
+  expect(calls.linear).toHaveBeenCalledWith(0.5, 4.2);
+  expect(calls.linear).toHaveBeenCalledWith(0, 4.8);
+  const times = [...calls.set.mock.calls, ...calls.linear.mock.calls].map(([, t]) => t as number);
+  expect(Math.min(...times)).toBeCloseTo(4, 10);
+
+  clock.currentTime = 5;
+  vi.advanceTimersByTime(50);
+
+  // Anchor is 3.8 (point 0's virtual time), so full cycles open at 4.8, 5.8, ...
+  const opens = [...new Set(calls.set.mock.calls.map(([, time]) => time as number))].sort(
+    (a, b) => a - b,
+  );
+  expect(opens[0]).toBeCloseTo(4, 10);
+  expect(opens[1]).toBeCloseTo(4.8, 10);
+  expect(opens[2]).toBeCloseTo(5.8, 10);
+
+  env.dispose();
+});

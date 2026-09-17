@@ -127,8 +127,16 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
  */
 export type ScheduleOptions = { base?: number; amount?: number; timeScale?: number };
 
+/**
+ * `fromPoint` opens the first pass mid-shape at that point index instead of point 0,
+ * for a loop switched on while the envelope is parked on its sustain point: the shape
+ * carries on from where it is into its first full cycle rather than snapping back.
+ * Looping runs only; every other shape is scheduled in one pass from point 0.
+ */
+export type EnvelopeTriggerOptions = ScheduleOptions & { fromPoint?: number };
+
 export type EnvelopeScheduler = {
-  trigger(time?: number, options?: ScheduleOptions): void;
+  trigger(time?: number, options?: EnvelopeTriggerOptions): void;
   release(time?: number): void;
   stop(time?: number): void;
   dispose(): void;
@@ -400,6 +408,12 @@ export function createEnvelopeScheduler(
         return;
       }
 
+      // Opening mid-shape moves the anchor back to where point 0 would have been, so
+      // every cycle boundary below still lands on the same grid and `valueAt` keeps
+      // reading the right phase. The anchor is in the past; nothing is scheduled there.
+      const from = Math.min(Math.max(options.fromPoint ?? 0, 0), points.length - 1);
+      triggerTime = time - (points[from].time - points[0].time) / timeScale;
+
       // Cycle n opens at time + n * duration, the first pass included, so there is no
       // pre-loop stage and point 0 lands on the trigger time every pass. Absolute
       // times, not an accumulated sum, so cycles cannot drift apart.
@@ -410,7 +424,7 @@ export function createEnvelopeScheduler(
       let cycleEnd = scheduleRange(
         param,
         envelope,
-        0,
+        from,
         points.length - 1,
         time,
         base,
@@ -418,18 +432,21 @@ export function createEnvelopeScheduler(
         timeScale,
       );
 
+      // A partial opening pass ends exactly where cycle 1 begins, so the grid carries on
+      // from here either way.
+      const anchor = triggerTime;
       let cycle = 1;
       removeLoop = addLoop(() => {
         const now = context.currentTime;
         const horizon = now + LOOKAHEAD_SECONDS;
 
-        while (time + (cycle + 1) * duration <= now) cycle++;
-        while (time + cycle * duration < horizon) {
+        while (anchor + (cycle + 1) * duration <= now) cycle++;
+        while (anchor + cycle * duration < horizon) {
           // A cycle opens on the same instant the previous one closes, but the two
           // expressions for it can differ by an ULP. When the closing ramp rounds later
           // than the opening setValueAtTime it overwrites the reset and that pass loses
           // its attack, so never open a cycle before the previous one has ended.
-          const start = Math.max(time + cycle * duration, cycleEnd);
+          const start = Math.max(anchor + cycle * duration, cycleEnd);
           cycleEnd = scheduleRange(
             param,
             envelope,

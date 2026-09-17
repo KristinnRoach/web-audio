@@ -83,13 +83,6 @@ export function resolveSampleEnvelopeTrigger(
   return { envelope: { ...envelope, points } };
 }
 
-export function getSampleEnvelopeTimeScaleMultiplier(
-  syncToPlaybackRate: boolean,
-  playbackRate: number,
-) {
-  return syncToPlaybackRate ? playbackRate : 1;
-}
-
 export function getPostFilterEnvelopeOptions(settings: EnvelopeSettings, amount: number) {
   return {
     amount: settings.enabled ? amount : 0,

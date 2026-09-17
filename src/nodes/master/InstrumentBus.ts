@@ -451,7 +451,6 @@ export class InstrumentBus implements ILibAudioNode {
    * MIDI note's playback rate.
    */
   setLpfEnvelope(envelope: Envelope | null, { amount = 0, timeScale = 1 } = {}): this {
-    this.#lpfEnvelope?.dispose();
     this.#lpfEnvAmount = amount;
 
     if (!envelope || amount === 0) {
