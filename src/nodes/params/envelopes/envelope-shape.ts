@@ -48,6 +48,7 @@ export function addPoint(
 ): Envelope {
   const { points } = envelope;
   if (!Number.isFinite(time)) return envelope;
+  if (points.some((point) => point.time === time)) return envelope;
   if (points.length >= 2 && (time < points[0].time || time > points[lastIndex(envelope)].time)) {
     return envelope;
   }
