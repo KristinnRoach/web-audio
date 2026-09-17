@@ -1118,7 +1118,8 @@ export class SampleVoice {
   /**
    * @param options.glideTime Ramp duration in seconds. For the filter cutoffs this is
    * converted to a `setTargetAtTime` time constant (glideTime / 3), so the cutoff is
-   * ~95% settled at `glideTime`. Defaults to DEFAULT.CUTOFF_SMOOTHING_SEC.
+   * ~95% settled at `glideTime`. When omitted, DEFAULT.CUTOFF_SMOOTHING_SEC is used as
+   * the time constant itself, so the cutoff is ~95% settled after 3x that.
    * @param options.cancelPrevious Clear automation already scheduled on the param.
    * Defaults to true. Pass false to let a running envelope or LFO ramp survive.
    */
@@ -1144,7 +1145,8 @@ export class SampleVoice {
   /**
    * @param options.glideTime Ramp duration in seconds. For the filter cutoffs this is
    * converted to a `setTargetAtTime` time constant (glideTime / 3), so the cutoff is
-   * ~95% settled at `glideTime`. Defaults to DEFAULT.CUTOFF_SMOOTHING_SEC.
+   * ~95% settled at `glideTime`. When omitted, DEFAULT.CUTOFF_SMOOTHING_SEC is used as
+   * the time constant itself, so the cutoff is ~95% settled after 3x that.
    * @param options.cancelPrevious Clear automation already scheduled on the param.
    * Defaults to true. Pass false to let a running envelope or LFO ramp survive.
    */
