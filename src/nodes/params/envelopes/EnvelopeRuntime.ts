@@ -77,31 +77,38 @@ export class EnvelopeRuntime {
   /**
    * How far into the shape the live run has got at `time`, or `null` when no run is live.
    *
-   * The unit is **envelope time**: the same scale `points[i].time` is written in, measured
-   * as an offset from `points[0].time`. `0` is point 0, `points[2].time` is point 2.
+   * **Seconds**, on the same scale `points[i].time` is written in, measured as an offset
+   * from `points[0].time`. `0` is point 0, `points[2].time` is point 2.
+   *
+   * Seconds is required rather than chosen: point times reach the parameter as
+   * `startTime + (points[i].time - points[from].time) / timeScale` and land in
+   * `linearRampToValueAtTime`, which reads `AudioContext` seconds.
    *
    * It is *not* `context.currentTime - startTime`. Wall seconds are scaled first:
    *
    * ```
-   * phase = (time - anchorTime) * timeScale
+   * position = (time - anchorTime) * timeScale
    * ```
    *
    * where `timeScale` is the run's, so `settings.timeScale * timeScaleMultiplier` as it
-   * was at trigger. A run playing at twice speed reaches phase 1 after half a second of
-   * wall clock. Go back the other way with `anchorTime + phase / timeScale`.
+   * was at trigger. A run playing at twice speed reaches position 1 after half a second
+   * of wall clock. Go back the other way with `anchorTime + position / timeScale`.
    *
    * The shape bounds the result: a loop wraps it into `[0, cycle)`, and a sustained run
    * clamps it at the sustain point and stays there while the note is held.
    *
    * `anchorTime` is where point 0 *would have* been, which for a run opened mid-shape
-   * with `fromPoint` is earlier than the trigger. Phase therefore reads off the same grid
-   * either way.
+   * with `fromPoint` is earlier than the trigger. The position therefore reads off the
+   * same grid either way.
+   *
+   * A normalized 0..1 phase, if a looping run ever wants one, is `position() / duration()`
+   * at the call site. Not an accessor here: it only means anything while looping.
    *
    * Null once released or stopped: the tail runs on its own clock from note-off, so no
    * single offset into the shape describes it.
    */
-  phase(time = this.context.currentTime): number | null {
-    return this.#scheduler?.phase(time) ?? null;
+  position(time = this.context.currentTime): number | null {
+    return this.#scheduler?.position(time) ?? null;
   }
 
   /**

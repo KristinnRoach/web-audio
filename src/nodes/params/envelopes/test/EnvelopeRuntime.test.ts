@@ -280,7 +280,7 @@ describe('live sustain value', () => {
   });
 });
 
-describe('EnvelopeRuntime.phase', () => {
+describe('EnvelopeRuntime.position', () => {
   // settingsOf() points sit at 0, 0.5, 1 and 1.5.
   const at = (settings: EnvelopeSettings, currentTime: number, multiplier?: number) => {
     const context = contextAt(0);
@@ -292,30 +292,30 @@ describe('EnvelopeRuntime.phase', () => {
 
   it('is null with no live run', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
-    expect(runtime.phase()).toBeNull();
+    expect(runtime.position()).toBeNull();
   });
 
   it('is null once released, and once stopped', () => {
     const released = at(settingsOf(), 0.75);
     released.release(0.75);
-    expect(released.phase()).toBeNull();
+    expect(released.position()).toBeNull();
 
     const stopped = at(settingsOf(), 0.75);
     stopped.stop();
-    expect(stopped.phase()).toBeNull();
+    expect(stopped.position()).toBeNull();
   });
 
-  it('reports envelope time, which matches wall seconds only at timeScale 1', () => {
-    expect(at(settingsOf(), 0.75).phase()).toBeCloseTo(0.75);
+  it('reports seconds of envelope time, matching wall seconds only at timeScale 1', () => {
+    expect(at(settingsOf(), 0.75).position()).toBeCloseTo(0.75);
   });
 
   it('scales wall seconds by the run timeScale', () => {
     // Twice speed: a quarter second of wall clock is half a second into the shape.
-    expect(at(settingsOf({ timeScale: 2 }), 0.25).phase()).toBeCloseTo(0.5);
+    expect(at(settingsOf({ timeScale: 2 }), 0.25).position()).toBeCloseTo(0.5);
   });
 
   it('folds the host multiplier into the same scale', () => {
-    expect(at(settingsOf(), 0.25, 2).phase()).toBeCloseTo(0.5);
+    expect(at(settingsOf(), 0.25, 2).position()).toBeCloseTo(0.5);
   });
 
   it('clamps at the sustain point while the note is held', () => {
@@ -323,12 +323,12 @@ describe('EnvelopeRuntime.phase', () => {
       envelope: { ...settingsOf().envelope, sustain: 1, release: 1 },
     });
     // Point 1 is at 0.5; the run parks there rather than advancing to 1.2.
-    expect(at(sustained, 1.2).phase()).toBeCloseTo(0.5);
+    expect(at(sustained, 1.2).position()).toBeCloseTo(0.5);
   });
 
   it('wraps into the cycle while looping', () => {
     const looping = settingsOf({ envelope: { ...settingsOf().envelope, loop: true } });
     // Cycle is 1.5 long, so 1.75 of wall clock is 0.25 into the second pass.
-    expect(at(looping, 1.75).phase()).toBeCloseTo(0.25);
+    expect(at(looping, 1.75).position()).toBeCloseTo(0.25);
   });
 });
