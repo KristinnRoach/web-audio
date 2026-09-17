@@ -6,6 +6,7 @@ import {
   scheduleEnvelope,
   type Envelope,
 } from './Envelope';
+import { createFakeParam } from './fakeParam';
 
 afterEach(() => vi.useRealTimers());
 
@@ -267,6 +268,55 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
   opens.forEach((time, cycle) => expect(time).toBeCloseTo(4 + cycle * 0.4, 10));
 
   env.dispose();
+});
+
+// The test above places cycles on the grid to within 5e-11, which is the tolerance the
+// guard below needs; this one is about the ULP underneath it. A cycle's opening
+// `setValueAtTime` and the previous cycle's closing ramp are the same instant reached by
+// two different sums, so they can land an ULP apart. Ordered the wrong way the ramp
+// overwrites the reset and that pass loses its attack - audibly a skipped loop cycle, and
+// only for some durations, since it is a rounding accident.
+test('never opens a loop cycle before the previous one has closed', () => {
+  vi.useFakeTimers();
+  const param = createFakeParam();
+  const clock = { currentTime: 0 };
+  const envelope: Envelope = {
+    points: [
+      { time: 0, value: 0, curve: 'linear' },
+      { time: 0.02, value: 1, curve: 'exponential' },
+      { time: 0.3, value: 0.15, curve: 'linear' },
+    ],
+    // `loop` takes the place of `sustain` rather than combining with it, and this test
+    // never releases, so pointing `release` at the last point leaves that stage empty.
+    release: 2,
+    loop: true,
+  };
+  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+
+  env.trigger(0.1);
+
+  // Past the durations where the rounding flips, which for 0.3 s first happens at t = 1.
+  for (let tick = 0; tick < 200; tick++) {
+    clock.currentTime += 0.05;
+    vi.advanceTimersByTime(50);
+  }
+
+  // `ramps()` drops the cancels, and cycle 0 opens with its own `set`, so this is whole
+  // cycles as-is. Read it before dispose, which pins once more.
+  const cycles = param.ramps();
+  env.dispose();
+
+  // Each cycle emits set, linear, exponential - the last of a triple closes it.
+  expect(cycles.map((e) => e.type)).toEqual(
+    cycles.map((_, index) => ['set', 'linear', 'exponential'][index % 3]),
+  );
+  expect(cycles.length / 3).toBeGreaterThan(20);
+
+  for (let index = 3; index < cycles.length; index += 3) {
+    expect(cycles[index - 1].time, `cycle ${index / 3} opens early`).toBeLessThanOrEqual(
+      cycles[index].time,
+    );
+  }
 });
 
 test('release exits a whole-envelope loop and plays its release tail', () => {

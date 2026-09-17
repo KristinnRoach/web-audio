@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   test: {
+    // Only for code that needs a real AudioContext or AudioParam. A scheduling test that
+    // mocks both belongs in the node suite, where it runs without booting Chrome and is
+    // covered by `vp check` — see Envelope.loop.test.ts and fakeParam.ts.
     include: ['**/*.browser.test.ts'],
     browser: {
       enabled: true,
