@@ -1,6 +1,12 @@
 # Proposal: what an envelope edit may change, and when
 
-Status: proposal, not applied. Scope is `src/nodes/params/envelopes/` only.
+Status: partly applied. Scope is `src/nodes/params/envelopes/` only.
+
+| Part                                | State                                                                       |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| B - late-bound release stage        | Not applied. `release(startTime)` still reads the trigger snapshot.         |
+| D - resuming from the sustain point | Applied (`5c58ad1`), with a different API than the one proposed below.      |
+| The deferred sustain question       | Half answered (`d8bf8cd`): the sustain **value** is live, the index is not. |
 
 ## Context to read first
 
@@ -75,8 +81,7 @@ release, assert the tail follows the new points and starts from the held value.
 
 ### Problem
 
-`nextCycleTime()` gates on `#activeRun.envelope.loop`, the **outgoing** run's flag
-(`EnvelopeRuntime.ts:112`). So:
+`nextCycleTime()` gates on `#activeRun.envelope.loop`, the **outgoing** run's flag. So:
 
 - Disabling loop on a looping run works. The old run is looping, a boundary exists, the
   handover installs the sustaining shape. Already correct.
@@ -90,7 +95,7 @@ cannot express it, because it returns a time and assumes index 0.
 Resuming there also rebinds `timeScale`, so enabling loop picks up a pending playback-rate
 sync at the same moment rather than at the next note.
 
-### Change
+### Change — applied in a different shape; see Naming below
 
 The seam accessor returns where as well as when:
 
@@ -112,38 +117,68 @@ The seam accessor returns where as well as when:
   `points[fromIndex].time`. This is the fiddly part and the one most worth an ear test —
   get it wrong and the release handoff pins the wrong value.
 
-### Naming
+### Naming — superseded by what shipped
 
-`nextSeam` was rejected as too vague, and it is. `nextLoopCycle` has the opposite
-problem: the sustain pickup is not a loop cycle, so the name would lie in exactly the
-case D exists to add.
+The naming problem below was sidestepped rather than solved. `nextCycleTime(): number |
+null` kept its name and its job of reporting a loop boundary, and the sustain pickup
+became two separate pieces: `EnvelopeRuntime.currentPoint()` reports the point a
+non-looping run has reached, and `trigger()` takes a `fromPoint` to open there. One
+accessor returning `{ startTime, fromIndex }` was not needed, because the caller already
+knows which of the two cases it is in.
 
-Suggested: **`nextRestartPoint()`** — it names what the caller does with it. Open to
-alternatives; this is the one thing in the ticket still undecided.
+Kept for the reasoning:
 
-If D is dropped, `nextCycleTime(): number | null` stays as-is and is the right name.
+> `nextSeam` was rejected as too vague, and it is. `nextLoopCycle` has the opposite
+> problem: the sustain pickup is not a loop cycle, so the name would lie in exactly the
+> case D exists to add.
+>
+> Suggested: **`nextRestartPoint()`** — it names what the caller does with it.
 
 ### Constraint to document
 
 The sustain seam is exact only while the edit leaves `points[sustain].value` alone. A
-pure loop toggle does. An edit that moves that point jumps, and there is no seam for it —
-that is the deferred sustain question, not something D solves.
+pure loop toggle does. Moving that point is handled separately, below.
+
+## The sustain value, applied separately (`d8bf8cd`)
+
+The deferred sustain question turned out to be two questions with different answers.
+
+**The value is live.** A sustained run schedules points `0..sustain` and stops, so the
+hold is an absence of scheduled events rather than an event. Nothing is queued after it
+to reschedule and no seam has to be waited for: pin, glide, done.
+`EnvelopeScheduler.setSustainValue()` does that and `applySettings` forwards to it.
+
+The point is mutated in place on the run's own clone, because `valueAt` and
+`releaseEnvelope` read that same object. Without the mutation the note-off handoff pins
+the old value and jumps, which is the whole bug the seam rule exists to prevent.
+
+**Only while the run is already parked there.** Earlier than the sustain point the
+points between now and sustain are still on the timeline, and the cancel needed to write
+the new value takes them with it: the parameter abandons the attack peak and heads
+straight for the sustain value. Rescheduling the remainder from the current position was
+tried and still steps audibly, so mid-flight edits wait for the next trigger like
+everything else. That one is still open.
+
+**The index is unchanged.** Still deferred, for the reason in the original ticket: the
+held value would have to jump or glide, and there is no seam that avoids it.
 
 ## Staging
 
-Two commits. Land the accessor's final shape in the first one, with `fromIndex` always 0,
-so the signature does not churn:
+D and the sustain value landed first, each in its own commit, and neither needed the
+rename. What is left is B on its own:
 
-1. **B** + rename to `nextRestartPoint()` returning `{ startTime, fromIndex }`. Mechanical.
-2. **D** — the sustain pickup and the scheduler's pickup-then-loop path. New logic, needs
-   an ear test.
+1. ~~**D** — the sustain pickup and the scheduler's pickup-then-loop path.~~ `5c58ad1`.
+2. ~~The sustain **value** on a held note.~~ `d8bf8cd`.
+3. **B** — the late-bound release stage. Mechanical, and it is the one that fixes the
+   live cutoff bug in Part B's second bullet.
 
-`EnvelopeRuntime` is exported from `src/index.ts` and the package is at `0.4.2` with two
-pending changesets, so `nextCycleTime()` has not shipped. Renaming now costs nothing.
+`EnvelopeRuntime` is exported from `src/index.ts` and none of this has been released yet,
+so B may still change the `release()` signature without a deprecation.
 
 ## Explicitly out of scope
 
 - Changing the sustain index mid-note. No seam exists; the held value would have to jump
-  or glide. Deferred by decision.
+  or glide. Deferred by decision. The sustain _value_ is live while the note is parked on
+  it; see above.
 - Phase continuation for non-looping envelopes generally.
 - Anything in `temporary-sample-envelope-adapters.ts`. Sampler policy stays deferred there.
