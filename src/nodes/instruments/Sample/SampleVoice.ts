@@ -1,5 +1,6 @@
 import { LibAudioNode, Destination, NodeType } from "@/nodes";
 import { getAudioContext } from "@/context";
+import { DEFAULT } from "@/constants";
 import { registerNode, NodeID, unregisterNode } from "@/nodes/node-store";
 import { VoiceState } from "../VoiceState";
 
@@ -12,6 +13,7 @@ import {
   midiToPlaybackRate,
   getKeytrackedFilterHz,
   clampHz,
+  durationToTimeConstant,
   maxSafeHz,
 } from "@/utils";
 
@@ -30,7 +32,7 @@ import { samplerParams } from "./sampler-params";
 
 export type SampleVoiceChainNode = "feedback" | "am" | "hpf" | "lpf";
 
-const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ["lpf", "hpf", "am", "feedback"];
+const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ["am", "hpf", "feedback", "lpf"];
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
@@ -71,13 +73,14 @@ export class SampleVoice {
   #hpf: BiquadFilterNode | null = null;
   #lpf: BiquadFilterNode | null = null;
   #hpfHz: number = samplerParams.highpassFilter.defaultValue;
-  #hpfQ: number = 0.5;
+  #hpfQ: number = DEFAULT.HPF_Q;
   #lpfHz: number = maxSafeHz();
-  #lpfQ: number = 0.707;
-  // Keytracking defaults roughly tuned by ear for now
+  #lpfQ: number = DEFAULT.LPF_Q;
+  // Keytracking off by default: it fought the post-FX filter envelope by moving the
+  // cutoff the sweep starts from. Was 0.25 / 0.75, tuned by ear.
   // TODO: Consider adding as params (#31)
-  #keytrackLPFAmount: number = 0.25;
-  #keytrackHPFAmount: number = 0.75;
+  #keytrackLPFAmount: number = 0;
+  #keytrackHPFAmount: number = 0;
 
   // static getProcessorParamDescriptors() {
   //   return SAMPLE_PLAYER_PARAM_DESCRIPTORS;
@@ -618,12 +621,8 @@ export class SampleVoice {
     const keytrackedHz = getKeytrackedFilterHz(this.#hpfHz, playbackRate, this.#keytrackHPFAmount);
     const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
-    if (glideTime > 0) {
-      freq.setTargetAtTime(safeHz, atTime, glideTime);
-    } else {
-      // immediate set, slightly offset to avoid scheduling conflicts
-      freq.setValueAtTime(safeHz, Math.max(atTime, this.now + 0.001));
-    }
+    const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+    freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
   /**
@@ -657,12 +656,8 @@ export class SampleVoice {
 
     const safeHz = this.#keytrackedLpfHz(playbackRate);
 
-    if (glideTime > 0) {
-      freq.setTargetAtTime(safeHz, atTime, glideTime);
-    } else {
-      // immediate set, slightly offset to avoid scheduling conflicts
-      freq.setValueAtTime(safeHz, Math.max(atTime, this.now + 0.001));
-    }
+    const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+    freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
   // === LFOs ===
@@ -1135,6 +1130,14 @@ export class SampleVoice {
     return this;
   }
 
+  /**
+   * @param options.glideTime Ramp duration in seconds. For the filter cutoffs this is
+   * converted to a `setTargetAtTime` time constant (glideTime / 3), so the cutoff is
+   * ~95% settled at `glideTime`. When omitted, DEFAULT.CUTOFF_SMOOTHING_SEC is used as
+   * the time constant itself, so the cutoff is ~95% settled after 3x that.
+   * @param options.cancelPrevious Clear automation already scheduled on the param.
+   * Defaults to true. Pass false to let a running envelope or LFO ramp survive.
+   */
   setHpfCutoff(
     hz: number,
     atTime: number = this.now,
@@ -1145,14 +1148,23 @@ export class SampleVoice {
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#hpfHz = safeHz;
     if (this.#hpf) {
-      this.setParam("hpf", safeHz, atTime, { glideTime: 0 });
-      // this.#hpf.frequency.setValueAtTime(safeHz, this.now);
+      const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+      if (options.cancelPrevious ?? true) this.#hpf.frequency.cancelScheduledValues(atTime);
+      this.#hpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;
       this.#updateHPFCutoffForPlaybackRate(currentRate, atTime, options);
     }
     return this;
   }
 
+  /**
+   * @param options.glideTime Ramp duration in seconds. For the filter cutoffs this is
+   * converted to a `setTargetAtTime` time constant (glideTime / 3), so the cutoff is
+   * ~95% settled at `glideTime`. When omitted, DEFAULT.CUTOFF_SMOOTHING_SEC is used as
+   * the time constant itself, so the cutoff is ~95% settled after 3x that.
+   * @param options.cancelPrevious Clear automation already scheduled on the param.
+   * Defaults to true. Pass false to let a running envelope or LFO ramp survive.
+   */
   setLpfCutoff(
     hz: number,
     atTime: number = this.now,
@@ -1163,10 +1175,9 @@ export class SampleVoice {
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
     if (this.#lpf) {
-      this.setParam("lpf", safeHz, atTime, {
-        glideTime: 0,
-        cancelPrevious: true,
-      });
+      const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
+      if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);
+      this.#lpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
       const currentRate = this.getParam("playbackRate")?.value ?? 1;
       this.#updateLPFCutoffForPlaybackRate(currentRate, atTime, options);
     }

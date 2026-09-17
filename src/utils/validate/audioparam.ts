@@ -34,3 +34,21 @@ export function maxSafeHz(sampleRate?: number): number {
 export function clampHz(hz: number, sampleRate?: number): number {
   return clamp(hz, MIN_HZ, maxSafeHz(sampleRate));
 }
+
+/**
+ * Converts a ramp duration in seconds to a `setTargetAtTime` time constant.
+ *
+ * `durationSec` is the duration by which the param should be ~95% settled.
+ * `setTargetAtTime` approaches its target exponentially and is ~95% there after
+ * 3 time constants, so the constant is `durationSec / 3`. Non-positive or
+ * non-finite input returns `fallbackSec`; a negative time constant makes
+ * `setTargetAtTime` throw a RangeError.
+ */
+export function durationToTimeConstant(
+  durationSec: number | undefined,
+  fallbackSec: number,
+): number {
+  return durationSec !== undefined && isFinite(durationSec) && durationSec > 0
+    ? durationSec / 3
+    : fallbackSec;
+}

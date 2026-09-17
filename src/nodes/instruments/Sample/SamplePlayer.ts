@@ -1254,18 +1254,19 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.outBus.setSendAmount(effect, amount);
   };
 
-  setLpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "pre") => {
+  setLpfCutoff = (hz: number, preOrPostFx: "pre" | "post" | "all" = "all") => {
     this.#lpfCutoff = hz;
-    if (preOrPostFx === "pre") {
+    if (preOrPostFx === "pre" || preOrPostFx === "all") {
       this.voicePool.applyToAllVoices((v) => {
         v.setLpfCutoff(hz);
       });
-    } else if (preOrPostFx === "post") {
+    }
+    if (preOrPostFx === "post" || preOrPostFx === "all") {
       this.outBus.setLpfCutoff(hz);
     }
   };
 
-  setHpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "pre") => {
+  setHpfCutoff = (hz: number, preOrPostFx: "pre" | "post" = "post") => {
     this.#hpfCutoff = hz;
     if (preOrPostFx === "pre") {
       this.voicePool.applyToAllVoices((v) => {
