@@ -5,7 +5,7 @@ import {
   releaseEnvelope,
   scheduleEnvelope,
   type Envelope,
-} from './Envelope';
+} from '../Envelope';
 import { createFakeParam } from './fakeParam';
 
 afterEach(() => vi.useRealTimers());
