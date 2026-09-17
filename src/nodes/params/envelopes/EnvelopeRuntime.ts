@@ -31,6 +31,7 @@ export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, "timeScale"> &
 type ActiveEnvelopeRun = {
   envelope: Envelope;
   timeScale: number;
+  startTime: number;
 };
 
 /**
@@ -99,6 +100,30 @@ export class EnvelopeRuntime {
     return releaseDuration(this.#settings, timeScaleMultiplier);
   }
 
+  /**
+   * Absolute time of the next loop boundary, or null when there is no boundary to wait for.
+   *
+   * A loop is back at point 0 every cycle, so re-triggering exactly on a boundary is
+   * continuous by construction and needs no phase maths. That makes it the one seam
+   * where new settings can be swapped in mid-note without a jump, which is why only a
+   * looping run answers; everything else applies on its next trigger.
+   *
+   * A run that has not started yet is already waiting on a seam, so that is the answer.
+   * Editors commit on every pointer move, and each commit asks again before the previous
+   * handover has arrived; without this the answer would advance a cycle every time and
+   * a drag would push its own edit further and further out.
+   */
+  nextCycleTime(): number | null {
+    if (!this.#activeRun?.envelope.loop) return null;
+    const { envelope, timeScale, startTime } = this.#activeRun;
+    const cycle = this.#duration(envelope, 0, envelope.points.length - 1, timeScale);
+    if (cycle <= 0) return null;
+
+    const elapsed = this.context.currentTime - startTime;
+    if (elapsed < 0) return startTime;
+    return startTime + (Math.floor(elapsed / cycle) + 1) * cycle;
+  }
+
   applySettings(settings: EnvelopeSettings) {
     assertValidEnvelopeSettings(settings);
     this.#settings = cloneEnvelopeSettings(settings);
@@ -113,16 +138,21 @@ export class EnvelopeRuntime {
       points: sourceEnvelope.points.map((point) => ({ ...point })),
     };
     const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
-    this.#activeRun = { envelope: scheduledEnvelope, timeScale };
+    const scheduledStartTime = Math.max(this.context.currentTime, startTime);
+    this.#activeRun = { envelope: scheduledEnvelope, timeScale, startTime: scheduledStartTime };
     const schedule = {
       base: options.base,
       amount: options.amount,
       timeScale,
     };
 
-    this.#scheduler?.dispose();
+    // Stop the outgoing run *at the handover*, not at `now`: that cancels its queued
+    // lookahead from there on while leaving everything before it to play out, so a
+    // trigger scheduled ahead takes over without cutting the current run short. The
+    // pin it writes is the param's stale value, immediately cancelled and replaced by
+    // the new run's first point at the same instant.
+    this.#scheduler?.stop(scheduledStartTime);
     this.#scheduler = createEnvelopeScheduler(this.context, param, scheduledEnvelope);
-    const scheduledStartTime = Math.max(this.context.currentTime, startTime);
     this.#scheduler.trigger(scheduledStartTime, schedule);
     if (this.callbacks.onPoint) {
       this.#startPointCallbacks(this.#activeRun, scheduledStartTime);

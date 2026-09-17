@@ -411,24 +411,38 @@ export class SampleVoice {
     return this.#midiNote;
   }
 
+  /** Trigger inputs of the current note, kept so a settings edit can restart from them. */
+  #lastTrigger: { playbackRate: number; velocity?: number } | null = null;
+
+  #triggerEnvelope(
+    envType: SampleEnvelopeId,
+    env: EnvelopeRuntime,
+    timestamp: number,
+    playbackRate: number,
+    velocity?: number,
+  ) {
+    if (!shouldTriggerSampleEnvelope(envType, env.settings)) return;
+    const param = this.getParam(getSampleEnvelopeParamName(envType));
+    if (!param) return;
+
+    const baseValue = getSampleEnvelopeBaseValue(envType, {
+      velocity,
+      playbackRate,
+      filterCutoff: this.#keytrackedLpfHz(playbackRate),
+    });
+    const target = resolveSampleEnvelopeTrigger(envType, env.settings.envelope, baseValue, param);
+    const timeScaleMultiplier = getSampleEnvelopeTimeScaleMultiplier(
+      this.#playbackRateSyncedEnvelopes.has(envType),
+      playbackRate,
+    );
+
+    env.trigger(param, timestamp, { ...target, timeScaleMultiplier });
+  }
+
   applyEnvelopes(timestamp: number, playbackRate: number, velocity?: number) {
+    this.#lastTrigger = { playbackRate, velocity };
     this.#envelopes.forEach((env, envType) => {
-      if (!shouldTriggerSampleEnvelope(envType, env.settings)) return;
-      const param = this.getParam(getSampleEnvelopeParamName(envType));
-      if (!param) return;
-
-      const baseValue = getSampleEnvelopeBaseValue(envType, {
-        velocity,
-        playbackRate,
-        filterCutoff: this.#keytrackedLpfHz(playbackRate),
-      });
-      const target = resolveSampleEnvelopeTrigger(envType, env.settings.envelope, baseValue, param);
-      const timeScaleMultiplier = getSampleEnvelopeTimeScaleMultiplier(
-        this.#playbackRateSyncedEnvelopes.has(envType),
-        playbackRate,
-      );
-
-      env.trigger(param, timestamp, { ...target, timeScaleMultiplier });
+      this.#triggerEnvelope(envType, env, timestamp, playbackRate, velocity);
     });
 
     const envDurations = Object.fromEntries(
@@ -717,7 +731,20 @@ export class SampleVoice {
 
     const wasEnabled = envelope.enabled;
     envelope.applySettings(settings);
-    if (wasEnabled && !settings.enabled) this.#resetFilterEnvTarget(envType);
+    if (wasEnabled && !settings.enabled) {
+      envelope.stop();
+      this.#resetFilterEnvTarget(envType);
+      return;
+    }
+
+    // Hand over on the next loop boundary, where point 0 comes round anyway, so the
+    // swap is inaudible. A non-looping run has no such seam and returns null, so it
+    // keeps its current shape and picks the edit up on the next note.
+    const at = envelope.nextCycleTime();
+    if (at === null || !this.#lastTrigger) return;
+
+    const { playbackRate, velocity } = this.#lastTrigger;
+    this.#triggerEnvelope(envType, envelope, at, playbackRate, velocity);
   };
 
   setEnvelopePlaybackRateSync = (envType: SampleEnvelopeId, sync: boolean) => {

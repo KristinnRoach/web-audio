@@ -351,27 +351,25 @@ export class InstrumentBus implements ILibAudioNode {
     const delayNode = this.getNode("delay");
     delayNode?.audioNode.sendProcessorMessage({ type: "trigger" });
 
-    if (this.#lpfEnvelope) {
-      // One filter shared by every note, so a new note simply takes over. Last note wins.
-      const time = this.now + secondsFromNow;
-      const ceiling = maxSafeHz(this.context.sampleRate);
-
-      const cutoff = this.getNode("lpf")?.audioNode.frequency;
-      if (!cutoff) return this;
-
-      this.#lpfEnvelope.trigger(cutoff, time, {
-        base: this.#lpfCutoffHz,
-        // Keep both upward and inverted sweeps inside the filter's usable range.
-        amount: clamp(
-          this.#lpfEnvAmount * ceiling,
-          -this.#lpfCutoffHz,
-          ceiling - this.#lpfCutoffHz,
-        ),
-        timeScaleMultiplier: midiToPlaybackRate(midiNote),
-      });
-    }
+    // One filter shared by every note, so a new note simply takes over. Last note wins.
+    this.#triggerLpfEnvelope(midiNote, this.now + secondsFromNow);
 
     return this;
+  }
+
+  #triggerLpfEnvelope(midiNote: number, time: number) {
+    if (!this.#lpfEnvelope) return;
+
+    const cutoff = this.getNode("lpf")?.audioNode.frequency;
+    if (!cutoff) return;
+
+    const ceiling = maxSafeHz(this.context.sampleRate);
+    this.#lpfEnvelope.trigger(cutoff, time, {
+      base: this.#lpfCutoffHz,
+      // Keep both upward and inverted sweeps inside the filter's usable range.
+      amount: clamp(this.#lpfEnvAmount * ceiling, -this.#lpfCutoffHz, ceiling - this.#lpfCutoffHz),
+      timeScaleMultiplier: midiToPlaybackRate(midiNote),
+    });
   }
 
   noteOff(midiNote: number): this {
@@ -455,10 +453,27 @@ export class InstrumentBus implements ILibAudioNode {
   setLpfEnvelope(envelope: Envelope | null, { amount = 0, timeScale = 1 } = {}): this {
     this.#lpfEnvelope?.dispose();
     this.#lpfEnvAmount = amount;
-    this.#lpfEnvelope = envelope
-      ? new EnvelopeRuntime(this.#context, { enabled: amount !== 0, timeScale, envelope })
-      : null;
-    if (!envelope || amount === 0) this.setLpfCutoff(this.#lpfCutoffHz);
+
+    if (!envelope || amount === 0) {
+      this.#lpfEnvelope?.dispose();
+      this.#lpfEnvelope = null;
+      this.setLpfCutoff(this.#lpfCutoffHz);
+      return this;
+    }
+
+    const settings = { enabled: true, timeScale, envelope };
+    if (!this.#lpfEnvelope) {
+      this.#lpfEnvelope = new EnvelopeRuntime(this.#context, settings);
+      return this;
+    }
+
+    // Keep the runtime so a running sweep survives the edit, and hand over on the next
+    // loop boundary, where point 0 comes round anyway. A non-looping run has no such
+    // seam and returns null, so it keeps its current shape until the next note.
+    const at = this.#lpfEnvelope.nextCycleTime();
+    this.#lpfEnvelope.applySettings(settings);
+    const held = Array.from(this.#heldNotes.keys()).pop();
+    if (at !== null && held !== undefined) this.#triggerLpfEnvelope(held, at);
     return this;
   }
 
