@@ -75,6 +75,36 @@ export class EnvelopeRuntime {
   }
 
   /**
+   * How far into the shape the live run has got at `time`, or `null` when no run is live.
+   *
+   * The unit is **envelope time**: the same scale `points[i].time` is written in, measured
+   * as an offset from `points[0].time`. `0` is point 0, `points[2].time` is point 2.
+   *
+   * It is *not* `context.currentTime - startTime`. Wall seconds are scaled first:
+   *
+   * ```
+   * phase = (time - anchorTime) * timeScale
+   * ```
+   *
+   * where `timeScale` is the run's, so `settings.timeScale * timeScaleMultiplier` as it
+   * was at trigger. A run playing at twice speed reaches phase 1 after half a second of
+   * wall clock. Go back the other way with `anchorTime + phase / timeScale`.
+   *
+   * The shape bounds the result: a loop wraps it into `[0, cycle)`, and a sustained run
+   * clamps it at the sustain point and stays there while the note is held.
+   *
+   * `anchorTime` is where point 0 *would have* been, which for a run opened mid-shape
+   * with `fromPoint` is earlier than the trigger. Phase therefore reads off the same grid
+   * either way.
+   *
+   * Null once released or stopped: the tail runs on its own clock from note-off, so no
+   * single offset into the shape describes it.
+   */
+  phase(time = this.context.currentTime): number | null {
+    return this.#scheduler?.phase(time) ?? null;
+  }
+
+  /**
    * Index of the last point a non-looping run has reached, or null when there is no
    * such run. A sustained run stops advancing at its sustain point, so once it is
    * parked there that is the answer for as long as the note is held.
