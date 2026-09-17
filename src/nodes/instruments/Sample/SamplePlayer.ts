@@ -123,7 +123,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
-  #sustainedNotes = new Set<MidiValue>();
+  #sustainedNotes = new Map<MidiValue, number>();
 
   constructor(options: SamplePlayerOptions = {}) {
     this.nodeId = registerNode('sample-player', this);
@@ -639,7 +639,10 @@ export class SamplePlayer implements ILibInstrumentNode {
     const transposedMidiNote = midiNote + this.#transposedBySemitones;
 
     if (this.#sustainPedalPressed) {
-      this.#sustainedNotes.add(transposedMidiNote);
+      this.#sustainedNotes.set(
+        transposedMidiNote,
+        (this.#sustainedNotes.get(transposedMidiNote) ?? 0) + 1,
+      );
       return this;
     }
 
@@ -816,9 +819,10 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
 
     if (!pressed) {
-      for (const note of this.#sustainedNotes) {
+      for (const [note, count] of this.#sustainedNotes) {
         this.voicePool.noteOff(note);
-        this.outBus.noteOff(note);
+        // One outBus release per held release: InstrumentBus counts note-ons.
+        for (let i = 0; i < count; i++) this.outBus.noteOff(note);
         this.sendUpstreamMessage('note:off', { transposedMidiNote: note });
       }
       this.#sustainedNotes.clear();
