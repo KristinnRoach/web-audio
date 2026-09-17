@@ -154,6 +154,7 @@ export class EnvelopeRuntime {
     this.#scheduler?.stop(scheduledStartTime);
     this.#scheduler = createEnvelopeScheduler(this.context, param, scheduledEnvelope);
     this.#scheduler.trigger(scheduledStartTime, schedule);
+
     if (this.callbacks.onPoint) {
       this.#startPointCallbacks(this.#activeRun, scheduledStartTime);
     }
@@ -178,7 +179,7 @@ export class EnvelopeRuntime {
     const releaseTime = Math.max(this.context.currentTime, startTime);
     this.#scheduler?.release(releaseTime);
     const { envelope, timeScale } = this.#activeRun;
-    if (this.callbacks.onPoint) this.#startReleasePointCallbacks(this.#activeRun, releaseTime);
+    if (this.callbacks.onPoint) this.#scheduleReleasePointCallbacks(this.#activeRun, releaseTime);
     if (this.callbacks.onComplete) {
       this.#armCompletion(
         releaseTime +
@@ -201,19 +202,23 @@ export class EnvelopeRuntime {
 
   #startPointCallbacks(run: ActiveEnvelopeRun, startTime: number) {
     const { envelope, timeScale } = run;
+
     const end = envelope.loop
       ? envelope.points.length - 1
       : (envelope.sustain ?? envelope.points.length - 1);
-    this.#schedulePointRange(envelope, startTime, 0, end, timeScale);
-    if (!envelope.loop) return;
-
     const duration = this.#duration(envelope, 0, end, timeScale);
     if (duration <= 0) return;
 
+    this.#schedulePointCallbackCycle(envelope, startTime, 0, end, timeScale);
+
     let cycle = 1;
     const tick = () => {
-      if (this.#isReleased || !envelope.loop) return this.#stopLoopCallbacks();
-      this.#schedulePointRange(envelope, startTime + cycle * duration, 0, end, timeScale);
+      if (this.#isReleased || !envelope.loop) {
+        return this.#clearLoopTimers();
+      }
+
+      this.#schedulePointCallbackCycle(envelope, startTime + cycle * duration, 0, end, timeScale);
+
       cycle++;
       this.#loopTimer = setTimeout(
         tick,
@@ -227,9 +232,9 @@ export class EnvelopeRuntime {
     );
   }
 
-  #startReleasePointCallbacks(run: ActiveEnvelopeRun, releaseTime: number) {
+  #scheduleReleasePointCallbacks(run: ActiveEnvelopeRun, releaseTime: number) {
     const { envelope, timeScale } = run;
-    this.#schedulePointRange(
+    this.#schedulePointCallbackCycle(
       envelope,
       releaseTime,
       envelope.release + 1,
@@ -239,7 +244,7 @@ export class EnvelopeRuntime {
     );
   }
 
-  #schedulePointRange(
+  #schedulePointCallbackCycle(
     envelope: Envelope,
     startTime: number,
     from: number,
@@ -247,6 +252,8 @@ export class EnvelopeRuntime {
     timeScale: number,
     fromIndex = from - 1,
   ) {
+    if (!this.callbacks.onPoint) return;
+
     const fromTime = fromIndex < 0 ? envelope.points[0].time : envelope.points[fromIndex].time;
     for (let index = from; index <= to; index++) {
       const time = startTime + (envelope.points[index].time - fromTime) / timeScale;
@@ -276,7 +283,7 @@ export class EnvelopeRuntime {
     return (envelope.points[to].time - envelope.points[from].time) / timeScale;
   }
 
-  #stopLoopCallbacks() {
+  #clearLoopTimers() {
     if (this.#loopTimer === null) return;
     clearTimeout(this.#loopTimer);
     this.#loopTimer = null;
@@ -289,6 +296,6 @@ export class EnvelopeRuntime {
       clearTimeout(this.#completionTimer);
       this.#completionTimer = null;
     }
-    this.#stopLoopCallbacks();
+    this.#clearLoopTimers();
   }
 }
