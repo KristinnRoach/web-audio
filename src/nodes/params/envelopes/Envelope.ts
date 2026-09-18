@@ -5,13 +5,14 @@ export type EnvelopeCurve = 'step' | 'linear' | 'exponential';
 /** The automation surface an envelope needs; native `AudioParam` is one implementation. */
 export type AutomatableParam = {
   value: number;
-  readonly minValue: number;
-  readonly maxValue: number;
   setValueAtTime(value: number, startTime: number): unknown;
   linearRampToValueAtTime(value: number, endTime: number): unknown;
   exponentialRampToValueAtTime(value: number, endTime: number): unknown;
   cancelScheduledValues(cancelTime: number): unknown;
 };
+
+/** The clock surface used to place envelope automation on a timeline. */
+export type EnvelopeClock = { readonly currentTime: number };
 
 export type EnvelopePoint = {
   readonly time: number;
@@ -59,7 +60,7 @@ export type Envelope = {
   readonly loop?: boolean;
 };
 
-/** Serializable settings shared by editors and schedulers. */
+/** Serializable settings shared by editors and envelope players. */
 export type EnvelopeSettings = {
   readonly enabled: boolean;
   /** Timing multiplier; values above 1 play the envelope faster. */
@@ -332,7 +333,7 @@ export function interpolateAtTime(points: readonly EnvelopePoint[], time: number
  *
  * ponytail: pins a value rather than calling `cancelAndHoldAtTime`, which Firefox
  * still has not implemented (bugzil.la/1308431). Without `holdValue` it falls back to
- * `param.value`, which is only accurate for now; the scheduler passes the analytic
+ * `param.value`, which is only accurate for now; the player passes the analytic
  * value so a `releaseTime` in the future hands off correctly.
  */
 export function releaseEnvelope(
@@ -365,9 +366,9 @@ export function releaseEnvelope(
   }
 }
 
-/** Creates a timestamp-anchored rolling scheduler for an envelope. */
+/** Creates a timestamp-anchored envelope player. */
 export function createEnvelopePlayer(
-  context: AudioContext,
+  context: EnvelopeClock,
   param: AutomatableParam,
   sourceEnvelope: Envelope,
 ): EnvelopePlayer {

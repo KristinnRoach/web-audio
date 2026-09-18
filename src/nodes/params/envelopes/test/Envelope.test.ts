@@ -185,7 +185,7 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
   env.dispose();
 });
 
-test('scheduler release stops its loop and schedules the scaled release stage', () => {
+test('player release stops its loop and schedules the scaled release stage', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };

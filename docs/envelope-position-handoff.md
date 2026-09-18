@@ -8,7 +8,7 @@ against the code it points at, not a decision already made.
 `EnvelopePlayer.position(time?)` and `EnvelopeRuntime.position(time?)` report how far
 into its shape a live run has got, or `null` when no run is live.
 
-The number already existed inside the scheduler's `valueAt` closure, which is what lets a
+The number already existed inside the envPlayer's `valueAt` closure, which is what lets a
 future-dated release hand off the value the envelope will actually have reached rather
 than the param's current one. It had no way out. `positionAt()` is now split out of
 `valueAt` so both read from one place.
@@ -107,7 +107,7 @@ anchor or keep this method.
 ### `#activeRun` — partially
 
 `EnvelopeRuntime.ts`, 19 references. Holds `{ envelope, timeScale, startTime }`, all three
-of which the scheduler closure already has. `startTime` is the one `position()` supersedes
+of which the envPlayer closure already has. `startTime` is the one `position()` supersedes
 for `currentPoint` and `nextCycleTime`; `envelope` and `timeScale` are still needed by
 `duration()` and `releaseDuration()`, so the field does not go away on its own.
 

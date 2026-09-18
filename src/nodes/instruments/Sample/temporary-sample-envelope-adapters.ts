@@ -7,6 +7,8 @@ import {
   type EnvelopeSettings,
 } from '@/nodes/params/envelopes';
 
+type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
+
 /**
  * Temporary sampler policy around the generic envelope runtime.
  * Keep these functions pure so each can either disappear or move independently.
@@ -66,7 +68,7 @@ export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
   envelope: Envelope,
   baseValue: number,
-  param: AutomatableParam,
+  param: RangedAutomatableParam,
 ): EnvelopeRuntimeTriggerOptions {
   if (id !== 'filter-env') return { amount: baseValue };
 

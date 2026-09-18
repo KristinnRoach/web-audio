@@ -28,7 +28,7 @@ not a decision already made. Order is roughly by risk, not by effort.
 - `Envelope.release` is required. Presets default it to the second-last point. Decide
   whether an envelope without a release stage is expressible. `Envelope.ts:52`.
 - Coincident point times are now rejected on insert (#60) to match `updatePoint`'s strict
-  ordering. The scheduler and interpolation still tolerate them, so a shape built by other
+  ordering. The player and interpolation still tolerate them, so a shape built by other
   means can carry them. `envelope-shape.ts:43,72`.
 - Loop-on mid-attack snaps to a point rather than splitting the segment, so a toggle mid
   segment is off by up to one segment. `EnvelopeRuntime.ts:82`.

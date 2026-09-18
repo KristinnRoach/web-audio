@@ -43,7 +43,7 @@ type ActiveEnvelopeRun = {
  * parameter names, MIDI, buses, or application-level envelope identifiers.
  */
 export class EnvelopeRuntime {
-  #scheduler: EnvelopePlayer | null = null;
+  #envPlayer: EnvelopePlayer | null = null;
   #isReleased = false;
   #pointTimers = new Set<ReturnType<typeof setTimeout>>();
   #completionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,7 +117,7 @@ export class EnvelopeRuntime {
     if (!Number.isFinite(time)) {
       throw new RangeError('Envelope position time must be a finite number');
     }
-    return this.#scheduler?.position(time) ?? null;
+    return this.#envPlayer?.position(time) ?? null;
   }
 
   /**
@@ -131,11 +131,11 @@ export class EnvelopeRuntime {
    * click-free.
    */
   currentPoint(): number | null {
-    return this.#scheduler?.currentPoint(this.context.currentTime) ?? null;
+    return this.#envPlayer?.currentPoint(this.context.currentTime) ?? null;
   }
 
   duration(timeScaleMultiplier = 1) {
-    if (this.#scheduler) return this.#scheduler.duration();
+    if (this.#envPlayer) return this.#envPlayer.duration();
     return scaledDuration(
       this.#settings,
       0,
@@ -145,7 +145,7 @@ export class EnvelopeRuntime {
   }
 
   releaseDuration(timeScaleMultiplier = 1) {
-    if (this.#scheduler) return this.#scheduler.releaseDuration();
+    if (this.#envPlayer) return this.#envPlayer.releaseDuration();
     return releaseDuration(this.#settings, timeScaleMultiplier);
   }
 
@@ -163,7 +163,7 @@ export class EnvelopeRuntime {
    * a drag would push its own edit further and further out.
    */
   nextCycleTime(): number | null {
-    return this.#scheduler?.nextCycleTime(this.context.currentTime) ?? null;
+    return this.#envPlayer?.nextCycleTime(this.context.currentTime) ?? null;
   }
 
   applySettings(settings: EnvelopeSettings) {
@@ -192,13 +192,13 @@ export class EnvelopeRuntime {
    */
   setSustainValue(value: number, glide?: number) {
     if (this.#isReleased) return;
-    this.#scheduler?.setSustainValue(value, this.context.currentTime, glide);
+    this.#envPlayer?.setSustainValue(value, this.context.currentTime, glide);
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
     // The constructor and applySettings both validate; trigger was the one entry point
     // that took a caller-supplied shape on trust. An out-of-range sustain index throws
-    // inside the scheduler instead, which is a worse place to find out. The stored
+    // inside the player instead, which is a worse place to find out. The stored
     // enabled/timeScale are already valid, so this checks the new shape and nothing else.
     //
     // Before anything is mutated: a throw here has to leave the current run exactly as it
@@ -236,9 +236,9 @@ export class EnvelopeRuntime {
     // trigger scheduled ahead takes over without cutting the current run short. The
     // pin it writes is the param's stale value, immediately cancelled and replaced by
     // the new run's first point at the same instant.
-    this.#scheduler?.stop(scheduledStartTime);
-    this.#scheduler = createEnvelopePlayer(this.context, param, scheduledEnvelope);
-    this.#scheduler.trigger(scheduledStartTime, schedule);
+    this.#envPlayer?.stop(scheduledStartTime);
+    this.#envPlayer = createEnvelopePlayer(this.context, param, scheduledEnvelope);
+    this.#envPlayer.trigger(scheduledStartTime, schedule);
 
     if (this.callbacks.onPoint) {
       this.#startPointCallbacks(this.#activeRun, scheduledStartTime, fromPoint);
@@ -249,35 +249,28 @@ export class EnvelopeRuntime {
       scheduledEnvelope.sustain === undefined &&
       !scheduledEnvelope.loop
     ) {
-      this.#armCompletion(
-        scheduledStartTime +
-          this.#duration(scheduledEnvelope, 0, scheduledEnvelope.points.length - 1, timeScale),
-      );
+      this.#armCompletion(scheduledStartTime + this.#envPlayer.duration());
     }
   }
 
   release(startTime: number) {
-    if (this.#isReleased || !this.#activeRun) return;
+    if (this.#isReleased || !this.#activeRun || !this.#envPlayer) return;
     this.#isReleased = true;
     this.#clearTimers();
 
     const releaseTime = Math.max(this.context.currentTime, startTime);
-    this.#scheduler?.release(releaseTime);
-    const { envelope, timeScale } = this.#activeRun;
+    this.#envPlayer.release(releaseTime);
     if (this.callbacks.onPoint) this.#scheduleReleasePointCallbacks(this.#activeRun, releaseTime);
     if (this.callbacks.onComplete) {
-      this.#armCompletion(
-        releaseTime +
-          this.#duration(envelope, envelope.release, envelope.points.length - 1, timeScale),
-      );
+      this.#armCompletion(releaseTime + this.#envPlayer.releaseDuration());
     }
   }
 
   stop() {
     this.#isReleased = true;
     this.#clearTimers();
-    this.#scheduler?.dispose();
-    this.#scheduler = null;
+    this.#envPlayer?.dispose();
+    this.#envPlayer = null;
     this.#activeRun = null;
   }
 

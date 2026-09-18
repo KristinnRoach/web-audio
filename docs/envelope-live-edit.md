@@ -107,7 +107,7 @@ The seam accessor returns where as well as when:
 - run parked at sustain → `{ now, sustain }`
 - neither → `null`
 
-`trigger()` gains a `fromIndex` option. Scheduler work:
+`trigger()` gains a `fromIndex` option. Player work:
 
 - `scheduleRange()` already takes a `from` index. The trigger path hardcodes 0.
 - The loop refill anchors cycle _n_ at `time + n * duration`. With a pickup the anchor
@@ -167,7 +167,7 @@ held value would have to jump or glide, and there is no seam that avoids it.
 D and the sustain value landed first, each in its own commit, and neither needed the
 rename. What is left is B on its own:
 
-1. ~~**D** — the sustain pickup and the scheduler's pickup-then-loop path.~~ `5c58ad1`.
+1. ~~**D** — the sustain pickup and the player's pickup-then-loop path.~~ `5c58ad1`.
 2. ~~The sustain **value** on a held note.~~ `d8bf8cd`.
 3. **B** — the late-bound release stage. Mechanical, and it is the one that fixes the
    live cutoff bug in Part B's second bullet.
