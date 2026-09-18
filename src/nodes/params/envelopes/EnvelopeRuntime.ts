@@ -1,10 +1,10 @@
 import {
-  createEnvelopeScheduler,
+  createEnvelopePlayer,
   assertValidEnvelopeSettings,
   cloneEnvelopeSettings,
   type AutomatableParam,
   type Envelope,
-  type EnvelopeScheduler,
+  type EnvelopePlayer,
   type EnvelopeSettings,
   type ScheduleOptions,
 } from './Envelope';
@@ -43,7 +43,7 @@ type ActiveEnvelopeRun = {
  * parameter names, MIDI, buses, or application-level envelope identifiers.
  */
 export class EnvelopeRuntime {
-  #scheduler: EnvelopeScheduler | null = null;
+  #scheduler: EnvelopePlayer | null = null;
   #isReleased = false;
   #pointTimers = new Set<ReturnType<typeof setTimeout>>();
   #completionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -131,27 +131,11 @@ export class EnvelopeRuntime {
    * click-free.
    */
   currentPoint(): number | null {
-    const run = this.#activeRun;
-    if (!run || this.#isReleased || run.envelope.loop) return null;
-
-    const { points, sustain } = run.envelope;
-    const last = sustain ?? points.length - 1;
-    const elapsed = (this.context.currentTime - run.startTime) * run.timeScale;
-
-    let index = 0;
-    while (index < last && points[index + 1].time - points[0].time <= elapsed) index++;
-    return index;
+    return this.#scheduler?.currentPoint(this.context.currentTime) ?? null;
   }
 
   duration(timeScaleMultiplier = 1) {
-    if (this.#activeRun) {
-      return this.#duration(
-        this.#activeRun.envelope,
-        0,
-        this.#activeRun.envelope.points.length - 1,
-        this.#activeRun.timeScale,
-      );
-    }
+    if (this.#scheduler) return this.#scheduler.duration();
     return scaledDuration(
       this.#settings,
       0,
@@ -161,14 +145,7 @@ export class EnvelopeRuntime {
   }
 
   releaseDuration(timeScaleMultiplier = 1) {
-    if (this.#activeRun) {
-      return this.#duration(
-        this.#activeRun.envelope,
-        this.#activeRun.envelope.release,
-        this.#activeRun.envelope.points.length - 1,
-        this.#activeRun.timeScale,
-      );
-    }
+    if (this.#scheduler) return this.#scheduler.releaseDuration();
     return releaseDuration(this.#settings, timeScaleMultiplier);
   }
 
@@ -186,14 +163,7 @@ export class EnvelopeRuntime {
    * a drag would push its own edit further and further out.
    */
   nextCycleTime(): number | null {
-    if (!this.#activeRun?.envelope.loop) return null;
-    const { envelope, timeScale, startTime } = this.#activeRun;
-    const cycle = this.#duration(envelope, 0, envelope.points.length - 1, timeScale);
-    if (cycle <= 0) return null;
-
-    const elapsed = this.context.currentTime - startTime;
-    if (elapsed < 0) return startTime;
-    return startTime + (Math.floor(elapsed / cycle) + 1) * cycle;
+    return this.#scheduler?.nextCycleTime(this.context.currentTime) ?? null;
   }
 
   applySettings(settings: EnvelopeSettings) {
@@ -267,7 +237,7 @@ export class EnvelopeRuntime {
     // pin it writes is the param's stale value, immediately cancelled and replaced by
     // the new run's first point at the same instant.
     this.#scheduler?.stop(scheduledStartTime);
-    this.#scheduler = createEnvelopeScheduler(this.context, param, scheduledEnvelope);
+    this.#scheduler = createEnvelopePlayer(this.context, param, scheduledEnvelope);
     this.#scheduler.trigger(scheduledStartTime, schedule);
 
     if (this.callbacks.onPoint) {

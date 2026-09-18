@@ -5,7 +5,7 @@ against the code it points at, not a decision already made.
 
 ## What shipped
 
-`EnvelopeScheduler.position(time?)` and `EnvelopeRuntime.position(time?)` report how far
+`EnvelopePlayer.position(time?)` and `EnvelopeRuntime.position(time?)` report how far
 into its shape a live run has got, or `null` when no run is live.
 
 The number already existed inside the scheduler's `valueAt` closure, which is what lets a

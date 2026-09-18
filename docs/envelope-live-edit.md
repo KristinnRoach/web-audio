@@ -12,12 +12,12 @@ Status: partly applied. Scope is `src/nodes/params/envelopes/` only.
 
 Everything needed is in four places. No search required.
 
-| File                                                                 | What to look at                                                                                                      |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | `#activeRun`, `nextCycleTime()`, `trigger()`, `release()`                                                            |
-| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopeScheduler()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
-| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                      |
-| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — the only reason a run snapshot has to exist                                       |
+| File                                                                 | What to look at                                                                                                   |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | `#activeRun`, `trigger()`, `release()`, and callback scheduling                                                   |
+| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopePlayer()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
+| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                   |
+| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — why the compatibility runtime keeps a second, mapped snapshot                  |
 
 Shipped already (commit `701bc35`): an edit to a running envelope hands over on the
 next loop boundary, where point 0 comes round anyway, so the swap is continuous by
@@ -56,7 +56,7 @@ Omitted fields fall back to the run's, so every existing call site keeps working
 
 Threading required:
 
-- `EnvelopeScheduler.release(time, options?)` — currently closes over the trigger's
+- `EnvelopePlayer.release(time, options?)` — currently closes over the trigger's
   `envelope`, `base`, `amount`, `timeScale`.
 - `releaseEnvelope()` already takes the envelope and options as parameters. No change.
 - `holdValue` must still come from the **outgoing** shape via `valueAt()`. That is what
@@ -146,7 +146,7 @@ The deferred sustain question turned out to be two questions with different answ
 **The value is live.** A sustained run schedules points `0..sustain` and stops, so the
 hold is an absence of scheduled events rather than an event. Nothing is queued after it
 to reschedule and no seam has to be waited for: pin, glide, done.
-`EnvelopeScheduler.setSustainValue()` does that and `applySettings` forwards to it.
+`EnvelopePlayer.setSustainValue()` does that and `applySettings` forwards to it.
 
 The point is mutated in place on the run's own clone, because `valueAt` and
 `releaseEnvelope` read that same object. Without the mutation the note-off handoff pins

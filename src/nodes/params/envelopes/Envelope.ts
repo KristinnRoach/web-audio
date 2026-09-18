@@ -135,9 +135,13 @@ export type ScheduleOptions = { base?: number; amount?: number; timeScale?: numb
  */
 export type EnvelopeTriggerOptions = ScheduleOptions & { fromPoint?: number };
 
-export type EnvelopeScheduler = {
+export type EnvelopePlayer = {
   trigger(time?: number, options?: EnvelopeTriggerOptions): void;
   release(time?: number): void;
+  /** Full envelope duration using the active run's time scale. */
+  duration(): number;
+  /** Release-stage duration using the active run's time scale. */
+  releaseDuration(): number;
   /**
    * How far into the shape the live run has got at `time`, or `null` when no run is live.
    *
@@ -175,6 +179,10 @@ export type EnvelopeScheduler = {
    * would leave a caller branching on null with no way to tell the two apart.
    */
   position(time?: number): number | null;
+  /** Index of the last point reached by a live, non-looping run. */
+  currentPoint(time?: number): number | null;
+  /** Absolute time of the next cycle boundary for a live loop. */
+  nextCycleTime(time?: number): number | null;
   /** Moves the sustain point's value on a run that is holding it; see the implementation. */
   setSustainValue(value: number, time?: number, glide?: number): void;
   stop(time?: number): void;
@@ -358,11 +366,15 @@ export function releaseEnvelope(
 }
 
 /** Creates a timestamp-anchored rolling scheduler for an envelope. */
-export function createEnvelopeScheduler(
+export function createEnvelopePlayer(
   context: AudioContext,
   param: AutomatableParam,
-  envelope: Envelope,
-): EnvelopeScheduler {
+  sourceEnvelope: Envelope,
+): EnvelopePlayer {
+  const envelope: Envelope = {
+    ...sourceEnvelope,
+    points: sourceEnvelope.points.map((point) => ({ ...point })),
+  };
   let removeLoop: (() => void) | undefined;
   let triggered = false;
   let base = 0;
@@ -377,7 +389,7 @@ export function createEnvelopeScheduler(
 
   /**
    * How far into the shape the run has got at `time`, in seconds of envelope time. See
-   * `EnvelopeScheduler.position` for why the unit is seconds and not wall seconds.
+   * `EnvelopePlayer.position` for why the unit is seconds and not wall seconds.
    *
    * A loop is back at its start every cycle, and a sustained envelope stops advancing
    * once it reaches the sustain point. Everything else keeps running, which is what a
@@ -407,6 +419,18 @@ export function createEnvelopeScheduler(
     if (points.length === 0) return base;
 
     return base + amount * interpolateAtTime(points, points[0].time + positionAt(time));
+  };
+
+  const duration = () => {
+    const { points } = envelope;
+    return points.length > 1 ? (points[points.length - 1].time - points[0].time) / timeScale : 0;
+  };
+
+  const releaseDuration = () => {
+    const { points, release } = envelope;
+    return release < points.length - 1
+      ? (points[points.length - 1].time - points[release].time) / timeScale
+      : 0;
   };
 
   const stop = (time = context.currentTime) => {
@@ -439,8 +463,8 @@ export function createEnvelopeScheduler(
    * but the absence of events, and nothing after it has to be rescheduled.
    *
    * The point is mutated in place because `valueAt` and `releaseEnvelope` read the same
-   * object; without that the note-off handoff would pin the old value and jump. The run
-   * owns that clone (`EnvelopeRuntime.trigger`), so nobody else sees the write.
+   * object; without that the note-off handoff would pin the old value and jump. The
+   * player owns that clone, so nobody else sees the write.
    *
    * A run that has not reached its sustain point yet is left alone. Up to that instant
    * the points between here and sustain are still queued, and cancelling to write the new
@@ -559,12 +583,33 @@ export function createEnvelopeScheduler(
       });
     },
     release,
+    duration,
+    releaseDuration,
     position(time = context.currentTime) {
       // Argument first, so a bad timestamp is a bug whether or not a run is live.
       if (!Number.isFinite(time)) {
         throw new RangeError('Envelope position time must be a finite number');
       }
       return triggered ? positionAt(time) : null;
+    },
+    currentPoint(time = context.currentTime) {
+      if (!triggered || envelope.loop) return null;
+
+      const position = positionAt(time);
+      const { points, sustain } = envelope;
+      const last = sustain ?? points.length - 1;
+      let index = 0;
+      while (index < last && points[index + 1].time - points[0].time <= position) index++;
+      return index;
+    },
+    nextCycleTime(time = context.currentTime) {
+      if (!triggered || !envelope.loop) return null;
+      const cycle = duration();
+      if (cycle <= 0) return null;
+
+      const elapsed = time - triggerTime;
+      if (elapsed < 0) return triggerTime;
+      return triggerTime + (Math.floor(elapsed / cycle) + 1) * cycle;
     },
     setSustainValue,
     stop,
