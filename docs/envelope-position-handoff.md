@@ -37,7 +37,7 @@ clamps it at the sustain point.
 - Non-finite `time` throws `RangeError`, checked before the live-run test. `null` already
   means "no live run", so overloading it would leave a caller unable to tell a missing run
   from a bad timestamp. An rAF loop calling `position()` with no argument never reaches
-  this, since the default is `context.currentTime`.
+  this, since the default is `clock.currentTime`.
 - `EnvelopeRuntime.trigger` now validates `options.envelope`, which it previously took on
   trust, **before** mutating any run state. `Envelope.ts:562`, `EnvelopeRuntime.ts:115`, `EnvelopeRuntime.ts:228`.
 
@@ -96,7 +96,8 @@ refactor.
 nextCycleTime = now + (cycleLength - position()) / timeScale
 ```
 
-One caller: `InstrumentBus.ts:472`, plus `applyOnNextEnvLoopCycle`.
+Callers coordinate this directly or through the temporary sampler adapter
+`applyOnNextEnvLoopCycle`.
 
 **Caveat, verified:** a run that has not started yet returns `startTime` today, because it
 is already waiting on a seam. `position()` returns 0 for that case (it clamps at

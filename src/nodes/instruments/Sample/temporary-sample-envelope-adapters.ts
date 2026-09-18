@@ -3,6 +3,7 @@ import {
   hasVariation,
   type AutomatableParam,
   type Envelope,
+  type EnvelopeRuntime,
   type EnvelopeRuntimeTriggerOptions,
   type EnvelopeSettings,
 } from '@/nodes/params/envelopes';
@@ -90,4 +91,15 @@ export function getPostFilterEnvelopeOptions(settings: EnvelopeSettings, amount:
     amount: settings.enabled ? amount : 0,
     timeScale: settings.timeScale,
   };
+}
+
+/** Applies an envelope edit at the next inaudible loop boundary, when one exists. */
+export function applyOnNextEnvLoopCycle(
+  runtime: EnvelopeRuntime,
+  apply: () => void,
+  retrigger: (at: number) => void,
+): void {
+  const at = runtime.nextCycleTime();
+  apply();
+  if (at !== null) retrigger(at);
 }

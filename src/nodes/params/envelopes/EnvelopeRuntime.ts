@@ -380,24 +380,3 @@ export class EnvelopeRuntime {
     this.#clearLoopTimers();
   }
 }
-
-/**
- * Applies an envelope edit at the seam where it is inaudible.
- *
- * A looping run is back at point 0 every cycle, so re-triggering exactly on a boundary
- * is continuous by construction. `apply` runs immediately either way; `retrigger` only
- * runs when there is a boundary to hand over on. Anything else - idle, one-shot,
- * sustained - has no such seam and picks the edit up on its next trigger.
- *
- * The boundary is read before `apply` so the answer describes the run that is actually
- * playing, not the edit replacing it.
- */
-export function applyOnNextEnvLoopCycle(
-  runtime: EnvelopeRuntime,
-  apply: () => void,
-  retrigger: (at: number) => void,
-): void {
-  const at = runtime.nextCycleTime();
-  apply();
-  if (at !== null) retrigger(at);
-}

@@ -154,7 +154,7 @@ export type EnvelopePlayer = {
    * that lands in `linearRampToValueAtTime`, which reads `AudioContext` seconds. With
    * `timeScale` dimensionless, point times are seconds and so is this.
    *
-   * It is *not* `context.currentTime - startTime`. Wall seconds are scaled first:
+   * It is *not* `clock.currentTime - startTime`. Wall seconds are scaled first:
    *
    * ```
    * position = (time - anchorTime) * timeScale
@@ -368,7 +368,7 @@ export function releaseEnvelope(
 
 /** Creates a timestamp-anchored envelope player. */
 export function createEnvelopePlayer(
-  context: EnvelopeClock,
+  clock: EnvelopeClock,
   param: AutomatableParam,
   sourceEnvelope: Envelope,
 ): EnvelopePlayer {
@@ -434,14 +434,14 @@ export function createEnvelopePlayer(
       : 0;
   };
 
-  const stop = (time = context.currentTime) => {
+  const stop = (time = clock.currentTime) => {
     if (!triggered) return;
     triggered = false;
     stopLoop();
     cancelAndPinParamValue(param, time);
   };
 
-  const release = (time = context.currentTime) => {
+  const release = (time = clock.currentTime) => {
     if (!triggered) return;
     // Read the shape before anything touches the param, so a future-dated release hands
     // off the value the envelope will actually have reached rather than today's.
@@ -481,7 +481,7 @@ export function createEnvelopePlayer(
    * step by up to the edit distance. Inaudible while `glide` stays short. Track the
    * pending glide in `valueAt` if a long one is ever wanted.
    */
-  const setSustainValue = (value: number, time = context.currentTime, glide = 0.02) => {
+  const setSustainValue = (value: number, time = clock.currentTime, glide = 0.02) => {
     const { points, sustain } = envelope;
     if (!triggered || sustain === undefined || envelope.loop) return;
     if (points[sustain].value === value) return;
@@ -504,7 +504,7 @@ export function createEnvelopePlayer(
   };
 
   return {
-    trigger(time = context.currentTime, options = {}) {
+    trigger(time = clock.currentTime, options = {}) {
       stopLoop();
       triggered = true;
       base = options.base ?? 0;
@@ -559,7 +559,7 @@ export function createEnvelopePlayer(
       const anchor = triggerTime;
       let cycle = 1;
       removeLoop = addLoop(() => {
-        const now = context.currentTime;
+        const now = clock.currentTime;
         const horizon = now + LOOKAHEAD_SECONDS;
 
         while (anchor + (cycle + 1) * duration <= now) cycle++;
@@ -586,14 +586,14 @@ export function createEnvelopePlayer(
     release,
     duration,
     releaseDuration,
-    position(time = context.currentTime) {
+    position(time = clock.currentTime) {
       // Argument first, so a bad timestamp is a bug whether or not a run is live.
       if (!Number.isFinite(time)) {
         throw new RangeError('Envelope position time must be a finite number');
       }
       return triggered ? positionAt(time) : null;
     },
-    currentPoint(time = context.currentTime) {
+    currentPoint(time = clock.currentTime) {
       if (!triggered || envelope.loop) return null;
 
       const position = positionAt(time);
@@ -603,7 +603,7 @@ export function createEnvelopePlayer(
       while (index < last && points[index + 1].time - points[0].time <= position) index++;
       return index;
     },
-    nextCycleTime(time = context.currentTime) {
+    nextCycleTime(time = clock.currentTime) {
       if (!triggered || !envelope.loop) return null;
       const cycle = duration();
       if (cycle <= 0) return null;

@@ -17,11 +17,7 @@ import {
   maxSafeHz,
 } from '@/utils';
 
-import {
-  applyOnNextEnvLoopCycle,
-  EnvelopeRuntime,
-  type EnvelopeSettings,
-} from '@/nodes/params/envelopes';
+import { EnvelopeRuntime, type EnvelopeSettings } from '@/nodes/params/envelopes';
 
 import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
 
@@ -29,6 +25,7 @@ import { LFO } from '@/nodes/params/LFOs/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
 import {
+  applyOnNextEnvLoopCycle,
   createDefaultSampleEnvelopeSettings,
   getSampleEnvelopeBaseValue,
   getSampleEnvelopeIds,
