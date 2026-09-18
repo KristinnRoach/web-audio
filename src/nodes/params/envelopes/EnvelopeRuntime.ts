@@ -226,16 +226,22 @@ export class EnvelopeRuntime {
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
-    this.#clearTimers();
-    this.#isReleased = false;
-    const sourceEnvelope = options.envelope ?? this.#settings.envelope;
     // The constructor and applySettings both validate; trigger was the one entry point
     // that took a caller-supplied shape on trust. An out-of-range sustain index throws
     // inside the scheduler instead, which is a worse place to find out. The stored
     // enabled/timeScale are already valid, so this checks the new shape and nothing else.
+    //
+    // Before anything is mutated: a throw here has to leave the current run exactly as it
+    // was. Clearing timers first would silence the outgoing run's callbacks while it kept
+    // playing, and resetting #isReleased would let release() run a second time on a run
+    // that had already released.
     if (options.envelope) {
       assertValidEnvelopeSettings({ ...this.#settings, envelope: options.envelope });
     }
+
+    this.#clearTimers();
+    this.#isReleased = false;
+    const sourceEnvelope = options.envelope ?? this.#settings.envelope;
     this.#runHasOwnShape = options.envelope !== undefined;
     const scheduledEnvelope = {
       ...sourceEnvelope,

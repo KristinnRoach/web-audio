@@ -305,6 +305,42 @@ describe('EnvelopeRuntime.trigger validation', () => {
   });
 });
 
+describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const badShape = () => ({ ...settingsOf().envelope, sustain: 9 });
+
+  it('keeps the timers of an active run armed', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint: vi.fn() });
+    runtime.trigger(createFakeParam(), 0);
+    const armed = vi.getTimerCount();
+    expect(armed).toBeGreaterThan(0);
+
+    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
+      'Invalid envelope settings',
+    );
+
+    expect(vi.getTimerCount()).toBe(armed);
+  });
+
+  it('keeps a released run released', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint: vi.fn() });
+    runtime.trigger(createFakeParam(), 0);
+    runtime.release(0);
+    const armed = vi.getTimerCount();
+
+    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
+      'Invalid envelope settings',
+    );
+
+    expect(vi.getTimerCount()).toBe(armed);
+    // Still released, so a second release stays the no-op it was.
+    runtime.release(0);
+    expect(vi.getTimerCount()).toBe(armed);
+  });
+});
+
 describe('EnvelopeRuntime.position', () => {
   // settingsOf() points sit at 0, 0.5, 1 and 1.5.
   const at = (settings: EnvelopeSettings, currentTime: number, multiplier?: number) => {
