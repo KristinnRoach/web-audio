@@ -14,10 +14,10 @@ Everything needed is in four places. No search required.
 
 | File                                                                 | What to look at                                                                                                   |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | `#activeRun`, `trigger()`, `release()`, and callback scheduling                                                   |
+| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | settings compatibility, `trigger()`, and `release()`                                                              |
 | `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopePlayer()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
 | `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                   |
-| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — why the compatibility runtime keeps a second, mapped snapshot                  |
+| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — creates a mapped envelope for one player                                       |
 
 Shipped already (commit `701bc35`): an edit to a running envelope hands over on the
 next loop boundary, where point 0 comes round anyway, so the swap is continuous by
@@ -35,7 +35,7 @@ Two consequences, which are the two parts below.
 
 ### Problem
 
-`release()` schedules the tail from `#activeRun`, the snapshot taken at trigger. So:
+`release()` schedules the tail from the envPlayer's owned snapshot taken at creation. So:
 
 - Editing the release index mid-note does nothing until the next trigger, even though
   the tail is not on the timeline yet and nothing about changing it is audible.
@@ -62,14 +62,14 @@ Threading required:
 - `holdValue` must still come from the **outgoing** shape via `valueAt()`. That is what
   makes the swap continuous: pin where the old shape actually got to, then ramp to the
   new tail. Do not let the override reach `valueAt`.
-- `EnvelopeRuntime.releaseDuration()` and `#startReleasePointCallbacks()` read
-  `#activeRun.envelope` and need the override too.
+- `EnvelopeRuntime.releaseDuration()` must reflect the late-bound tail too.
 
 ### Why not simply drop the snapshot and always read `#settings`
 
-`#activeRun.envelope` is the _mapped_ shape for filter-env (normalized → Hz), which is
-not `#settings.envelope`. Reading settings at release time would compute the handoff
-from a shape that was never playing. The snapshot has to stay; only the tail is late.
+The envPlayer's envelope may be the _mapped_ shape for filter-env (normalized → Hz),
+which is not `#settings.envelope`. Reading settings at release time would compute the
+handoff from a shape that was never playing. The owned snapshot has to stay; only the
+tail is late.
 
 ### Check
 
@@ -81,7 +81,7 @@ release, assert the tail follows the new points and starts from the held value.
 
 ### Problem
 
-`nextCycleTime()` gates on `#activeRun.envelope.loop`, the **outgoing** run's flag. So:
+`nextCycleTime()` gates on the envPlayer's **outgoing** envelope. So:
 
 - Disabling loop on a looping run works. The old run is looping, a boundary exists, the
   handover installs the sustaining shape. Already correct.

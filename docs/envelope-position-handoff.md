@@ -105,21 +105,15 @@ is already waiting on a seam. `position()` returns 0 for that case (it clamps at
 current answer needs the anchor, which `position()` does not expose. Either expose the
 anchor or keep this method.
 
-### `#activeRun` — partially
+### `#activeRun` — removed
 
-`EnvelopeRuntime.ts`, 19 references. Holds `{ envelope, timeScale, startTime }`, all three
-of which the envPlayer closure already has. `startTime` is the one `position()` supersedes
-for `currentPoint` and `nextCycleTime`; `envelope` and `timeScale` are still needed by
-`duration()` and `releaseDuration()`, so the field does not go away on its own.
-
-The duplication is the finding, not the field. See the "Core" view in
-`.local/envelope-core-map.html` for why one run modelled twice is the thing to fix.
+Run position, duration, release duration, point index, and cycle boundaries now come from
+the envPlayer. `EnvelopeRuntime` no longer keeps a second model of the active run.
 
 ### `onPoint` / `onComplete` and their three timer fields
 
-`#pointTimers`, `#completionTimer`, `#loopTimer` — three of `EnvelopeRuntime`'s eight
-private fields, plus a `setTimeout` per point per cycle. They exist to _push_ "where am I"
-to a display. A display can now _pull_ `position()` in `requestAnimationFrame`.
+The optional `observeEnvelopePlayer()` decorator now owns these wall-clock notifications
+and their timers. `EnvelopeRuntime` has no callback or notification responsibility.
 
 **Not a clean swap, verified:** `position()` returns `null` once released, so the release
 tail's `onComplete` is not derivable from polling. Either keep a completion event, or give
@@ -138,7 +132,7 @@ cause.
 2. Rewrite `currentPoint()` over `position()`, keeping its `null`-for-loop behaviour so the
    change stays a refactor. Decide the loop semantics separately.
 3. Decide the `nextCycleTime` caveat: expose the anchor, or leave the method alone.
-4. Leave the callbacks until the release-tail gap has an answer.
+4. Keep callback observation optional and separate from playback.
 
 `docs/envelope-followups.md` still holds the larger open questions (merging `sustain` and
 `release`, a loop `until` index, splitting `EnvelopeRuntime` into a store and a run

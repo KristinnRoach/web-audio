@@ -20,8 +20,6 @@ export type { SampleVoiceChainNode } from './nodes/instruments/Sample/SampleVoic
 export type {
   Envelope,
   EnvelopePoint,
-  EnvelopePointDetails,
-  EnvelopeRuntimeCallbacks,
   EnvelopeRuntimeTriggerOptions,
   EnvelopeSettings,
   AutomatableParam,

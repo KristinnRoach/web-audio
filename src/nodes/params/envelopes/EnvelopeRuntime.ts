@@ -10,17 +10,6 @@ import {
 } from './Envelope';
 import { releaseDuration, scaledDuration } from './envelope-shape';
 
-export type EnvelopePointDetails = {
-  index: number;
-  point: Envelope['points'][number];
-  time: number;
-};
-
-export type EnvelopeRuntimeCallbacks = {
-  onPoint?: (details: EnvelopePointDetails) => void;
-  onComplete?: () => void;
-};
-
 export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> & {
   /** Additional timing multiplier supplied by the host, such as a playback rate. */
   timeScaleMultiplier?: number;
@@ -28,12 +17,6 @@ export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> &
   envelope?: Envelope;
   /** Point index the first pass opens at; see `EnvelopeTriggerOptions.fromPoint`. */
   fromPoint?: number;
-};
-
-type ActiveEnvelopeRun = {
-  envelope: Envelope;
-  timeScale: number;
-  startTime: number;
 };
 
 /**
@@ -44,17 +27,11 @@ type ActiveEnvelopeRun = {
  */
 export class EnvelopeRuntime {
   #envPlayer: EnvelopePlayer | null = null;
-  #isReleased = false;
-  #pointTimers = new Set<ReturnType<typeof setTimeout>>();
-  #completionTimer: ReturnType<typeof setTimeout> | null = null;
-  #loopTimer: ReturnType<typeof setTimeout> | null = null;
-  #activeRun: ActiveEnvelopeRun | null = null;
   #runHasOwnShape = false;
 
   constructor(
     readonly context: AudioContext,
     settings: EnvelopeSettings,
-    readonly callbacks: EnvelopeRuntimeCallbacks = {},
   ) {
     assertValidEnvelopeSettings(settings);
     this.#settings = cloneEnvelopeSettings(settings);
@@ -191,7 +168,6 @@ export class EnvelopeRuntime {
    * for a seam. Edits the run only; `applySettings` is what changes the stored shape.
    */
   setSustainValue(value: number, glide?: number) {
-    if (this.#isReleased) return;
     this.#envPlayer?.setSustainValue(value, this.context.currentTime, glide);
   }
 
@@ -201,29 +177,16 @@ export class EnvelopeRuntime {
     // inside the player instead, which is a worse place to find out. The stored
     // enabled/timeScale are already valid, so this checks the new shape and nothing else.
     //
-    // Before anything is mutated: a throw here has to leave the current run exactly as it
-    // was. Clearing timers first would silence the outgoing run's callbacks while it kept
-    // playing, and resetting #isReleased would let release() run a second time on a run
-    // that had already released.
+    // Validate before replacing the current player, so a rejected shape leaves it alone.
     if (options.envelope) {
       assertValidEnvelopeSettings({ ...this.#settings, envelope: options.envelope });
     }
 
-    this.#clearTimers();
-    this.#isReleased = false;
     const sourceEnvelope = options.envelope ?? this.#settings.envelope;
     this.#runHasOwnShape = options.envelope !== undefined;
-    const scheduledEnvelope = {
-      ...sourceEnvelope,
-      points: sourceEnvelope.points.map((point) => ({ ...point })),
-    };
     const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
     const scheduledStartTime = Math.max(this.context.currentTime, startTime);
-    const fromPoint = scheduledEnvelope.loop ? (options.fromPoint ?? 0) : 0;
-    // A run opening mid-shape is anchored on where point 0 would have been, so cycle
-    // boundaries and durations are read off the same grid as a run that started there.
-    const anchor = scheduledStartTime - this.#duration(scheduledEnvelope, 0, fromPoint, timeScale);
-    this.#activeRun = { envelope: scheduledEnvelope, timeScale, startTime: anchor };
+    const fromPoint = sourceEnvelope.loop ? (options.fromPoint ?? 0) : 0;
     const schedule = {
       base: options.base,
       amount: options.amount,
@@ -237,146 +200,23 @@ export class EnvelopeRuntime {
     // pin it writes is the param's stale value, immediately cancelled and replaced by
     // the new run's first point at the same instant.
     this.#envPlayer?.stop(scheduledStartTime);
-    this.#envPlayer = createEnvelopePlayer(this.context, param, scheduledEnvelope);
+    this.#envPlayer = createEnvelopePlayer(this.context, param, sourceEnvelope);
     this.#envPlayer.trigger(scheduledStartTime, schedule);
-
-    if (this.callbacks.onPoint) {
-      this.#startPointCallbacks(this.#activeRun, scheduledStartTime, fromPoint);
-    }
-
-    if (
-      this.callbacks.onComplete &&
-      scheduledEnvelope.sustain === undefined &&
-      !scheduledEnvelope.loop
-    ) {
-      this.#armCompletion(scheduledStartTime + this.#envPlayer.duration());
-    }
   }
 
   release(startTime: number) {
-    if (this.#isReleased || !this.#activeRun || !this.#envPlayer) return;
-    this.#isReleased = true;
-    this.#clearTimers();
+    if (!this.#envPlayer) return;
 
     const releaseTime = Math.max(this.context.currentTime, startTime);
     this.#envPlayer.release(releaseTime);
-    if (this.callbacks.onPoint) this.#scheduleReleasePointCallbacks(this.#activeRun, releaseTime);
-    if (this.callbacks.onComplete) {
-      this.#armCompletion(releaseTime + this.#envPlayer.releaseDuration());
-    }
   }
 
   stop() {
-    this.#isReleased = true;
-    this.#clearTimers();
     this.#envPlayer?.dispose();
     this.#envPlayer = null;
-    this.#activeRun = null;
   }
 
   dispose() {
     this.stop();
-  }
-
-  #startPointCallbacks(run: ActiveEnvelopeRun, startTime: number, fromPoint = 0) {
-    const { envelope, timeScale } = run;
-
-    const end = envelope.loop
-      ? envelope.points.length - 1
-      : (envelope.sustain ?? envelope.points.length - 1);
-    const duration = this.#duration(envelope, 0, end, timeScale);
-    if (duration <= 0) return;
-
-    // `run.startTime` is the anchor: `startTime` for a run opening at point 0, earlier
-    // for one resuming mid-shape. Cycles after the first are read off the anchor.
-    const anchor = run.startTime;
-    this.#schedulePointCallbackCycle(envelope, startTime, fromPoint, end, timeScale, fromPoint);
-
-    let cycle = 1;
-    const tick = () => {
-      if (this.#isReleased || !envelope.loop) {
-        return this.#clearLoopTimers();
-      }
-
-      this.#schedulePointCallbackCycle(envelope, anchor + cycle * duration, 0, end, timeScale);
-
-      cycle++;
-      this.#loopTimer = setTimeout(
-        tick,
-        Math.max(0, (anchor + cycle * duration - this.context.currentTime) * 1000),
-      );
-    };
-
-    this.#loopTimer = setTimeout(
-      tick,
-      Math.max(0, (anchor + duration - this.context.currentTime) * 1000),
-    );
-  }
-
-  #scheduleReleasePointCallbacks(run: ActiveEnvelopeRun, releaseTime: number) {
-    const { envelope, timeScale } = run;
-    this.#schedulePointCallbackCycle(
-      envelope,
-      releaseTime,
-      envelope.release + 1,
-      envelope.points.length - 1,
-      timeScale,
-      envelope.release,
-    );
-  }
-
-  #schedulePointCallbackCycle(
-    envelope: Envelope,
-    startTime: number,
-    from: number,
-    to: number,
-    timeScale: number,
-    fromIndex = from - 1,
-  ) {
-    if (!this.callbacks.onPoint) return;
-
-    const fromTime = fromIndex < 0 ? envelope.points[0].time : envelope.points[fromIndex].time;
-    for (let index = from; index <= to; index++) {
-      const time = startTime + (envelope.points[index].time - fromTime) / timeScale;
-      const timer = setTimeout(
-        () => {
-          this.#pointTimers.delete(timer);
-          this.callbacks.onPoint?.({ index, point: envelope.points[index], time });
-        },
-        Math.max(0, (time - this.context.currentTime) * 1000),
-      );
-      this.#pointTimers.add(timer);
-    }
-  }
-
-  #armCompletion(time: number) {
-    this.#completionTimer = setTimeout(
-      () => {
-        this.#completionTimer = null;
-        this.callbacks.onComplete?.();
-      },
-      Math.max(0, (time - this.context.currentTime) * 1000),
-    );
-  }
-
-  #duration(envelope: Envelope, from: number, to: number, timeScale: number) {
-    if (from < 0 || to >= envelope.points.length || from >= to) return 0;
-    return (envelope.points[to].time - envelope.points[from].time) / timeScale;
-  }
-
-  #clearLoopTimers() {
-    if (this.#loopTimer === null) return;
-    clearTimeout(this.#loopTimer);
-    this.#loopTimer = null;
-  }
-
-  #clearTimers() {
-    this.#pointTimers.forEach((timer) => clearTimeout(timer));
-    this.#pointTimers.clear();
-    if (this.#completionTimer !== null) {
-      clearTimeout(this.#completionTimer);
-      this.#completionTimer = null;
-    }
-    this.#clearLoopTimers();
   }
 }
