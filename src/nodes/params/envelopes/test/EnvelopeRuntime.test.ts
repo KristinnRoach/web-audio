@@ -150,52 +150,7 @@ describe('live sustain value', () => {
     expect(pins.at(-1)?.value).toBe(0.25);
   });
 
-  it('picks the edit up from applySettings while the note is held', () => {
-    const context = contextAt(0);
-    const param = createFakeParam();
-    const runtime = new EnvelopeRuntime(context, sustaining());
-    runtime.trigger(param, 0);
-
-    context.currentTime = 1;
-    const edited = sustaining();
-    runtime.applySettings({
-      ...edited,
-      envelope: {
-        ...edited.envelope,
-        points: edited.envelope.points.map((point, index) =>
-          index === 1 ? { ...point, value: 0.25 } : point,
-        ),
-      },
-    });
-
-    expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 0.25, time: 1.02 });
-  });
-
-  it('leaves the queued shape alone when the run has not reached sustain', () => {
-    const context = contextAt(0);
-    const param = createFakeParam();
-    const runtime = new EnvelopeRuntime(context, sustaining());
-    runtime.trigger(param, 0);
-    const queued = param.ramps().length;
-
-    // Point 1 lands at 0.5, so the attack is still in flight here. Cancelling to write
-    // the new value would take the attack ramp with it.
-    context.currentTime = 0.2;
-    const edited = sustaining();
-    runtime.applySettings({
-      ...edited,
-      envelope: {
-        ...edited.envelope,
-        points: edited.envelope.points.map((point, index) =>
-          index === 1 ? { ...point, value: 0.25 } : point,
-        ),
-      },
-    });
-
-    expect(param.events.length).toBe(queued + 1); // the trigger's own cancel, nothing more
-  });
-
-  it('writes nothing when the sustain value is unchanged', () => {
+  it('keeps settings updates separate from the active player', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
@@ -203,26 +158,20 @@ describe('live sustain value', () => {
 
     context.currentTime = 1;
     const before = param.events.length;
-    runtime.applySettings(sustaining());
+    const edited = sustaining();
+    const settings = {
+      ...edited,
+      envelope: {
+        ...edited.envelope,
+        points: edited.envelope.points.map((point, index) =>
+          index === 1 ? { ...point, value: 0.25 } : point,
+        ),
+      },
+    };
+    runtime.applySettings(settings);
 
+    expect(runtime.settings.envelope.points[1].value).toBe(0.25);
     expect(param.events.length).toBe(before);
-  });
-
-  it('leaves a run playing its own mapped shape alone', () => {
-    const context = contextAt(0);
-    const param = createFakeParam();
-    const runtime = new EnvelopeRuntime(context, sustaining());
-    // Stand-in for the sampler's filter envelope: the run plays Hz, settings are normalized.
-    const mapped = sustaining().envelope;
-    runtime.trigger(param, 0, {
-      envelope: { ...mapped, points: mapped.points.map((p) => ({ ...p, value: p.value * 8000 })) },
-    });
-
-    context.currentTime = 1;
-    const before = param.ramps().length;
-    runtime.applySettings(sustaining());
-
-    expect(param.ramps().length).toBe(before);
   });
 });
 
