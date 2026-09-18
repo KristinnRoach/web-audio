@@ -138,6 +138,43 @@ export type EnvelopeTriggerOptions = ScheduleOptions & { fromPoint?: number };
 export type EnvelopeScheduler = {
   trigger(time?: number, options?: EnvelopeTriggerOptions): void;
   release(time?: number): void;
+  /**
+   * How far into the shape the live run has got at `time`, or `null` when no run is live.
+   *
+   * **Seconds**, on the same scale `points[i].time` is written in, measured as an offset
+   * from `points[0].time`. So `0` is point 0 and `points[2].time` is point 2.
+   *
+   * Seconds is required, not a convention this module is free to pick: point times reach
+   * the parameter as `startTime + (points[i].time - points[from].time) / timeScale`, and
+   * that lands in `linearRampToValueAtTime`, which reads `AudioContext` seconds. With
+   * `timeScale` dimensionless, point times are seconds and so is this.
+   *
+   * It is *not* `context.currentTime - startTime`. Wall seconds are scaled first:
+   *
+   * ```
+   * position = (time - anchorTime) * timeScale
+   * ```
+   *
+   * A `timeScale` of 2 plays the envelope twice as fast, so half a second of wall clock
+   * reaches position 1. Reverse it with `anchorTime + position / timeScale` to get back
+   * to a context timestamp.
+   *
+   * The shape then bounds the result, because neither of these runs past its own end:
+   * a loop wraps the position into `[0, cycle)`, and a sustained run clamps it at the
+   * sustain point's offset and stays there for as long as the note is held.
+   *
+   * `anchorTime` is where point 0 *would have* been, not necessarily where the run was
+   * triggered. A run opened mid-shape with `fromPoint` anchors itself in the past, so its
+   * position reads off the same grid as a run that opened at point 0.
+   *
+   * Null once released or stopped. The release tail runs on its own clock from the
+   * note-off instant, so there is no single offset into the shape left to report.
+   *
+   * Throws `RangeError` on a non-finite `time`, matching how the duration helpers reject
+   * one. Null already means "no live run", and overloading it with "you passed garbage"
+   * would leave a caller branching on null with no way to tell the two apart.
+   */
+  position(time?: number): number | null;
   /** Moves the sustain point's value on a run that is holding it; see the implementation. */
   setSustainValue(value: number, time?: number, glide?: number): void;
   stop(time?: number): void;
@@ -339,26 +376,37 @@ export function createEnvelopeScheduler(
   };
 
   /**
-   * The envelope's value at `time`, wherever the shape has got to by then.
+   * How far into the shape the run has got at `time`, in seconds of envelope time. See
+   * `EnvelopeScheduler.position` for why the unit is seconds and not wall seconds.
    *
    * A loop is back at its start every cycle, and a sustained envelope stops advancing
    * once it reaches the sustain point. Everything else keeps running, which is what a
    * release index without a sustain is for.
    */
-  const valueAt = (time: number) => {
+  const positionAt = (time: number) => {
     const { points, sustain } = envelope;
-    if (points.length === 0) return base;
+    if (points.length === 0) return 0;
 
     let elapsed = Math.max(0, (time - triggerTime) * timeScale);
 
     if (envelope.loop) {
+      // A zero-extent cycle has nowhere to advance to, and `trigger` already declines to
+      // loop it. Answering 0 keeps the two in agreement instead of counting up forever.
       const cycle = points[points.length - 1].time - points[0].time;
-      if (cycle > 0) elapsed %= cycle;
+      elapsed = cycle > 0 ? elapsed % cycle : 0;
     } else if (sustain !== undefined) {
       elapsed = Math.min(elapsed, points[sustain].time - points[0].time);
     }
 
-    return base + amount * interpolateAtTime(points, points[0].time + elapsed);
+    return elapsed;
+  };
+
+  /** The envelope's value at `time`, wherever the shape has got to by then. */
+  const valueAt = (time: number) => {
+    const { points } = envelope;
+    if (points.length === 0) return base;
+
+    return base + amount * interpolateAtTime(points, points[0].time + positionAt(time));
   };
 
   const stop = (time = context.currentTime) => {
@@ -511,6 +559,13 @@ export function createEnvelopeScheduler(
       });
     },
     release,
+    position(time = context.currentTime) {
+      // Argument first, so a bad timestamp is a bug whether or not a run is live.
+      if (!Number.isFinite(time)) {
+        throw new RangeError('Envelope position time must be a finite number');
+      }
+      return triggered ? positionAt(time) : null;
+    },
     setSustainValue,
     stop,
     dispose() {

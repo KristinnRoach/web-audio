@@ -52,12 +52,10 @@ not a decision already made. Order is roughly by risk, not by effort.
   the private fields make `Object.create(prototype)` call sites throw, and no harness builds
   a real one. Either add a browser test or extract the sustain bookkeeping.
 - `fakeParam` no longer records `setValueCurveAtTime`. Fine while `AutomatableParam`
-  excludes curves; revisit if the runtime starts scheduling them. `fakeParam.ts`.
+  excludes curves; revisit if the runtime starts scheduling them. `test/fakeParam.ts`.
 
 ## Hygiene
 
-- `src/nodes/params/envelopes/cleanup/` is 17 tracked files of old source dumped as `.txt`
-  plus HTML experiments. Delete, or move out of `src/`.
 - Unrelated TODOs in files this PR touched: `SamplePlayer.ts:110` (loop tempo sync),
   `SamplePlayer.ts:1028` (envelope source of truth), `SampleVoice.ts:90` (#31),
   `Preprocessor.ts:38` (compression).

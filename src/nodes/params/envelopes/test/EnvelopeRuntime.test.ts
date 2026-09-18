@@ -279,3 +279,142 @@ describe('live sustain value', () => {
     expect(param.ramps().length).toBe(before);
   });
 });
+
+describe('EnvelopeRuntime.trigger validation', () => {
+  it('rejects a caller-supplied shape with an out-of-range sustain', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const bad = { ...settingsOf().envelope, sustain: 9 };
+
+    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: bad })).toThrow(
+      'Invalid envelope settings',
+    );
+  });
+
+  it('still accepts a valid caller-supplied shape', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const mapped = settingsOf().envelope;
+
+    expect(() =>
+      runtime.trigger(createFakeParam(), 0, {
+        envelope: {
+          ...mapped,
+          points: mapped.points.map((p) => ({ ...p, value: p.value * 8000 })),
+        },
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const badShape = () => ({ ...settingsOf().envelope, sustain: 9 });
+
+  it('keeps the timers of an active run armed', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint: vi.fn() });
+    runtime.trigger(createFakeParam(), 0);
+    const armed = vi.getTimerCount();
+    expect(armed).toBeGreaterThan(0);
+
+    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
+      'Invalid envelope settings',
+    );
+
+    expect(vi.getTimerCount()).toBe(armed);
+  });
+
+  it('keeps a released run released', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint: vi.fn() });
+    runtime.trigger(createFakeParam(), 0);
+    runtime.release(0);
+    const armed = vi.getTimerCount();
+
+    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
+      'Invalid envelope settings',
+    );
+
+    expect(vi.getTimerCount()).toBe(armed);
+    // Still released, so a second release stays the no-op it was.
+    runtime.release(0);
+    expect(vi.getTimerCount()).toBe(armed);
+  });
+});
+
+describe('EnvelopeRuntime.position', () => {
+  // settingsOf() points sit at 0, 0.5, 1 and 1.5.
+  const at = (settings: EnvelopeSettings, currentTime: number, multiplier?: number) => {
+    const context = contextAt(0);
+    const runtime = new EnvelopeRuntime(context, settings);
+    runtime.trigger(createFakeParam(), 0, { timeScaleMultiplier: multiplier });
+    context.currentTime = currentTime;
+    return runtime;
+  };
+
+  it('throws on a non-finite time, live run or not', () => {
+    const idle = new EnvelopeRuntime(contextAt(0), settingsOf());
+    expect(() => idle.position(NaN)).toThrow(RangeError);
+
+    const live = at(settingsOf(), 0.5);
+    expect(() => live.position(NaN)).toThrow(RangeError);
+    expect(() => live.position(Infinity)).toThrow(RangeError);
+  });
+
+  it('is null with no live run', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    expect(runtime.position()).toBeNull();
+  });
+
+  it('is null once released, and once stopped', () => {
+    const released = at(settingsOf(), 0.75);
+    released.release(0.75);
+    expect(released.position()).toBeNull();
+
+    const stopped = at(settingsOf(), 0.75);
+    stopped.stop();
+    expect(stopped.position()).toBeNull();
+  });
+
+  it('reports seconds of envelope time, matching wall seconds only at timeScale 1', () => {
+    expect(at(settingsOf(), 0.75).position()).toBeCloseTo(0.75);
+  });
+
+  it('scales wall seconds by the run timeScale', () => {
+    // Twice speed: a quarter second of wall clock is half a second into the shape.
+    expect(at(settingsOf({ timeScale: 2 }), 0.25).position()).toBeCloseTo(0.5);
+  });
+
+  it('folds the host multiplier into the same scale', () => {
+    expect(at(settingsOf(), 0.25, 2).position()).toBeCloseTo(0.5);
+  });
+
+  it('clamps at the sustain point while the note is held', () => {
+    const sustained = settingsOf({
+      envelope: { ...settingsOf().envelope, sustain: 1, release: 1 },
+    });
+    // Point 1 is at 0.5; the run parks there rather than advancing to 1.2.
+    expect(at(sustained, 1.2).position()).toBeCloseTo(0.5);
+  });
+
+  it('stays at 0 on a loop whose points share one time', () => {
+    const flat = settingsOf({
+      envelope: {
+        points: [
+          { time: 0, value: 0 },
+          { time: 0, value: 1 },
+        ],
+        release: 0,
+        loop: true,
+      },
+    });
+    // Coincident times pass validation, so the cycle has zero extent. There is nowhere to
+    // advance to, and trigger schedules it as a one-shot rather than looping it.
+    expect(at(flat, 5).position()).toBe(0);
+  });
+
+  it('wraps into the cycle while looping', () => {
+    const looping = settingsOf({ envelope: { ...settingsOf().envelope, loop: true } });
+    // Cycle is 1.5 long, so 1.75 of wall clock is 0.25 into the second pass.
+    expect(at(looping, 1.75).position()).toBeCloseTo(0.25);
+  });
+});
