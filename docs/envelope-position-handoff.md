@@ -39,7 +39,7 @@ clamps it at the sustain point.
   from a bad timestamp. An rAF loop calling `position()` with no argument never reaches
   this, since the default is `clock.currentTime`.
 - `EnvelopeRuntime.trigger` now validates `options.envelope`, which it previously took on
-  trust, **before** mutating any run state. `Envelope.ts:562`, `EnvelopeRuntime.ts:115`, `EnvelopeRuntime.ts:228`.
+  trust, before replacing the active player.
 
 ## Still missing: a UI test
 
@@ -73,24 +73,19 @@ consumer below inherits the error.
 Nothing here is dead yet: no caller has migrated. These are things `position()` can now
 express, listed so they get retired deliberately rather than left to rot.
 
-### `EnvelopeRuntime.currentPoint()`
+### `EnvelopePlayer.currentPoint()`
 
-`EnvelopeRuntime.ts:133`. Computes the same elapsed time and then searches for a point
-index, snapping to it. Its own comment admits the cost:
-
-> ponytail: snaps to a point rather than reporting the exact phase, so resuming from it is
-> only sample-accurate once the run has settled on sustain.
-
-Now a search over `position()`, exactly. One caller: `SampleVoice.ts:741`, for loop-resume.
+Computes a point index from the same position owned by the player. `EnvelopeRuntime`
+only delegates to it. The sampler uses it when enabling a loop on a live run.
 
 Note the semantic difference if you rewrite it: `currentPoint()` returns `null` for a
 looping run, while `position()` returns a wrapped value. Deciding a looping run _does_
 have a current point is probably the improvement, but it is a behaviour change, not a
 refactor.
 
-### `EnvelopeRuntime.nextCycleTime()`
+### `EnvelopePlayer.nextCycleTime()`
 
-`EnvelopeRuntime.ts:188`. Mostly derivable:
+Owned by the player and exposed through the compatibility runtime. Mostly derivable:
 
 ```
 nextCycleTime = now + (cycleLength - position()) / timeScale

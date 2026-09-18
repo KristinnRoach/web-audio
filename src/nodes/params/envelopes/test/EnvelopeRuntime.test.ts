@@ -4,7 +4,7 @@ import { EnvelopeRuntime } from '../EnvelopeRuntime';
 import type { EnvelopeSettings } from '../Envelope';
 
 function contextAt(currentTime: number) {
-  return { currentTime, sampleRate: 44100 } as AudioContext & { currentTime: number };
+  return { currentTime };
 }
 
 function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings {

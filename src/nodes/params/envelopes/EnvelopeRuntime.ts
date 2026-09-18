@@ -4,6 +4,7 @@ import {
   cloneEnvelopeSettings,
   type AutomatableParam,
   type Envelope,
+  type EnvelopeClock,
   type EnvelopePlayer,
   type EnvelopeSettings,
   type ScheduleOptions,
@@ -24,7 +25,7 @@ export class EnvelopeRuntime {
   #envPlayer: EnvelopePlayer | null = null;
 
   constructor(
-    readonly context: AudioContext,
+    readonly clock: EnvelopeClock,
     settings: EnvelopeSettings,
   ) {
     assertValidEnvelopeSettings(settings);
@@ -46,7 +47,7 @@ export class EnvelopeRuntime {
   }
 
   /** Envelope-time position of the active player; see `EnvelopePlayer.position`. */
-  position(time = this.context.currentTime): number | null {
+  position(time = this.clock.currentTime): number | null {
     // Argument first, so a bad timestamp is a bug whether or not a run is live.
     if (!Number.isFinite(time)) {
       throw new RangeError('Envelope position time must be a finite number');
@@ -56,7 +57,7 @@ export class EnvelopeRuntime {
 
   /** Last point reached by the active player. */
   currentPoint(): number | null {
-    return this.#envPlayer?.currentPoint(this.context.currentTime) ?? null;
+    return this.#envPlayer?.currentPoint(this.clock.currentTime) ?? null;
   }
 
   duration(timeScaleMultiplier = 1) {
@@ -76,7 +77,7 @@ export class EnvelopeRuntime {
 
   /** Absolute time of the active player's next loop boundary. */
   nextCycleTime(): number | null {
-    return this.#envPlayer?.nextCycleTime(this.context.currentTime) ?? null;
+    return this.#envPlayer?.nextCycleTime(this.clock.currentTime) ?? null;
   }
 
   applySettings(settings: EnvelopeSettings) {
@@ -92,7 +93,7 @@ export class EnvelopeRuntime {
    * for a seam. Edits the run only; `applySettings` is what changes the stored shape.
    */
   setSustainValue(value: number, glide?: number) {
-    this.#envPlayer?.setSustainValue(value, this.context.currentTime, glide);
+    this.#envPlayer?.setSustainValue(value, this.clock.currentTime, glide);
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
@@ -108,7 +109,7 @@ export class EnvelopeRuntime {
 
     const sourceEnvelope = options.envelope ?? this.#settings.envelope;
     const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
-    const scheduledStartTime = Math.max(this.context.currentTime, startTime);
+    const scheduledStartTime = Math.max(this.clock.currentTime, startTime);
     const fromPoint = sourceEnvelope.loop ? (options.fromPoint ?? 0) : 0;
     const schedule = {
       base: options.base,
@@ -123,14 +124,14 @@ export class EnvelopeRuntime {
     // pin it writes is the param's stale value, immediately cancelled and replaced by
     // the new run's first point at the same instant.
     this.#envPlayer?.stop(scheduledStartTime);
-    this.#envPlayer = createEnvelopePlayer(this.context, param, sourceEnvelope);
+    this.#envPlayer = createEnvelopePlayer(this.clock, param, sourceEnvelope);
     this.#envPlayer.trigger(scheduledStartTime, schedule);
   }
 
   release(startTime: number) {
     if (!this.#envPlayer) return;
 
-    const releaseTime = Math.max(this.context.currentTime, startTime);
+    const releaseTime = Math.max(this.clock.currentTime, startTime);
     this.#envPlayer.release(releaseTime);
   }
 
