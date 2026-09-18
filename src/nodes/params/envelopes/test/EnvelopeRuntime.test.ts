@@ -315,6 +315,15 @@ describe('EnvelopeRuntime.position', () => {
     return runtime;
   };
 
+  it('throws on a non-finite time, live run or not', () => {
+    const idle = new EnvelopeRuntime(contextAt(0), settingsOf());
+    expect(() => idle.position(NaN)).toThrow(RangeError);
+
+    const live = at(settingsOf(), 0.5);
+    expect(() => live.position(NaN)).toThrow(RangeError);
+    expect(() => live.position(Infinity)).toThrow(RangeError);
+  });
+
   it('is null with no live run', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
     expect(runtime.position()).toBeNull();

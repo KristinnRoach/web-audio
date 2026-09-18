@@ -169,6 +169,10 @@ export type EnvelopeScheduler = {
    *
    * Null once released or stopped. The release tail runs on its own clock from the
    * note-off instant, so there is no single offset into the shape left to report.
+   *
+   * Throws `RangeError` on a non-finite `time`, matching how the duration helpers reject
+   * one. Null already means "no live run", and overloading it with "you passed garbage"
+   * would leave a caller branching on null with no way to tell the two apart.
    */
   position(time?: number): number | null;
   /** Moves the sustain point's value on a run that is holding it; see the implementation. */
@@ -556,6 +560,10 @@ export function createEnvelopeScheduler(
     },
     release,
     position(time = context.currentTime) {
+      // Argument first, so a bad timestamp is a bug whether or not a run is live.
+      if (!Number.isFinite(time)) {
+        throw new RangeError('Envelope position time must be a finite number');
+      }
       return triggered ? positionAt(time) : null;
     },
     setSustainValue,

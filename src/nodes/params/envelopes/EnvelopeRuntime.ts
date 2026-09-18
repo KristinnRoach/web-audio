@@ -106,8 +106,17 @@ export class EnvelopeRuntime {
    *
    * Null once released or stopped: the tail runs on its own clock from note-off, so no
    * single offset into the shape describes it.
+   *
+   * Throws `RangeError` on a non-finite `time`. Null already means "no live run"; letting
+   * it also mean "you passed garbage" would leave a caller unable to tell the two apart.
+   * An rAF loop calling `position()` with no argument never reaches this, since the
+   * default is `context.currentTime`.
    */
   position(time = this.context.currentTime): number | null {
+    // Argument first, so a bad timestamp is a bug whether or not a run is live.
+    if (!Number.isFinite(time)) {
+      throw new RangeError('Envelope position time must be a finite number');
+    }
     return this.#scheduler?.position(time) ?? null;
   }
 
