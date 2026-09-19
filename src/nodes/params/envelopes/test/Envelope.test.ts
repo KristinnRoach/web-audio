@@ -561,3 +561,39 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
   expect(player.position(4)).toBe(1);
   player.dispose();
 });
+
+describe('EnvelopePlayer lifecycle', () => {
+  const envelope: Envelope = {
+    points: [
+      { time: 0, value: 0 },
+      { time: 1, value: 1 },
+    ],
+    mode: { type: 'once' },
+    release: 0,
+  };
+
+  it('can trigger again after stop', () => {
+    const param = createFakeParam();
+    const player = createEnvelopePlayer({ currentTime: 0 }, param, envelope);
+
+    player.trigger(0);
+    player.stop(0.25);
+    expect(player.position(0.25)).toBeNull();
+
+    player.trigger(1);
+    expect(player.position(1)).toBe(0);
+    expect(param.ramps()).toContainEqual({ type: 'set', value: 0, time: 1 });
+    player.dispose();
+  });
+
+  it('cannot trigger after idempotent disposal', () => {
+    const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam(), envelope);
+
+    player.trigger(0);
+    player.dispose();
+
+    expect(() => player.dispose()).not.toThrow();
+    expect(player.position()).toBeNull();
+    expect(() => player.trigger(1)).toThrow('disposed');
+  });
+});

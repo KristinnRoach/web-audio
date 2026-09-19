@@ -373,6 +373,7 @@ export function createEnvelopePlayer(
     points: sourceEnvelope.points.map((point) => ({ ...point })),
   };
   let removeLoop: (() => void) | undefined;
+  let disposed = false;
   let triggered = false;
   let base = 0;
   let amount = 1;
@@ -503,6 +504,7 @@ export function createEnvelopePlayer(
 
   return {
     trigger(time = clock.currentTime, options = {}) {
+      if (disposed) throw new Error('Cannot trigger a disposed EnvelopePlayer');
       stopLoop();
       triggered = true;
       base = options.base ?? 0;
@@ -615,6 +617,8 @@ export function createEnvelopePlayer(
     setSustainValue,
     stop,
     dispose() {
+      if (disposed) return;
+      disposed = true;
       stop();
     },
   };
