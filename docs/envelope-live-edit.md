@@ -12,12 +12,12 @@ Status: partly applied. Scope is `src/nodes/params/envelopes/` only.
 
 Everything needed is in four places. No search required.
 
-| File                                                                 | What to look at                                                                                                      |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | `#activeRun`, `nextCycleTime()`, `trigger()`, `release()`                                                            |
-| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopeScheduler()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
-| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                      |
-| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — the only reason a run snapshot has to exist                                       |
+| File                                                                 | What to look at                                                                                                   |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | settings compatibility, `trigger()`, and `release()`                                                              |
+| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopePlayer()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
+| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                   |
+| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — creates a mapped envelope for one player                                       |
 
 Shipped already (commit `701bc35`): an edit to a running envelope hands over on the
 next loop boundary, where point 0 comes round anyway, so the swap is continuous by
@@ -35,7 +35,7 @@ Two consequences, which are the two parts below.
 
 ### Problem
 
-`release()` schedules the tail from `#activeRun`, the snapshot taken at trigger. So:
+`release()` schedules the tail from the envPlayer's owned snapshot taken at creation. So:
 
 - Editing the release index mid-note does nothing until the next trigger, even though
   the tail is not on the timeline yet and nothing about changing it is audible.
@@ -56,20 +56,20 @@ Omitted fields fall back to the run's, so every existing call site keeps working
 
 Threading required:
 
-- `EnvelopeScheduler.release(time, options?)` — currently closes over the trigger's
+- `EnvelopePlayer.release(time, options?)` — currently closes over the trigger's
   `envelope`, `base`, `amount`, `timeScale`.
 - `releaseEnvelope()` already takes the envelope and options as parameters. No change.
 - `holdValue` must still come from the **outgoing** shape via `valueAt()`. That is what
   makes the swap continuous: pin where the old shape actually got to, then ramp to the
   new tail. Do not let the override reach `valueAt`.
-- `EnvelopeRuntime.releaseDuration()` and `#startReleasePointCallbacks()` read
-  `#activeRun.envelope` and need the override too.
+- `EnvelopeRuntime.releaseDuration()` must reflect the late-bound tail too.
 
 ### Why not simply drop the snapshot and always read `#settings`
 
-`#activeRun.envelope` is the _mapped_ shape for filter-env (normalized → Hz), which is
-not `#settings.envelope`. Reading settings at release time would compute the handoff
-from a shape that was never playing. The snapshot has to stay; only the tail is late.
+The envPlayer's envelope may be the _mapped_ shape for filter-env (normalized → Hz),
+which is not `#settings.envelope`. Reading settings at release time would compute the
+handoff from a shape that was never playing. The owned snapshot has to stay; only the
+tail is late.
 
 ### Check
 
@@ -81,7 +81,7 @@ release, assert the tail follows the new points and starts from the held value.
 
 ### Problem
 
-`nextCycleTime()` gates on `#activeRun.envelope.loop`, the **outgoing** run's flag. So:
+`nextCycleTime()` gates on the envPlayer's **outgoing** envelope. So:
 
 - Disabling loop on a looping run works. The old run is looping, a boundary exists, the
   handover installs the sustaining shape. Already correct.
@@ -107,7 +107,7 @@ The seam accessor returns where as well as when:
 - run parked at sustain → `{ now, sustain }`
 - neither → `null`
 
-`trigger()` gains a `fromIndex` option. Scheduler work:
+`trigger()` gains a `fromIndex` option. Player work:
 
 - `scheduleRange()` already takes a `from` index. The trigger path hardcodes 0.
 - The loop refill anchors cycle _n_ at `time + n * duration`. With a pickup the anchor
@@ -146,7 +146,7 @@ The deferred sustain question turned out to be two questions with different answ
 **The value is live.** A sustained run schedules points `0..sustain` and stops, so the
 hold is an absence of scheduled events rather than an event. Nothing is queued after it
 to reschedule and no seam has to be waited for: pin, glide, done.
-`EnvelopeScheduler.setSustainValue()` does that and `applySettings` forwards to it.
+`EnvelopePlayer.setSustainValue()` does that and `applySettings` forwards to it.
 
 The point is mutated in place on the run's own clone, because `valueAt` and
 `releaseEnvelope` read that same object. Without the mutation the note-off handoff pins
@@ -167,7 +167,7 @@ held value would have to jump or glide, and there is no seam that avoids it.
 D and the sustain value landed first, each in its own commit, and neither needed the
 rename. What is left is B on its own:
 
-1. ~~**D** — the sustain pickup and the scheduler's pickup-then-loop path.~~ `5c58ad1`.
+1. ~~**D** — the sustain pickup and the player's pickup-then-loop path.~~ `5c58ad1`.
 2. ~~The sustain **value** on a held note.~~ `d8bf8cd`.
 3. **B** — the late-bound release stage. Mechanical, and it is the one that fixes the
    live cutoff bug in Part B's second bullet.

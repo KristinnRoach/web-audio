@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import { createFakeParam } from './fakeParam';
 import { EnvelopeRuntime } from '../EnvelopeRuntime';
 import type { EnvelopeSettings } from '../Envelope';
 
 function contextAt(currentTime: number) {
-  return { currentTime, sampleRate: 44100 } as AudioContext & { currentTime: number };
+  return { currentTime };
 }
 
 function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings {
@@ -24,61 +24,7 @@ function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings
   };
 }
 
-describe('EnvelopeRuntime callbacks', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it('does not create callback timers when it has no callbacks', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
-    runtime.trigger(createFakeParam(), 0);
-
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('reports scheduled points and completion', () => {
-    const onPoint = vi.fn();
-    const onComplete = vi.fn();
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint, onComplete });
-
-    runtime.trigger(createFakeParam(), 0, { timeScaleMultiplier: 2 });
-    vi.advanceTimersByTime(750);
-
-    expect(onPoint.mock.calls.map(([details]) => details.index)).toEqual([0, 1, 2, 3]);
-    expect(onPoint.mock.calls.map(([details]) => details.time)).toEqual([0, 0.25, 0.5, 0.75]);
-    expect(onComplete).toHaveBeenCalledOnce();
-  });
-
-  it('keeps callbacks on the active shape after settings change', () => {
-    const context = contextAt(0);
-    const onPoint = vi.fn();
-    const onComplete = vi.fn();
-    const runtime = new EnvelopeRuntime(context, settingsOf(), { onPoint, onComplete });
-
-    runtime.trigger(createFakeParam(), 0);
-    runtime.applySettings(
-      settingsOf({
-        timeScale: 10,
-        envelope: {
-          points: [
-            { time: 0, value: 0 },
-            { time: 1, value: 1 },
-            { time: 2, value: 0 },
-          ],
-          release: 1,
-        },
-      }),
-    );
-
-    context.currentTime = 0.25;
-    runtime.release(0.25);
-    vi.advanceTimersByTime(500);
-
-    const releasePoint = onPoint.mock.calls.find(([details]) => details.index === 3)?.[0];
-    expect(releasePoint?.point.value).toBe(0);
-    expect(releasePoint?.time).toBe(0.75);
-    expect(onComplete).toHaveBeenCalledOnce();
-  });
-
+describe('EnvelopeRuntime validation', () => {
   it('requires a release point', () => {
     const settings = settingsOf() as unknown as {
       enabled: boolean;
@@ -204,52 +150,7 @@ describe('live sustain value', () => {
     expect(pins.at(-1)?.value).toBe(0.25);
   });
 
-  it('picks the edit up from applySettings while the note is held', () => {
-    const context = contextAt(0);
-    const param = createFakeParam();
-    const runtime = new EnvelopeRuntime(context, sustaining());
-    runtime.trigger(param, 0);
-
-    context.currentTime = 1;
-    const edited = sustaining();
-    runtime.applySettings({
-      ...edited,
-      envelope: {
-        ...edited.envelope,
-        points: edited.envelope.points.map((point, index) =>
-          index === 1 ? { ...point, value: 0.25 } : point,
-        ),
-      },
-    });
-
-    expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 0.25, time: 1.02 });
-  });
-
-  it('leaves the queued shape alone when the run has not reached sustain', () => {
-    const context = contextAt(0);
-    const param = createFakeParam();
-    const runtime = new EnvelopeRuntime(context, sustaining());
-    runtime.trigger(param, 0);
-    const queued = param.ramps().length;
-
-    // Point 1 lands at 0.5, so the attack is still in flight here. Cancelling to write
-    // the new value would take the attack ramp with it.
-    context.currentTime = 0.2;
-    const edited = sustaining();
-    runtime.applySettings({
-      ...edited,
-      envelope: {
-        ...edited.envelope,
-        points: edited.envelope.points.map((point, index) =>
-          index === 1 ? { ...point, value: 0.25 } : point,
-        ),
-      },
-    });
-
-    expect(param.events.length).toBe(queued + 1); // the trigger's own cancel, nothing more
-  });
-
-  it('writes nothing when the sustain value is unchanged', () => {
+  it('keeps settings updates separate from the active player', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
@@ -257,26 +158,20 @@ describe('live sustain value', () => {
 
     context.currentTime = 1;
     const before = param.events.length;
-    runtime.applySettings(sustaining());
+    const edited = sustaining();
+    const settings = {
+      ...edited,
+      envelope: {
+        ...edited.envelope,
+        points: edited.envelope.points.map((point, index) =>
+          index === 1 ? { ...point, value: 0.25 } : point,
+        ),
+      },
+    };
+    runtime.applySettings(settings);
 
+    expect(runtime.settings.envelope.points[1].value).toBe(0.25);
     expect(param.events.length).toBe(before);
-  });
-
-  it('leaves a run playing its own mapped shape alone', () => {
-    const context = contextAt(0);
-    const param = createFakeParam();
-    const runtime = new EnvelopeRuntime(context, sustaining());
-    // Stand-in for the sampler's filter envelope: the run plays Hz, settings are normalized.
-    const mapped = sustaining().envelope;
-    runtime.trigger(param, 0, {
-      envelope: { ...mapped, points: mapped.points.map((p) => ({ ...p, value: p.value * 8000 })) },
-    });
-
-    context.currentTime = 1;
-    const before = param.ramps().length;
-    runtime.applySettings(sustaining());
-
-    expect(param.ramps().length).toBe(before);
   });
 });
 
@@ -306,38 +201,32 @@ describe('EnvelopeRuntime.trigger validation', () => {
 });
 
 describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
   const badShape = () => ({ ...settingsOf().envelope, sustain: 9 });
 
-  it('keeps the timers of an active run armed', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint: vi.fn() });
+  it('keeps the active player running', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
     runtime.trigger(createFakeParam(), 0);
-    const armed = vi.getTimerCount();
-    expect(armed).toBeGreaterThan(0);
+    const before = runtime.position();
 
     expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
       'Invalid envelope settings',
     );
 
-    expect(vi.getTimerCount()).toBe(armed);
+    expect(runtime.position()).toBe(before);
   });
 
   it('keeps a released run released', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf(), { onPoint: vi.fn() });
+    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
     runtime.trigger(createFakeParam(), 0);
     runtime.release(0);
-    const armed = vi.getTimerCount();
 
     expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
       'Invalid envelope settings',
     );
 
-    expect(vi.getTimerCount()).toBe(armed);
     // Still released, so a second release stays the no-op it was.
     runtime.release(0);
-    expect(vi.getTimerCount()).toBe(armed);
+    expect(runtime.position()).toBeNull();
   });
 });
 

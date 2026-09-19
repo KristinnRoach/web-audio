@@ -1,25 +1,15 @@
 import {
-  createEnvelopeScheduler,
+  createEnvelopePlayer,
   assertValidEnvelopeSettings,
   cloneEnvelopeSettings,
   type AutomatableParam,
   type Envelope,
-  type EnvelopeScheduler,
+  type EnvelopeClock,
+  type EnvelopePlayer,
   type EnvelopeSettings,
   type ScheduleOptions,
 } from './Envelope';
 import { releaseDuration, scaledDuration } from './envelope-shape';
-
-export type EnvelopePointDetails = {
-  index: number;
-  point: Envelope['points'][number];
-  time: number;
-};
-
-export type EnvelopeRuntimeCallbacks = {
-  onPoint?: (details: EnvelopePointDetails) => void;
-  onComplete?: () => void;
-};
 
 export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> & {
   /** Additional timing multiplier supplied by the host, such as a playback rate. */
@@ -30,31 +20,13 @@ export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> &
   fromPoint?: number;
 };
 
-type ActiveEnvelopeRun = {
-  envelope: Envelope;
-  timeScale: number;
-  startTime: number;
-};
-
-/**
- * Stateful playback for one envelope bound at trigger time to any automatable parameter.
- *
- * It owns scheduling and lifecycle timing, but has no knowledge of instruments,
- * parameter names, MIDI, buses, or application-level envelope identifiers.
- */
+/** Temporary settings compatibility around the parameter-bound envelope player. */
 export class EnvelopeRuntime {
-  #scheduler: EnvelopeScheduler | null = null;
-  #isReleased = false;
-  #pointTimers = new Set<ReturnType<typeof setTimeout>>();
-  #completionTimer: ReturnType<typeof setTimeout> | null = null;
-  #loopTimer: ReturnType<typeof setTimeout> | null = null;
-  #activeRun: ActiveEnvelopeRun | null = null;
-  #runHasOwnShape = false;
+  #envPlayer: EnvelopePlayer | null = null;
 
   constructor(
-    readonly context: AudioContext,
+    readonly clock: EnvelopeClock,
     settings: EnvelopeSettings,
-    readonly callbacks: EnvelopeRuntimeCallbacks = {},
   ) {
     assertValidEnvelopeSettings(settings);
     this.#settings = cloneEnvelopeSettings(settings);
@@ -74,84 +46,22 @@ export class EnvelopeRuntime {
     return !!this.#settings.envelope.loop;
   }
 
-  /**
-   * How far into the shape the live run has got at `time`, or `null` when no run is live.
-   *
-   * **Seconds**, on the same scale `points[i].time` is written in, measured as an offset
-   * from `points[0].time`. `0` is point 0, `points[2].time` is point 2.
-   *
-   * Seconds is required rather than chosen: point times reach the parameter as
-   * `startTime + (points[i].time - points[from].time) / timeScale` and land in
-   * `linearRampToValueAtTime`, which reads `AudioContext` seconds.
-   *
-   * It is *not* `context.currentTime - startTime`. Wall seconds are scaled first:
-   *
-   * ```
-   * position = (time - anchorTime) * timeScale
-   * ```
-   *
-   * where `timeScale` is the run's, so `settings.timeScale * timeScaleMultiplier` as it
-   * was at trigger. A run playing at twice speed reaches position 1 after half a second
-   * of wall clock. Go back the other way with `anchorTime + position / timeScale`.
-   *
-   * The shape bounds the result: a loop wraps it into `[0, cycle)`, and a sustained run
-   * clamps it at the sustain point and stays there while the note is held.
-   *
-   * `anchorTime` is where point 0 *would have* been, which for a run opened mid-shape
-   * with `fromPoint` is earlier than the trigger. The position therefore reads off the
-   * same grid either way.
-   *
-   * A normalized 0..1 phase, if a looping run ever wants one, is `position() / duration()`
-   * at the call site. Not an accessor here: it only means anything while looping.
-   *
-   * Null once released or stopped: the tail runs on its own clock from note-off, so no
-   * single offset into the shape describes it.
-   *
-   * Throws `RangeError` on a non-finite `time`. Null already means "no live run"; letting
-   * it also mean "you passed garbage" would leave a caller unable to tell the two apart.
-   * An rAF loop calling `position()` with no argument never reaches this, since the
-   * default is `context.currentTime`.
-   */
-  position(time = this.context.currentTime): number | null {
+  /** Envelope-time position of the active player; see `EnvelopePlayer.position`. */
+  position(time = this.clock.currentTime): number | null {
     // Argument first, so a bad timestamp is a bug whether or not a run is live.
     if (!Number.isFinite(time)) {
       throw new RangeError('Envelope position time must be a finite number');
     }
-    return this.#scheduler?.position(time) ?? null;
+    return this.#envPlayer?.position(time) ?? null;
   }
 
-  /**
-   * Index of the last point a non-looping run has reached, or null when there is no
-   * such run. A sustained run stops advancing at its sustain point, so once it is
-   * parked there that is the answer for as long as the note is held.
-   *
-   * ponytail: snaps to a point rather than reporting the exact phase, so resuming from
-   * it is only sample-accurate once the run has settled on sustain - mid-attack it is
-   * off by up to one segment. Split the segment if a toggle mid-attack ever needs to be
-   * click-free.
-   */
+  /** Last point reached by the active player. */
   currentPoint(): number | null {
-    const run = this.#activeRun;
-    if (!run || this.#isReleased || run.envelope.loop) return null;
-
-    const { points, sustain } = run.envelope;
-    const last = sustain ?? points.length - 1;
-    const elapsed = (this.context.currentTime - run.startTime) * run.timeScale;
-
-    let index = 0;
-    while (index < last && points[index + 1].time - points[0].time <= elapsed) index++;
-    return index;
+    return this.#envPlayer?.currentPoint(this.clock.currentTime) ?? null;
   }
 
   duration(timeScaleMultiplier = 1) {
-    if (this.#activeRun) {
-      return this.#duration(
-        this.#activeRun.envelope,
-        0,
-        this.#activeRun.envelope.points.length - 1,
-        this.#activeRun.timeScale,
-      );
-    }
+    if (this.#envPlayer) return this.#envPlayer.duration();
     return scaledDuration(
       this.#settings,
       0,
@@ -161,56 +71,18 @@ export class EnvelopeRuntime {
   }
 
   releaseDuration(timeScaleMultiplier = 1) {
-    if (this.#activeRun) {
-      return this.#duration(
-        this.#activeRun.envelope,
-        this.#activeRun.envelope.release,
-        this.#activeRun.envelope.points.length - 1,
-        this.#activeRun.timeScale,
-      );
-    }
+    if (this.#envPlayer) return this.#envPlayer.releaseDuration();
     return releaseDuration(this.#settings, timeScaleMultiplier);
   }
 
-  /**
-   * Absolute time of the next loop boundary, or null when there is no boundary to wait for.
-   *
-   * A loop is back at point 0 every cycle, so re-triggering exactly on a boundary is
-   * continuous by construction and needs no phase maths. That makes it the one seam
-   * where new settings can be swapped in mid-note without a jump, which is why only a
-   * looping run answers; everything else applies on its next trigger.
-   *
-   * A run that has not started yet is already waiting on a seam, so that is the answer.
-   * Editors commit on every pointer move, and each commit asks again before the previous
-   * handover has arrived; without this the answer would advance a cycle every time and
-   * a drag would push its own edit further and further out.
-   */
+  /** Absolute time of the active player's next loop boundary. */
   nextCycleTime(): number | null {
-    if (!this.#activeRun?.envelope.loop) return null;
-    const { envelope, timeScale, startTime } = this.#activeRun;
-    const cycle = this.#duration(envelope, 0, envelope.points.length - 1, timeScale);
-    if (cycle <= 0) return null;
-
-    const elapsed = this.context.currentTime - startTime;
-    if (elapsed < 0) return startTime;
-    return startTime + (Math.floor(elapsed / cycle) + 1) * cycle;
+    return this.#envPlayer?.nextCycleTime(this.clock.currentTime) ?? null;
   }
 
   applySettings(settings: EnvelopeSettings) {
     assertValidEnvelopeSettings(settings);
     this.#settings = cloneEnvelopeSettings(settings);
-
-    // The one edit the running note picks up. Everything else - timing, curves, the
-    // sustain index itself - still waits for the next trigger or loop boundary.
-    //
-    // Skipped for a run triggered with its own shape, where the points are on a scale
-    // the stored settings do not share: the sampler's filter envelope plays Hz mapped
-    // from normalized settings, so forwarding the stored value would set a cutoff of
-    // 0.3 Hz. Those runs pick the edit up on the next trigger, as before.
-    const { sustain } = settings.envelope;
-    if (sustain !== undefined && !this.#runHasOwnShape) {
-      this.setSustainValue(settings.envelope.points[sustain].value);
-    }
   }
 
   /**
@@ -221,39 +93,24 @@ export class EnvelopeRuntime {
    * for a seam. Edits the run only; `applySettings` is what changes the stored shape.
    */
   setSustainValue(value: number, glide?: number) {
-    if (this.#isReleased) return;
-    this.#scheduler?.setSustainValue(value, this.context.currentTime, glide);
+    this.#envPlayer?.setSustainValue(value, this.clock.currentTime, glide);
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
     // The constructor and applySettings both validate; trigger was the one entry point
     // that took a caller-supplied shape on trust. An out-of-range sustain index throws
-    // inside the scheduler instead, which is a worse place to find out. The stored
+    // inside the player instead, which is a worse place to find out. The stored
     // enabled/timeScale are already valid, so this checks the new shape and nothing else.
     //
-    // Before anything is mutated: a throw here has to leave the current run exactly as it
-    // was. Clearing timers first would silence the outgoing run's callbacks while it kept
-    // playing, and resetting #isReleased would let release() run a second time on a run
-    // that had already released.
+    // Validate before replacing the current player, so a rejected shape leaves it alone.
     if (options.envelope) {
       assertValidEnvelopeSettings({ ...this.#settings, envelope: options.envelope });
     }
 
-    this.#clearTimers();
-    this.#isReleased = false;
     const sourceEnvelope = options.envelope ?? this.#settings.envelope;
-    this.#runHasOwnShape = options.envelope !== undefined;
-    const scheduledEnvelope = {
-      ...sourceEnvelope,
-      points: sourceEnvelope.points.map((point) => ({ ...point })),
-    };
     const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
-    const scheduledStartTime = Math.max(this.context.currentTime, startTime);
-    const fromPoint = scheduledEnvelope.loop ? (options.fromPoint ?? 0) : 0;
-    // A run opening mid-shape is anchored on where point 0 would have been, so cycle
-    // boundaries and durations are read off the same grid as a run that started there.
-    const anchor = scheduledStartTime - this.#duration(scheduledEnvelope, 0, fromPoint, timeScale);
-    this.#activeRun = { envelope: scheduledEnvelope, timeScale, startTime: anchor };
+    const scheduledStartTime = Math.max(this.clock.currentTime, startTime);
+    const fromPoint = sourceEnvelope.loop ? (options.fromPoint ?? 0) : 0;
     const schedule = {
       base: options.base,
       amount: options.amount,
@@ -266,175 +123,24 @@ export class EnvelopeRuntime {
     // trigger scheduled ahead takes over without cutting the current run short. The
     // pin it writes is the param's stale value, immediately cancelled and replaced by
     // the new run's first point at the same instant.
-    this.#scheduler?.stop(scheduledStartTime);
-    this.#scheduler = createEnvelopeScheduler(this.context, param, scheduledEnvelope);
-    this.#scheduler.trigger(scheduledStartTime, schedule);
-
-    if (this.callbacks.onPoint) {
-      this.#startPointCallbacks(this.#activeRun, scheduledStartTime, fromPoint);
-    }
-
-    if (
-      this.callbacks.onComplete &&
-      scheduledEnvelope.sustain === undefined &&
-      !scheduledEnvelope.loop
-    ) {
-      this.#armCompletion(
-        scheduledStartTime +
-          this.#duration(scheduledEnvelope, 0, scheduledEnvelope.points.length - 1, timeScale),
-      );
-    }
+    this.#envPlayer?.stop(scheduledStartTime);
+    this.#envPlayer = createEnvelopePlayer(this.clock, param, sourceEnvelope);
+    this.#envPlayer.trigger(scheduledStartTime, schedule);
   }
 
   release(startTime: number) {
-    if (this.#isReleased || !this.#activeRun) return;
-    this.#isReleased = true;
-    this.#clearTimers();
+    if (!this.#envPlayer) return;
 
-    const releaseTime = Math.max(this.context.currentTime, startTime);
-    this.#scheduler?.release(releaseTime);
-    const { envelope, timeScale } = this.#activeRun;
-    if (this.callbacks.onPoint) this.#scheduleReleasePointCallbacks(this.#activeRun, releaseTime);
-    if (this.callbacks.onComplete) {
-      this.#armCompletion(
-        releaseTime +
-          this.#duration(envelope, envelope.release, envelope.points.length - 1, timeScale),
-      );
-    }
+    const releaseTime = Math.max(this.clock.currentTime, startTime);
+    this.#envPlayer.release(releaseTime);
   }
 
   stop() {
-    this.#isReleased = true;
-    this.#clearTimers();
-    this.#scheduler?.dispose();
-    this.#scheduler = null;
-    this.#activeRun = null;
+    this.#envPlayer?.dispose();
+    this.#envPlayer = null;
   }
 
   dispose() {
     this.stop();
   }
-
-  #startPointCallbacks(run: ActiveEnvelopeRun, startTime: number, fromPoint = 0) {
-    const { envelope, timeScale } = run;
-
-    const end = envelope.loop
-      ? envelope.points.length - 1
-      : (envelope.sustain ?? envelope.points.length - 1);
-    const duration = this.#duration(envelope, 0, end, timeScale);
-    if (duration <= 0) return;
-
-    // `run.startTime` is the anchor: `startTime` for a run opening at point 0, earlier
-    // for one resuming mid-shape. Cycles after the first are read off the anchor.
-    const anchor = run.startTime;
-    this.#schedulePointCallbackCycle(envelope, startTime, fromPoint, end, timeScale, fromPoint);
-
-    let cycle = 1;
-    const tick = () => {
-      if (this.#isReleased || !envelope.loop) {
-        return this.#clearLoopTimers();
-      }
-
-      this.#schedulePointCallbackCycle(envelope, anchor + cycle * duration, 0, end, timeScale);
-
-      cycle++;
-      this.#loopTimer = setTimeout(
-        tick,
-        Math.max(0, (anchor + cycle * duration - this.context.currentTime) * 1000),
-      );
-    };
-
-    this.#loopTimer = setTimeout(
-      tick,
-      Math.max(0, (anchor + duration - this.context.currentTime) * 1000),
-    );
-  }
-
-  #scheduleReleasePointCallbacks(run: ActiveEnvelopeRun, releaseTime: number) {
-    const { envelope, timeScale } = run;
-    this.#schedulePointCallbackCycle(
-      envelope,
-      releaseTime,
-      envelope.release + 1,
-      envelope.points.length - 1,
-      timeScale,
-      envelope.release,
-    );
-  }
-
-  #schedulePointCallbackCycle(
-    envelope: Envelope,
-    startTime: number,
-    from: number,
-    to: number,
-    timeScale: number,
-    fromIndex = from - 1,
-  ) {
-    if (!this.callbacks.onPoint) return;
-
-    const fromTime = fromIndex < 0 ? envelope.points[0].time : envelope.points[fromIndex].time;
-    for (let index = from; index <= to; index++) {
-      const time = startTime + (envelope.points[index].time - fromTime) / timeScale;
-      const timer = setTimeout(
-        () => {
-          this.#pointTimers.delete(timer);
-          this.callbacks.onPoint?.({ index, point: envelope.points[index], time });
-        },
-        Math.max(0, (time - this.context.currentTime) * 1000),
-      );
-      this.#pointTimers.add(timer);
-    }
-  }
-
-  #armCompletion(time: number) {
-    this.#completionTimer = setTimeout(
-      () => {
-        this.#completionTimer = null;
-        this.callbacks.onComplete?.();
-      },
-      Math.max(0, (time - this.context.currentTime) * 1000),
-    );
-  }
-
-  #duration(envelope: Envelope, from: number, to: number, timeScale: number) {
-    if (from < 0 || to >= envelope.points.length || from >= to) return 0;
-    return (envelope.points[to].time - envelope.points[from].time) / timeScale;
-  }
-
-  #clearLoopTimers() {
-    if (this.#loopTimer === null) return;
-    clearTimeout(this.#loopTimer);
-    this.#loopTimer = null;
-  }
-
-  #clearTimers() {
-    this.#pointTimers.forEach((timer) => clearTimeout(timer));
-    this.#pointTimers.clear();
-    if (this.#completionTimer !== null) {
-      clearTimeout(this.#completionTimer);
-      this.#completionTimer = null;
-    }
-    this.#clearLoopTimers();
-  }
-}
-
-/**
- * Applies an envelope edit at the seam where it is inaudible.
- *
- * A looping run is back at point 0 every cycle, so re-triggering exactly on a boundary
- * is continuous by construction. `apply` runs immediately either way; `retrigger` only
- * runs when there is a boundary to hand over on. Anything else - idle, one-shot,
- * sustained - has no such seam and picks the edit up on its next trigger.
- *
- * The boundary is read before `apply` so the answer describes the run that is actually
- * playing, not the edit replacing it.
- */
-export function applyOnNextEnvLoopCycle(
-  runtime: EnvelopeRuntime,
-  apply: () => void,
-  retrigger: (at: number) => void,
-): void {
-  const at = runtime.nextCycleTime();
-  apply();
-  if (at !== null) retrigger(at);
 }

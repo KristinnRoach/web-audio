@@ -5,10 +5,10 @@ against the code it points at, not a decision already made.
 
 ## What shipped
 
-`EnvelopeScheduler.position(time?)` and `EnvelopeRuntime.position(time?)` report how far
+`EnvelopePlayer.position(time?)` and `EnvelopeRuntime.position(time?)` report how far
 into its shape a live run has got, or `null` when no run is live.
 
-The number already existed inside the scheduler's `valueAt` closure, which is what lets a
+The number already existed inside the envPlayer's `valueAt` closure, which is what lets a
 future-dated release hand off the value the envelope will actually have reached rather
 than the param's current one. It had no way out. `positionAt()` is now split out of
 `valueAt` so both read from one place.
@@ -37,9 +37,9 @@ clamps it at the sustain point.
 - Non-finite `time` throws `RangeError`, checked before the live-run test. `null` already
   means "no live run", so overloading it would leave a caller unable to tell a missing run
   from a bad timestamp. An rAF loop calling `position()` with no argument never reaches
-  this, since the default is `context.currentTime`.
+  this, since the default is `clock.currentTime`.
 - `EnvelopeRuntime.trigger` now validates `options.envelope`, which it previously took on
-  trust, **before** mutating any run state. `Envelope.ts:562`, `EnvelopeRuntime.ts:115`, `EnvelopeRuntime.ts:228`.
+  trust, before replacing the active player.
 
 ## Still missing: a UI test
 
@@ -73,30 +73,26 @@ consumer below inherits the error.
 Nothing here is dead yet: no caller has migrated. These are things `position()` can now
 express, listed so they get retired deliberately rather than left to rot.
 
-### `EnvelopeRuntime.currentPoint()`
+### `EnvelopePlayer.currentPoint()`
 
-`EnvelopeRuntime.ts:133`. Computes the same elapsed time and then searches for a point
-index, snapping to it. Its own comment admits the cost:
-
-> ponytail: snaps to a point rather than reporting the exact phase, so resuming from it is
-> only sample-accurate once the run has settled on sustain.
-
-Now a search over `position()`, exactly. One caller: `SampleVoice.ts:741`, for loop-resume.
+Computes a point index from the same position owned by the player. `EnvelopeRuntime`
+only delegates to it. The sampler uses it when enabling a loop on a live run.
 
 Note the semantic difference if you rewrite it: `currentPoint()` returns `null` for a
 looping run, while `position()` returns a wrapped value. Deciding a looping run _does_
 have a current point is probably the improvement, but it is a behaviour change, not a
 refactor.
 
-### `EnvelopeRuntime.nextCycleTime()`
+### `EnvelopePlayer.nextCycleTime()`
 
-`EnvelopeRuntime.ts:188`. Mostly derivable:
+Owned by the player and exposed through the compatibility runtime. Mostly derivable:
 
 ```
 nextCycleTime = now + (cycleLength - position()) / timeScale
 ```
 
-One caller: `InstrumentBus.ts:472`, plus `applyOnNextEnvLoopCycle`.
+Callers coordinate this directly or through the temporary sampler adapter
+`applyOnNextEnvLoopCycle`.
 
 **Caveat, verified:** a run that has not started yet returns `startTime` today, because it
 is already waiting on a seam. `position()` returns 0 for that case (it clamps at
@@ -104,21 +100,15 @@ is already waiting on a seam. `position()` returns 0 for that case (it clamps at
 current answer needs the anchor, which `position()` does not expose. Either expose the
 anchor or keep this method.
 
-### `#activeRun` — partially
+### `#activeRun` — removed
 
-`EnvelopeRuntime.ts`, 19 references. Holds `{ envelope, timeScale, startTime }`, all three
-of which the scheduler closure already has. `startTime` is the one `position()` supersedes
-for `currentPoint` and `nextCycleTime`; `envelope` and `timeScale` are still needed by
-`duration()` and `releaseDuration()`, so the field does not go away on its own.
-
-The duplication is the finding, not the field. See the "Core" view in
-`.local/envelope-core-map.html` for why one run modelled twice is the thing to fix.
+Run position, duration, release duration, point index, and cycle boundaries now come from
+the envPlayer. `EnvelopeRuntime` no longer keeps a second model of the active run.
 
 ### `onPoint` / `onComplete` and their three timer fields
 
-`#pointTimers`, `#completionTimer`, `#loopTimer` — three of `EnvelopeRuntime`'s eight
-private fields, plus a `setTimeout` per point per cycle. They exist to _push_ "where am I"
-to a display. A display can now _pull_ `position()` in `requestAnimationFrame`.
+The optional `observeEnvelopePlayer()` decorator now owns these wall-clock notifications
+and their timers. `EnvelopeRuntime` has no callback or notification responsibility.
 
 **Not a clean swap, verified:** `position()` returns `null` once released, so the release
 tail's `onComplete` is not derivable from polling. Either keep a completion event, or give
@@ -137,7 +127,7 @@ cause.
 2. Rewrite `currentPoint()` over `position()`, keeping its `null`-for-loop behaviour so the
    change stays a refactor. Decide the loop semantics separately.
 3. Decide the `nextCycleTime` caveat: expose the anchor, or leave the method alone.
-4. Leave the callbacks until the release-tail gap has an answer.
+4. Keep callback observation optional and separate from playback.
 
 `docs/envelope-followups.md` still holds the larger open questions (merging `sustain` and
 `release`, a loop `until` index, splitting `EnvelopeRuntime` into a store and a run

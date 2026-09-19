@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, test, vi } from 'vite-plus/test';
 import {
-  createEnvelopeScheduler,
+  createEnvelopePlayer,
   interpolateAtTime,
   releaseEnvelope,
   scheduleEnvelope,
@@ -156,7 +156,6 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const context = clock as AudioContext;
   const envelope: Envelope = {
     points: [
       { time: 0, value: 0 },
@@ -167,7 +166,7 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
     release: 1,
     loop: true,
   };
-  const env = createEnvelopeScheduler(context, param, envelope);
+  const env = createEnvelopePlayer(clock, param, envelope);
 
   env.trigger(0);
   clock.currentTime = 2.02;
@@ -185,7 +184,7 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
   env.dispose();
 });
 
-test('scheduler release stops its loop and schedules the scaled release stage', () => {
+test('player release stops its loop and schedules the scaled release stage', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
@@ -200,7 +199,7 @@ test('scheduler release stops its loop and schedules the scaled release stage', 
     release: 2,
     loop: true,
   };
-  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+  const env = createEnvelopePlayer(clock, param, envelope);
 
   env.trigger(0, { amount: 0.5 });
   env.release(0.25);
@@ -232,7 +231,7 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
     release: 2,
     loop: true,
   };
-  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+  const env = createEnvelopePlayer(clock, param, envelope);
 
   env.trigger(4);
   clock.currentTime = 4.5;
@@ -275,7 +274,7 @@ test('never opens a loop cycle before the previous one has closed', () => {
     release: 2,
     loop: true,
   };
-  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+  const env = createEnvelopePlayer(clock, param, envelope);
 
   env.trigger(0.1);
 
@@ -317,7 +316,7 @@ test('release exits a whole-envelope loop and plays its release tail', () => {
     release: 2,
     loop: true,
   };
-  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+  const env = createEnvelopePlayer(clock, param, envelope);
 
   env.trigger(0);
 
@@ -339,7 +338,7 @@ test('loops the whole envelope when no sustain point is set', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const env = createEnvelopeScheduler(clock as AudioContext, param, {
+  const env = createEnvelopePlayer(clock, param, {
     points: [
       { time: 0, value: 0 },
       { time: 0.5, value: 1 },
@@ -444,7 +443,7 @@ test('a release index without a sustain plays through and still has a tail', () 
     ],
     release: 2,
   };
-  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+  const env = createEnvelopePlayer(clock, param, envelope);
 
   // No sustain, so the whole shape is scheduled up front, tail included.
   env.trigger(0);
@@ -481,7 +480,7 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
     release: 2,
     loop: true,
   };
-  const env = createEnvelopeScheduler(clock as AudioContext, param, envelope);
+  const env = createEnvelopePlayer(clock, param, envelope);
 
   env.trigger(4, { fromPoint: 1 });
 
@@ -509,4 +508,58 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
   expect(opens[2]).toBeCloseTo(5.8, 10);
 
   env.dispose();
+});
+
+test('an envelope player owns its envelope shape', () => {
+  const clock = { currentTime: 0 };
+  const envelope: Envelope = {
+    points: [
+      { time: 0, value: 0 },
+      { time: 0.5, value: 1 },
+      { time: 1, value: 0 },
+    ],
+    sustain: 1,
+    release: 1,
+  };
+  const envPlayer = createEnvelopePlayer(clock, createFakeParam(), envelope);
+
+  envPlayer.trigger(0);
+  clock.currentTime = 1;
+  envPlayer.setSustainValue(0.25);
+
+  expect(envelope.points[1].value).toBe(1);
+});
+
+test('an empty player has no current point after triggering', () => {
+  const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam(), {
+    points: [],
+    release: 0,
+  });
+
+  player.trigger();
+
+  expect(player.currentPoint()).toBeNull();
+  player.dispose();
+});
+
+test('a future pickup hands over no earlier than its scheduled opening', () => {
+  vi.useFakeTimers();
+  const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam(), {
+    points: [
+      { time: 0, value: 0 },
+      { time: 1, value: 1 },
+      { time: 2, value: 0 },
+    ],
+    release: 1,
+    loop: true,
+  });
+
+  player.trigger(4, { fromPoint: 1, timeScale: 2 });
+
+  expect(player.nextCycleTime(0)).toBe(4);
+  expect(player.nextCycleTime(3.75)).toBe(4);
+  expect(player.nextCycleTime(4)).toBe(4.5);
+  expect(player.nextCycleTime(4.5)).toBe(5.5);
+  expect(player.position(4)).toBe(1);
+  player.dispose();
 });

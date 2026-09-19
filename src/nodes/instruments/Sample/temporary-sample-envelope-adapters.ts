@@ -3,9 +3,12 @@ import {
   hasVariation,
   type AutomatableParam,
   type Envelope,
+  type EnvelopeRuntime,
   type EnvelopeRuntimeTriggerOptions,
   type EnvelopeSettings,
 } from '@/nodes/params/envelopes';
+
+type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
 
 /**
  * Temporary sampler policy around the generic envelope runtime.
@@ -66,7 +69,7 @@ export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
   envelope: Envelope,
   baseValue: number,
-  param: AutomatableParam,
+  param: RangedAutomatableParam,
 ): EnvelopeRuntimeTriggerOptions {
   if (id !== 'filter-env') return { amount: baseValue };
 
@@ -88,4 +91,24 @@ export function getPostFilterEnvelopeOptions(settings: EnvelopeSettings, amount:
     amount: settings.enabled ? amount : 0,
     timeScale: settings.timeScale,
   };
+}
+
+export function getLiveSampleEnvelopeSustainValue(
+  id: SampleEnvelopeId,
+  settings: EnvelopeSettings,
+): number | undefined {
+  const { sustain } = settings.envelope;
+  if (id === 'filter-env' || sustain === undefined) return undefined;
+  return settings.envelope.points[sustain].value;
+}
+
+/** Applies an envelope edit at the next inaudible loop boundary, when one exists. */
+export function applyOnNextEnvLoopCycle(
+  runtime: EnvelopeRuntime,
+  apply: () => void,
+  retrigger: (at: number) => void,
+): void {
+  const at = runtime.nextCycleTime();
+  apply();
+  if (at !== null) retrigger(at);
 }

@@ -17,11 +17,7 @@ import {
   maxSafeHz,
 } from '@/utils';
 
-import {
-  applyOnNextEnvLoopCycle,
-  EnvelopeRuntime,
-  type EnvelopeSettings,
-} from '@/nodes/params/envelopes';
+import { EnvelopeRuntime, type EnvelopeSettings } from '@/nodes/params/envelopes';
 
 import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
 
@@ -29,10 +25,12 @@ import { LFO } from '@/nodes/params/LFOs/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
 import {
+  applyOnNextEnvLoopCycle,
   createDefaultSampleEnvelopeSettings,
   getSampleEnvelopeBaseValue,
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
+  getLiveSampleEnvelopeSustainValue,
   resolveSampleEnvelopeTrigger,
   shouldTriggerSampleEnvelope,
   type SampleEnvelopeId,
@@ -727,9 +725,14 @@ export class SampleVoice {
   applyEnvelopeSettings = (envType: SampleEnvelopeId, settings: EnvelopeSettings) => {
     const envelope = this.#envelopes.get(envType);
     if (!envelope) return;
+    const apply = () => {
+      envelope.applySettings(settings);
+      const sustainValue = getLiveSampleEnvelopeSustainValue(envType, settings);
+      if (sustainValue !== undefined) envelope.setSustainValue(sustainValue);
+    };
 
     if (envelope.enabled && !settings.enabled) {
-      envelope.applySettings(settings);
+      apply();
       envelope.stop();
       this.#resetFilterEnvTarget(envType);
       return;
@@ -740,16 +743,12 @@ export class SampleVoice {
     // into its first full cycle rather than snapping back to point 0.
     const resumeFrom = settings.envelope.loop && !envelope.loop ? envelope.currentPoint() : null;
     if (resumeFrom !== null) {
-      envelope.applySettings(settings);
+      apply();
       this.#retriggerAt(envType, envelope, this.now, resumeFrom);
       return;
     }
 
-    applyOnNextEnvLoopCycle(
-      envelope,
-      () => envelope.applySettings(settings),
-      (at) => this.#retriggerAt(envType, envelope, at),
-    );
+    applyOnNextEnvLoopCycle(envelope, apply, (at) => this.#retriggerAt(envType, envelope, at));
   };
 
   /** Restarts an envelope from the current note's trigger inputs, for a live edit. */

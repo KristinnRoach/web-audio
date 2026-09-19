@@ -24,7 +24,7 @@ export type FakeParam = AutomatableParam & {
  * a loop cycle's opening `setValueAtTime` and the previous cycle's closing ramp go to
  * different spies, and which of them came first is the whole question.
  *
- * Only the four methods the scheduler actually calls are recorded. A scheduler that
+ * Only the four methods the player actually calls are recorded. A player that
  * reached for `setValueCurveAtTime` would record nothing and leave `ramps()` short, so
  * add the method here rather than reading that silence as a pass.
  *
