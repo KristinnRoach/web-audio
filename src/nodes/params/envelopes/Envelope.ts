@@ -21,12 +21,12 @@ export type EnvelopePoint = {
   readonly curve?: EnvelopeCurve;
 };
 
-export type PlaybackMode =
-  /** One-shot. Default. */
+export type EnvelopeMode =
+  /** Play through once. */
   | { readonly type: 'once' }
   /** Hold `at`'s value until release. */
   | { readonly type: 'sustain'; readonly at: number }
-  /** Repeat the full duration. */
+  /** Repeat the whole envelope until release. */
   | { readonly type: 'loop' };
 
 /**
@@ -42,22 +42,15 @@ export type Envelope = {
    * Assumed sorted by time. Nothing re-sorts them on the audio path.
    */
   readonly points: readonly EnvelopePoint[];
+  /** How the envelope advances until it is released. */
+  readonly mode: EnvelopeMode;
   /**
    * Point the release stage starts from. Presets normally use the second-last point.
    *
-   * Set it without a `sustain` for a shape that plays through on its own while the
-   * note is held and still has a tail to jump to on note-off. That is how a sampler
-   * amp envelope decays on its own yet still has a release, and it is the one thing
-   * a lone `sustain` cannot express: `sustain` holds where this one keeps moving.
+   * This is an alternate exit path used when `release()` interrupts playback; it does
+   * not mark the end of a loop. A loop repeats the whole envelope.
    */
   readonly release: number;
-  /** Point held until release. Points after it form the release stage. */
-  readonly sustain?: number;
-  /**
-   * Repeats the whole envelope while the note is held. Takes the place of `sustain`
-   * rather than combining with it.
-   */
-  readonly loop?: boolean;
 };
 
 /** Serializable settings shared by editors and envelope players. */
@@ -74,6 +67,7 @@ export function cloneEnvelopeSettings(settings: EnvelopeSettings): EnvelopeSetti
     ...settings,
     envelope: {
       ...settings.envelope,
+      mode: { ...settings.envelope.mode },
       points: settings.envelope.points.map((point) => ({ ...point })),
     },
   };
@@ -82,11 +76,13 @@ export function cloneEnvelopeSettings(settings: EnvelopeSettings): EnvelopeSetti
 /** Rejects settings that cannot be scheduled predictably. */
 export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
   const points = settings?.envelope?.points;
-  const validMarker = (index: number | undefined) =>
-    index === undefined ||
-    (Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length);
-  const validRelease = (index: number) =>
+  const validMarker = (index: number) =>
     Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length;
+  const mode = settings?.envelope?.mode;
+  const validMode =
+    mode?.type === 'once' ||
+    mode?.type === 'loop' ||
+    (mode?.type === 'sustain' && validMarker(mode.at));
 
   if (
     typeof settings?.enabled !== 'boolean' ||
@@ -94,7 +90,7 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
     settings.timeScale <= 0 ||
     !Array.isArray(points) ||
     points.length < 2 ||
-    (settings.envelope.loop !== undefined && typeof settings.envelope.loop !== 'boolean') ||
+    !validMode ||
     points.some(
       (point, index) =>
         !Number.isFinite(point.time) ||
@@ -105,8 +101,7 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
           point.curve !== 'exponential') ||
         (index > 0 && point.time < points[index - 1].time),
     ) ||
-    !validMarker(settings.envelope.sustain) ||
-    !validRelease(settings.envelope.release)
+    !validMarker(settings.envelope.release)
   ) {
     throw new TypeError('Invalid envelope settings');
   }
@@ -295,7 +290,7 @@ export function scheduleEnvelope(
   const { points } = envelope;
   if (points.length === 0) return;
 
-  const end = envelope.sustain ?? points.length - 1;
+  const end = envelope.mode.type === 'sustain' ? envelope.mode.at : points.length - 1;
   scheduleRange(param, envelope, 0, end, startTime, base, amount, timeScale);
 }
 
@@ -374,6 +369,7 @@ export function createEnvelopePlayer(
 ): EnvelopePlayer {
   const envelope: Envelope = {
     ...sourceEnvelope,
+    mode: { ...sourceEnvelope.mode },
     points: sourceEnvelope.points.map((point) => ({ ...point })),
   };
   let removeLoop: (() => void) | undefined;
@@ -394,22 +390,22 @@ export function createEnvelopePlayer(
    * `EnvelopePlayer.position` for why the unit is seconds and not wall seconds.
    *
    * A loop is back at its start every cycle, and a sustained envelope stops advancing
-   * once it reaches the sustain point. Everything else keeps running, which is what a
-   * release index without a sustain is for.
+   * once it reaches the sustain point. A one-shot keeps running through its release
+   * marker to the end.
    */
   const positionAt = (time: number) => {
-    const { points, sustain } = envelope;
+    const { points, mode } = envelope;
     if (points.length === 0) return 0;
 
     let elapsed = Math.max(0, (time - triggerTime) * timeScale);
 
-    if (envelope.loop) {
+    if (mode.type === 'loop') {
       // A zero-extent cycle has nowhere to advance to, and `trigger` already declines to
       // loop it. Answering 0 keeps the two in agreement instead of counting up forever.
       const cycle = points[points.length - 1].time - points[0].time;
       elapsed = cycle > 0 ? elapsed % cycle : 0;
-    } else if (sustain !== undefined) {
-      elapsed = Math.min(elapsed, points[sustain].time - points[0].time);
+    } else if (mode.type === 'sustain') {
+      elapsed = Math.min(elapsed, points[mode.at].time - points[0].time);
     }
 
     return elapsed;
@@ -483,8 +479,9 @@ export function createEnvelopePlayer(
    * pending glide in `valueAt` if a long one is ever wanted.
    */
   const setSustainValue = (value: number, time = clock.currentTime, glide = 0.02) => {
-    const { points, sustain } = envelope;
-    if (!triggered || sustain === undefined || envelope.loop) return;
+    const { points, mode } = envelope;
+    if (!triggered || mode.type !== 'sustain') return;
+    const sustain = mode.at;
     if (points[sustain].value === value) return;
 
     const sustainTime = triggerTime + (points[sustain].time - points[0].time) / timeScale;
@@ -520,10 +517,10 @@ export function createEnvelopePlayer(
       param.cancelScheduledValues(time);
 
       const { points } = envelope;
-      // A loop repeats the whole envelope; anything else is scheduled once, sustain
-      // and release included.
+      // A loop repeats the whole envelope. Every other mode schedules one pass;
+      // scheduleEnvelope stops that pass at the sustain point when there is one.
       const duration =
-        envelope.loop && points.length > 0
+        envelope.mode.type === 'loop' && points.length > 0
           ? (points[points.length - 1].time - points[0].time) / timeScale
           : 0;
 
@@ -596,17 +593,17 @@ export function createEnvelopePlayer(
       return triggered ? positionAt(time) : null;
     },
     currentPoint(time = clock.currentTime) {
-      if (!triggered || envelope.loop || envelope.points.length === 0) return null;
+      if (!triggered || envelope.mode.type === 'loop' || envelope.points.length === 0) return null;
 
       const position = positionAt(time);
-      const { points, sustain } = envelope;
-      const last = sustain ?? points.length - 1;
+      const { points, mode } = envelope;
+      const last = mode.type === 'sustain' ? mode.at : points.length - 1;
       let index = 0;
       while (index < last && points[index + 1].time - points[0].time <= position) index++;
       return index;
     },
     nextCycleTime(time = clock.currentTime) {
-      if (!triggered || !envelope.loop) return null;
+      if (!triggered || envelope.mode.type !== 'loop') return null;
       const cycle = duration();
       if (cycle <= 0) return null;
 

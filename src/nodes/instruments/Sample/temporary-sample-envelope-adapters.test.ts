@@ -11,7 +11,7 @@ const settings: EnvelopeSettings = {
       { time: 1, value: 0.25 },
       { time: 2, value: 0 },
     ],
-    sustain: 1,
+    mode: { type: 'sustain', at: 1 },
     release: 1,
   },
 };

@@ -7,6 +7,7 @@ describe('envelopePresets', () => {
       enabled: true,
       timeScale: 1,
       envelope: {
+        mode: { type: 'sustain', at: 3 },
         points: [
           { time: 0, value: 0, curve: 'exponential' },
           { time: 0.005, value: 1, curve: 'exponential' },

@@ -20,6 +20,7 @@ export function observeEnvelopePlayer(
 ): EnvelopePlayer {
   const envelope: Envelope = {
     ...sourceEnvelope,
+    mode: { ...sourceEnvelope.mode },
     points: sourceEnvelope.points.map((point) => ({ ...point })),
   };
   const pointTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -70,9 +71,7 @@ export function observeEnvelopePlayer(
 
   const startPointNotifications = (startTime: number, fromPoint: number) => {
     if (!callbacks.onPoint) return;
-    const end = envelope.loop
-      ? envelope.points.length - 1
-      : (envelope.sustain ?? envelope.points.length - 1);
+    const end = envelope.mode.type === 'sustain' ? envelope.mode.at : envelope.points.length - 1;
     const cycleDuration = duration(0, end);
     if (cycleDuration <= 0) return;
 
@@ -80,7 +79,7 @@ export function observeEnvelopePlayer(
 
     let cycle = 1;
     const tick = () => {
-      if (!active || !envelope.loop) return;
+      if (!active || envelope.mode.type !== 'loop') return;
       schedulePoints(anchorTime + cycle * cycleDuration, 0, end);
       cycle++;
       loopTimer = setTimeout(
@@ -101,12 +100,12 @@ export function observeEnvelopePlayer(
       clearTimers();
       active = true;
       timeScale = options.timeScale ?? 1;
-      const requestedPoint = envelope.loop ? (options.fromPoint ?? 0) : 0;
+      const requestedPoint = envelope.mode.type === 'loop' ? (options.fromPoint ?? 0) : 0;
       const fromPoint = Math.min(Math.max(requestedPoint, 0), envelope.points.length - 1);
       anchorTime = time - duration(0, fromPoint);
 
       startPointNotifications(time, fromPoint);
-      if (callbacks.onComplete && envelope.sustain === undefined && !envelope.loop) {
+      if (callbacks.onComplete && envelope.mode.type === 'once') {
         armCompletion(time + envPlayer.duration());
       }
     },

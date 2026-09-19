@@ -471,9 +471,8 @@ export class InstrumentBus implements ILibAudioNode {
     // seam and returns null, so it keeps its current shape until the next note.
     const at = this.#lpfEnvelope.nextCycleTime();
     this.#lpfEnvelope.applySettings(settings);
-    const { sustain } = envelope;
-    if (sustain !== undefined) {
-      this.#lpfEnvelope.setSustainValue(envelope.points[sustain].value);
+    if (envelope.mode.type === 'sustain') {
+      this.#lpfEnvelope.setSustainValue(envelope.points[envelope.mode.at].value);
     }
     const held = Array.from(this.#heldNotes.keys()).pop();
     if (at !== null && held !== undefined) this.#triggerLpfEnvelope(held, at);

@@ -18,6 +18,7 @@ function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings
         { time: 1, value: 0.5 },
         { time: 1.5, value: 0 },
       ],
+      mode: { type: 'once' },
       release: 2,
     },
     ...overrides,
@@ -25,6 +26,13 @@ function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings
 }
 
 describe('EnvelopeRuntime validation', () => {
+  it('requires an explicit mode', () => {
+    const settings = settingsOf();
+    delete (settings.envelope as { mode?: EnvelopeSettings['envelope']['mode'] }).mode;
+
+    expect(() => new EnvelopeRuntime(contextAt(0), settings)).toThrow('Invalid envelope settings');
+  });
+
   it('requires a release point', () => {
     const settings = settingsOf() as unknown as {
       enabled: boolean;
@@ -48,7 +56,7 @@ describe('EnvelopeRuntime live settings handover', () => {
         { time: 2, value: 0 },
       ],
       release: 1,
-      loop: true,
+      mode: { type: 'loop' },
     },
   });
 
@@ -105,7 +113,7 @@ describe('EnvelopeRuntime repeated handovers', () => {
         { time: 2, value: 0 },
       ],
       release: 1,
-      loop: true,
+      mode: { type: 'loop' },
     },
   });
 
@@ -130,7 +138,9 @@ describe('EnvelopeRuntime repeated handovers', () => {
 
 describe('live sustain value', () => {
   const sustaining = () =>
-    settingsOf({ envelope: { ...settingsOf().envelope, sustain: 1, release: 1 } });
+    settingsOf({
+      envelope: { ...settingsOf().envelope, mode: { type: 'sustain', at: 1 }, release: 1 },
+    });
 
   it('glides to the new value and releases from it', () => {
     const context = contextAt(0);
@@ -178,7 +188,7 @@ describe('live sustain value', () => {
 describe('EnvelopeRuntime.trigger validation', () => {
   it('rejects a caller-supplied shape with an out-of-range sustain', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
-    const bad = { ...settingsOf().envelope, sustain: 9 };
+    const bad = { ...settingsOf().envelope, mode: { type: 'sustain' as const, at: 9 } };
 
     expect(() => runtime.trigger(createFakeParam(), 0, { envelope: bad })).toThrow(
       'Invalid envelope settings',
@@ -201,7 +211,10 @@ describe('EnvelopeRuntime.trigger validation', () => {
 });
 
 describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () => {
-  const badShape = () => ({ ...settingsOf().envelope, sustain: 9 });
+  const badShape = () => ({
+    ...settingsOf().envelope,
+    mode: { type: 'sustain' as const, at: 9 },
+  });
 
   it('keeps the active player running', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
@@ -279,7 +292,11 @@ describe('EnvelopeRuntime.position', () => {
 
   it('clamps at the sustain point while the note is held', () => {
     const sustained = settingsOf({
-      envelope: { ...settingsOf().envelope, sustain: 1, release: 1 },
+      envelope: {
+        ...settingsOf().envelope,
+        mode: { type: 'sustain', at: 1 },
+        release: 1,
+      },
     });
     // Point 1 is at 0.5; the run parks there rather than advancing to 1.2.
     expect(at(sustained, 1.2).position()).toBeCloseTo(0.5);
@@ -293,7 +310,7 @@ describe('EnvelopeRuntime.position', () => {
           { time: 0, value: 1 },
         ],
         release: 0,
-        loop: true,
+        mode: { type: 'loop' },
       },
     });
     // Coincident times pass validation, so the cycle has zero extent. There is nowhere to
@@ -302,7 +319,9 @@ describe('EnvelopeRuntime.position', () => {
   });
 
   it('wraps into the cycle while looping', () => {
-    const looping = settingsOf({ envelope: { ...settingsOf().envelope, loop: true } });
+    const looping = settingsOf({
+      envelope: { ...settingsOf().envelope, mode: { type: 'loop' } },
+    });
     // Cycle is 1.5 long, so 1.75 of wall clock is 0.25 into the second pass.
     expect(at(looping, 1.75).position()).toBeCloseTo(0.25);
   });

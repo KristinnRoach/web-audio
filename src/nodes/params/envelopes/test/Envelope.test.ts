@@ -19,7 +19,7 @@ test('schedules through sustain, then schedules the remaining points on release'
       { time: 0.3, value: 0.5 },
       { time: 0.8, value: 0 },
     ],
-    sustain: 2,
+    mode: { type: 'sustain', at: 2 },
     release: 2,
   };
 
@@ -44,7 +44,7 @@ test('treats point times as offsets from the first point, not as a pre-delay', (
       { time: 0.6, value: 1 },
       { time: 0.9, value: 0.25 },
     ],
-    sustain: 2,
+    mode: { type: 'sustain', at: 2 },
     release: 2,
   };
 
@@ -66,7 +66,7 @@ test('keeps an exponential segment off zero at both ends', () => {
       { time: 0.9, value: 0.5, curve: 'exponential' },
       { time: 1, value: 0, curve: 'exponential' },
     ],
-    sustain: 2,
+    mode: { type: 'sustain', at: 2 },
     release: 2,
   };
 
@@ -92,7 +92,7 @@ test('leaves values alone when no exponential segment touches them', () => {
         { time: 0.02, value: 1, curve: 'exponential' },
         { time: 0.3, value: 0, curve: 'linear' },
       ],
-      sustain: 2,
+      mode: { type: 'sustain', at: 2 },
       release: 2,
     },
     10,
@@ -113,7 +113,7 @@ test("places the shape on the parameter's range with base and amount", () => {
       { time: 0.1, value: 1 },
       { time: 0.2, value: 0.5 },
     ],
-    sustain: 2,
+    mode: { type: 'sustain', at: 2 },
     release: 2,
   };
 
@@ -140,7 +140,7 @@ test('keeps an inverted exponential envelope on its own side of zero', () => {
         { time: 0, value: 0, curve: 'exponential' },
         { time: 0.1, value: 1, curve: 'exponential' },
       ],
-      sustain: 1,
+      mode: { type: 'sustain', at: 1 },
       release: 1,
     },
     0,
@@ -162,9 +162,8 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
       { time: 0.1, value: 1 },
       { time: 0.2, value: 0 },
     ],
-    sustain: 2,
     release: 1,
-    loop: true,
+    mode: { type: 'loop' },
   };
   const env = createEnvelopePlayer(clock, param, envelope);
 
@@ -195,9 +194,8 @@ test('player release stops its loop and schedules the scaled release stage', () 
       { time: 0.2, value: 0.5 },
       { time: 0.5, value: 0.2 },
     ],
-    sustain: 2,
     release: 2,
-    loop: true,
+    mode: { type: 'loop' },
   };
   const env = createEnvelopePlayer(clock, param, envelope);
 
@@ -227,9 +225,8 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
       { time: 0.6, value: 1 },
       { time: 0.9, value: 0.25 },
     ],
-    sustain: 2,
     release: 2,
-    loop: true,
+    mode: { type: 'loop' },
   };
   const env = createEnvelopePlayer(clock, param, envelope);
 
@@ -269,10 +266,10 @@ test('never opens a loop cycle before the previous one has closed', () => {
       { time: 0.02, value: 1, curve: 'exponential' },
       { time: 0.3, value: 0.15, curve: 'linear' },
     ],
-    // `loop` takes the place of `sustain` rather than combining with it, and this test
-    // never releases, so pointing `release` at the last point leaves that stage empty.
+    // This test never releases, so pointing `release` at the last point leaves that
+    // stage empty.
     release: 2,
-    loop: true,
+    mode: { type: 'loop' },
   };
   const env = createEnvelopePlayer(clock, param, envelope);
 
@@ -314,7 +311,7 @@ test('release exits a whole-envelope loop and plays its release tail', () => {
       { time: 1.4, value: 0 },
     ],
     release: 2,
-    loop: true,
+    mode: { type: 'loop' },
   };
   const env = createEnvelopePlayer(clock, param, envelope);
 
@@ -334,7 +331,7 @@ test('release exits a whole-envelope loop and plays its release tail', () => {
   env.dispose();
 });
 
-test('loops the whole envelope when no sustain point is set', () => {
+test('loop mode repeats the whole envelope', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
@@ -345,7 +342,7 @@ test('loops the whole envelope when no sustain point is set', () => {
       { time: 1, value: 0 },
     ],
     release: 1,
-    loop: true,
+    mode: { type: 'loop' },
   });
 
   env.trigger(0);
@@ -416,7 +413,7 @@ test('timeScale speeds up both the sustaining stage and the release', () => {
       { time: 0.2, value: 0.5 },
       { time: 0.6, value: 0 },
     ],
-    sustain: 2,
+    mode: { type: 'sustain', at: 2 },
     release: 2,
   };
 
@@ -431,7 +428,7 @@ test('timeScale speeds up both the sustaining stage and the release', () => {
 // A sampler amp envelope decays on its own while the note is held and still has a
 // tail on note-off. A lone sustain cannot express that: it holds where this keeps
 // moving. So the release index has to work without one.
-test('a release index without a sustain plays through and still has a tail', () => {
+test('once mode plays through and still has a release tail', () => {
   const param = createFakeParam();
   const clock = { currentTime: 0 };
   const envelope: Envelope = {
@@ -441,11 +438,12 @@ test('a release index without a sustain plays through and still has a tail', () 
       { time: 1.1, value: 0.2 },
       { time: 1.3, value: 0 },
     ],
+    mode: { type: 'once' },
     release: 2,
   };
   const env = createEnvelopePlayer(clock, param, envelope);
 
-  // No sustain, so the whole shape is scheduled up front, tail included.
+  // Once mode schedules the whole shape up front, tail included.
   env.trigger(0);
   expect(param.ramps()).toContainEqual({ type: 'linear', value: 0, time: 1.3 });
 
@@ -476,9 +474,8 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
       { time: 0.4, value: 0.5 },
       { time: 1, value: 0 },
     ],
-    sustain: 1,
     release: 2,
-    loop: true,
+    mode: { type: 'loop' },
   };
   const env = createEnvelopePlayer(clock, param, envelope);
 
@@ -518,7 +515,7 @@ test('an envelope player owns its envelope shape', () => {
       { time: 0.5, value: 1 },
       { time: 1, value: 0 },
     ],
-    sustain: 1,
+    mode: { type: 'sustain', at: 1 },
     release: 1,
   };
   const envPlayer = createEnvelopePlayer(clock, createFakeParam(), envelope);
@@ -533,6 +530,7 @@ test('an envelope player owns its envelope shape', () => {
 test('an empty player has no current point after triggering', () => {
   const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam(), {
     points: [],
+    mode: { type: 'once' },
     release: 0,
   });
 
@@ -551,7 +549,7 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
       { time: 2, value: 0 },
     ],
     release: 1,
-    loop: true,
+    mode: { type: 'loop' },
   });
 
   player.trigger(4, { fromPoint: 1, timeScale: 2 });

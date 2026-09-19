@@ -43,7 +43,7 @@ export class EnvelopeRuntime {
   }
 
   get loop() {
-    return !!this.#settings.envelope.loop;
+    return this.#settings.envelope.mode.type === 'loop';
   }
 
   /** Envelope-time position of the active player; see `EnvelopePlayer.position`. */
@@ -110,7 +110,7 @@ export class EnvelopeRuntime {
     const sourceEnvelope = options.envelope ?? this.#settings.envelope;
     const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
     const scheduledStartTime = Math.max(this.clock.currentTime, startTime);
-    const fromPoint = sourceEnvelope.loop ? (options.fromPoint ?? 0) : 0;
+    const fromPoint = sourceEnvelope.mode.type === 'loop' ? (options.fromPoint ?? 0) : 0;
     const schedule = {
       base: options.base,
       amount: options.amount,

@@ -97,9 +97,9 @@ export function getLiveSampleEnvelopeSustainValue(
   id: SampleEnvelopeId,
   settings: EnvelopeSettings,
 ): number | undefined {
-  const { sustain } = settings.envelope;
-  if (id === 'filter-env' || sustain === undefined) return undefined;
-  return settings.envelope.points[sustain].value;
+  const { mode } = settings.envelope;
+  if (id === 'filter-env' || mode.type !== 'sustain') return undefined;
+  return settings.envelope.points[mode.at].value;
 }
 
 /** Applies an envelope edit at the next inaudible loop boundary, when one exists. */

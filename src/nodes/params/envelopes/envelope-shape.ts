@@ -61,10 +61,10 @@ export function addPoint(
   return {
     ...envelope,
     points: next,
-    sustain:
-      envelope.sustain !== undefined && insertAt <= envelope.sustain
-        ? envelope.sustain + 1
-        : envelope.sustain,
+    mode:
+      envelope.mode.type === 'sustain' && insertAt <= envelope.mode.at
+        ? { ...envelope.mode, at: envelope.mode.at + 1 }
+        : envelope.mode,
     release: insertAt <= envelope.release ? envelope.release + 1 : envelope.release,
   };
 }
@@ -97,14 +97,21 @@ export function deletePoint(envelope: Envelope, index: number): Envelope {
   const next = clonePoints(points);
   next.splice(index, 1);
   const end = next.length - 1;
-  const shift = (marker: number | undefined) =>
-    marker === undefined ? undefined : marker > index ? marker - 1 : marker;
   const release = envelope.release > index ? envelope.release - 1 : envelope.release;
+  const mode =
+    envelope.mode.type !== 'sustain'
+      ? envelope.mode
+      : envelope.mode.at === index
+        ? { type: 'once' as const }
+        : {
+            ...envelope.mode,
+            at: envelope.mode.at > index ? envelope.mode.at - 1 : envelope.mode.at,
+          };
 
   return {
     ...envelope,
     points: next,
-    sustain: envelope.sustain === index ? undefined : shift(envelope.sustain),
+    mode,
     release: envelope.release === index ? Math.min(index, Math.max(0, end - 1)) : release,
   };
 }
@@ -134,7 +141,10 @@ export function setDuration(envelope: Envelope, seconds: number): Envelope {
 
 export function setSustainPoint(envelope: Envelope, index?: number): Envelope {
   if (index !== undefined && (index < 0 || index >= envelope.points.length)) return envelope;
-  return { ...envelope, sustain: index };
+  return {
+    ...envelope,
+    mode: index === undefined ? { type: 'once' } : { type: 'sustain', at: index },
+  };
 }
 
 export function setReleasePoint(envelope: Envelope, index: number): Envelope {

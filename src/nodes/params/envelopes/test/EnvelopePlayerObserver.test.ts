@@ -14,6 +14,7 @@ describe('observeEnvelopePlayer', () => {
       { time: 1, value: 0.5 },
       { time: 1.5, value: 0 },
     ],
+    mode: { type: 'once' },
     release: 2,
   });
 

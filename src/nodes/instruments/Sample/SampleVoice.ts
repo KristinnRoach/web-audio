@@ -741,7 +741,8 @@ export class SampleVoice {
     // Loop switched on mid-note has no cycle boundary to hand over on: the run is not
     // looping yet. Resume from the point it has reached instead, so the shape carries on
     // into its first full cycle rather than snapping back to point 0.
-    const resumeFrom = settings.envelope.loop && !envelope.loop ? envelope.currentPoint() : null;
+    const resumeFrom =
+      settings.envelope.mode.type === 'loop' && !envelope.loop ? envelope.currentPoint() : null;
     if (resumeFrom !== null) {
       apply();
       this.#retriggerAt(envType, envelope, this.now, resumeFrom);
