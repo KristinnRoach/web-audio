@@ -529,3 +529,37 @@ test('an envelope player owns its envelope shape', () => {
 
   expect(envelope.points[1].value).toBe(1);
 });
+
+test('an empty player has no current point after triggering', () => {
+  const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam(), {
+    points: [],
+    release: 0,
+  });
+
+  player.trigger();
+
+  expect(player.currentPoint()).toBeNull();
+  player.dispose();
+});
+
+test('a future pickup hands over no earlier than its scheduled opening', () => {
+  vi.useFakeTimers();
+  const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam(), {
+    points: [
+      { time: 0, value: 0 },
+      { time: 1, value: 1 },
+      { time: 2, value: 0 },
+    ],
+    release: 1,
+    loop: true,
+  });
+
+  player.trigger(4, { fromPoint: 1, timeScale: 2 });
+
+  expect(player.nextCycleTime(0)).toBe(4);
+  expect(player.nextCycleTime(3.75)).toBe(4);
+  expect(player.nextCycleTime(4)).toBe(4.5);
+  expect(player.nextCycleTime(4.5)).toBe(5.5);
+  expect(player.position(4)).toBe(1);
+  player.dispose();
+});

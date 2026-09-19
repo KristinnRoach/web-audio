@@ -382,6 +382,7 @@ export function createEnvelopePlayer(
   let amount = 1;
   let timeScale = 1;
   let triggerTime = 0;
+  let startTime = 0;
 
   const stopLoop = () => {
     removeLoop?.();
@@ -511,6 +512,7 @@ export function createEnvelopePlayer(
       amount = options.amount ?? 1;
       timeScale = options.timeScale ?? 1;
       triggerTime = time;
+      startTime = time;
 
       // Clear only. Every scheduling path below opens with its own setValueAtTime at
       // this same instant, so pinning here would write the param's stale value and be
@@ -594,7 +596,7 @@ export function createEnvelopePlayer(
       return triggered ? positionAt(time) : null;
     },
     currentPoint(time = clock.currentTime) {
-      if (!triggered || envelope.loop) return null;
+      if (!triggered || envelope.loop || envelope.points.length === 0) return null;
 
       const position = positionAt(time);
       const { points, sustain } = envelope;
@@ -608,8 +610,9 @@ export function createEnvelopePlayer(
       const cycle = duration();
       if (cycle <= 0) return null;
 
+      // A pickup backdates the phase anchor, but no automation starts before startTime.
+      if (time < startTime) return startTime;
       const elapsed = time - triggerTime;
-      if (elapsed < 0) return triggerTime;
       return triggerTime + (Math.floor(elapsed / cycle) + 1) * cycle;
     },
     setSustainValue,
