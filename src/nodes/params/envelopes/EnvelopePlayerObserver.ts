@@ -15,14 +15,9 @@ export type EnvelopePlayerObserverCallbacks = {
 export function observeEnvelopePlayer(
   envPlayer: EnvelopePlayer,
   clock: EnvelopeClock,
-  sourceEnvelope: Envelope,
   callbacks: EnvelopePlayerObserverCallbacks,
 ): EnvelopePlayer {
-  const envelope: Envelope = {
-    ...sourceEnvelope,
-    mode: { ...sourceEnvelope.mode },
-    points: sourceEnvelope.points.map((point) => ({ ...point })),
-  };
+  let envelope: Envelope | undefined;
   const pointTimers = new Set<ReturnType<typeof setTimeout>>();
   let completionTimer: ReturnType<typeof setTimeout> | undefined;
   let loopTimer: ReturnType<typeof setTimeout> | undefined;
@@ -31,6 +26,7 @@ export function observeEnvelopePlayer(
   let anchorTime = 0;
 
   const duration = (from: number, to: number) => {
+    if (!envelope) return 0;
     if (from < 0 || to >= envelope.points.length || from >= to) return 0;
     return (envelope.points[to].time - envelope.points[from].time) / timeScale;
   };
@@ -45,13 +41,16 @@ export function observeEnvelopePlayer(
   };
 
   const schedulePoints = (startTime: number, from: number, to: number, fromIndex = from - 1) => {
-    const fromTime = fromIndex < 0 ? envelope.points[0].time : envelope.points[fromIndex].time;
+    if (!envelope) return;
+    const runEnvelope = envelope;
+    const fromTime =
+      fromIndex < 0 ? runEnvelope.points[0].time : runEnvelope.points[fromIndex].time;
     for (let index = from; index <= to; index++) {
-      const time = startTime + (envelope.points[index].time - fromTime) / timeScale;
+      const time = startTime + (runEnvelope.points[index].time - fromTime) / timeScale;
       const timer = setTimeout(
         () => {
           pointTimers.delete(timer);
-          callbacks.onPoint?.({ index, point: envelope.points[index], time });
+          callbacks.onPoint?.({ index, point: runEnvelope.points[index], time });
         },
         Math.max(0, (time - clock.currentTime) * 1000),
       );
@@ -70,8 +69,10 @@ export function observeEnvelopePlayer(
   };
 
   const startPointNotifications = (startTime: number, fromPoint: number) => {
-    if (!callbacks.onPoint) return;
-    const end = envelope.mode.type === 'sustain' ? envelope.mode.at : envelope.points.length - 1;
+    if (!callbacks.onPoint || !envelope) return;
+    const runEnvelope = envelope;
+    const end =
+      runEnvelope.mode.type === 'sustain' ? runEnvelope.mode.at : runEnvelope.points.length - 1;
     const cycleDuration = duration(0, end);
     if (cycleDuration <= 0) return;
 
@@ -79,7 +80,7 @@ export function observeEnvelopePlayer(
 
     let cycle = 1;
     const tick = () => {
-      if (!active || envelope.mode.type !== 'loop') return;
+      if (!active || runEnvelope.mode.type !== 'loop') return;
       schedulePoints(anchorTime + cycle * cycleDuration, 0, end);
       cycle++;
       loopTimer = setTimeout(
@@ -95,8 +96,13 @@ export function observeEnvelopePlayer(
   };
 
   return {
-    trigger(time = clock.currentTime, options: EnvelopeTriggerOptions = {}) {
-      envPlayer.trigger(time, options);
+    trigger(sourceEnvelope, time = clock.currentTime, options: EnvelopeTriggerOptions = {}) {
+      envPlayer.trigger(sourceEnvelope, time, options);
+      envelope = {
+        ...sourceEnvelope,
+        mode: { ...sourceEnvelope.mode },
+        points: sourceEnvelope.points.map((point) => ({ ...point })),
+      };
       clearTimers();
       active = true;
       timeScale = options.timeScale ?? 1;
@@ -111,7 +117,7 @@ export function observeEnvelopePlayer(
     },
     release(time = clock.currentTime) {
       envPlayer.release(time);
-      if (!active) return;
+      if (!active || !envelope) return;
       active = false;
       clearTimers();
 

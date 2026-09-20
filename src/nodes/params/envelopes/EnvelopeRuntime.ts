@@ -124,8 +124,8 @@ export class EnvelopeRuntime {
     // pin it writes is the param's stale value, immediately cancelled and replaced by
     // the new run's first point at the same instant.
     this.#envPlayer?.stop(scheduledStartTime);
-    this.#envPlayer = createEnvelopePlayer(this.clock, param, sourceEnvelope);
-    this.#envPlayer.trigger(scheduledStartTime, schedule);
+    this.#envPlayer = createEnvelopePlayer(this.clock, param);
+    this.#envPlayer.trigger(sourceEnvelope, scheduledStartTime, schedule);
   }
 
   release(startTime: number) {

@@ -132,7 +132,7 @@ export type ScheduleOptions = { base?: number; amount?: number; timeScale?: numb
 export type EnvelopeTriggerOptions = ScheduleOptions & { fromPoint?: number };
 
 export type EnvelopePlayer = {
-  trigger(time?: number, options?: EnvelopeTriggerOptions): void;
+  trigger(envelope: Envelope, time?: number, options?: EnvelopeTriggerOptions): void;
   release(time?: number): void;
   /** Full envelope duration using the active run's time scale. */
   duration(): number;
@@ -365,13 +365,8 @@ export function releaseEnvelope(
 export function createEnvelopePlayer(
   clock: EnvelopeClock,
   param: AutomatableParam,
-  sourceEnvelope: Envelope,
 ): EnvelopePlayer {
-  const envelope: Envelope = {
-    ...sourceEnvelope,
-    mode: { ...sourceEnvelope.mode },
-    points: sourceEnvelope.points.map((point) => ({ ...point })),
-  };
+  let envelope: Envelope | undefined;
   let removeLoop: (() => void) | undefined;
   let disposed = false;
   let triggered = false;
@@ -395,6 +390,7 @@ export function createEnvelopePlayer(
    * marker to the end.
    */
   const positionAt = (time: number) => {
+    if (!envelope) return 0;
     const { points, mode } = envelope;
     if (points.length === 0) return 0;
 
@@ -414,6 +410,7 @@ export function createEnvelopePlayer(
 
   /** The envelope's value at `time`, wherever the shape has got to by then. */
   const valueAt = (time: number) => {
+    if (!envelope) return base;
     const { points } = envelope;
     if (points.length === 0) return base;
 
@@ -421,11 +418,13 @@ export function createEnvelopePlayer(
   };
 
   const duration = () => {
+    if (!envelope) return 0;
     const { points } = envelope;
     return points.length > 1 ? (points[points.length - 1].time - points[0].time) / timeScale : 0;
   };
 
   const releaseDuration = () => {
+    if (!envelope) return 0;
     const { points, release } = envelope;
     return release < points.length - 1
       ? (points[points.length - 1].time - points[release].time) / timeScale
@@ -440,7 +439,7 @@ export function createEnvelopePlayer(
   };
 
   const release = (time = clock.currentTime) => {
-    if (!triggered) return;
+    if (!triggered || !envelope) return;
     // Read the shape before anything touches the param, so a future-dated release hands
     // off the value the envelope will actually have reached rather than today's.
     const holdValue = valueAt(time);
@@ -480,6 +479,7 @@ export function createEnvelopePlayer(
    * pending glide in `valueAt` if a long one is ever wanted.
    */
   const setSustainValue = (value: number, time = clock.currentTime, glide = 0.02) => {
+    if (!envelope) return;
     const { points, mode } = envelope;
     if (!triggered || mode.type !== 'sustain') return;
     const sustain = mode.at;
@@ -503,8 +503,14 @@ export function createEnvelopePlayer(
   };
 
   return {
-    trigger(time = clock.currentTime, options = {}) {
+    trigger(sourceEnvelope, time = clock.currentTime, options = {}) {
       if (disposed) throw new Error('Cannot trigger a disposed EnvelopePlayer');
+      const runEnvelope: Envelope = {
+        ...sourceEnvelope,
+        mode: { ...sourceEnvelope.mode },
+        points: sourceEnvelope.points.map((point) => ({ ...point })),
+      };
+      envelope = runEnvelope;
       stopLoop();
       triggered = true;
       base = options.base ?? 0;
@@ -518,16 +524,16 @@ export function createEnvelopePlayer(
       // overwritten by the envelope's first point a moment later.
       param.cancelScheduledValues(time);
 
-      const { points } = envelope;
+      const { points } = runEnvelope;
       // A loop repeats the whole envelope. Every other mode schedules one pass;
       // scheduleEnvelope stops that pass at the sustain point when there is one.
       const duration =
-        envelope.mode.type === 'loop' && points.length > 0
+        runEnvelope.mode.type === 'loop' && points.length > 0
           ? (points[points.length - 1].time - points[0].time) / timeScale
           : 0;
 
       if (duration <= 0) {
-        scheduleEnvelope(param, envelope, time, { base, amount, timeScale });
+        scheduleEnvelope(param, runEnvelope, time, { base, amount, timeScale });
         return;
       }
 
@@ -546,7 +552,7 @@ export function createEnvelopePlayer(
       // it is triggered, whatever the refill timer does in between.
       let cycleEnd = scheduleRange(
         param,
-        envelope,
+        runEnvelope,
         from,
         points.length - 1,
         time,
@@ -572,7 +578,7 @@ export function createEnvelopePlayer(
           const start = Math.max(anchor + cycle * duration, cycleEnd);
           cycleEnd = scheduleRange(
             param,
-            envelope,
+            runEnvelope,
             0,
             points.length - 1,
             start,
@@ -595,7 +601,14 @@ export function createEnvelopePlayer(
       return triggered ? positionAt(time) : null;
     },
     currentPoint(time = clock.currentTime) {
-      if (!triggered || envelope.mode.type === 'loop' || envelope.points.length === 0) return null;
+      if (
+        !triggered ||
+        !envelope ||
+        envelope.mode.type === 'loop' ||
+        envelope.points.length === 0
+      ) {
+        return null;
+      }
 
       const position = positionAt(time);
       const { points, mode } = envelope;
@@ -605,7 +618,7 @@ export function createEnvelopePlayer(
       return index;
     },
     nextCycleTime(time = clock.currentTime) {
-      if (!triggered || envelope.mode.type !== 'loop') return null;
+      if (!triggered || !envelope || envelope.mode.type !== 'loop') return null;
       const cycle = duration();
       if (cycle <= 0) return null;
 

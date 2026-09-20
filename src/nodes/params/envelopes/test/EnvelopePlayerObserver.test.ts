@@ -23,14 +23,12 @@ describe('observeEnvelopePlayer', () => {
     const shape = envelope();
     const onPoint = vi.fn();
     const onComplete = vi.fn();
-    const envPlayer = observeEnvelopePlayer(
-      createEnvelopePlayer(clock, createFakeParam(), shape),
-      clock,
-      shape,
-      { onPoint, onComplete },
-    );
+    const envPlayer = observeEnvelopePlayer(createEnvelopePlayer(clock, createFakeParam()), clock, {
+      onPoint,
+      onComplete,
+    });
 
-    envPlayer.trigger(0, { timeScale: 2 });
+    envPlayer.trigger(shape, 0, { timeScale: 2 });
     vi.advanceTimersByTime(750);
 
     expect(onPoint.mock.calls.map(([details]) => details.index)).toEqual([0, 1, 2, 3]);
@@ -42,14 +40,11 @@ describe('observeEnvelopePlayer', () => {
     const clock = { currentTime: 0 };
     const shape = envelope();
     const onPoint = vi.fn();
-    const envPlayer = observeEnvelopePlayer(
-      createEnvelopePlayer(clock, createFakeParam(), shape),
-      clock,
-      shape,
-      { onPoint },
-    );
+    const envPlayer = observeEnvelopePlayer(createEnvelopePlayer(clock, createFakeParam()), clock, {
+      onPoint,
+    });
 
-    envPlayer.trigger(0);
+    envPlayer.trigger(shape, 0);
     (shape.points[3] as { value: number }).value = 99;
     clock.currentTime = 0.25;
     envPlayer.release(0.25);
