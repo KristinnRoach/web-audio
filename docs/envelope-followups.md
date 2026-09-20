@@ -21,10 +21,9 @@ not a decision already made. Order is roughly by risk, not by effort.
 
 ## Envelope core
 
-- Part B of the live-edit proposal is unshipped: the release stage binds at trigger, not
-  at note-off, so editing release mid-note has no effect until the next trigger.
-  `docs/envelope-live-edit.md:34`. `EnvelopeRuntime` is exported but unreleased, so the
-  `release()` signature can still change without deprecation.
+- The release stage deliberately binds at trigger. Editing it mid-note affects the next
+  trigger, like other definition changes; `setSustainValue()` is the explicit live
+  exception. `docs/envelope-live-edit.md:34`.
 - `Envelope.release` is required. Presets default it to the second-last point. Decide
   whether an envelope without a release stage is expressible.
 - Coincident point times are now rejected on insert (#60) to match `updatePoint`'s strict
