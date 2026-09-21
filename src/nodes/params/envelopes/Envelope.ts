@@ -73,21 +73,18 @@ export function cloneEnvelopeSettings(settings: EnvelopeSettings): EnvelopeSetti
   };
 }
 
-/** Rejects settings that cannot be scheduled predictably. */
-export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
-  const points = settings?.envelope?.points;
+/** Rejects an envelope that cannot be scheduled predictably. */
+export function assertValidEnvelope(envelope: Envelope): void {
+  const points = envelope?.points;
   const validMarker = (index: number) =>
     Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length;
-  const mode = settings?.envelope?.mode;
+  const mode = envelope?.mode;
   const validMode =
     mode?.type === 'once' ||
     mode?.type === 'loop' ||
     (mode?.type === 'sustain' && validMarker(mode.at));
 
   if (
-    typeof settings?.enabled !== 'boolean' ||
-    !Number.isFinite(settings?.timeScale) ||
-    settings.timeScale <= 0 ||
     !Array.isArray(points) ||
     points.length < 2 ||
     !validMode ||
@@ -101,8 +98,25 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
           point.curve !== 'exponential') ||
         (index > 0 && point.time < points[index - 1].time),
     ) ||
-    !validMarker(settings.envelope.release)
+    !validMarker(envelope.release)
   ) {
+    throw new TypeError('Invalid envelope');
+  }
+}
+
+/** Rejects settings that cannot be scheduled predictably. */
+export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
+  if (
+    typeof settings?.enabled !== 'boolean' ||
+    !Number.isFinite(settings?.timeScale) ||
+    settings.timeScale <= 0
+  ) {
+    throw new TypeError('Invalid envelope settings');
+  }
+
+  try {
+    assertValidEnvelope(settings.envelope);
+  } catch {
     throw new TypeError('Invalid envelope settings');
   }
 }
@@ -505,6 +519,7 @@ export function createEnvelopePlayer(
   return {
     trigger(sourceEnvelope, time = clock.currentTime, options = {}) {
       if (disposed) throw new Error('Cannot trigger a disposed EnvelopePlayer');
+      assertValidEnvelope(sourceEnvelope);
       const runEnvelope: Envelope = {
         ...sourceEnvelope,
         mode: { ...sourceEnvelope.mode },

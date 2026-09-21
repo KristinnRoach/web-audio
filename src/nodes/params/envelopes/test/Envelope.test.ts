@@ -528,16 +528,16 @@ test('an envelope player owns its envelope shape', () => {
   expect(envelope.points[1].value).toBe(1);
 });
 
-test('an empty player has no current point after triggering', () => {
+test('an envelope player rejects an empty envelope', () => {
   const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam());
 
-  player.trigger({
-    points: [],
-    mode: { type: 'once' },
-    release: 0,
-  });
-
-  expect(player.currentPoint()).toBeNull();
+  expect(() =>
+    player.trigger({
+      points: [],
+      mode: { type: 'once' },
+      release: 0,
+    }),
+  ).toThrow('Invalid envelope');
   player.dispose();
 });
 
@@ -585,6 +585,19 @@ describe('EnvelopePlayer lifecycle', () => {
     player.trigger(envelope, 1);
     expect(player.position(1)).toBe(0);
     expect(param.ramps()).toContainEqual({ type: 'set', value: 0, time: 1 });
+    player.dispose();
+  });
+
+  it('leaves the active run unchanged when a trigger is invalid', () => {
+    const param = createFakeParam();
+    const player = createEnvelopePlayer({ currentTime: 0 }, param);
+
+    player.trigger(envelope, 0);
+    const eventCount = param.events.length;
+
+    expect(() => player.trigger({ ...envelope, release: 9 }, 0.5)).toThrow('Invalid envelope');
+    expect(player.position(0.5)).toBe(0.5);
+    expect(param.events).toHaveLength(eventCount);
     player.dispose();
   });
 
