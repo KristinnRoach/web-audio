@@ -4,7 +4,7 @@ Status: partly applied. Scope is `src/nodes/params/envelopes/` only.
 
 | Part                                | State                                                                       |
 | ----------------------------------- | --------------------------------------------------------------------------- |
-| B - late-bound release stage        | Not applied. `release(startTime)` still reads the trigger snapshot.         |
+| B - late-bound release stage        | Rejected. `release(startTime)` reads the active run's trigger snapshot.     |
 | D - resuming from the sustain point | Applied (`5c58ad1`), with a different API than the one proposed below.      |
 | The deferred sustain question       | Half answered (`d8bf8cd`): the sustain **value** is live, the index is not. |
 
@@ -12,17 +12,17 @@ Status: partly applied. Scope is `src/nodes/params/envelopes/` only.
 
 Everything needed is in four places. No search required.
 
-| File                                                                 | What to look at                                                                                                      |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | `#activeRun`, `nextCycleTime()`, `trigger()`, `release()`                                                            |
-| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopeScheduler()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
-| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                      |
-| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — the only reason a run snapshot has to exist                                       |
+| File                                                                 | What to look at                                                                                                   |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | settings compatibility, `trigger()`, and `release()`                                                              |
+| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopePlayer()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
+| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                   |
+| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — creates a mapped envelope for one player                                       |
 
 Shipped already (commit `701bc35`): an edit to a running envelope hands over on the
 next loop boundary, where point 0 comes round anyway, so the swap is continuous by
-construction. `nextCycleTime()` reports that boundary; null means no boundary, wait for
-the next trigger.
+design. `nextCycleTime()` reports that boundary; null means no boundary, wait for the
+next trigger.
 
 ## The rule this proposal is trying to state once
 
@@ -31,57 +31,18 @@ the next trigger.
 
 Two consequences, which are the two parts below.
 
-## Part B — the release stage binds at note-off, not at trigger
+## Part B — the release stage stays bound to the trigger
 
-### Problem
-
-`release()` schedules the tail from `#activeRun`, the snapshot taken at trigger. So:
-
-- Editing the release index mid-note does nothing until the next trigger, even though
-  the tail is not on the timeline yet and nothing about changing it is audible.
-- For the sampler's filter envelope, `resolveSampleEnvelopeTrigger()` maps normalized
-  point values to Hz against the cutoff **as it was at note-on**. Move the cutoff knob
-  during a held note and the release tail sweeps to the wrong frequencies. Live bug,
-  independent of live editing.
-
-### Change
-
-`release()` takes the same late-bound options `trigger()` does:
-
-```ts
-release(startTime: number, options: EnvelopeRuntimeTriggerOptions = {}): void
-```
-
-Omitted fields fall back to the run's, so every existing call site keeps working.
-
-Threading required:
-
-- `EnvelopeScheduler.release(time, options?)` — currently closes over the trigger's
-  `envelope`, `base`, `amount`, `timeScale`.
-- `releaseEnvelope()` already takes the envelope and options as parameters. No change.
-- `holdValue` must still come from the **outgoing** shape via `valueAt()`. That is what
-  makes the swap continuous: pin where the old shape actually got to, then ramp to the
-  new tail. Do not let the override reach `valueAt`.
-- `EnvelopeRuntime.releaseDuration()` and `#startReleasePointCallbacks()` read
-  `#activeRun.envelope` and need the override too.
-
-### Why not simply drop the snapshot and always read `#settings`
-
-`#activeRun.envelope` is the _mapped_ shape for filter-env (normalized → Hz), which is
-not `#settings.envelope`. Reading settings at release time would compute the handoff
-from a shape that was never playing. The snapshot has to stay; only the tail is late.
-
-### Check
-
-One test: trigger a sustaining envelope, `applySettings` with a different release index,
-release, assert the tail follows the new points and starts from the held value.
-`fakeParam.ts` records the automation.
+Resolved: each trigger owns one snapshot, including its release tail. Definition edits
+affect the next trigger only; `setSustainValue()` remains the explicit live exception.
+This keeps the release handoff on the same mapped shape and timing that produced the
+active run.
 
 ## Part D — a seam can say where to resume, not just when
 
 ### Problem
 
-`nextCycleTime()` gates on `#activeRun.envelope.loop`, the **outgoing** run's flag. So:
+`nextCycleTime()` gates on the envPlayer's **outgoing** envelope. So:
 
 - Disabling loop on a looping run works. The old run is looping, a boundary exists, the
   handover installs the sustaining shape. Already correct.
@@ -107,7 +68,7 @@ The seam accessor returns where as well as when:
 - run parked at sustain → `{ now, sustain }`
 - neither → `null`
 
-`trigger()` gains a `fromIndex` option. Scheduler work:
+`trigger()` gains a `fromIndex` option. Player work:
 
 - `scheduleRange()` already takes a `from` index. The trigger path hardcodes 0.
 - The loop refill anchors cycle _n_ at `time + n * duration`. With a pickup the anchor
@@ -146,7 +107,7 @@ The deferred sustain question turned out to be two questions with different answ
 **The value is live.** A sustained run schedules points `0..sustain` and stops, so the
 hold is an absence of scheduled events rather than an event. Nothing is queued after it
 to reschedule and no seam has to be waited for: pin, glide, done.
-`EnvelopeScheduler.setSustainValue()` does that and `applySettings` forwards to it.
+`EnvelopePlayer.setSustainValue()` does that and `applySettings` forwards to it.
 
 The point is mutated in place on the run's own clone, because `valueAt` and
 `releaseEnvelope` read that same object. Without the mutation the note-off handoff pins
@@ -165,15 +126,12 @@ held value would have to jump or glide, and there is no seam that avoids it.
 ## Staging
 
 D and the sustain value landed first, each in its own commit, and neither needed the
-rename. What is left is B on its own:
+rename. B was then closed by the trigger-snapshot lifecycle decision:
 
-1. ~~**D** — the sustain pickup and the scheduler's pickup-then-loop path.~~ `5c58ad1`.
+1. ~~**D** — the sustain pickup and the player's pickup-then-loop path.~~ `5c58ad1`.
 2. ~~The sustain **value** on a held note.~~ `d8bf8cd`.
-3. **B** — the late-bound release stage. Mechanical, and it is the one that fixes the
-   live cutoff bug in Part B's second bullet.
-
-`EnvelopeRuntime` is exported from `src/index.ts` and none of this has been released yet,
-so B may still change the `release()` signature without a deprecation.
+3. ~~**B** — the late-bound release stage.~~ Rejected in favor of one trigger snapshot
+   for the entire run.
 
 ## Explicitly out of scope
 

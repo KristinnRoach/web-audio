@@ -19,6 +19,7 @@ function envelopeOf(overrides: Partial<Envelope> = {}): Envelope {
       { time: 2, value: 0.5, curve: 'exponential' },
       { time: 3, value: 0, curve: 'exponential' },
     ],
+    mode: { type: 'once' },
     release: 2,
     ...overrides,
   };
@@ -43,9 +44,9 @@ describe('envelope edits', () => {
   });
 
   it('inserts in time order and carries markers along', () => {
-    const next = addPoint(envelopeOf({ sustain: 1 }), 0.5, 0.3);
+    const next = addPoint(envelopeOf({ mode: { type: 'sustain', at: 1 } }), 0.5, 0.3);
     expect(next.points.map((point) => point.time)).toEqual([0, 0.5, 1, 2, 3]);
-    expect(next.sustain).toBe(2);
+    expect(next.mode).toEqual({ type: 'sustain', at: 2 });
     expect(next.release).toBe(3);
   });
 
@@ -67,9 +68,9 @@ describe('envelope edits', () => {
   });
 
   it('removes interior points and adjusts markers', () => {
-    const next = deletePoint(envelopeOf({ sustain: 1 }), 1);
+    const next = deletePoint(envelopeOf({ mode: { type: 'sustain', at: 1 } }), 1);
     expect(next.points.map((point) => point.time)).toEqual([0, 2, 3]);
-    expect(next.sustain).toBeUndefined();
+    expect(next.mode).toEqual({ type: 'once' });
     expect(next.release).toBe(1);
   });
 

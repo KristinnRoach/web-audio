@@ -10,6 +10,7 @@ const settings: EnvelopeSettings = {
       { time: 0, value: 0, curve: 'linear' },
       { time: 1, value: 1, curve: 'exponential' },
     ],
+    mode: { type: 'once' },
     release: 1,
   },
 };

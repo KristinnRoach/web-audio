@@ -14,6 +14,7 @@ export const envelopePresets = {
       enabled: true,
       timeScale: 1,
       envelope: {
+        mode: { type: 'sustain', at: 3 },
         points: [
           { time: 0, value: 0, curve: 'exponential' },
           { time: Math.min(0.005, 0.1 * duration), value: 1, curve: 'exponential' },
@@ -32,6 +33,7 @@ export const envelopePresets = {
       enabled: false,
       timeScale: 1,
       envelope: {
+        mode: { type: 'once' },
         points: [
           { time: 0, value: 1, curve: 'exponential' },
           { time: duration, value: 1, curve: 'exponential' },
@@ -47,6 +49,7 @@ export const envelopePresets = {
       enabled: false,
       timeScale: 1,
       envelope: {
+        mode: { type: 'once' },
         points: [
           { time: 0, value: 0, curve: 'exponential' },
           { time: 0.02 * duration, value: 1, curve: 'exponential' },

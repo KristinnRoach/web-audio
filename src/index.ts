@@ -2,7 +2,9 @@
 export { createSamplePlayer } from './nodes/instruments/Sample/createSamplePlayer';
 export { createAudioRecorder } from './nodes/recorder';
 export {
+  createEnvelopePlayer,
   EnvelopeRuntime,
+  assertValidEnvelope,
   assertValidEnvelopeSettings,
   cloneEnvelopeSettings,
   envelopePresets,
@@ -19,11 +21,13 @@ export type { SamplePlayerOptions } from './nodes/instruments/Sample/SamplePlaye
 export type { SampleVoiceChainNode } from './nodes/instruments/Sample/SampleVoice';
 export type {
   Envelope,
+  EnvelopeClock,
+  EnvelopeMode,
+  EnvelopePlayer,
   EnvelopePoint,
-  EnvelopePointDetails,
-  EnvelopeRuntimeCallbacks,
   EnvelopeRuntimeTriggerOptions,
   EnvelopeSettings,
+  EnvelopeTriggerOptions,
   AutomatableParam,
 } from './nodes/params/envelopes';
 export type { SampleEnvelopeId } from './nodes/instruments/Sample/temporary-sample-envelope-adapters';
