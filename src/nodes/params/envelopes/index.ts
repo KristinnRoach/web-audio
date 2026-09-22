@@ -1,9 +1,4 @@
-export {
-  createEnvelope,
-  type EnvelopeClock,
-  type EnvelopePlayer,
-  type EnvelopeTriggerOptions,
-} from './Envelope';
+export { Envelope, type EnvelopeClock, type EnvelopeTriggerOptions } from './Envelope';
 export type { AutomatableParam } from './envelope-scheduling';
 export {
   assertValidEnvelopeShape,

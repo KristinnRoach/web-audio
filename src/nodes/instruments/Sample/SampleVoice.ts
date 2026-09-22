@@ -15,7 +15,7 @@ import {
 } from '@/utils';
 import { clampHz, durationToTimeConstant, maxSafeHz } from '@/nodes/params/audioparam-utils';
 
-import { createEnvelope, type EnvelopePlayer } from '@/nodes/params/envelopes';
+import { Envelope } from '@/nodes/params/envelopes';
 import type { EnvelopeConfig } from './envelope-config';
 
 import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
@@ -54,7 +54,7 @@ export class SampleVoice {
   #am_gain: GainNode | null = null;
   #feedback: HarmonicFeedback | null = null;
 
-  #envelopes = new Map<SampleEnvelopeId, EnvelopePlayer>();
+  #envelopes = new Map<SampleEnvelopeId, Envelope>();
   /** Host policy the envelope does not know about: `enabled` and the stored `timeScale`. */
   #envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
   #playbackRateSyncedEnvelopes = new Set<SampleEnvelopeId>();
@@ -244,7 +244,7 @@ export class SampleVoice {
       const config = createDefaultSampleEnvelopeConfig(type, durationSeconds);
       const param = this.getParam(getSampleEnvelopeParamName(type));
       if (!param) continue;
-      this.#envelopes.set(type, createEnvelope(this.context, param, config.envelope));
+      this.#envelopes.set(type, new Envelope(this.context, param, config.envelope));
       this.#envelopeConfigs.set(type, config);
     }
   }
@@ -433,7 +433,7 @@ export class SampleVoice {
 
   #triggerEnvelope(
     envType: SampleEnvelopeId,
-    env: EnvelopePlayer,
+    env: Envelope,
     timestamp: number,
     playbackRate: number,
     velocity?: number,
@@ -716,7 +716,7 @@ export class SampleVoice {
     }
   };
 
-  getEnvelope = (envType: SampleEnvelopeId): EnvelopePlayer | undefined => {
+  getEnvelope = (envType: SampleEnvelopeId): Envelope | undefined => {
     return this.#envelopes.get(envType);
   };
 
@@ -760,7 +760,7 @@ export class SampleVoice {
   };
 
   /** Restarts an envelope from the current note's trigger inputs, for a live edit. */
-  #retriggerAt(envType: SampleEnvelopeId, envelope: EnvelopePlayer, at: number, fromPoint = 0) {
+  #retriggerAt(envType: SampleEnvelopeId, envelope: Envelope, at: number, fromPoint = 0) {
     if (!this.#lastTrigger) return;
     const { playbackRate, velocity } = this.#lastTrigger;
     this.#triggerEnvelope(envType, envelope, at, playbackRate, velocity, fromPoint);

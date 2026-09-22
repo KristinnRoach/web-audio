@@ -1,15 +1,12 @@
 // =*=*= Factories =*=*= \\
 export { createSamplePlayer } from './nodes/instruments/Sample/createSamplePlayer';
 export { createAudioRecorder } from './nodes/recorder';
-export {
-  createEnvelope,
-  assertValidEnvelopeShape,
-  envelopePresets,
-} from './nodes/params/envelopes';
+export { assertValidEnvelopeShape, envelopePresets } from './nodes/params/envelopes';
 
 // =*=*= Classes =*=*= \\
 export { SamplePlayer } from './nodes/instruments/Sample/SamplePlayer';
 export { Oscilloscope } from './nodes/drafts/OscilloScope';
+export { Envelope } from './nodes/params/envelopes';
 
 // =*=*=  Types =*=*= \\
 export type { Recorder, RecorderInput, RecorderStartOptions } from './nodes/recorder';
@@ -20,7 +17,6 @@ export type {
   EnvelopeShape,
   EnvelopeClock,
   EnvelopeMode,
-  EnvelopePlayer,
   EnvelopePoint,
   EnvelopeTriggerOptions,
   AutomatableParam,

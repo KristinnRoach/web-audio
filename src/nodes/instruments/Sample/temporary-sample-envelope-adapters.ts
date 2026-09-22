@@ -2,7 +2,7 @@ import {
   envelopePresets,
   hasVariation,
   type AutomatableParam,
-  type EnvelopePlayer,
+  type Envelope,
   type EnvelopeShape,
   type EnvelopeTriggerOptions,
 } from '@/nodes/params/envelopes';
@@ -97,7 +97,7 @@ export function getLiveSampleEnvelopeSustainValue(
 
 /** Applies an envelope edit at the next inaudible loop boundary, when one exists. */
 export function applyOnNextEnvLoopCycle(
-  envelope: EnvelopePlayer,
+  envelope: Envelope,
   apply: () => void,
   retrigger: (at: number) => void,
 ): void {

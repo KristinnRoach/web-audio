@@ -8,8 +8,8 @@ aligned to the final API afterwards, not designed around.
 ## Current files
 
 ```
-Envelope.ts             EnvelopeClock, EnvelopeTriggerOptions, EnvelopePlayer,
-                        module-global loop refill registry, class Envelope, createEnvelope
+Envelope.ts             EnvelopeClock, EnvelopeTriggerOptions, module-global loop
+                        refill registry, exported class Envelope
 envelope-scheduling.ts  AutomatableParam, ScheduleOptions, param-writing primitives
 envelope-shape.ts       shape types, validation, pure math, point editing
 envelope-presets.ts     amplitude/pitch/filter, each returns an EnvelopeShape
@@ -19,7 +19,7 @@ index.ts                explicit exports: everything used outside the module
 ## Current API
 
 ```ts
-const env = createEnvelope(clock, param, shape); // validates and copies the shape
+const env = new Envelope(clock, param, shape); // validates and copies the shape
 env.trigger(time?, { base, amount, timeScale, fromPoint, shape? }); // shape? = this run only
 env.release(time?);
 env.stop(time?); // ends the run, player stays reusable
@@ -34,11 +34,8 @@ the "re-triggering one player" tests in `test/Envelope.test.ts`.
 
 ## Open
 
-1. **`EnvelopePlayer` type.** Structural type with one implementation. `class Envelope` is
-   not exported; `createEnvelope` returns the type. The `Envelope` public name is free now,
-   so decide: export the class and delete the type, or keep factory + type. The class doc
-   justifies the type with `observeEnvelopePlayer`, which only exists in
-   `EnvelopePlayerObserver.temp.txt` (not compiled; still calls the removed `dispose()`).
+1. **`EnvelopePlayerObserver.temp.txt`** (+ its `.test.temp.txt`) targets the removed
+   `EnvelopePlayer` type and `dispose()`. Not compiled. Delete or rewrite against `Envelope`.
 2. **`pitch()` preset** is a flat line (two points at value 1), an identity placeholder.
    `shouldTriggerSampleEnvelope` already skips a pitch env with no variation. May belong
    in the Sample adapter instead.
@@ -60,9 +57,10 @@ do not "fix" that by deleting it.
 
 `@kidlib/web-audio` is published (0.4.2). Deferred on purpose, reconcile at the end.
 Breaking so far: removed `EnvelopeRuntime`, `EnvelopeRuntimeTriggerOptions`,
-`assertValidEnvelopeConfig`, `cloneEnvelopeConfig` and `EnvelopePlayer.dispose()`;
-`createEnvelope` takes a shape and `trigger` no longer does; presets return `EnvelopeShape`;
-the `Envelope` type export is now `EnvelopeShape`.
+`assertValidEnvelopeConfig`, `cloneEnvelopeConfig`, `createEnvelope`, the `EnvelopePlayer`
+type and `dispose()`; the player is now the exported class `new Envelope(clock, param,
+shape)`, and `trigger` no longer takes a shape; presets return `EnvelopeShape`; the
+`Envelope` export used to be the shape type and is now the player class.
 
 ## Tooling
 

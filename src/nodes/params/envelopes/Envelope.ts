@@ -32,67 +32,6 @@ export type EnvelopeTriggerOptions = ScheduleOptions & {
   shape?: EnvelopeShape;
 };
 
-export type EnvelopePlayer = {
-  /**
-   * The shape a trigger plays unless it passes its own. Setting it takes effect on the
-   * next trigger; a run already on the timeline keeps the copy it started with.
-   */
-  shape: EnvelopeShape;
-  /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
-  trigger(time?: number, options?: EnvelopeTriggerOptions): void;
-  /** Plays the release stage from `time`, clamped to now like `trigger`. */
-  release(time?: number): void;
-  /** Full duration of the latest run at its time scale; before any run, `shape` at 1. */
-  duration(): number;
-  /** Release-stage duration, read the same way as `duration`. */
-  releaseDuration(): number;
-  /**
-   * How far into the shape the live run has got at `time`, or `null` when no run is live.
-   *
-   * **Seconds**, on the same scale `points[i].time` is written in, measured as an offset
-   * from `points[0].time`. So `0` is point 0 and `points[2].time` is point 2.
-   *
-   * Seconds is required, not a convention this module is free to pick: point times reach
-   * the parameter as `startTime + (points[i].time - points[from].time) / timeScale`, and
-   * that lands in `linearRampToValueAtTime`, which reads `AudioContext` seconds. With
-   * `timeScale` dimensionless, point times are seconds and so is this.
-   *
-   * It is *not* `clock.currentTime - startTime`. Wall seconds are scaled first:
-   *
-   * ```
-   * position = (time - anchorTime) * timeScale
-   * ```
-   *
-   * A `timeScale` of 2 plays the envelope twice as fast, so half a second of wall clock
-   * reaches position 1. Reverse it with `anchorTime + position / timeScale` to get back
-   * to a context timestamp.
-   *
-   * The shape then bounds the result, because neither of these runs past its own end:
-   * a loop wraps the position into `[0, cycle)`, and a sustained run clamps it at the
-   * sustain point's offset and stays there for as long as the note is held.
-   *
-   * `anchorTime` is where point 0 *would have* been, not necessarily where the run was
-   * triggered. A run opened mid-shape with `fromPoint` anchors itself in the past, so its
-   * position reads off the same grid as a run that opened at point 0.
-   *
-   * Null once released or stopped. The release tail runs on its own clock from the
-   * note-off instant, so there is no single offset into the shape left to report.
-   *
-   * Throws `RangeError` on a non-finite `time`, matching how the duration helpers reject
-   * one. Null already means "no live run", and overloading it with "you passed garbage"
-   * would leave a caller branching on null with no way to tell the two apart.
-   */
-  position(time?: number): number | null;
-  /** Index of the last point reached by a live, non-looping run. */
-  currentPoint(time?: number): number | null;
-  /** Absolute time of the next cycle boundary for a live loop. */
-  nextCycleTime(time?: number): number | null;
-  /** Moves the sustain point's value on a run that is holding it; see the implementation. */
-  setSustainValue(value: number, time?: number, glide?: number): void;
-  /** Ends the run at `time` and pins the param there. The player stays reusable. */
-  stop(time?: number): void;
-};
-
 const LOOKAHEAD_SECONDS = 1;
 const REFILL_INTERVAL_MS = 50;
 const activeLoops = new Set<() => void>();
@@ -122,13 +61,8 @@ function snapshot(shape: EnvelopeShape): EnvelopeShape {
   };
 }
 
-/**
- * Timestamp-anchored envelope player.
- *
- * `implements EnvelopePlayer` rather than replacing it: the type stays structural so
- * `observeEnvelopePlayer` can keep returning a plain object as one.
- */
-class Envelope implements EnvelopePlayer {
+/** Timestamp-anchored envelope player bound to one param. */
+export class Envelope {
   #shape: EnvelopeShape;
   /** The latest run's own copy; `setSustainValue` edits it in place. */
   #envShape: EnvelopeShape | undefined;
@@ -148,6 +82,10 @@ class Envelope implements EnvelopePlayer {
     this.#shape = snapshot(shape);
   }
 
+  /**
+   * The shape a trigger plays unless it passes its own. Setting it takes effect on the
+   * next trigger; a run already on the timeline keeps the copy it started with.
+   */
   get shape(): EnvelopeShape {
     return this.#shape;
   }
@@ -163,7 +101,7 @@ class Envelope implements EnvelopePlayer {
 
   /**
    * How far into the shape the run has got at `time`, in seconds of envelope time. See
-   * `EnvelopePlayer.position` for why the unit is seconds and not wall seconds.
+   * `position` for why the unit is seconds and not wall seconds.
    *
    * A loop is back at its start every cycle, and a sustained envelope stops advancing
    * once it reaches the sustain point. A one-shot keeps running through its release
@@ -199,6 +137,7 @@ class Envelope implements EnvelopePlayer {
     );
   }
 
+  /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
   trigger(time = this.clock.currentTime, options: EnvelopeTriggerOptions = {}) {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
     const runEnvelope = snapshot(options.shape ?? this.#shape);
@@ -288,6 +227,7 @@ class Envelope implements EnvelopePlayer {
     });
   }
 
+  /** Plays the release stage from `time`, clamped to now like `trigger`. */
   release(time = this.clock.currentTime) {
     if (!this.#triggered || !this.#envShape) return;
     time = Math.max(this.clock.currentTime, time);
@@ -310,16 +250,54 @@ class Envelope implements EnvelopePlayer {
     );
   }
 
+  /** Full duration of the latest run at its time scale; before any run, `shape` at 1. */
   duration() {
     const { points } = this.#envShape ?? this.#shape;
     return baseDuration(points) / this.#timeScale;
   }
 
+  /** Release-stage duration, read the same way as `duration`. */
   releaseDuration() {
     const { points, release } = this.#envShape ?? this.#shape;
     return releaseStageDuration(points, release, this.#timeScale);
   }
 
+  /**
+   * How far into the shape the live run has got at `time`, or `null` when no run is live.
+   *
+   * **Seconds**, on the same scale `points[i].time` is written in, measured as an offset
+   * from `points[0].time`. So `0` is point 0 and `points[2].time` is point 2.
+   *
+   * Seconds is required, not a convention this module is free to pick: point times reach
+   * the parameter as `startTime + (points[i].time - points[from].time) / timeScale`, and
+   * that lands in `linearRampToValueAtTime`, which reads `AudioContext` seconds. With
+   * `timeScale` dimensionless, point times are seconds and so is this.
+   *
+   * It is *not* `clock.currentTime - startTime`. Wall seconds are scaled first:
+   *
+   * ```
+   * position = (time - anchorTime) * timeScale
+   * ```
+   *
+   * A `timeScale` of 2 plays the envelope twice as fast, so half a second of wall clock
+   * reaches position 1. Reverse it with `anchorTime + position / timeScale` to get back
+   * to a context timestamp.
+   *
+   * The shape then bounds the result, because neither of these runs past its own end:
+   * a loop wraps the position into `[0, cycle)`, and a sustained run clamps it at the
+   * sustain point's offset and stays there for as long as the note is held.
+   *
+   * `anchorTime` is where point 0 *would have* been, not necessarily where the run was
+   * triggered. A run opened mid-shape with `fromPoint` anchors itself in the past, so its
+   * position reads off the same grid as a run that opened at point 0.
+   *
+   * Null once released or stopped. The release tail runs on its own clock from the
+   * note-off instant, so there is no single offset into the shape left to report.
+   *
+   * Throws `RangeError` on a non-finite `time`, matching how the duration helpers reject
+   * one. Null already means "no live run", and overloading it with "you passed garbage"
+   * would leave a caller branching on null with no way to tell the two apart.
+   */
   position(time = this.clock.currentTime) {
     // Argument first, so a bad timestamp is a bug whether or not a run is live.
     if (!Number.isFinite(time)) {
@@ -328,6 +306,7 @@ class Envelope implements EnvelopePlayer {
     return this.#triggered ? this.#positionAt(time) : null;
   }
 
+  /** Index of the last point reached by a live, non-looping run. */
   currentPoint(time = this.clock.currentTime) {
     if (
       !this.#triggered ||
@@ -346,6 +325,7 @@ class Envelope implements EnvelopePlayer {
     return index;
   }
 
+  /** Absolute time of the next cycle boundary for a live loop. */
   nextCycleTime(time = this.clock.currentTime) {
     if (!this.#triggered || !this.#envShape || this.#envShape.mode.type !== 'loop') return null;
     const cycle = this.duration();
@@ -407,19 +387,11 @@ class Envelope implements EnvelopePlayer {
     );
   }
 
+  /** Ends the run at `time` and pins the param there. The player stays reusable. */
   stop(time = this.clock.currentTime) {
     if (!this.#triggered) return;
     this.#triggered = false;
     this.#stopLoop();
     cancelAndPinParamValue(this.param, time);
   }
-}
-
-/** Creates a timestamp-anchored envelope player. */
-export function createEnvelope(
-  clock: EnvelopeClock,
-  param: AutomatableParam,
-  shape: EnvelopeShape,
-): EnvelopePlayer {
-  return new Envelope(clock, param, shape);
 }

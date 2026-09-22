@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, test, vi } from 'vite-plus/test';
-import { createEnvelope } from '../Envelope';
+import { Envelope } from '../Envelope';
 import { releaseEnvelope, scheduleEnvelope } from '../envelope-scheduling';
 import type { EnvelopeShape } from '../envelope-shape';
 import { createFakeParam } from './fakeParam';
@@ -201,7 +201,7 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
     release: 1,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   env.trigger(0);
   clock.currentTime = 2.02;
@@ -233,7 +233,7 @@ test('player release stops its loop and schedules the scaled release stage', () 
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   env.trigger(0, { amount: 0.5 });
   env.release(0.25);
@@ -268,7 +268,7 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   env.trigger(4);
   clock.currentTime = 4.5;
@@ -314,7 +314,7 @@ test('keeps loop cycles on the trigger grid over thousands of cycles', () => {
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
   env.trigger(0.1);
 
   for (let tick = 0; tick < 400; tick++) {
@@ -356,7 +356,7 @@ test('never opens a loop cycle before the previous one has closed', () => {
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   env.trigger(0.1);
 
@@ -398,7 +398,7 @@ test('release exits a whole-envelope loop and plays its release tail', () => {
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   env.trigger(0);
 
@@ -429,7 +429,7 @@ test('loop mode repeats the whole envelope', () => {
     release: 1,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   env.trigger(0);
   clock.currentTime = 0.1;
@@ -489,7 +489,7 @@ test('once mode plays through and still has a release tail', () => {
     mode: { type: 'once' },
     release: 2,
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   // Once mode schedules the whole shape up front, tail included.
   env.trigger(0);
@@ -525,7 +525,7 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelope(clock, param, envelope);
+  const env = new Envelope(clock, param, envelope);
 
   env.trigger(4, { fromPoint: 1 });
 
@@ -570,7 +570,7 @@ test('an envelope player owns its envelope shape', () => {
     mode: { type: 'sustain', at: 1 },
     release: 1,
   };
-  const envPlayer = createEnvelope(clock, createFakeParam(), envelope);
+  const envPlayer = new Envelope(clock, createFakeParam(), envelope);
 
   envPlayer.trigger(0);
   clock.currentTime = 1;
@@ -580,12 +580,13 @@ test('an envelope player owns its envelope shape', () => {
 });
 
 test('an envelope player rejects an empty envelope', () => {
-  expect(() =>
-    createEnvelope({ currentTime: 0 }, createFakeParam(), {
-      points: [],
-      mode: { type: 'once' },
-      release: 0,
-    }),
+  expect(
+    () =>
+      new Envelope({ currentTime: 0 }, createFakeParam(), {
+        points: [],
+        mode: { type: 'once' },
+        release: 0,
+      }),
   ).toThrow('Invalid envelope');
 });
 
@@ -600,7 +601,7 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
     release: 1,
     mode: { type: 'loop' },
   };
-  const player = createEnvelope({ currentTime: 0 }, createFakeParam(), envelope);
+  const player = new Envelope({ currentTime: 0 }, createFakeParam(), envelope);
 
   player.trigger(4, { fromPoint: 1, timeScale: 2 });
 
@@ -612,7 +613,7 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
   player.stop();
 });
 
-describe('EnvelopePlayer lifecycle', () => {
+describe('Envelope lifecycle', () => {
   const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
@@ -624,7 +625,7 @@ describe('EnvelopePlayer lifecycle', () => {
 
   it('can trigger again after stop', () => {
     const param = createFakeParam();
-    const player = createEnvelope({ currentTime: 0 }, param, envelope);
+    const player = new Envelope({ currentTime: 0 }, param, envelope);
 
     player.trigger(0);
     player.stop(0.25);
@@ -638,7 +639,7 @@ describe('EnvelopePlayer lifecycle', () => {
 
   it('leaves the active run unchanged when a trigger is invalid', () => {
     const param = createFakeParam();
-    const player = createEnvelope({ currentTime: 0 }, param, envelope);
+    const player = new Envelope({ currentTime: 0 }, param, envelope);
 
     player.trigger(0);
     const eventCount = param.events.length;
@@ -661,7 +662,7 @@ describe('EnvelopePlayer lifecycle', () => {
       mode: { type: 'sustain', at: 1 },
       release: 1,
     };
-    const player = createEnvelope({ currentTime: 0 }, param, definition);
+    const player = new Envelope({ currentTime: 0 }, param, definition);
 
     player.trigger(0);
     (definition.points[1] as { value: number }).value = 0.25;
@@ -682,7 +683,7 @@ describe('EnvelopePlayer lifecycle', () => {
   it('clamps a trigger or release in the past to now', () => {
     const param = createFakeParam();
     const clock = { currentTime: 5 };
-    const player = createEnvelope(clock, param, {
+    const player = new Envelope(clock, param, {
       points: [
         { time: 0, value: 0 },
         { time: 1, value: 1 },
@@ -727,19 +728,19 @@ describe('re-triggering one player', () => {
   it('rejects a shape without a mode or a release point', () => {
     const { mode: _mode, ...noMode } = oneShot;
     const { release: _release, ...noRelease } = oneShot;
-    expect(() =>
-      createEnvelope({ currentTime: 0 }, createFakeParam(), noMode as EnvelopeShape),
+    expect(
+      () => new Envelope({ currentTime: 0 }, createFakeParam(), noMode as EnvelopeShape),
     ).toThrow('Invalid envelope');
-    expect(() =>
-      createEnvelope({ currentTime: 0 }, createFakeParam(), noRelease as EnvelopeShape),
+    expect(
+      () => new Envelope({ currentTime: 0 }, createFakeParam(), noRelease as EnvelopeShape),
     ).toThrow('Invalid envelope');
   });
 
   it('has no boundary to hand over on unless a loop is running', () => {
-    const idle = createEnvelope({ currentTime: 0 }, createFakeParam(), looping);
+    const idle = new Envelope({ currentTime: 0 }, createFakeParam(), looping);
     expect(idle.nextCycleTime()).toBeNull();
 
-    const once = createEnvelope({ currentTime: 0 }, createFakeParam(), oneShot);
+    const once = new Envelope({ currentTime: 0 }, createFakeParam(), oneShot);
     once.trigger(0);
     expect(once.nextCycleTime()).toBeNull();
     once.stop();
@@ -748,7 +749,7 @@ describe('re-triggering one player', () => {
   it("puts the next cycle boundary ahead of now, on the trigger's grid", () => {
     vi.useFakeTimers();
     const clock = { currentTime: 0 };
-    const player = createEnvelope(clock, createFakeParam(), looping);
+    const player = new Envelope(clock, createFakeParam(), looping);
     player.trigger(0);
 
     expect(player.nextCycleTime()).toBe(2);
@@ -763,7 +764,7 @@ describe('re-triggering one player', () => {
     vi.useFakeTimers();
     const clock = { currentTime: 0 };
     const param = createFakeParam();
-    const player = createEnvelope(clock, param, looping);
+    const player = new Envelope(clock, param, looping);
     player.trigger(0);
 
     clock.currentTime = 0.5;
@@ -785,7 +786,7 @@ describe('re-triggering one player', () => {
   it('keeps every edit during a drag on the same boundary', () => {
     vi.useFakeTimers();
     const clock = { currentTime: 0 };
-    const player = createEnvelope(clock, createFakeParam(), looping);
+    const player = new Envelope(clock, createFakeParam(), looping);
     player.trigger(0);
 
     // An editor commits on each pointermove, so the boundary is asked for repeatedly
@@ -804,7 +805,7 @@ describe('re-triggering one player', () => {
   it('glides a held sustain to a new value and releases from it', () => {
     const clock = { currentTime: 0 };
     const param = createFakeParam();
-    const player = createEnvelope(clock, param, {
+    const player = new Envelope(clock, param, {
       ...oneShot,
       mode: { type: 'sustain', at: 1 },
       release: 1,
@@ -824,7 +825,7 @@ describe('re-triggering one player', () => {
   });
 
   it('keeps a released run released when a trigger is rejected', () => {
-    const player = createEnvelope({ currentTime: 0 }, createFakeParam(), oneShot);
+    const player = new Envelope({ currentTime: 0 }, createFakeParam(), oneShot);
     player.trigger(0);
     player.release(0);
 
@@ -838,7 +839,7 @@ describe('re-triggering one player', () => {
   });
 
   it("reports the stored shape at scale 1 before any run, then the run's own scale", () => {
-    const player = createEnvelope({ currentTime: 0 }, createFakeParam(), oneShot);
+    const player = new Envelope({ currentTime: 0 }, createFakeParam(), oneShot);
     expect(player.duration()).toBeCloseTo(1.5);
     expect(player.releaseDuration()).toBeCloseTo(0.5);
 
