@@ -47,9 +47,8 @@ is re-triggered afterwards.
 `'Cannot trigger a disposed EnvelopePlayer'`.
 
 So the merge must re-separate `stop()` (ends the run, object reusable) from `dispose()`
-(terminal), and repoint `SampleVoice.ts:486` at `stop()`. The other three sites need
-deciding individually: `SampleVoice.ts:231` in `#createEnvelopes`, `:736` on the
-enabled→disabled transition, `:1235` in `dispose()`.
+(terminal) at the call sites. See step 1 under "Suggested lifecycle merge" for the
+per-site triage.
 
 ## Verified: the two-player handover is redundant
 
@@ -125,6 +124,67 @@ Open, blocks nothing: `pitch()` returns two points both at value 1 — a flat li
 the wrapper gone it is an identity placeholder, and `shouldTriggerSampleEnvelope` already
 refuses a pitch env with no variation via `hasVariation`. May belong in the adapter
 rather than as a preset.
+
+## Suggested lifecycle merge
+
+The mechanical part: `Envelope` takes `(clock, param, shape)`, `trigger` drops its param
+argument, the four `#envPlayer?.x()` forwards disappear, and `EnvelopeRuntime` is
+deleted. These are the parts that need judgment.
+
+**1. Triage the four `.dispose()` sites. TWO must become `stop()`, not one.**
+`Envelope` already has both methods separated correctly; the work is entirely
+caller-side.
+
+```
+SampleVoice.ts:231   #createEnvelopes()      map is replaced        -> dispose()
+SampleVoice.ts:486   #stopEnvelopes()        voice reused           -> stop()
+SampleVoice.ts:736   applyEnvelopeConfig()   can be re-enabled      -> stop()
+SampleVoice.ts:1235  SampleVoice.dispose()   terminal               -> dispose()
+```
+
+`:736` runs on the enabled→disabled transition. The voice keeps living and the envelope
+can be re-enabled and re-triggered later, so a terminal `dispose()` there throws on the
+next note. This one is easy to miss; the earlier handoff text only named `:486`.
+
+**2. Resolve the public name collision before exporting the class.**
+`src/index.ts:23` exports `EnvelopeShape as Envelope` — the package's public `Envelope`
+type currently means the _shape_, not the player. Pick which one keeps the name.
+
+**3. Decide where the param lookup happens.**
+`Envelope` binds the param at construction, but `#createEnvelopes()` (`SampleVoice.ts:230`)
+builds envelopes without one. `SampleVoice.getParam` (`:1241`) returns null for `'lpf'`
+until `#lpf` exists, and `#triggerEnvelope` guards with `if (!param) return`, so null is
+reachable at trigger time today. Verify all three ids resolve at both `#createEnvelopes()`
+call sites (`:138` during init, `:974` on `voice:loaded`). If any can be null there,
+construct the player lazily on first trigger and keep the guard.
+
+**4. Give SampleVoice somewhere to read `enabled`.**
+Three sites read it off the runtime (`:528`, `:540`, `:734`). `applyEnvelopeConfig`
+(`:725`) already receives the config but does not store it. `:734` compares the live
+value against the incoming one to detect the disable transition, so it needs the
+_previous_ value, not just the new one — a plain "read the incoming config" substitution
+breaks it.
+
+**5. Decide the idle default for `duration()` / `releaseDuration()`.**
+They currently default to `config.timeScale`. With the config gone there is no stored
+scale. `SampleVoice.releaseTime` (`:1080`) calls `releaseDuration()` with no argument,
+while `:456` and `:546` pass a composed scale. Either make the argument required and fix
+`:1080`, or default to 1 and accept that `:1080` changes meaning.
+
+**6. Moving the clamp changes `Envelope`'s behavior for direct callers.**
+`Math.max(clock.currentTime, startTime)` lives in `EnvelopeRuntime.trigger`/`release`;
+`Envelope.trigger` takes `time` as given. Check `test/Envelope.test.ts` before moving it —
+those tests trigger at explicit timestamps against a fake clock.
+
+**7. Port the handover tests, do not delete them.**
+`test/EnvelopeRuntime.test.ts` is ~250 lines built on the `configOf()` fixture. The
+`live config handover` and `repeated handovers` describes are what pin the behavior this
+merge changes. Rewrite them against the merged class.
+
+**8. Delete the `EnvelopePlayer` type.**
+Once `Envelope` is the API it is a structural type with one implementation.
+
+**9. Fold in the config move** as described under "Config and presets" above.
 
 ## Caller state
 
