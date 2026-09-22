@@ -86,13 +86,6 @@ export function resolveSampleEnvelopeTrigger(
   return { envelope: { ...envelope, points } };
 }
 
-export function getPostFilterEnvelopeOptions(config: EnvelopeConfig, amount: number) {
-  return {
-    amount: config.enabled ? amount : 0,
-    timeScale: config.timeScale,
-  };
-}
-
 export function getLiveSampleEnvelopeSustainValue(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,

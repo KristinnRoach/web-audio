@@ -31,7 +31,6 @@ import {
   assertValidEnvelopeConfig,
   cloneEnvelopeConfig,
   setDuration,
-  type EnvelopeShape,
   type EnvelopeConfig,
 } from '@/nodes/params/envelopes';
 import { ILibInstrumentNode } from '@/nodes/LibAudioNode';
@@ -44,7 +43,6 @@ import type { SampleVoiceChainNode } from './SampleVoice';
 import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeConfig,
-  getPostFilterEnvelopeOptions,
   type SampleEnvelopeId,
 } from './temporary-sample-envelope-adapters';
 
@@ -106,7 +104,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
-  #filterEnvAmount: number = DEFAULT_FILTER_ENV_AMOUNT;
+  // #filterEnvAmount: number = DEFAULT_FILTER_ENV_AMOUNT;   // TODO: @POST_ENV_API_READY
   #loopTempoSync = false; // TODO: Implement!
   #MAX_TEMPO = 300;
   #MIN_TEMPO = 20;
@@ -1106,25 +1104,17 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeConfig(id, next));
 
-    if (id === 'filter-env') {
-      this.applyPostFilterEnvelope(next);
-    }
+    // if (id === 'filter-env') {   // TODO: @POST_ENV_API_READY
+    //   this.setLpfEnvelope(config.envelope, {
+    //     amount: this.#filterEnvAmount,
+    //     timeScale: config.timeScale,
+    //   });
+    // }
 
     this.sendUpstreamMessage('envelope:changed', {
       envelopeId: id,
       settings: cloneEnvelopeConfig(next),
     });
-  }
-
-  /**
-   * The post-FX cutoff follows the same envelope definition. `InstrumentBus.noteOn`
-   * adds the triggering MIDI note's playback rate to the envelope's own time scale.
-   */
-  private applyPostFilterEnvelope(config: EnvelopeConfig): void {
-    this.setLpfEnvelope(
-      config.envelope,
-      getPostFilterEnvelopeOptions(config, this.#filterEnvAmount),
-    );
   }
 
   /** Restores one envelope to defaults sized to the current authority sample. */
@@ -1187,17 +1177,18 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
   };
 
-  /**
-   * Envelope for the post-FX lowpass cutoff. See `InstrumentBus.setLpfEnvelope`.
-   * Set `setLpfCutoff` low first - it is the base the sweep starts from, and it
-   * defaults to wide open, where a sweep upwards is inaudible.
-   */
-  setLpfEnvelope = (
-    envelope: EnvelopeShape | null,
-    options: { amount?: number; timeScale?: number } = {},
-  ) => {
-    this.outBus.setLpfEnvelope(envelope, options);
-  };
+  // TODO: @POST_ENV_API_READY
+  // /**
+  //  * Envelope for the post-FX lowpass cutoff. See `InstrumentBus.setLpfEnvelope`.
+  //  * Set `setLpfCutoff` low first - it is the base the sweep starts from, and it
+  //  * defaults to wide open, where a sweep upwards is inaudible.
+  //  */
+  // setLpfEnvelope = (
+  //   envelope: EnvelopeShape | null,
+  //   options: { amount?: number; timeScale?: number } = {},
+  // ) => {
+  //   this.outBus.setLpfEnvelope(envelope, options);
+  // };
 
   setHpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' = 'post') => {
     this.#hpfCutoff = hz;
