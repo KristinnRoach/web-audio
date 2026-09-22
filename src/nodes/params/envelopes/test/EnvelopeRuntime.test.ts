@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { createFakeParam } from './fakeParam';
 import { EnvelopeRuntime } from '../EnvelopeRuntime';
-import type { EnvelopeConfig } from '../envelope-shape';
+import type { EnvelopeConfig } from '../EnvelopeRuntime';
 
 function contextAt(currentTime: number) {
   return { currentTime };

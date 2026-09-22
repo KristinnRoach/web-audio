@@ -284,7 +284,10 @@ export class SamplePlayer implements ILibInstrumentNode {
         const config = this.getEnvelopeConfig(id);
         this.applyEnvelopeConfig(id, {
           ...config,
-          envelope: setDuration(config.envelope, this.#bufferDuration),
+          envelope: {
+            ...config.envelope,
+            points: setDuration(config.envelope.points, this.#bufferDuration),
+          },
         });
       });
     });

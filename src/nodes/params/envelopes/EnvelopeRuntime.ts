@@ -6,13 +6,48 @@ import {
   type ScheduleOptions,
 } from './Envelope';
 import {
-  assertValidEnvelopeConfig,
-  cloneEnvelopeConfig,
-  releaseDuration,
+  assertValidEnvelopeShape,
+  releaseDuration as releaseStageDuration,
   scaledDuration,
-  type EnvelopeConfig,
   type EnvelopeShape,
 } from './envelope-shape';
+
+/** Serializable config shared by editors and envelope players. */
+export type EnvelopeConfig = {
+  readonly enabled: boolean;
+  /** Timing multiplier; values above 1 play the envelope faster. */
+  readonly timeScale: number;
+  readonly envelope: EnvelopeShape;
+};
+
+/** Returns a config snapshot whose shape and points can be safely retained. */
+export function cloneEnvelopeConfig(config: EnvelopeConfig): EnvelopeConfig {
+  return {
+    ...config,
+    envelope: {
+      ...config.envelope,
+      mode: { ...config.envelope.mode },
+      points: config.envelope.points.map((point) => ({ ...point })),
+    },
+  };
+}
+
+/** Rejects a config that cannot be scheduled predictably. */
+export function assertValidEnvelopeConfig(config: EnvelopeConfig): void {
+  if (
+    typeof config?.enabled !== 'boolean' ||
+    !Number.isFinite(config?.timeScale) ||
+    config.timeScale <= 0
+  ) {
+    throw new TypeError('Invalid envelope settings');
+  }
+
+  try {
+    assertValidEnvelopeShape(config.envelope);
+  } catch {
+    throw new TypeError('Invalid envelope settings');
+  }
+}
 
 export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> & {
   /** Additional timing multiplier supplied by the host, such as a playback rate. */
@@ -36,6 +71,11 @@ export class EnvelopeRuntime {
   }
 
   #config: EnvelopeConfig;
+
+  /** Stored scale composed with a per-run multiplier, the one place the two combine. */
+  #scale(timeScaleMultiplier = 1) {
+    return this.#config.timeScale * timeScaleMultiplier;
+  }
 
   get config(): EnvelopeConfig {
     return this.#config;
@@ -65,17 +105,14 @@ export class EnvelopeRuntime {
 
   duration(timeScaleMultiplier = 1) {
     if (this.#envPlayer) return this.#envPlayer.duration();
-    return scaledDuration(
-      this.#config,
-      0,
-      this.#config.envelope.points.length - 1,
-      timeScaleMultiplier,
-    );
+    const { points } = this.#config.envelope;
+    return scaledDuration(points, 0, points.length - 1, this.#scale(timeScaleMultiplier));
   }
 
   releaseDuration(timeScaleMultiplier = 1) {
     if (this.#envPlayer) return this.#envPlayer.releaseDuration();
-    return releaseDuration(this.#config, timeScaleMultiplier);
+    const { points, release } = this.#config.envelope;
+    return releaseStageDuration(points, release, this.#scale(timeScaleMultiplier));
   }
 
   /** Absolute time of the active player's next loop boundary. */
@@ -114,7 +151,7 @@ export class EnvelopeRuntime {
     }
 
     const sourceEnvelope = options.envelope ?? this.#config.envelope;
-    const timeScale = this.#config.timeScale * (options.timeScaleMultiplier ?? 1);
+    const timeScale = this.#scale(options.timeScaleMultiplier);
     const scheduledStartTime = Math.max(this.clock.currentTime, startTime);
     const fromPoint = sourceEnvelope.mode.type === 'loop' ? (options.fromPoint ?? 0) : 0;
     const schedule = {

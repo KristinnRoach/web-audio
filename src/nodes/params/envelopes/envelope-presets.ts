@@ -1,4 +1,4 @@
-import type { EnvelopeConfig } from './envelope-shape';
+import type { EnvelopeConfig } from './EnvelopeRuntime';
 
 function durationOf(duration: number) {
   if (!Number.isFinite(duration) || duration <= 0) {

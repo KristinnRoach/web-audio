@@ -2,8 +2,9 @@ import { cancelAndPinParamValue } from '@/utils';
 
 import {
   assertValidEnvelopeShape,
+  baseDuration,
   interpolateAtTime,
-  spanBetween,
+  releaseDuration as releaseStageDuration,
   type EnvelopeCurve,
   type EnvelopePoint,
   type EnvelopeShape,
@@ -295,7 +296,7 @@ class Envelope implements EnvelopePlayer {
     if (mode.type === 'loop') {
       // A zero-extent cycle has nowhere to advance to, and `trigger` already declines to
       // loop it. Both read the same `spanBetween`, so they cannot disagree.
-      const cycle = spanBetween(this.#envShape, 0, points.length - 1);
+      const cycle = baseDuration(points);
       elapsed = cycle > 0 ? elapsed % cycle : 0;
     } else if (mode.type === 'sustain') {
       elapsed = Math.min(elapsed, points[mode.at].time - points[0].time);
@@ -351,10 +352,7 @@ class Envelope implements EnvelopePlayer {
     const { points } = runEnvelope;
     // A loop repeats the whole envelope. Every other mode schedules one pass;
     // scheduleEnvelope stops that pass at the sustain point when there is one.
-    const duration =
-      runEnvelope.mode.type === 'loop'
-        ? spanBetween(runEnvelope, 0, points.length - 1) / timeScale
-        : 0;
+    const duration = runEnvelope.mode.type === 'loop' ? baseDuration(points) / timeScale : 0;
 
     if (duration <= 0) {
       scheduleEnvelope(param, runEnvelope, time, { base, amount, timeScale });
@@ -438,13 +436,13 @@ class Envelope implements EnvelopePlayer {
 
   duration() {
     if (!this.#envShape) return 0;
-    return spanBetween(this.#envShape, 0, this.#envShape.points.length - 1) / this.#timeScale;
+    return baseDuration(this.#envShape.points) / this.#timeScale;
   }
 
   releaseDuration() {
     if (!this.#envShape) return 0;
     const { points, release } = this.#envShape;
-    return spanBetween(this.#envShape, release, points.length - 1) / this.#timeScale;
+    return releaseStageDuration(points, release, this.#timeScale);
   }
 
   position(time = this.clock.currentTime) {

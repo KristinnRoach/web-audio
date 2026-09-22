@@ -48,7 +48,7 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
 }
 
 export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: EnvelopeConfig) {
-  return config.enabled && (id !== 'pitch-env' || hasVariation(config.envelope));
+  return config.enabled && (id !== 'pitch-env' || hasVariation(config.envelope.points));
 }
 
 export function getSampleEnvelopeBaseValue(

@@ -10,7 +10,7 @@ import {
   setDuration,
   updatePoint,
 } from '../envelope-shape';
-import type { EnvelopeShape, EnvelopeConfig } from '../envelope-shape';
+import type { EnvelopeShape } from '../envelope-shape';
 
 function envelopeOf(overrides: Partial<EnvelopeShape> = {}): EnvelopeShape {
   return {
@@ -26,20 +26,15 @@ function envelopeOf(overrides: Partial<EnvelopeShape> = {}): EnvelopeShape {
   };
 }
 
-const configOf = (
-  envelope: EnvelopeShape,
-  overrides: Partial<EnvelopeConfig> = {},
-): EnvelopeConfig => ({ enabled: true, timeScale: 1, envelope, ...overrides });
-
 describe('envelope edits', () => {
   it('never mutates the envelope it was given', () => {
     const envelope = envelopeOf();
     const before = JSON.stringify(envelope);
 
     addPoint(envelope, 1.5, 0.8);
-    updatePoint(envelope, 1, 1.2);
+    updatePoint(envelope.points, 1, 1.2);
     deletePoint(envelope, 1);
-    setDuration(envelope, 6);
+    setDuration(envelope.points, 6);
 
     expect(JSON.stringify(envelope)).toBe(before);
   });
@@ -60,12 +55,13 @@ describe('envelope edits', () => {
   });
 
   it('refuses a move across either neighbour', () => {
-    const envelope = envelopeOf();
-    expect(updatePoint(envelope, 2, 0.5)).toBe(envelope);
-    expect(updatePoint(envelope, 1, 2.5)).toBe(envelope);
-    expect(updatePoint(envelope, 1, Number.NaN)).toBe(envelope);
-    expect(updatePoint(envelope, 1, Number.NEGATIVE_INFINITY)).toBe(envelope);
-    expect(updatePoint(envelope, 1, 1.5).points[1].time).toBe(1.5);
+    const { points } = envelopeOf();
+    // Rejected edits hand the same array back, so a caller can compare by identity.
+    expect(updatePoint(points, 2, 0.5)).toBe(points);
+    expect(updatePoint(points, 1, 2.5)).toBe(points);
+    expect(updatePoint(points, 1, Number.NaN)).toBe(points);
+    expect(updatePoint(points, 1, Number.NEGATIVE_INFINITY)).toBe(points);
+    expect(updatePoint(points, 1, 1.5)[1].time).toBe(1.5);
   });
 
   it('removes interior points and adjusts markers', () => {
@@ -87,33 +83,37 @@ describe('envelope edits', () => {
   });
 
   it('scales every point about the first one', () => {
-    const next = setDuration(envelopeOf(), 6);
-    expect(next.points.map((point) => point.time)).toEqual([0, 2, 4, 6]);
+    const next = setDuration(envelopeOf().points, 6);
+    expect(next.map((point) => point.time)).toEqual([0, 2, 4, 6]);
     expect(baseDuration(next)).toBe(6);
     expect(() => setDuration(next, 0)).toThrow(RangeError);
   });
 });
 
 describe('envelope timing', () => {
-  it('combines the stored time scale with a runtime multiplier', () => {
-    const envelope = envelopeOf();
-    expect(scaledDuration(configOf(envelope), 0, 3)).toBe(3);
-    expect(scaledDuration(configOf(envelope, { timeScale: 2 }), 0, 3)).toBe(1.5);
-    expect(scaledDuration(configOf(envelope), 0, 3, 2)).toBe(1.5);
+  it('divides the span by the time scale it is handed', () => {
+    const { points } = envelopeOf();
+    expect(scaledDuration(points, 0, 3)).toBe(3);
+    expect(scaledDuration(points, 0, 3, 2)).toBe(1.5);
+    // Composing a stored scale with a per-run multiplier is the caller's job now;
+    // EnvelopeRuntime.#scale is the one place that happens.
+    expect(scaledDuration(points, 0, 3, 1 * 2)).toBe(1.5);
   });
 
   it('splits the envelope at its release point', () => {
-    const config = configOf(envelopeOf());
-    expect(releaseStartTime(config)).toBe(2);
-    expect(releaseDuration(config)).toBe(1);
-    expect(releaseStartTime(config) + releaseDuration(config)).toBe(baseDuration(config.envelope));
+    const { points, release } = envelopeOf();
+    expect(releaseStartTime(points, release)).toBe(2);
+    expect(releaseDuration(points, release)).toBe(1);
+    expect(releaseStartTime(points, release) + releaseDuration(points, release)).toBe(
+      baseDuration(points),
+    );
   });
 
   it('returns zero for an invalid span', () => {
-    const config = configOf(envelopeOf());
-    expect(scaledDuration(config, 2, 1)).toBe(0);
-    expect(scaledDuration(config, 0, 99)).toBe(0);
-    expect(scaledDuration(config, -1, 2)).toBe(0);
+    const { points } = envelopeOf();
+    expect(scaledDuration(points, 2, 1)).toBe(0);
+    expect(scaledDuration(points, 0, 99)).toBe(0);
+    expect(scaledDuration(points, -1, 2)).toBe(0);
   });
 });
 
