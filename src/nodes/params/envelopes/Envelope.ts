@@ -61,7 +61,14 @@ function snapshot(shape: EnvelopeShape): EnvelopeShape {
   };
 }
 
-/** Timestamp-anchored envelope player bound to one param. */
+/**
+ * Timestamp-anchored envelope player bound to one param.
+ *
+ * The envelope owns the param's automation from `trigger` until `stop`: a trigger cancels
+ * everything scheduled from its start time on, and automation written by anyone else in
+ * that window can be overwritten. Drive other changes through `base` and `amount`, or
+ * `stop` the envelope first.
+ */
 export class Envelope {
   #shape: EnvelopeShape;
   /** The latest run's own copy; `setSustainValue` edits it in place. */
@@ -338,31 +345,35 @@ export class Envelope {
   }
 
   /**
-   * Moves the sustain point's value mid-note.
+   * Moves the held sustain level of the live run toward `value`, around `time`.
    *
-   * The one envelope input that is still editable once the run is on the timeline: a
-   * sustained run schedules points 0..sustain and stops, so the hold is not an event
-   * but the absence of events, and nothing after it has to be rescheduled.
-   *
-   * The point is mutated in place because `valueAt` and `releaseEnvelope` read the same
-   * object; without that the note-off handoff would pin the old value and jump. The
-   * player owns that clone, so nobody else sees the write.
-   *
-   * A run that has not reached its sustain point yet is left alone. Up to that instant
-   * the points between here and sustain are still queued, and cancelling to write the new
-   * value takes the attack peak with them - the parameter heads straight for the sustain
-   * value from wherever it had got to. Those edits wait for the next trigger, like every
-   * other envelope edit. Rescheduling the remainder would lift that restriction.
-   *
-   * The cancel is what makes a fast drag safe: a second ramp ending before the first one
-   * would otherwise re-target the old value on the way past.
-   *
-   * ponytail: releasing mid-glide pins the shape's value, which is the glide's target
-   * rather than where it has actually got to, so a note-off inside the glide window can
-   * step by up to the edit distance. Inaudible while `glide` stays short. Track the
-   * pending glide in `valueAt` if a long one is ever wanted.
+   * Best-effort and provisional. Only a sustained run that is live is guaranteed to
+   * respond; when the change lands, how it glides and whether an edit before the sustain
+   * point is honoured may all change. The stored `shape` is never touched.
    */
   setSustainValue(value: number, time = this.clock.currentTime, glide = 0.02) {
+    // Current behaviour, not contract:
+    //
+    // The one envelope input that is still editable once the run is on the timeline: a
+    // sustained run schedules points 0..sustain and stops, so the hold is not an event
+    // but the absence of events, and nothing after it has to be rescheduled.
+    //
+    // The point is mutated in place because `valueAt` and `releaseEnvelope` read the same
+    // object; without that the note-off handoff would pin the old value and jump. The
+    // player owns that clone, so nobody else sees the write.
+    //
+    // A run that has not reached its sustain point yet is left alone. Up to that instant
+    // the points between here and sustain are still queued, and cancelling to write the new
+    // value takes the attack peak with them - the parameter heads straight for the sustain
+    // value from wherever it had got to. Rescheduling the remainder would lift that.
+    //
+    // The cancel is what makes a fast drag safe: a second ramp ending before the first one
+    // would otherwise re-target the old value on the way past.
+    //
+    // ponytail: releasing mid-glide pins the shape's value, which is the glide's target
+    // rather than where it has actually got to, so a note-off inside the glide window can
+    // step by up to the edit distance. Inaudible while `glide` stays short. Track the
+    // pending glide in `valueAt` if a long one is ever wanted.
     if (!this.#envShape) return;
     const { points, mode } = this.#envShape;
     if (!this.#triggered || mode.type !== 'sustain') return;

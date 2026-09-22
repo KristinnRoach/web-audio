@@ -27,18 +27,6 @@ export const envelopePresets = {
     };
   },
 
-  pitch(durationSeconds = 1): EnvelopeShape {
-    const duration = durationOf(durationSeconds);
-    return {
-      mode: { type: 'once' },
-      points: [
-        { time: 0, value: 1, curve: 'exponential' },
-        { time: duration, value: 1, curve: 'exponential' },
-      ],
-      release: 0,
-    };
-  },
-
   filter(durationSeconds = 1): EnvelopeShape {
     const duration = durationOf(durationSeconds);
     return {

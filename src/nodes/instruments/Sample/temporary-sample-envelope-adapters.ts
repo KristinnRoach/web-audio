@@ -1,6 +1,7 @@
 import {
   envelopePresets,
   hasVariation,
+  setDuration,
   type AutomatableParam,
   type Envelope,
   type EnvelopeShape,
@@ -22,6 +23,21 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
   return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp-env', 'pitch-env'];
 }
 
+/** Flat at 1, so the pitch env is an identity until someone edits it. */
+function flatPitchShape(durationSeconds: number): EnvelopeShape {
+  return {
+    mode: { type: 'once' },
+    points: setDuration(
+      [
+        { time: 0, value: 1, curve: 'exponential' },
+        { time: 1, value: 1, curve: 'exponential' },
+      ],
+      durationSeconds,
+    ),
+    release: 0,
+  };
+}
+
 export function createDefaultSampleEnvelopeConfig(
   id: SampleEnvelopeId,
   durationSeconds: number,
@@ -30,7 +46,7 @@ export function createDefaultSampleEnvelopeConfig(
     case 'amp-env':
       return { enabled: true, timeScale: 1, envelope: envelopePresets.amplitude(durationSeconds) };
     case 'pitch-env':
-      return { enabled: false, timeScale: 1, envelope: envelopePresets.pitch(durationSeconds) };
+      return { enabled: false, timeScale: 1, envelope: flatPitchShape(durationSeconds) };
     case 'filter-env':
       return { enabled: false, timeScale: 1, envelope: envelopePresets.filter(durationSeconds) };
   }
