@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
-import type { EnvelopeConfig } from '../../params/envelopes';
+import type { EnvelopeConfig } from './envelope-config';
 
 const envConfig: EnvelopeConfig = {
   enabled: false,

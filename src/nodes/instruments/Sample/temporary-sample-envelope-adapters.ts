@@ -2,11 +2,11 @@ import {
   envelopePresets,
   hasVariation,
   type AutomatableParam,
+  type EnvelopePlayer,
   type EnvelopeShape,
-  type EnvelopeRuntime,
-  type EnvelopeRuntimeTriggerOptions,
-  type EnvelopeConfig,
+  type EnvelopeTriggerOptions,
 } from '@/nodes/params/envelopes';
+import type { EnvelopeConfig } from './envelope-config';
 
 type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
 
@@ -28,11 +28,11 @@ export function createDefaultSampleEnvelopeConfig(
 ): EnvelopeConfig {
   switch (id) {
     case 'amp-env':
-      return envelopePresets.amplitude(durationSeconds);
+      return { enabled: true, timeScale: 1, envelope: envelopePresets.amplitude(durationSeconds) };
     case 'pitch-env':
-      return envelopePresets.pitch(durationSeconds);
+      return { enabled: false, timeScale: 1, envelope: envelopePresets.pitch(durationSeconds) };
     case 'filter-env':
-      return envelopePresets.filter(durationSeconds);
+      return { enabled: false, timeScale: 1, envelope: envelopePresets.filter(durationSeconds) };
   }
 }
 
@@ -70,7 +70,7 @@ export function resolveSampleEnvelopeTrigger(
   envelope: EnvelopeShape,
   baseValue: number,
   param: RangedAutomatableParam,
-): Pick<EnvelopeRuntimeTriggerOptions, 'amount' | 'envelope'> {
+): Pick<EnvelopeTriggerOptions, 'amount' | 'shape'> {
   if (id !== 'filter-env') return { amount: baseValue };
 
   const low = Math.max(baseValue, 1e-3);
@@ -83,7 +83,7 @@ export function resolveSampleEnvelopeTrigger(
     curve: 'exponential' as const,
   }));
 
-  return { envelope: { ...envelope, points } };
+  return { shape: { ...envelope, points } };
 }
 
 export function getLiveSampleEnvelopeSustainValue(
@@ -97,11 +97,11 @@ export function getLiveSampleEnvelopeSustainValue(
 
 /** Applies an envelope edit at the next inaudible loop boundary, when one exists. */
 export function applyOnNextEnvLoopCycle(
-  runtime: EnvelopeRuntime,
+  envelope: EnvelopePlayer,
   apply: () => void,
   retrigger: (at: number) => void,
 ): void {
-  const at = runtime.nextCycleTime();
+  const at = envelope.nextCycleTime();
   apply();
   if (at !== null) retrigger(at);
 }

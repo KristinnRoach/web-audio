@@ -3,10 +3,7 @@ export { createSamplePlayer } from './nodes/instruments/Sample/createSamplePlaye
 export { createAudioRecorder } from './nodes/recorder';
 export {
   createEnvelope,
-  EnvelopeRuntime,
   assertValidEnvelopeShape,
-  assertValidEnvelopeConfig,
-  cloneEnvelopeConfig,
   envelopePresets,
 } from './nodes/params/envelopes';
 
@@ -20,16 +17,15 @@ export type { LibNode, LibAudioNode, SampleLoader, GainStages } from './nodes';
 export type { SamplePlayerOptions } from './nodes/instruments/Sample/SamplePlayer';
 export type { SampleVoiceChainNode } from './nodes/instruments/Sample/SampleVoice';
 export type {
-  EnvelopeShape as Envelope,
+  EnvelopeShape,
   EnvelopeClock,
   EnvelopeMode,
   EnvelopePlayer,
   EnvelopePoint,
-  EnvelopeRuntimeTriggerOptions,
-  EnvelopeConfig,
   EnvelopeTriggerOptions,
   AutomatableParam,
 } from './nodes/params/envelopes';
+export type { EnvelopeConfig } from './nodes/instruments/Sample/envelope-config';
 export type { SampleEnvelopeId } from './nodes/instruments/Sample/temporary-sample-envelope-adapters';
 
 // =*=*= Utilities =*=*= \\

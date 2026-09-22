@@ -26,14 +26,25 @@ export type EnvelopeClock = { readonly currentTime: number };
  * carries on from where it is into its first full cycle rather than snapping back.
  * Looping runs only; every other shape is scheduled in one pass from point 0.
  */
-export type EnvelopeTriggerOptions = ScheduleOptions & { fromPoint?: number };
+export type EnvelopeTriggerOptions = ScheduleOptions & {
+  fromPoint?: number;
+  /** Plays this shape for this run only; the stored `shape` is left as it is. */
+  shape?: EnvelopeShape;
+};
 
 export type EnvelopePlayer = {
-  trigger(envelope: EnvelopeShape, time?: number, options?: EnvelopeTriggerOptions): void;
+  /**
+   * The shape a trigger plays unless it passes its own. Setting it takes effect on the
+   * next trigger; a run already on the timeline keeps the copy it started with.
+   */
+  shape: EnvelopeShape;
+  /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
+  trigger(time?: number, options?: EnvelopeTriggerOptions): void;
+  /** Plays the release stage from `time`, clamped to now like `trigger`. */
   release(time?: number): void;
-  /** Full envelope duration using the active run's time scale. */
+  /** Full duration of the latest run at its time scale; before any run, `shape` at 1. */
   duration(): number;
-  /** Release-stage duration using the active run's time scale. */
+  /** Release-stage duration, read the same way as `duration`. */
   releaseDuration(): number;
   /**
    * How far into the shape the live run has got at `time`, or `null` when no run is live.
@@ -78,8 +89,8 @@ export type EnvelopePlayer = {
   nextCycleTime(time?: number): number | null;
   /** Moves the sustain point's value on a run that is holding it; see the implementation. */
   setSustainValue(value: number, time?: number, glide?: number): void;
+  /** Ends the run at `time` and pins the param there. The player stays reusable. */
   stop(time?: number): void;
-  dispose(): void;
 };
 
 const LOOKAHEAD_SECONDS = 1;
@@ -101,6 +112,16 @@ function addLoop(fill: () => void) {
   };
 }
 
+/** Validates and deep-copies a shape, so nobody else's edits reach it. */
+function snapshot(shape: EnvelopeShape): EnvelopeShape {
+  assertValidEnvelopeShape(shape);
+  return {
+    ...shape,
+    mode: { ...shape.mode },
+    points: shape.points.map((point) => ({ ...point })),
+  };
+}
+
 /**
  * Timestamp-anchored envelope player.
  *
@@ -108,9 +129,10 @@ function addLoop(fill: () => void) {
  * `observeEnvelopePlayer` can keep returning a plain object as one.
  */
 class Envelope implements EnvelopePlayer {
+  #shape: EnvelopeShape;
+  /** The latest run's own copy; `setSustainValue` edits it in place. */
   #envShape: EnvelopeShape | undefined;
   #removeLoop: (() => void) | undefined;
-  #disposed = false;
   #triggered = false;
   #base = 0;
   #amount = 1;
@@ -121,7 +143,18 @@ class Envelope implements EnvelopePlayer {
   constructor(
     readonly clock: EnvelopeClock,
     readonly param: AutomatableParam,
-  ) {}
+    shape: EnvelopeShape,
+  ) {
+    this.#shape = snapshot(shape);
+  }
+
+  get shape(): EnvelopeShape {
+    return this.#shape;
+  }
+
+  set shape(shape: EnvelopeShape) {
+    this.#shape = snapshot(shape);
+  }
 
   #stopLoop() {
     this.#removeLoop?.();
@@ -166,18 +199,10 @@ class Envelope implements EnvelopePlayer {
     );
   }
 
-  trigger(
-    sourceEnvelope: EnvelopeShape,
-    time = this.clock.currentTime,
-    options: EnvelopeTriggerOptions = {},
-  ) {
-    if (this.#disposed) throw new Error('Cannot trigger a disposed EnvelopePlayer');
-    assertValidEnvelopeShape(sourceEnvelope);
-    const runEnvelope: EnvelopeShape = {
-      ...sourceEnvelope,
-      mode: { ...sourceEnvelope.mode },
-      points: sourceEnvelope.points.map((point) => ({ ...point })),
-    };
+  trigger(time = this.clock.currentTime, options: EnvelopeTriggerOptions = {}) {
+    // Validated before anything changes, so a rejected trigger leaves the live run alone.
+    const runEnvelope = snapshot(options.shape ?? this.#shape);
+    time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;
     this.#stopLoop();
     this.#triggered = true;
@@ -265,6 +290,7 @@ class Envelope implements EnvelopePlayer {
 
   release(time = this.clock.currentTime) {
     if (!this.#triggered || !this.#envShape) return;
+    time = Math.max(this.clock.currentTime, time);
     // Read the shape before anything touches the param, so a future-dated release hands
     // off the value the envelope will actually have reached rather than today's.
     const holdValue = this.#valueAt(time);
@@ -285,13 +311,12 @@ class Envelope implements EnvelopePlayer {
   }
 
   duration() {
-    if (!this.#envShape) return 0;
-    return baseDuration(this.#envShape.points) / this.#timeScale;
+    const { points } = this.#envShape ?? this.#shape;
+    return baseDuration(points) / this.#timeScale;
   }
 
   releaseDuration() {
-    if (!this.#envShape) return 0;
-    const { points, release } = this.#envShape;
+    const { points, release } = this.#envShape ?? this.#shape;
     return releaseStageDuration(points, release, this.#timeScale);
   }
 
@@ -388,15 +413,13 @@ class Envelope implements EnvelopePlayer {
     this.#stopLoop();
     cancelAndPinParamValue(this.param, time);
   }
-
-  dispose() {
-    if (this.#disposed) return;
-    this.#disposed = true;
-    this.stop();
-  }
 }
 
 /** Creates a timestamp-anchored envelope player. */
-export function createEnvelope(clock: EnvelopeClock, param: AutomatableParam): EnvelopePlayer {
-  return new Envelope(clock, param);
+export function createEnvelope(
+  clock: EnvelopeClock,
+  param: AutomatableParam,
+  shape: EnvelopeShape,
+): EnvelopePlayer {
+  return new Envelope(clock, param, shape);
 }

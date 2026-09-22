@@ -27,12 +27,12 @@ import { LFO } from '@/nodes/params/LFOs/LFO';
 import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
 import { SampleVoicePool } from './SampleVoicePool';
+import { setDuration } from '@/nodes/params/envelopes';
 import {
   assertValidEnvelopeConfig,
   cloneEnvelopeConfig,
-  setDuration,
   type EnvelopeConfig,
-} from '@/nodes/params/envelopes';
+} from './envelope-config';
 import { ILibInstrumentNode } from '@/nodes/LibAudioNode';
 import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
