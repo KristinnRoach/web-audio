@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, test, vi } from 'vite-plus/test';
-import { createEnvelope, releaseEnvelope, scheduleEnvelope } from '../Envelope';
+import { createEnvelope } from '../Envelope';
+import { releaseEnvelope, scheduleEnvelope } from '../envelope-scheduling';
 import type { EnvelopeShape } from '../envelope-shape';
 import { createFakeParam } from './fakeParam';
 

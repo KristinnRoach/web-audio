@@ -1,5 +1,5 @@
 import { vi } from 'vite-plus/test';
-import type { AutomatableParam } from '../Envelope';
+import type { AutomatableParam } from '../envelope-scheduling';
 
 export type ScheduledEvent = {
   type: 'set' | 'linear' | 'exponential' | 'cancel';

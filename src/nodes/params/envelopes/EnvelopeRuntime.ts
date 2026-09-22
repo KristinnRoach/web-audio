@@ -1,10 +1,5 @@
-import {
-  createEnvelope,
-  type AutomatableParam,
-  type EnvelopeClock,
-  type EnvelopePlayer,
-  type ScheduleOptions,
-} from './Envelope';
+import { createEnvelope, type EnvelopeClock, type EnvelopePlayer } from './Envelope';
+import type { AutomatableParam, ScheduleOptions } from './envelope-scheduling';
 import {
   assertValidEnvelopeConfig,
   cloneEnvelopeConfig,
