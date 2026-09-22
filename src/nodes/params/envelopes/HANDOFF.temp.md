@@ -13,7 +13,7 @@ Envelope.ts             EnvelopeClock, EnvelopeTriggerOptions, EnvelopePlayer,
 envelope-scheduling.ts  AutomatableParam, ScheduleOptions, param-writing primitives
 envelope-shape.ts       shape types, validation, pure math, point editing
 envelope-presets.ts     amplitude/pitch/filter, each returns an EnvelopeShape
-index.ts                barrel
+index.ts                explicit exports: everything used outside the module
 ```
 
 ## Current API
