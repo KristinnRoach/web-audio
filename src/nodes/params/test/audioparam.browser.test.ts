@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { cancelAndPinParamValue } from './audioparam';
+import { cancelAndPinParamValue } from '../audioparam-utils';
 
 const SR = 48000;
 const CANCEL_AT = 0.25; // midpoint of the curve, so the correct hold value is 0.5
@@ -45,7 +45,7 @@ describe('cancelAndPinParamValue', () => {
           '*** swap to cancelAndHoldAtTime directly. Calls that pass one are\n' +
           '*** pinning a value the automation would not produce on its own, so\n' +
           '*** check each before converting it.\n' +
-          '*** See the notes in src/utils/validate/audioparam.ts\n',
+          '*** See the notes in src/nodes/params/audioparam-utils.ts\n',
       );
     }
   });

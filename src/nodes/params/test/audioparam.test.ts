@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { clampHz, durationToTimeConstant, maxSafeHz, FALLBACK_MAX_HZ, MIN_HZ } from '../audioparam';
+import {
+  clampHz,
+  durationToTimeConstant,
+  maxSafeHz,
+  FALLBACK_MAX_HZ,
+  MIN_HZ,
+} from '../audioparam-utils';
 
 describe('maxSafeHz', () => {
   it('leaves a 1 kHz guard band below Nyquist', () => {

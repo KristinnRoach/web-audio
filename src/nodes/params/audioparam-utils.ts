@@ -1,5 +1,3 @@
-import { clamp } from '../math/math-utils';
-
 /**
  * Cancels scheduled automation and pins the param at a known value.
  *
@@ -40,7 +38,7 @@ export function maxSafeHz(sampleRate?: number): number {
 
 /** Clamps a filter cutoff into the safe range for a given sample rate. */
 export function clampHz(hz: number, sampleRate?: number): number {
-  return clamp(hz, MIN_HZ, maxSafeHz(sampleRate));
+  return Math.max(MIN_HZ, Math.min(maxSafeHz(sampleRate), hz));
 }
 
 /**

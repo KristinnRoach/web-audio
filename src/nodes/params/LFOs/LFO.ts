@@ -4,7 +4,7 @@ import {
   WaveformOptions,
   isCustomLibWaveform,
 } from '@/utils/audiodata/generate/generateWaveform';
-import { maxSafeHz } from '@/utils';
+import { maxSafeHz } from '../audioparam-utils';
 
 export class LFO {
   #context: AudioContext;

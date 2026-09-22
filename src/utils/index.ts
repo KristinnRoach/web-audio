@@ -18,7 +18,6 @@ export * from './code/generate/generateProcessorCode';
 
 // Validation utils
 export * from './validate/environment';
-export * from './validate/audioparam';
 
 // Search utils
 export * from './search';

@@ -7,7 +7,8 @@ import { getAudioContext } from '@/context';
 
 import { Message, MessageBus, MessageHandler, createMessageBus } from '@/events';
 
-import { clamp, clampHz, mapToRange, maxSafeHz, midiToPlaybackRate } from '@/utils';
+import { clamp, mapToRange } from '@/utils';
+import { clampHz, maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import { DEFAULT } from '@/constants';
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from './defaults';

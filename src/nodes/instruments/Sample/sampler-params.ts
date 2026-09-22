@@ -2,7 +2,7 @@
 // UI-agnostic metadata (range, default, taper, formatting) plus an apply()
 // mapping a normalized-or-natural knob value onto the player. Lets any
 // frontend render controls without hardcoding per-param knowledge.
-import { maxSafeHz } from '@/utils';
+import { maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import type { SamplePlayer } from './SamplePlayer';
 

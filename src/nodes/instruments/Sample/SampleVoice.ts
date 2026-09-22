@@ -12,10 +12,8 @@ import {
   mapToRange,
   midiToPlaybackRate,
   getKeytrackedFilterHz,
-  clampHz,
-  durationToTimeConstant,
-  maxSafeHz,
 } from '@/utils';
+import { clampHz, durationToTimeConstant, maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import { EnvelopeRuntime, type EnvelopeConfig } from '@/nodes/params/envelopes';
 
