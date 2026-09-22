@@ -65,14 +65,14 @@ describe('EnvelopeRuntime live config handover', () => {
     expect(idle.nextCycleTime()).toBeNull();
 
     const oneShot = new EnvelopeRuntime(contextAt(0), configOf());
-    oneShot.trigger(createFakeParam(), 0);
+    oneShot.trigger(createFakeParam(), 0, { timeScale: 1 });
     expect(oneShot.nextCycleTime()).toBeNull();
   });
 
   it("puts the next cycle boundary ahead of now, on the trigger's grid", () => {
     const context = contextAt(0);
     const runtime = new EnvelopeRuntime(context, looping);
-    runtime.trigger(createFakeParam(), 0);
+    runtime.trigger(createFakeParam(), 0, { timeScale: 1 });
 
     expect(runtime.nextCycleTime()).toBe(2);
     context.currentTime = 2;
@@ -85,7 +85,7 @@ describe('EnvelopeRuntime live config handover', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, looping);
-    runtime.trigger(param, 0);
+    runtime.trigger(param, 0, { timeScale: 1 });
 
     context.currentTime = 0.5;
     const at = runtime.nextCycleTime();
@@ -93,7 +93,7 @@ describe('EnvelopeRuntime live config handover', () => {
 
     runtime.update({ ...looping, timeScale: 2 });
     param.events.length = 0;
-    runtime.trigger(param, at!);
+    runtime.trigger(param, at!, { timeScale: runtime.config.timeScale });
 
     // Nothing is cancelled or written before the handover, so the running cycle plays out.
     expect(param.events.every((event) => event.time >= at!)).toBe(true);
@@ -121,14 +121,14 @@ describe('EnvelopeRuntime repeated handovers', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, looping);
-    runtime.trigger(param, 0);
+    runtime.trigger(param, 0, { timeScale: 1 });
 
     // An editor commits on each pointermove, so the boundary is asked for repeatedly
     // while it is still in the future. Every one of them is the same boundary.
     for (const now of [0.5, 0.55, 0.6, 1.4, 1.9]) {
       context.currentTime = now;
       expect(runtime.nextCycleTime()).toBe(2);
-      runtime.trigger(param, 2);
+      runtime.trigger(param, 2, { timeScale: 1 });
     }
 
     context.currentTime = 2.1;
@@ -150,7 +150,7 @@ describe('live sustain value', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
-    runtime.trigger(param, 0);
+    runtime.trigger(param, 0, { timeScale: 1 });
 
     // Parked on sustain: point 1 lands at 0.5.
     context.currentTime = 1;
@@ -172,7 +172,7 @@ describe('live sustain value', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
-    runtime.trigger(param, 0);
+    runtime.trigger(param, 0, { timeScale: 1 });
 
     context.currentTime = 1;
     const before = param.events.length;
@@ -201,7 +201,7 @@ describe('EnvelopeRuntime.trigger validation', () => {
       mode: { type: 'sustain' as const, at: 9 },
     };
 
-    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: bad })).toThrow(
+    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: bad, timeScale: 1 })).toThrow(
       'Invalid envelope',
     );
   });
@@ -212,6 +212,7 @@ describe('EnvelopeRuntime.trigger validation', () => {
 
     expect(() =>
       runtime.trigger(createFakeParam(), 0, {
+        timeScale: 1,
         envelope: {
           ...mapped,
           points: mapped.points.map((p) => ({ ...p, value: p.value * 8000 })),
@@ -229,27 +230,51 @@ describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () =>
 
   it('keeps the active player running', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), configOf());
-    runtime.trigger(createFakeParam(), 0);
+    runtime.trigger(createFakeParam(), 0, { timeScale: 1 });
     const before = runtime.currentPoint();
 
-    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
-      'Invalid envelope',
-    );
+    expect(() =>
+      runtime.trigger(createFakeParam(), 0, { envelope: badShape(), timeScale: 1 }),
+    ).toThrow('Invalid envelope');
 
     expect(runtime.currentPoint()).toBe(before);
   });
 
   it('keeps a released run released', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), configOf());
-    runtime.trigger(createFakeParam(), 0);
+    runtime.trigger(createFakeParam(), 0, { timeScale: 1 });
     runtime.release(0);
 
-    expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
-      'Invalid envelope',
-    );
+    expect(() =>
+      runtime.trigger(createFakeParam(), 0, { envelope: badShape(), timeScale: 1 }),
+    ).toThrow('Invalid envelope');
 
     // Still released, so a second release stays the no-op it was.
     runtime.release(0);
     expect(runtime.currentPoint()).toBeNull();
+  });
+});
+
+describe('EnvelopeRuntime duration scaling', () => {
+  // configOf() spans 0 to 1.5, with the release point at 1.
+  it('scales an idle shape by the stored scale when the caller asks for nothing', () => {
+    expect(new EnvelopeRuntime(contextAt(0), configOf()).duration()).toBeCloseTo(1.5);
+    expect(new EnvelopeRuntime(contextAt(0), configOf({ timeScale: 2 })).duration()).toBeCloseTo(
+      0.75,
+    );
+  });
+
+  it('takes the caller-composed scale verbatim, without folding the stored one in again', () => {
+    // 3 is already config.timeScale * multiplier; the runtime must not multiply by 2 again.
+    const runtime = new EnvelopeRuntime(contextAt(0), configOf({ timeScale: 2 }));
+    expect(runtime.duration(3)).toBeCloseTo(0.5);
+    expect(runtime.releaseDuration(3)).toBeCloseTo(0.5 / 3);
+  });
+
+  it('reports the live run scale once triggered, ignoring the argument', () => {
+    const runtime = new EnvelopeRuntime(contextAt(0), configOf());
+    runtime.trigger(createFakeParam(), 0, { timeScale: 3 });
+    expect(runtime.duration(99)).toBeCloseTo(0.5);
+    expect(runtime.releaseDuration(99)).toBeCloseTo(0.5 / 3);
   });
 });

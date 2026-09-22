@@ -368,7 +368,7 @@ export class InstrumentBus implements ILibAudioNode {
       base: this.#lpfCutoffHz,
       // Keep both upward and inverted sweeps inside the filter's usable range.
       amount: clamp(this.#lpfEnvAmount * ceiling, -this.#lpfCutoffHz, ceiling - this.#lpfCutoffHz),
-      timeScaleMultiplier: midiToPlaybackRate(midiNote),
+      timeScale: this.#lpfEnvelope.config.timeScale * midiToPlaybackRate(midiNote),
     });
   }
 
@@ -454,7 +454,7 @@ export class InstrumentBus implements ILibAudioNode {
     this.#lpfEnvAmount = amount;
 
     if (!envelope || amount === 0) {
-      this.#lpfEnvelope?.stop();
+      this.#lpfEnvelope?.dispose();
       this.#lpfEnvelope = null;
       this.setLpfCutoff(this.#lpfCutoffHz);
       return this;
@@ -727,7 +727,7 @@ export class InstrumentBus implements ILibAudioNode {
 
   dispose(): void {
     this.#heldNotes.clear();
-    this.#lpfEnvelope?.stop();
+    this.#lpfEnvelope?.dispose();
     this.#lpfEnvelope = null;
 
     // Disconnect all nodes

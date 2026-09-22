@@ -70,7 +70,7 @@ export function resolveSampleEnvelopeTrigger(
   envelope: EnvelopeShape,
   baseValue: number,
   param: RangedAutomatableParam,
-): EnvelopeRuntimeTriggerOptions {
+): Pick<EnvelopeRuntimeTriggerOptions, 'amount' | 'envelope'> {
   if (id !== 'filter-env') return { amount: baseValue };
 
   const low = Math.max(baseValue, 1e-3);

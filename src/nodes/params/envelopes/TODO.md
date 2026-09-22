@@ -14,11 +14,12 @@ few cycles" rules out float error anyway. Two candidates, both fast-onset:
   cycle can be scheduled at or past its own start time and Web Audio applies it
   immediately. Probe: advance the clock in 1 s steps while firing the timer once per step,
   and assert every cycle is scheduled strictly ahead of `clock.currentTime`.
-- **`timeScale` composition against the sample rate.** `EnvelopeRuntime.trigger` composes
-  `config.timeScale * timeScaleMultiplier`. If the sample's playback rate is applied on a
-  different grid than the envelope's, the two walk apart at a rate proportional to the
-  rate error, which would be audible within a few cycles. Probe: drive a loop and a sample
-  from one trigger at a non-integer rate and compare cycle boundaries against buffer wraps.
+- **`timeScale` composition against the sample rate.** `SampleVoice.#timeScale` composes
+  `config.timeScale * playbackRate` for the envelopes that follow the rate. If the
+  sample's playback rate is applied on a different grid than the envelope's, the two walk
+  apart at a rate proportional to the rate error, which would be audible within a few
+  cycles. Probe: drive a loop and a sample from one trigger at a non-integer rate and
+  compare cycle boundaries against buffer wraps.
 
 Ear test before landing either fix.
 

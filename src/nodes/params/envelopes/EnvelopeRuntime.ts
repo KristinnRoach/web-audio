@@ -18,8 +18,12 @@ import {
 } from './envelope-shape';
 
 export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> & {
-  /** Additional timing multiplier supplied by the host, such as a playback rate. */
-  timeScaleMultiplier?: number;
+  /**
+   * The run's timing multiplier, required because the caller composes it. A host
+   * following a sample's playback rate passes `config.timeScale * rate`; a host that
+   * does not still passes `config.timeScale`.
+   */
+  timeScale: number;
   /** Optional target-specific shape derived from the stored shape for this run. */
   envelope?: EnvelopeShape;
   /** Point index the first pass opens at; see `EnvelopeTriggerOptions.fromPoint`. */
@@ -40,11 +44,6 @@ export class EnvelopeRuntime {
 
   #config: EnvelopeConfig;
 
-  /** Stored scale composed with a per-run multiplier, the one place the two combine. */
-  #scale(timeScaleMultiplier = 1) {
-    return this.#config.timeScale * timeScaleMultiplier;
-  }
-
   get config(): EnvelopeConfig {
     return this.#config;
   }
@@ -62,16 +61,18 @@ export class EnvelopeRuntime {
     return this.#envPlayer?.currentPoint(this.clock.currentTime) ?? null;
   }
 
-  duration(timeScaleMultiplier = 1) {
+  /** Idle: the stored shape at `timeScale`. Live: the active run's own scale, as triggered. */
+  duration(timeScale = this.#config.timeScale) {
     if (this.#envPlayer) return this.#envPlayer.duration();
     const { points } = this.#config.envelope;
-    return scaledDuration(points, 0, points.length - 1, this.#scale(timeScaleMultiplier));
+    return scaledDuration(points, 0, points.length - 1, timeScale);
   }
 
-  releaseDuration(timeScaleMultiplier = 1) {
+  /** Idle: the stored shape at `timeScale`. Live: the active run's own scale, as triggered. */
+  releaseDuration(timeScale = this.#config.timeScale) {
     if (this.#envPlayer) return this.#envPlayer.releaseDuration();
     const { points, release } = this.#config.envelope;
-    return releaseStageDuration(points, release, this.#scale(timeScaleMultiplier));
+    return releaseStageDuration(points, release, timeScale);
   }
 
   /** Absolute time of the active player's next loop boundary. */
@@ -95,18 +96,17 @@ export class EnvelopeRuntime {
     this.#envPlayer?.setSustainValue(value, this.clock.currentTime, glide);
   }
 
-  trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
+  trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions) {
     // `Envelope.trigger` validates the shape too, but only after the handover below has
     // already stopped the outgoing run. Checking here first leaves it alone on a reject.
     if (options.envelope) assertValidEnvelopeShape(options.envelope);
 
     const sourceEnvelope = options.envelope ?? this.#config.envelope;
-    const timeScale = this.#scale(options.timeScaleMultiplier);
     const scheduledStartTime = Math.max(this.clock.currentTime, startTime);
     const schedule = {
       base: options.base,
       amount: options.amount,
-      timeScale,
+      timeScale: options.timeScale,
       // Read only by looping runs; every other shape is scheduled in one pass from 0.
       fromPoint: options.fromPoint ?? 0,
     };
@@ -128,7 +128,7 @@ export class EnvelopeRuntime {
     this.#envPlayer.release(releaseTime);
   }
 
-  stop() {
+  dispose() {
     this.#envPlayer?.dispose();
     this.#envPlayer = null;
   }

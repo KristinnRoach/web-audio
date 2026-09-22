@@ -95,8 +95,8 @@ describe('envelope timing', () => {
     const { points } = envelopeOf();
     expect(scaledDuration(points, 0, 3)).toBe(3);
     expect(scaledDuration(points, 0, 3, 2)).toBe(1.5);
-    // Composing a stored scale with a per-run multiplier is the caller's job now;
-    // EnvelopeRuntime.#scale is the one place that happens.
+    // Composing a stored scale with a per-run multiplier is the caller's job;
+    // SampleVoice.#timeScale and InstrumentBus.#triggerLpfEnvelope do it.
     expect(scaledDuration(points, 0, 3, 1 * 2)).toBe(1.5);
   });
 
