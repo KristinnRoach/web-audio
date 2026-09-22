@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { createFakeParam } from './fakeParam';
 import { EnvelopeRuntime } from '../EnvelopeRuntime';
-import type { EnvelopeConfig } from '../EnvelopeRuntime';
+import type { EnvelopeConfig } from '../envelope-config';
 
 function contextAt(currentTime: number) {
   return { currentTime };
@@ -202,7 +202,7 @@ describe('EnvelopeRuntime.trigger validation', () => {
     };
 
     expect(() => runtime.trigger(createFakeParam(), 0, { envelope: bad })).toThrow(
-      'Invalid envelope settings',
+      'Invalid envelope',
     );
   });
 
@@ -230,13 +230,13 @@ describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () =>
   it('keeps the active player running', () => {
     const runtime = new EnvelopeRuntime(contextAt(0), configOf());
     runtime.trigger(createFakeParam(), 0);
-    const before = runtime.position();
+    const before = runtime.currentPoint();
 
     expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
-      'Invalid envelope settings',
+      'Invalid envelope',
     );
 
-    expect(runtime.position()).toBe(before);
+    expect(runtime.currentPoint()).toBe(before);
   });
 
   it('keeps a released run released', () => {
@@ -245,95 +245,11 @@ describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () =>
     runtime.release(0);
 
     expect(() => runtime.trigger(createFakeParam(), 0, { envelope: badShape() })).toThrow(
-      'Invalid envelope settings',
+      'Invalid envelope',
     );
 
     // Still released, so a second release stays the no-op it was.
     runtime.release(0);
-    expect(runtime.position()).toBeNull();
-  });
-});
-
-describe('EnvelopeRuntime.position', () => {
-  // configOf() points sit at 0, 0.5, 1 and 1.5.
-  const at = (config: EnvelopeConfig, currentTime: number, multiplier?: number) => {
-    const context = contextAt(0);
-    const runtime = new EnvelopeRuntime(context, config);
-    runtime.trigger(createFakeParam(), 0, { timeScaleMultiplier: multiplier });
-    context.currentTime = currentTime;
-    return runtime;
-  };
-
-  it('throws on a non-finite time, live run or not', () => {
-    const idle = new EnvelopeRuntime(contextAt(0), configOf());
-    expect(() => idle.position(NaN)).toThrow(RangeError);
-
-    const live = at(configOf(), 0.5);
-    expect(() => live.position(NaN)).toThrow(RangeError);
-    expect(() => live.position(Infinity)).toThrow(RangeError);
-  });
-
-  it('is null with no live run', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), configOf());
-    expect(runtime.position()).toBeNull();
-  });
-
-  it('is null once released, and once stopped', () => {
-    const released = at(configOf(), 0.75);
-    released.release(0.75);
-    expect(released.position()).toBeNull();
-
-    const stopped = at(configOf(), 0.75);
-    stopped.stop();
-    expect(stopped.position()).toBeNull();
-  });
-
-  it('reports seconds of envelope time, matching wall seconds only at timeScale 1', () => {
-    expect(at(configOf(), 0.75).position()).toBeCloseTo(0.75);
-  });
-
-  it('scales wall seconds by the run timeScale', () => {
-    // Twice speed: a quarter second of wall clock is half a second into the shape.
-    expect(at(configOf({ timeScale: 2 }), 0.25).position()).toBeCloseTo(0.5);
-  });
-
-  it('folds the host multiplier into the same scale', () => {
-    expect(at(configOf(), 0.25, 2).position()).toBeCloseTo(0.5);
-  });
-
-  it('clamps at the sustain point while the note is held', () => {
-    const sustained = configOf({
-      envelope: {
-        ...configOf().envelope,
-        mode: { type: 'sustain', at: 1 },
-        release: 1,
-      },
-    });
-    // Point 1 is at 0.5; the run parks there rather than advancing to 1.2.
-    expect(at(sustained, 1.2).position()).toBeCloseTo(0.5);
-  });
-
-  it('stays at 0 on a loop whose points share one time', () => {
-    const flat = configOf({
-      envelope: {
-        points: [
-          { time: 0, value: 0 },
-          { time: 0, value: 1 },
-        ],
-        release: 0,
-        mode: { type: 'loop' },
-      },
-    });
-    // Coincident times pass validation, so the cycle has zero extent. There is nowhere to
-    // advance to, and trigger schedules it as a one-shot rather than looping it.
-    expect(at(flat, 5).position()).toBe(0);
-  });
-
-  it('wraps into the cycle while looping', () => {
-    const looping = configOf({
-      envelope: { ...configOf().envelope, mode: { type: 'loop' } },
-    });
-    // Cycle is 1.5 long, so 1.75 of wall clock is 0.25 into the second pass.
-    expect(at(looping, 1.75).position()).toBeCloseTo(0.25);
+    expect(runtime.currentPoint()).toBeNull();
   });
 });

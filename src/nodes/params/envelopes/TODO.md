@@ -33,10 +33,8 @@ Ear test before landing either fix.
 
 - `releaseStartTime`, `setReleasePoint`, `setSustainPoint` have no callers outside tests.
   Delete unless the editor UI lands.
-- `envelope-presets.ts` imports `EnvelopeConfig` from `EnvelopeRuntime.ts`, so preset
-  data depends on the runtime class module for a type. Type-only, erased at build, no
-  cycle. If it starts to grate, the answer is a two-line `envelope-config.ts`, not moving
-  the type back into the shape module.
+- `EnvelopeConfig` and its two helpers now live in `envelope-config.ts`, so preset data
+  no longer reaches through the runtime class module for a type.
 - `updatePoint` and `setDuration` now return `EnvelopePoint[]`, so a caller rebuilding a
   shape writes `{ ...shape, points: updatePoint(shape.points, ...) }` and gets a new shape
   object even when the edit was rejected. The old versions returned the same shape by

@@ -230,7 +230,7 @@ export class SampleVoice {
   }
 
   #createEnvelopes() {
-    this.#envelopes.forEach((env) => env.dispose());
+    this.#envelopes.forEach((env) => env.stop());
     this.#envelopes.clear();
 
     const durationSeconds = this.#sampleDurationSeconds || 1;
@@ -1232,7 +1232,7 @@ export class SampleVoice {
     this.stop();
     this.disconnect();
     this.#cleanupAmpModLFO();
-    this.#envelopes.forEach((env) => env.dispose());
+    this.#envelopes.forEach((env) => env.stop());
     this.#playerWorklet.port.close();
     this.#clearTimeouts();
     unregisterNode(this.nodeId);

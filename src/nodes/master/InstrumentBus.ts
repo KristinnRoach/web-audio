@@ -454,7 +454,7 @@ export class InstrumentBus implements ILibAudioNode {
     this.#lpfEnvAmount = amount;
 
     if (!envelope || amount === 0) {
-      this.#lpfEnvelope?.dispose();
+      this.#lpfEnvelope?.stop();
       this.#lpfEnvelope = null;
       this.setLpfCutoff(this.#lpfCutoffHz);
       return this;
@@ -727,7 +727,7 @@ export class InstrumentBus implements ILibAudioNode {
 
   dispose(): void {
     this.#heldNotes.clear();
-    this.#lpfEnvelope?.dispose();
+    this.#lpfEnvelope?.stop();
     this.#lpfEnvelope = null;
 
     // Disconnect all nodes

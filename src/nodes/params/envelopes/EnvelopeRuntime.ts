@@ -6,48 +6,16 @@ import {
   type ScheduleOptions,
 } from './Envelope';
 import {
+  assertValidEnvelopeConfig,
+  cloneEnvelopeConfig,
+  type EnvelopeConfig,
+} from './envelope-config';
+import {
   assertValidEnvelopeShape,
   releaseDuration as releaseStageDuration,
   scaledDuration,
   type EnvelopeShape,
 } from './envelope-shape';
-
-/** Serializable config shared by editors and envelope players. */
-export type EnvelopeConfig = {
-  readonly enabled: boolean;
-  /** Timing multiplier; values above 1 play the envelope faster. */
-  readonly timeScale: number;
-  readonly envelope: EnvelopeShape;
-};
-
-/** Returns a config snapshot whose shape and points can be safely retained. */
-export function cloneEnvelopeConfig(config: EnvelopeConfig): EnvelopeConfig {
-  return {
-    ...config,
-    envelope: {
-      ...config.envelope,
-      mode: { ...config.envelope.mode },
-      points: config.envelope.points.map((point) => ({ ...point })),
-    },
-  };
-}
-
-/** Rejects a config that cannot be scheduled predictably. */
-export function assertValidEnvelopeConfig(config: EnvelopeConfig): void {
-  if (
-    typeof config?.enabled !== 'boolean' ||
-    !Number.isFinite(config?.timeScale) ||
-    config.timeScale <= 0
-  ) {
-    throw new TypeError('Invalid envelope settings');
-  }
-
-  try {
-    assertValidEnvelopeShape(config.envelope);
-  } catch {
-    throw new TypeError('Invalid envelope settings');
-  }
-}
 
 export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> & {
   /** Additional timing multiplier supplied by the host, such as a playback rate. */
@@ -89,15 +57,6 @@ export class EnvelopeRuntime {
     return this.#config.envelope.mode.type === 'loop';
   }
 
-  /** Envelope-time position of the active player; see `EnvelopePlayer.position`. */
-  position(time = this.clock.currentTime): number | null {
-    // Argument first, so a bad timestamp is a bug whether or not a run is live.
-    if (!Number.isFinite(time)) {
-      throw new RangeError('Envelope position time must be a finite number');
-    }
-    return this.#envPlayer?.position(time) ?? null;
-  }
-
   /** Last point reached by the active player. */
   currentPoint(): number | null {
     return this.#envPlayer?.currentPoint(this.clock.currentTime) ?? null;
@@ -137,28 +96,19 @@ export class EnvelopeRuntime {
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
-    // The constructor and update both validate; trigger was the one entry point
-    // that took a caller-supplied shape on trust. An out-of-range sustain index throws
-    // inside the player instead, which is a worse place to find out. The stored
-    // enabled/timeScale are already valid, so this checks the new shape and nothing else.
-    //
-    // Validate before replacing the current player, so a rejected shape leaves it alone.
-    if (options.envelope) {
-      assertValidEnvelopeConfig({
-        ...this.#config,
-        envelope: options.envelope,
-      });
-    }
+    // `Envelope.trigger` validates the shape too, but only after the handover below has
+    // already stopped the outgoing run. Checking here first leaves it alone on a reject.
+    if (options.envelope) assertValidEnvelopeShape(options.envelope);
 
     const sourceEnvelope = options.envelope ?? this.#config.envelope;
     const timeScale = this.#scale(options.timeScaleMultiplier);
     const scheduledStartTime = Math.max(this.clock.currentTime, startTime);
-    const fromPoint = sourceEnvelope.mode.type === 'loop' ? (options.fromPoint ?? 0) : 0;
     const schedule = {
       base: options.base,
       amount: options.amount,
       timeScale,
-      fromPoint,
+      // Read only by looping runs; every other shape is scheduled in one pass from 0.
+      fromPoint: options.fromPoint ?? 0,
     };
 
     // Stop the outgoing run *at the handover*, not at `now`: that cancels its queued
@@ -181,9 +131,5 @@ export class EnvelopeRuntime {
   stop() {
     this.#envPlayer?.dispose();
     this.#envPlayer = null;
-  }
-
-  dispose() {
-    this.stop();
   }
 }
