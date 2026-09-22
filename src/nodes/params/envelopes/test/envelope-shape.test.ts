@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   addPoint,
   baseDuration,
+  interpolateAtTime,
   deletePoint,
   releaseDuration,
   releaseStartTime,
@@ -9,9 +10,9 @@ import {
   setDuration,
   updatePoint,
 } from '../envelope-shape';
-import type { Envelope, EnvelopeSettings } from '../Envelope';
+import type { EnvelopeShape, EnvelopeConfig } from '../envelope-shape';
 
-function envelopeOf(overrides: Partial<Envelope> = {}): Envelope {
+function envelopeOf(overrides: Partial<EnvelopeShape> = {}): EnvelopeShape {
   return {
     points: [
       { time: 0, value: 0, curve: 'exponential' },
@@ -25,10 +26,10 @@ function envelopeOf(overrides: Partial<Envelope> = {}): Envelope {
   };
 }
 
-const settingsOf = (
-  envelope: Envelope,
-  overrides: Partial<EnvelopeSettings> = {},
-): EnvelopeSettings => ({ enabled: true, timeScale: 1, envelope, ...overrides });
+const configOf = (
+  envelope: EnvelopeShape,
+  overrides: Partial<EnvelopeConfig> = {},
+): EnvelopeConfig => ({ enabled: true, timeScale: 1, envelope, ...overrides });
 
 describe('envelope edits', () => {
   it('never mutates the envelope it was given', () => {
@@ -78,7 +79,10 @@ describe('envelope edits', () => {
     const envelope = envelopeOf();
     expect(deletePoint(envelope, 0)).toBe(envelope);
     expect(deletePoint(envelope, 3)).toBe(envelope);
-    const pair = envelopeOf({ points: envelope.points.slice(0, 2), release: 0 });
+    const pair = envelopeOf({
+      points: envelope.points.slice(0, 2),
+      release: 0,
+    });
     expect(deletePoint(pair, 1)).toBe(pair);
   });
 
@@ -93,24 +97,72 @@ describe('envelope edits', () => {
 describe('envelope timing', () => {
   it('combines the stored time scale with a runtime multiplier', () => {
     const envelope = envelopeOf();
-    expect(scaledDuration(settingsOf(envelope), 0, 3)).toBe(3);
-    expect(scaledDuration(settingsOf(envelope, { timeScale: 2 }), 0, 3)).toBe(1.5);
-    expect(scaledDuration(settingsOf(envelope), 0, 3, 2)).toBe(1.5);
+    expect(scaledDuration(configOf(envelope), 0, 3)).toBe(3);
+    expect(scaledDuration(configOf(envelope, { timeScale: 2 }), 0, 3)).toBe(1.5);
+    expect(scaledDuration(configOf(envelope), 0, 3, 2)).toBe(1.5);
   });
 
   it('splits the envelope at its release point', () => {
-    const settings = settingsOf(envelopeOf());
-    expect(releaseStartTime(settings)).toBe(2);
-    expect(releaseDuration(settings)).toBe(1);
-    expect(releaseStartTime(settings) + releaseDuration(settings)).toBe(
-      baseDuration(settings.envelope),
-    );
+    const config = configOf(envelopeOf());
+    expect(releaseStartTime(config)).toBe(2);
+    expect(releaseDuration(config)).toBe(1);
+    expect(releaseStartTime(config) + releaseDuration(config)).toBe(baseDuration(config.envelope));
   });
 
   it('returns zero for an invalid span', () => {
-    const settings = settingsOf(envelopeOf());
-    expect(scaledDuration(settings, 2, 1)).toBe(0);
-    expect(scaledDuration(settings, 0, 99)).toBe(0);
-    expect(scaledDuration(settings, -1, 2)).toBe(0);
+    const config = configOf(envelopeOf());
+    expect(scaledDuration(config, 2, 1)).toBe(0);
+    expect(scaledDuration(config, 0, 99)).toBe(0);
+    expect(scaledDuration(config, -1, 2)).toBe(0);
+  });
+});
+
+/**
+ * Guards the release handoff: `interpolateAtTime` is what lets a release scheduled in
+ * the future start from where the envelope will actually be, rather than from
+ * `param.value`, which only ever answers for now.
+ */
+describe('interpolateAtTime', () => {
+  const points = [
+    { time: 0, value: 0, curve: 'linear' as const },
+    { time: 1, value: 1, curve: 'exponential' as const },
+    { time: 2, value: 0.25, curve: 'step' as const },
+    { time: 3, value: 0 },
+  ];
+
+  it('clamps outside the shape instead of extrapolating', () => {
+    expect(interpolateAtTime(points, -5)).toBe(0);
+    expect(interpolateAtTime(points, 99)).toBe(0);
+    expect(interpolateAtTime([], 1)).toBe(0);
+  });
+
+  it('returns point values exactly on the points', () => {
+    expect(interpolateAtTime(points, 0)).toBe(0);
+    expect(interpolateAtTime(points, 1)).toBe(1);
+    expect(interpolateAtTime(points, 2)).toBe(0.25);
+  });
+
+  it("follows each segment's own curve", () => {
+    expect(interpolateAtTime(points, 0.5)).toBeCloseTo(0.5); // linear
+    expect(interpolateAtTime(points, 1.5)).toBeCloseTo(0.5); // exponential: 1 * 0.25^0.5
+    expect(interpolateAtTime(points, 2.5)).toBe(0.25); // step holds the left value
+  });
+
+  it('falls back to linear where an exponential segment touches zero', () => {
+    const throughZero = [
+      { time: 0, value: 0, curve: 'exponential' as const },
+      { time: 1, value: 1 },
+    ];
+    expect(interpolateAtTime(throughZero, 0.5)).toBeCloseTo(0.5);
+  });
+
+  it('survives coincident point times', () => {
+    const stacked = [
+      { time: 0, value: 0 },
+      { time: 1, value: 0.5 },
+      { time: 1, value: 1 },
+      { time: 2, value: 0 },
+    ];
+    expect(Number.isFinite(interpolateAtTime(stacked, 1))).toBe(true);
   });
 });

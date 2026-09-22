@@ -1,4 +1,4 @@
-import type { EnvelopeSettings } from './Envelope';
+import type { EnvelopeConfig } from './envelope-shape';
 
 function durationOf(duration: number) {
   if (!Number.isFinite(duration) || duration <= 0) {
@@ -8,7 +8,7 @@ function durationOf(duration: number) {
 }
 
 export const envelopePresets = {
-  amplitude(durationSeconds = 1): EnvelopeSettings {
+  amplitude(durationSeconds = 1): EnvelopeConfig {
     const duration = durationOf(durationSeconds);
     return {
       enabled: true,
@@ -17,7 +17,11 @@ export const envelopePresets = {
         mode: { type: 'sustain', at: 3 },
         points: [
           { time: 0, value: 0, curve: 'exponential' },
-          { time: Math.min(0.005, 0.1 * duration), value: 1, curve: 'exponential' },
+          {
+            time: Math.min(0.005, 0.1 * duration),
+            value: 1,
+            curve: 'exponential',
+          },
           { time: 0.25 * duration, value: 0.75, curve: 'exponential' },
           { time: 0.9 * duration, value: 0.5, curve: 'exponential' },
           { time: duration, value: 0, curve: 'exponential' },
@@ -27,7 +31,7 @@ export const envelopePresets = {
     };
   },
 
-  pitch(durationSeconds = 1): EnvelopeSettings {
+  pitch(durationSeconds = 1): EnvelopeConfig {
     const duration = durationOf(durationSeconds);
     return {
       enabled: false,
@@ -43,7 +47,7 @@ export const envelopePresets = {
     };
   },
 
-  filter(durationSeconds = 1): EnvelopeSettings {
+  filter(durationSeconds = 1): EnvelopeConfig {
     const duration = durationOf(durationSeconds);
     return {
       enabled: false,

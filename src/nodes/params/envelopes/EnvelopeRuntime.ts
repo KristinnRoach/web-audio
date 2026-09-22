@@ -1,49 +1,52 @@
 import {
-  createEnvelopePlayer,
-  assertValidEnvelopeSettings,
-  cloneEnvelopeSettings,
+  createEnvelope,
   type AutomatableParam,
-  type Envelope,
   type EnvelopeClock,
   type EnvelopePlayer,
-  type EnvelopeSettings,
   type ScheduleOptions,
 } from './Envelope';
-import { releaseDuration, scaledDuration } from './envelope-shape';
+import {
+  assertValidEnvelopeConfig,
+  cloneEnvelopeConfig,
+  releaseDuration,
+  scaledDuration,
+  type EnvelopeConfig,
+  type EnvelopeShape,
+} from './envelope-shape';
 
 export type EnvelopeRuntimeTriggerOptions = Omit<ScheduleOptions, 'timeScale'> & {
   /** Additional timing multiplier supplied by the host, such as a playback rate. */
   timeScaleMultiplier?: number;
   /** Optional target-specific shape derived from the stored shape for this run. */
-  envelope?: Envelope;
+  envelope?: EnvelopeShape;
   /** Point index the first pass opens at; see `EnvelopeTriggerOptions.fromPoint`. */
   fromPoint?: number;
 };
 
-/** Temporary settings compatibility around the parameter-bound envelope player. */
+/** Temporary config compatibility around the parameter-bound envelope player. */
 export class EnvelopeRuntime {
   #envPlayer: EnvelopePlayer | null = null;
 
   constructor(
     readonly clock: EnvelopeClock,
-    settings: EnvelopeSettings,
+    envelopeConfig: EnvelopeConfig,
   ) {
-    assertValidEnvelopeSettings(settings);
-    this.#settings = cloneEnvelopeSettings(settings);
+    assertValidEnvelopeConfig(envelopeConfig);
+    this.#config = cloneEnvelopeConfig(envelopeConfig);
   }
 
-  #settings: EnvelopeSettings;
+  #config: EnvelopeConfig;
 
-  get settings(): EnvelopeSettings {
-    return this.#settings;
+  get config(): EnvelopeConfig {
+    return this.#config;
   }
 
   get enabled() {
-    return this.#settings.enabled;
+    return this.#config.enabled;
   }
 
   get loop() {
-    return this.#settings.envelope.mode.type === 'loop';
+    return this.#config.envelope.mode.type === 'loop';
   }
 
   /** Envelope-time position of the active player; see `EnvelopePlayer.position`. */
@@ -63,16 +66,16 @@ export class EnvelopeRuntime {
   duration(timeScaleMultiplier = 1) {
     if (this.#envPlayer) return this.#envPlayer.duration();
     return scaledDuration(
-      this.#settings,
+      this.#config,
       0,
-      this.#settings.envelope.points.length - 1,
+      this.#config.envelope.points.length - 1,
       timeScaleMultiplier,
     );
   }
 
   releaseDuration(timeScaleMultiplier = 1) {
     if (this.#envPlayer) return this.#envPlayer.releaseDuration();
-    return releaseDuration(this.#settings, timeScaleMultiplier);
+    return releaseDuration(this.#config, timeScaleMultiplier);
   }
 
   /** Absolute time of the active player's next loop boundary. */
@@ -80,9 +83,9 @@ export class EnvelopeRuntime {
     return this.#envPlayer?.nextCycleTime(this.clock.currentTime) ?? null;
   }
 
-  applySettings(settings: EnvelopeSettings) {
-    assertValidEnvelopeSettings(settings);
-    this.#settings = cloneEnvelopeSettings(settings);
+  update(config: EnvelopeConfig) {
+    assertValidEnvelopeConfig(config);
+    this.#config = cloneEnvelopeConfig(config);
   }
 
   /**
@@ -90,25 +93,28 @@ export class EnvelopeRuntime {
    *
    * The exception to "a run's inputs are fixed once they are on the timeline": the hold
    * is an absence of events, so it can be edited in place. Everything else still waits
-   * for a seam. Edits the run only; `applySettings` is what changes the stored shape.
+   * for a seam. Edits the run only; `update` is what changes the stored shape.
    */
   setSustainValue(value: number, glide?: number) {
     this.#envPlayer?.setSustainValue(value, this.clock.currentTime, glide);
   }
 
   trigger(param: AutomatableParam, startTime: number, options: EnvelopeRuntimeTriggerOptions = {}) {
-    // The constructor and applySettings both validate; trigger was the one entry point
+    // The constructor and update both validate; trigger was the one entry point
     // that took a caller-supplied shape on trust. An out-of-range sustain index throws
     // inside the player instead, which is a worse place to find out. The stored
     // enabled/timeScale are already valid, so this checks the new shape and nothing else.
     //
     // Validate before replacing the current player, so a rejected shape leaves it alone.
     if (options.envelope) {
-      assertValidEnvelopeSettings({ ...this.#settings, envelope: options.envelope });
+      assertValidEnvelopeConfig({
+        ...this.#config,
+        envelope: options.envelope,
+      });
     }
 
-    const sourceEnvelope = options.envelope ?? this.#settings.envelope;
-    const timeScale = this.#settings.timeScale * (options.timeScaleMultiplier ?? 1);
+    const sourceEnvelope = options.envelope ?? this.#config.envelope;
+    const timeScale = this.#config.timeScale * (options.timeScaleMultiplier ?? 1);
     const scheduledStartTime = Math.max(this.clock.currentTime, startTime);
     const fromPoint = sourceEnvelope.mode.type === 'loop' ? (options.fromPoint ?? 0) : 0;
     const schedule = {
@@ -124,7 +130,7 @@ export class EnvelopeRuntime {
     // pin it writes is the param's stale value, immediately cancelled and replaced by
     // the new run's first point at the same instant.
     this.#envPlayer?.stop(scheduledStartTime);
-    this.#envPlayer = createEnvelopePlayer(this.clock, param);
+    this.#envPlayer = createEnvelope(this.clock, param);
     this.#envPlayer.trigger(sourceEnvelope, scheduledStartTime, schedule);
   }
 

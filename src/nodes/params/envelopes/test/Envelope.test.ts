@@ -1,18 +1,13 @@
 import { afterEach, describe, expect, it, test, vi } from 'vite-plus/test';
-import {
-  createEnvelopePlayer,
-  interpolateAtTime,
-  releaseEnvelope,
-  scheduleEnvelope,
-  type Envelope,
-} from '../Envelope';
+import { createEnvelope, releaseEnvelope, scheduleEnvelope } from '../Envelope';
+import type { EnvelopeShape } from '../envelope-shape';
 import { createFakeParam } from './fakeParam';
 
 afterEach(() => vi.useRealTimers());
 
 test('schedules through sustain, then schedules the remaining points on release', () => {
   const param = createFakeParam();
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.1, value: 1, curve: 'exponential' },
@@ -26,19 +21,35 @@ test('schedules through sustain, then schedules the remaining points on release'
   scheduleEnvelope(param, envelope, 10);
 
   expect(param.ramps()).toContainEqual({ type: 'set', value: 0, time: 10 });
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 1, time: 10.1 });
-  expect(param.ramps()).toContainEqual({ type: 'exponential', value: 0.5, time: 10.3 });
-  expect(param.ramps()).not.toContainEqual({ type: 'linear', value: 0, time: 10.8 });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 1,
+    time: 10.1,
+  });
+  expect(param.ramps()).toContainEqual({
+    type: 'exponential',
+    value: 0.5,
+    time: 10.3,
+  });
+  expect(param.ramps()).not.toContainEqual({
+    type: 'linear',
+    value: 0,
+    time: 10.8,
+  });
 
   releaseEnvelope(param, envelope, 20);
 
   expect(param.events).toContainEqual({ type: 'cancel', time: 20 });
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 0, time: 20.5 });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 0,
+    time: 20.5,
+  });
 });
 
 test('treats point times as offsets from the first point, not as a pre-delay', () => {
   const param = createFakeParam();
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0.5, value: 0 },
       { time: 0.6, value: 1 },
@@ -52,14 +63,18 @@ test('treats point times as offsets from the first point, not as a pre-delay', (
 
   // Point 0 on the trigger time, same as the looped path does.
   expect(param.ramps()).toContainEqual({ type: 'set', value: 0, time: 10 });
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 1, time: 10 + (0.6 - 0.5) });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 1,
+    time: 10 + (0.6 - 0.5),
+  });
 });
 
 // Common amplitude and filter presets use exponential segments that touch zero.
 // throughout, zero at both ends. A zero target throws, a zero start silently holds.
 test('keeps an exponential segment off zero at both ends', () => {
   const param = createFakeParam();
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0, curve: 'exponential' },
       { time: 0.005, value: 1, curve: 'exponential' },
@@ -73,12 +88,24 @@ test('keeps an exponential segment off zero at both ends', () => {
   scheduleEnvelope(param, envelope, 10, { amount: 20000 });
 
   // A fraction of the amount, so it lands at the same depth whatever the range.
-  expect(param.ramps()).toContainEqual({ type: 'set', value: 1e-4 * 20000, time: 10 });
-  expect(param.ramps()).toContainEqual({ type: 'exponential', value: 20000, time: 10.005 });
+  expect(param.ramps()).toContainEqual({
+    type: 'set',
+    value: 1e-4 * 20000,
+    time: 10,
+  });
+  expect(param.ramps()).toContainEqual({
+    type: 'exponential',
+    value: 20000,
+    time: 10.005,
+  });
 
   releaseEnvelope(param, envelope, 20, { amount: 20000 });
 
-  expect(param.ramps()).toContainEqual({ type: 'exponential', value: 1e-4 * 20000, time: 20.1 });
+  expect(param.ramps()).toContainEqual({
+    type: 'exponential',
+    value: 1e-4 * 20000,
+    time: 20.1,
+  });
 });
 
 test('leaves values alone when no exponential segment touches them', () => {
@@ -101,13 +128,17 @@ test('leaves values alone when no exponential segment touches them', () => {
   // Point 0 is only a linear endpoint, so it stays at a true zero.
   expect(param.ramps()).toContainEqual({ type: 'set', value: 0, time: 10 });
   // Point 2 is the exponential's target, so it is floored.
-  expect(param.ramps()).toContainEqual({ type: 'exponential', value: 1e-4, time: 10.3 });
+  expect(param.ramps()).toContainEqual({
+    type: 'exponential',
+    value: 1e-4,
+    time: 10.3,
+  });
 });
 
 // param = base + amount * value, so the same shape drives a gain, a cutoff sweeping
 // up from a resting frequency, or a rate falling below one.
 test("places the shape on the parameter's range with base and amount", () => {
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.1, value: 1 },
@@ -149,14 +180,18 @@ test('keeps an inverted exponential envelope on its own side of zero', () => {
 
   // Point 0 lands on zero, so it is floored away from it without crossing over.
   expect(param.ramps()).toContainEqual({ type: 'set', value: -1e-4, time: 0 });
-  expect(param.ramps()).toContainEqual({ type: 'exponential', value: -1, time: 0.1 });
+  expect(param.ramps()).toContainEqual({
+    type: 'exponential',
+    value: -1,
+    time: 0.1,
+  });
 });
 
 test('anchors every rolling loop cycle to the original trigger time', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.1, value: 1 },
@@ -165,7 +200,7 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
     release: 1,
     mode: { type: 'loop' },
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   env.trigger(envelope, 0);
   clock.currentTime = 2.02;
@@ -187,7 +222,7 @@ test('player release stops its loop and schedules the scaled release stage', () 
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.1, value: 1 },
@@ -197,12 +232,16 @@ test('player release stops its loop and schedules the scaled release stage', () 
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   env.trigger(envelope, 0, { amount: 0.5 });
   env.release(0.25);
 
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 0.1, time: 0.55 });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 0.1,
+    time: 0.55,
+  });
 
   const scheduledCalls = param.ramps().length;
   clock.currentTime = 2;
@@ -219,7 +258,7 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0.5, value: 0 },
       { time: 0.6, value: 1 },
@@ -228,7 +267,7 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   env.trigger(envelope, 4);
   clock.currentTime = 4.5;
@@ -250,6 +289,51 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
   env.dispose();
 });
 
+// The grid test above runs four cycles, which is too few for an accumulating error to
+// show. The `Math.max(grid, cycleEnd)` guard in `trigger` is a ratchet: it can only ever
+// push a cycle later, never back, so a per-cycle rounding error would compound rather
+// than cancel. This pins the total over three thousand cycles of a short envelope, the
+// worst case for accumulation since it is the most cycles per second.
+//
+// Budget is one sample at 48 kHz (2.08e-5 s), which is inaudible and still five orders
+// of magnitude above the ~1e-12 s the ratchet actually reaches. It is a guard against a
+// regression that makes cycle length and cycle placement round differently, not a claim
+// that the current error is near the limit.
+test('keeps loop cycles on the trigger grid over thousands of cycles', () => {
+  vi.useFakeTimers();
+  const param = createFakeParam();
+  const clock = { currentTime: 0.1 };
+  const span = 0.007;
+  const envelope: EnvelopeShape = {
+    points: [
+      { time: 0, value: 0, curve: 'linear' },
+      { time: span * 0.1, value: 1, curve: 'linear' },
+      { time: span, value: 0.2, curve: 'linear' },
+    ],
+    release: 2,
+    mode: { type: 'loop' },
+  };
+  const env = createEnvelope(clock, param);
+  env.trigger(envelope, 0.1);
+
+  for (let tick = 0; tick < 400; tick++) {
+    clock.currentTime += 0.05;
+    vi.advanceTimersByTime(50);
+  }
+
+  const opens = param
+    .ramps()
+    .filter((event) => event.type === 'set')
+    .map((event) => event.time);
+  env.dispose();
+
+  expect(opens.length).toBeGreaterThan(2000);
+  const worst = Math.max(...opens.map((time, cycle) => Math.abs(time - (0.1 + cycle * span))));
+  expect(worst, `${opens.length} cycles drifted by ${worst.toExponential(3)} s`).toBeLessThan(
+    1 / 48000,
+  );
+});
+
 // The test above places cycles on the grid to within 5e-11, which is the tolerance the
 // guard below needs; this one is about the ULP underneath it. A cycle's opening
 // `setValueAtTime` and the previous cycle's closing ramp are the same instant reached by
@@ -260,7 +344,7 @@ test('never opens a loop cycle before the previous one has closed', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0, curve: 'linear' },
       { time: 0.02, value: 1, curve: 'exponential' },
@@ -271,7 +355,7 @@ test('never opens a loop cycle before the previous one has closed', () => {
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   env.trigger(envelope, 0.1);
 
@@ -303,7 +387,7 @@ test('release exits a whole-envelope loop and plays its release tail', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.2, value: 1 },
@@ -313,7 +397,7 @@ test('release exits a whole-envelope loop and plays its release tail', () => {
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   env.trigger(envelope, 0);
 
@@ -335,7 +419,7 @@ test('loop mode repeats the whole envelope', () => {
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.5, value: 1 },
@@ -344,7 +428,7 @@ test('loop mode repeats the whole envelope', () => {
     release: 1,
     mode: { type: 'loop' },
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   env.trigger(envelope, 0);
   clock.currentTime = 0.1;
@@ -353,61 +437,11 @@ test('loop mode repeats the whole envelope', () => {
   env.dispose();
 });
 
-/**
- * Guards the release handoff: `interpolateAtTime` is what lets a release scheduled in
- * the future start from where the envelope will actually be, rather than from
- * `param.value`, which only ever answers for now.
- */
-describe('interpolateAtTime', () => {
-  const points = [
-    { time: 0, value: 0, curve: 'linear' as const },
-    { time: 1, value: 1, curve: 'exponential' as const },
-    { time: 2, value: 0.25, curve: 'step' as const },
-    { time: 3, value: 0 },
-  ];
-
-  it('clamps outside the shape instead of extrapolating', () => {
-    expect(interpolateAtTime(points, -5)).toBe(0);
-    expect(interpolateAtTime(points, 99)).toBe(0);
-    expect(interpolateAtTime([], 1)).toBe(0);
-  });
-
-  it('returns point values exactly on the points', () => {
-    expect(interpolateAtTime(points, 0)).toBe(0);
-    expect(interpolateAtTime(points, 1)).toBe(1);
-    expect(interpolateAtTime(points, 2)).toBe(0.25);
-  });
-
-  it("follows each segment's own curve", () => {
-    expect(interpolateAtTime(points, 0.5)).toBeCloseTo(0.5); // linear
-    expect(interpolateAtTime(points, 1.5)).toBeCloseTo(0.5); // exponential: 1 * 0.25^0.5
-    expect(interpolateAtTime(points, 2.5)).toBe(0.25); // step holds the left value
-  });
-
-  it('falls back to linear where an exponential segment touches zero', () => {
-    const throughZero = [
-      { time: 0, value: 0, curve: 'exponential' as const },
-      { time: 1, value: 1 },
-    ];
-    expect(interpolateAtTime(throughZero, 0.5)).toBeCloseTo(0.5);
-  });
-
-  it('survives coincident point times', () => {
-    const stacked = [
-      { time: 0, value: 0 },
-      { time: 1, value: 0.5 },
-      { time: 1, value: 1 },
-      { time: 2, value: 0 },
-    ];
-    expect(Number.isFinite(interpolateAtTime(stacked, 1))).toBe(true);
-  });
-});
-
 // timeScale divides point times, so it is the same knob a sampler uses to make the
 // envelope stretch with playback rate. It has to reach the release stage too.
 test('timeScale speeds up both the sustaining stage and the release', () => {
   const param = createFakeParam();
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.1, value: 1 },
@@ -419,11 +453,23 @@ test('timeScale speeds up both the sustaining stage and the release', () => {
   };
 
   scheduleEnvelope(param, envelope, 10, { timeScale: 2 });
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 1, time: 10.05 });
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 0.5, time: 10.1 });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 1,
+    time: 10.05,
+  });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 0.5,
+    time: 10.1,
+  });
 
   releaseEnvelope(param, envelope, 20, { timeScale: 2 });
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 0, time: 20.2 });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 0,
+    time: 20.2,
+  });
 });
 
 // A sampler amp envelope decays on its own while the note is held and still has a
@@ -432,7 +478,7 @@ test('timeScale speeds up both the sustaining stage and the release', () => {
 test('once mode plays through and still has a release tail', () => {
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.1, value: 1 },
@@ -442,7 +488,7 @@ test('once mode plays through and still has a release tail', () => {
     mode: { type: 'once' },
     release: 2,
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   // Once mode schedules the whole shape up front, tail included.
   env.trigger(envelope, 0);
@@ -468,7 +514,7 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
   vi.useFakeTimers();
   const param = createFakeParam();
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.2, value: 1 },
@@ -478,13 +524,17 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
     release: 2,
     mode: { type: 'loop' },
   };
-  const env = createEnvelopePlayer(clock, param);
+  const env = createEnvelope(clock, param);
 
   env.trigger(envelope, 4, { fromPoint: 1 });
 
   // The opening pass runs sustain -> end: no attack, and nothing scheduled before 4.
   expect(param.ramps()).toContainEqual({ type: 'set', value: 1, time: 4 });
-  expect(param.ramps()).toContainEqual({ type: 'linear', value: 0.5, time: 4.2 });
+  expect(param.ramps()).toContainEqual({
+    type: 'linear',
+    value: 0.5,
+    time: 4.2,
+  });
   expect(param.ramps()).toContainEqual({ type: 'linear', value: 0, time: 4.8 });
   const times = param.ramps().map((event) => event.time);
   expect(Math.min(...times)).toBeCloseTo(4, 10);
@@ -510,7 +560,7 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
 
 test('an envelope player owns its envelope shape', () => {
   const clock = { currentTime: 0 };
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 0.5, value: 1 },
@@ -519,7 +569,7 @@ test('an envelope player owns its envelope shape', () => {
     mode: { type: 'sustain', at: 1 },
     release: 1,
   };
-  const envPlayer = createEnvelopePlayer(clock, createFakeParam());
+  const envPlayer = createEnvelope(clock, createFakeParam());
 
   envPlayer.trigger(envelope, 0);
   clock.currentTime = 1;
@@ -529,7 +579,7 @@ test('an envelope player owns its envelope shape', () => {
 });
 
 test('an envelope player rejects an empty envelope', () => {
-  const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam());
+  const player = createEnvelope({ currentTime: 0 }, createFakeParam());
 
   expect(() =>
     player.trigger({
@@ -543,7 +593,7 @@ test('an envelope player rejects an empty envelope', () => {
 
 test('a future pickup hands over no earlier than its scheduled opening', () => {
   vi.useFakeTimers();
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 1, value: 1 },
@@ -552,7 +602,7 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
     release: 1,
     mode: { type: 'loop' },
   };
-  const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam());
+  const player = createEnvelope({ currentTime: 0 }, createFakeParam());
 
   player.trigger(envelope, 4, { fromPoint: 1, timeScale: 2 });
 
@@ -565,7 +615,7 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
 });
 
 describe('EnvelopePlayer lifecycle', () => {
-  const envelope: Envelope = {
+  const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 1, value: 1 },
@@ -576,7 +626,7 @@ describe('EnvelopePlayer lifecycle', () => {
 
   it('can trigger again after stop', () => {
     const param = createFakeParam();
-    const player = createEnvelopePlayer({ currentTime: 0 }, param);
+    const player = createEnvelope({ currentTime: 0 }, param);
 
     player.trigger(envelope, 0);
     player.stop(0.25);
@@ -590,7 +640,7 @@ describe('EnvelopePlayer lifecycle', () => {
 
   it('leaves the active run unchanged when a trigger is invalid', () => {
     const param = createFakeParam();
-    const player = createEnvelopePlayer({ currentTime: 0 }, param);
+    const player = createEnvelope({ currentTime: 0 }, param);
 
     player.trigger(envelope, 0);
     const eventCount = param.events.length;
@@ -602,7 +652,7 @@ describe('EnvelopePlayer lifecycle', () => {
   });
 
   it('cannot trigger after idempotent disposal', () => {
-    const player = createEnvelopePlayer({ currentTime: 0 }, createFakeParam());
+    const player = createEnvelope({ currentTime: 0 }, createFakeParam());
 
     player.trigger(envelope, 0);
     player.dispose();
@@ -614,7 +664,7 @@ describe('EnvelopePlayer lifecycle', () => {
 
   it('snapshots each envelope when triggered', () => {
     const param = createFakeParam();
-    const definition: Envelope = {
+    const definition: EnvelopeShape = {
       points: [
         { time: 0, value: 0 },
         { time: 1, value: 1 },
@@ -622,7 +672,7 @@ describe('EnvelopePlayer lifecycle', () => {
       mode: { type: 'sustain', at: 1 },
       release: 1,
     };
-    const player = createEnvelopePlayer({ currentTime: 0 }, param);
+    const player = createEnvelope({ currentTime: 0 }, param);
 
     player.trigger(definition, 0);
     (definition.points[1] as { value: number }).value = 0.25;

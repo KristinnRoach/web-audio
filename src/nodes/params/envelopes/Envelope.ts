@@ -1,6 +1,13 @@
 import { cancelAndPinParamValue } from '@/utils';
 
-export type EnvelopeCurve = 'step' | 'linear' | 'exponential';
+import {
+  assertValidEnvelopeShape,
+  interpolateAtTime,
+  spanBetween,
+  type EnvelopeCurve,
+  type EnvelopePoint,
+  type EnvelopeShape,
+} from './envelope-shape';
 
 /** The automation surface an envelope needs; native `AudioParam` is one implementation. */
 export type AutomatableParam = {
@@ -13,113 +20,6 @@ export type AutomatableParam = {
 
 /** The clock surface used to place envelope automation on a timeline. */
 export type EnvelopeClock = { readonly currentTime: number };
-
-export type EnvelopePoint = {
-  readonly time: number;
-  readonly value: number;
-  /** Curve from this point to the next one. Defaults to linear. */
-  readonly curve?: EnvelopeCurve;
-};
-
-export type EnvelopeMode =
-  /** Play through once. */
-  | { readonly type: 'once' }
-  /** Hold `at`'s value until release. */
-  | { readonly type: 'sustain'; readonly at: number }
-  /** Repeat the whole envelope until release. */
-  | { readonly type: 'loop' };
-
-/**
- * Three shapes: play through once, hold at a point until release, or loop until release.
- * A loop repeats the whole envelope, so it and `sustain` are alternatives, not a pair.
- */
-export type Envelope = {
-  /**
-   * Times are offsets from `points[0].time`, so point 0 lands on the trigger time
-   * whatever that value is. A delay before the attack is a second point at the same
-   * value, not a non-zero first time.
-   *
-   * Assumed sorted by time. Nothing re-sorts them on the audio path.
-   */
-  readonly points: readonly EnvelopePoint[];
-  /** How the envelope advances until it is released. */
-  readonly mode: EnvelopeMode;
-  /**
-   * Point the release stage starts from. Presets normally use the second-last point.
-   *
-   * This is an alternate exit path used when `release()` interrupts playback; it does
-   * not mark the end of a loop. A loop repeats the whole envelope.
-   */
-  readonly release: number;
-};
-
-/** Serializable settings shared by editors and envelope players. */
-export type EnvelopeSettings = {
-  readonly enabled: boolean;
-  /** Timing multiplier; values above 1 play the envelope faster. */
-  readonly timeScale: number;
-  readonly envelope: Envelope;
-};
-
-/** Returns a settings snapshot whose shape and points can be safely retained. */
-export function cloneEnvelopeSettings(settings: EnvelopeSettings): EnvelopeSettings {
-  return {
-    ...settings,
-    envelope: {
-      ...settings.envelope,
-      mode: { ...settings.envelope.mode },
-      points: settings.envelope.points.map((point) => ({ ...point })),
-    },
-  };
-}
-
-/** Rejects an envelope that cannot be scheduled predictably. */
-export function assertValidEnvelope(envelope: Envelope): void {
-  const points = envelope?.points;
-  const validMarker = (index: number) =>
-    Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length;
-  const mode = envelope?.mode;
-  const validMode =
-    mode?.type === 'once' ||
-    mode?.type === 'loop' ||
-    (mode?.type === 'sustain' && validMarker(mode.at));
-
-  if (
-    !Array.isArray(points) ||
-    points.length < 2 ||
-    !validMode ||
-    points.some(
-      (point, index) =>
-        !Number.isFinite(point.time) ||
-        !Number.isFinite(point.value) ||
-        (point.curve !== undefined &&
-          point.curve !== 'step' &&
-          point.curve !== 'linear' &&
-          point.curve !== 'exponential') ||
-        (index > 0 && point.time < points[index - 1].time),
-    ) ||
-    !validMarker(envelope.release)
-  ) {
-    throw new TypeError('Invalid envelope');
-  }
-}
-
-/** Rejects settings that cannot be scheduled predictably. */
-export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
-  if (
-    typeof settings?.enabled !== 'boolean' ||
-    !Number.isFinite(settings?.timeScale) ||
-    settings.timeScale <= 0
-  ) {
-    throw new TypeError('Invalid envelope settings');
-  }
-
-  try {
-    assertValidEnvelope(settings.envelope);
-  } catch {
-    throw new TypeError('Invalid envelope settings');
-  }
-}
 
 /**
  * How the envelope reaches the parameter: `param = base + amount * value`.
@@ -135,7 +35,11 @@ export function assertValidEnvelopeSettings(settings: EnvelopeSettings): void {
  * Following a sample's playback rate is this same knob at the call site, not a second
  * mechanism: pass `rate * scale` and the envelope stretches with the sample.
  */
-export type ScheduleOptions = { base?: number; amount?: number; timeScale?: number };
+export type ScheduleOptions = {
+  base?: number;
+  amount?: number;
+  timeScale?: number;
+};
 
 /**
  * `fromPoint` opens the first pass mid-shape at that point index instead of point 0,
@@ -146,7 +50,7 @@ export type ScheduleOptions = { base?: number; amount?: number; timeScale?: numb
 export type EnvelopeTriggerOptions = ScheduleOptions & { fromPoint?: number };
 
 export type EnvelopePlayer = {
-  trigger(envelope: Envelope, time?: number, options?: EnvelopeTriggerOptions): void;
+  trigger(envelope: EnvelopeShape, time?: number, options?: EnvelopeTriggerOptions): void;
   release(time?: number): void;
   /** Full envelope duration using the active run's time scale. */
   duration(): number;
@@ -269,7 +173,7 @@ function valueOf(
 /** Returns the time of the last point scheduled. */
 function scheduleRange(
   param: AutomatableParam,
-  envelope: Envelope,
+  envelope: EnvelopeShape,
   from: number,
   to: number,
   startTime: number,
@@ -297,7 +201,7 @@ function scheduleRange(
 /** Schedules the envelope up to its sustain point, or to its end when it has none. */
 export function scheduleEnvelope(
   param: AutomatableParam,
-  envelope: Envelope,
+  envelope: EnvelopeShape,
   startTime: number,
   { base = 0, amount = 1, timeScale = 1 }: ScheduleOptions = {},
 ) {
@@ -306,35 +210,6 @@ export function scheduleEnvelope(
 
   const end = envelope.mode.type === 'sustain' ? envelope.mode.at : points.length - 1;
   scheduleRange(param, envelope, 0, end, startTime, base, amount, timeScale);
-}
-
-/**
- * The envelope's own value at a point in envelope time, following each segment's curve.
- *
- * Reading `param.value` only ever answers for now, so it cannot say where a release
- * scheduled in the future should start from. The shape can.
- */
-export function interpolateAtTime(points: readonly EnvelopePoint[], time: number): number {
-  const last = points.length - 1;
-  if (last < 0) return 0;
-  if (time <= points[0].time) return points[0].value;
-  if (time >= points[last].time) return points[last].value;
-
-  let i = 0;
-  while (i < last && points[i + 1].time <= time) i++;
-
-  const left = points[i];
-  const right = points[i + 1];
-  const span = right.time - left.time;
-  if (span <= 0) return right.value;
-
-  if (left.curve === 'step') return left.value;
-
-  const t = (time - left.time) / span;
-  if (left.curve === 'exponential' && left.value > 0 && right.value > 0) {
-    return left.value * Math.pow(right.value / left.value, t);
-  }
-  return left.value + (right.value - left.value) * t;
 }
 
 /**
@@ -347,7 +222,7 @@ export function interpolateAtTime(points: readonly EnvelopePoint[], time: number
  */
 export function releaseEnvelope(
   param: AutomatableParam,
-  envelope: Envelope,
+  envelope: EnvelopeShape,
   releaseTime: number,
   { base = 0, amount = 1, timeScale = 1 }: ScheduleOptions = {},
   holdValue?: number,
@@ -381,8 +256,8 @@ export function releaseEnvelope(
  * `implements EnvelopePlayer` rather than replacing it: the type stays structural so
  * `observeEnvelopePlayer` can keep returning a plain object as one.
  */
-class EnvelopePlayerImpl implements EnvelopePlayer {
-  #envelope: Envelope | undefined;
+class Envelope implements EnvelopePlayer {
+  #envShape: EnvelopeShape | undefined;
   #removeLoop: (() => void) | undefined;
   #disposed = false;
   #triggered = false;
@@ -411,16 +286,16 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
    * marker to the end.
    */
   #positionAt(time: number) {
-    if (!this.#envelope) return 0;
-    const { points, mode } = this.#envelope;
+    if (!this.#envShape) return 0;
+    const { points, mode } = this.#envShape;
     if (points.length === 0) return 0;
 
     let elapsed = Math.max(0, (time - this.#triggerTime) * this.#timeScale);
 
     if (mode.type === 'loop') {
       // A zero-extent cycle has nowhere to advance to, and `trigger` already declines to
-      // loop it. Answering 0 keeps the two in agreement instead of counting up forever.
-      const cycle = points[points.length - 1].time - points[0].time;
+      // loop it. Both read the same `spanBetween`, so they cannot disagree.
+      const cycle = spanBetween(this.#envShape, 0, points.length - 1);
       elapsed = cycle > 0 ? elapsed % cycle : 0;
     } else if (mode.type === 'sustain') {
       elapsed = Math.min(elapsed, points[mode.at].time - points[0].time);
@@ -431,8 +306,8 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
 
   /** The envelope's value at `time`, wherever the shape has got to by then. */
   #valueAt(time: number) {
-    if (!this.#envelope) return this.#base;
-    const { points } = this.#envelope;
+    if (!this.#envShape) return this.#base;
+    const { points } = this.#envShape;
     if (points.length === 0) return this.#base;
 
     return (
@@ -441,18 +316,18 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
   }
 
   trigger(
-    sourceEnvelope: Envelope,
+    sourceEnvelope: EnvelopeShape,
     time = this.clock.currentTime,
     options: EnvelopeTriggerOptions = {},
   ) {
     if (this.#disposed) throw new Error('Cannot trigger a disposed EnvelopePlayer');
-    assertValidEnvelope(sourceEnvelope);
-    const runEnvelope: Envelope = {
+    assertValidEnvelopeShape(sourceEnvelope);
+    const runEnvelope: EnvelopeShape = {
       ...sourceEnvelope,
       mode: { ...sourceEnvelope.mode },
       points: sourceEnvelope.points.map((point) => ({ ...point })),
     };
-    this.#envelope = runEnvelope;
+    this.#envShape = runEnvelope;
     this.#stopLoop();
     this.#triggered = true;
     this.#base = options.base ?? 0;
@@ -477,8 +352,8 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
     // A loop repeats the whole envelope. Every other mode schedules one pass;
     // scheduleEnvelope stops that pass at the sustain point when there is one.
     const duration =
-      runEnvelope.mode.type === 'loop' && points.length > 0
-        ? (points[points.length - 1].time - points[0].time) / timeScale
+      runEnvelope.mode.type === 'loop'
+        ? spanBetween(runEnvelope, 0, points.length - 1) / timeScale
         : 0;
 
     if (duration <= 0) {
@@ -541,7 +416,7 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
   }
 
   release(time = this.clock.currentTime) {
-    if (!this.#triggered || !this.#envelope) return;
+    if (!this.#triggered || !this.#envShape) return;
     // Read the shape before anything touches the param, so a future-dated release hands
     // off the value the envelope will actually have reached rather than today's.
     const holdValue = this.#valueAt(time);
@@ -554,7 +429,7 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
 
     releaseEnvelope(
       this.param,
-      this.#envelope,
+      this.#envShape,
       time,
       { base: this.#base, amount: this.#amount, timeScale: this.#timeScale },
       holdValue,
@@ -562,19 +437,14 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
   }
 
   duration() {
-    if (!this.#envelope) return 0;
-    const { points } = this.#envelope;
-    return points.length > 1
-      ? (points[points.length - 1].time - points[0].time) / this.#timeScale
-      : 0;
+    if (!this.#envShape) return 0;
+    return spanBetween(this.#envShape, 0, this.#envShape.points.length - 1) / this.#timeScale;
   }
 
   releaseDuration() {
-    if (!this.#envelope) return 0;
-    const { points, release } = this.#envelope;
-    return release < points.length - 1
-      ? (points[points.length - 1].time - points[release].time) / this.#timeScale
-      : 0;
+    if (!this.#envShape) return 0;
+    const { points, release } = this.#envShape;
+    return spanBetween(this.#envShape, release, points.length - 1) / this.#timeScale;
   }
 
   position(time = this.clock.currentTime) {
@@ -588,15 +458,15 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
   currentPoint(time = this.clock.currentTime) {
     if (
       !this.#triggered ||
-      !this.#envelope ||
-      this.#envelope.mode.type === 'loop' ||
-      this.#envelope.points.length === 0
+      !this.#envShape ||
+      this.#envShape.mode.type === 'loop' ||
+      this.#envShape.points.length === 0
     ) {
       return null;
     }
 
     const position = this.#positionAt(time);
-    const { points, mode } = this.#envelope;
+    const { points, mode } = this.#envShape;
     const last = mode.type === 'sustain' ? mode.at : points.length - 1;
     let index = 0;
     while (index < last && points[index + 1].time - points[0].time <= position) index++;
@@ -604,7 +474,7 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
   }
 
   nextCycleTime(time = this.clock.currentTime) {
-    if (!this.#triggered || !this.#envelope || this.#envelope.mode.type !== 'loop') return null;
+    if (!this.#triggered || !this.#envShape || this.#envShape.mode.type !== 'loop') return null;
     const cycle = this.duration();
     if (cycle <= 0) return null;
 
@@ -640,8 +510,8 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
    * pending glide in `valueAt` if a long one is ever wanted.
    */
   setSustainValue(value: number, time = this.clock.currentTime, glide = 0.02) {
-    if (!this.#envelope) return;
-    const { points, mode } = this.#envelope;
+    if (!this.#envShape) return;
+    const { points, mode } = this.#envShape;
     if (!this.#triggered || mode.type !== 'sustain') return;
     const sustain = mode.at;
     if (points[sustain].value === value) return;
@@ -679,9 +549,6 @@ class EnvelopePlayerImpl implements EnvelopePlayer {
 }
 
 /** Creates a timestamp-anchored envelope player. */
-export function createEnvelopePlayer(
-  clock: EnvelopeClock,
-  param: AutomatableParam,
-): EnvelopePlayer {
-  return new EnvelopePlayerImpl(clock, param);
+export function createEnvelope(clock: EnvelopeClock, param: AutomatableParam): EnvelopePlayer {
+  return new Envelope(clock, param);
 }

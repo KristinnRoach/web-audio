@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { createFakeParam } from './fakeParam';
 import { EnvelopeRuntime } from '../EnvelopeRuntime';
-import type { EnvelopeSettings } from '../Envelope';
+import type { EnvelopeConfig } from '../envelope-shape';
 
 function contextAt(currentTime: number) {
   return { currentTime };
 }
 
-function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings {
+function configOf(overrides: Partial<EnvelopeConfig> = {}): EnvelopeConfig {
   return {
     enabled: true,
     timeScale: 1,
@@ -27,28 +27,28 @@ function settingsOf(overrides: Partial<EnvelopeSettings> = {}): EnvelopeSettings
 
 describe('EnvelopeRuntime validation', () => {
   it('requires an explicit mode', () => {
-    const settings = settingsOf();
-    delete (settings.envelope as { mode?: EnvelopeSettings['envelope']['mode'] }).mode;
+    const config = configOf();
+    delete (config.envelope as { mode?: EnvelopeConfig['envelope']['mode'] }).mode;
 
-    expect(() => new EnvelopeRuntime(contextAt(0), settings)).toThrow('Invalid envelope settings');
+    expect(() => new EnvelopeRuntime(contextAt(0), config)).toThrow('Invalid envelope settings');
   });
 
   it('requires a release point', () => {
-    const settings = settingsOf() as unknown as {
+    const config = configOf() as unknown as {
       enabled: boolean;
       timeScale: number;
-      envelope: { points: EnvelopeSettings['envelope']['points'] };
+      envelope: { points: EnvelopeConfig['envelope']['points'] };
     };
-    delete (settings.envelope as { release?: number }).release;
+    delete (config.envelope as { release?: number }).release;
 
-    expect(() => new EnvelopeRuntime(contextAt(0), settings as EnvelopeSettings)).toThrow(
+    expect(() => new EnvelopeRuntime(contextAt(0), config as EnvelopeConfig)).toThrow(
       'Invalid envelope settings',
     );
   });
 });
 
-describe('EnvelopeRuntime live settings handover', () => {
-  const looping = settingsOf({
+describe('EnvelopeRuntime live config handover', () => {
+  const looping = configOf({
     envelope: {
       points: [
         { time: 0, value: 0 },
@@ -64,7 +64,7 @@ describe('EnvelopeRuntime live settings handover', () => {
     const idle = new EnvelopeRuntime(contextAt(0), looping);
     expect(idle.nextCycleTime()).toBeNull();
 
-    const oneShot = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const oneShot = new EnvelopeRuntime(contextAt(0), configOf());
     oneShot.trigger(createFakeParam(), 0);
     expect(oneShot.nextCycleTime()).toBeNull();
   });
@@ -91,7 +91,7 @@ describe('EnvelopeRuntime live settings handover', () => {
     const at = runtime.nextCycleTime();
     expect(at).toBe(2);
 
-    runtime.applySettings({ ...looping, timeScale: 2 });
+    runtime.update({ ...looping, timeScale: 2 });
     param.events.length = 0;
     runtime.trigger(param, at!);
 
@@ -105,7 +105,7 @@ describe('EnvelopeRuntime live settings handover', () => {
 });
 
 describe('EnvelopeRuntime repeated handovers', () => {
-  const looping = settingsOf({
+  const looping = configOf({
     envelope: {
       points: [
         { time: 0, value: 0 },
@@ -138,8 +138,12 @@ describe('EnvelopeRuntime repeated handovers', () => {
 
 describe('live sustain value', () => {
   const sustaining = () =>
-    settingsOf({
-      envelope: { ...settingsOf().envelope, mode: { type: 'sustain', at: 1 }, release: 1 },
+    configOf({
+      envelope: {
+        ...configOf().envelope,
+        mode: { type: 'sustain', at: 1 },
+        release: 1,
+      },
     });
 
   it('glides to the new value and releases from it', () => {
@@ -151,7 +155,11 @@ describe('live sustain value', () => {
     // Parked on sustain: point 1 lands at 0.5.
     context.currentTime = 1;
     runtime.setSustainValue(0.25);
-    expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 0.25, time: 1.02 });
+    expect(param.ramps().at(-1)).toEqual({
+      type: 'linear',
+      value: 0.25,
+      time: 1.02,
+    });
 
     // The tail has to hand off from the edited value, not the one captured at trigger.
     // The glide's own pin sits at this same instant, so it is the last write that counts.
@@ -160,7 +168,7 @@ describe('live sustain value', () => {
     expect(pins.at(-1)?.value).toBe(0.25);
   });
 
-  it('keeps settings updates separate from the active player', () => {
+  it('keeps config updates separate from the active player', () => {
     const context = contextAt(0);
     const param = createFakeParam();
     const runtime = new EnvelopeRuntime(context, sustaining());
@@ -169,7 +177,7 @@ describe('live sustain value', () => {
     context.currentTime = 1;
     const before = param.events.length;
     const edited = sustaining();
-    const settings = {
+    const config = {
       ...edited,
       envelope: {
         ...edited.envelope,
@@ -178,17 +186,20 @@ describe('live sustain value', () => {
         ),
       },
     };
-    runtime.applySettings(settings);
+    runtime.update(config);
 
-    expect(runtime.settings.envelope.points[1].value).toBe(0.25);
+    expect(runtime.config.envelope.points[1].value).toBe(0.25);
     expect(param.events.length).toBe(before);
   });
 });
 
 describe('EnvelopeRuntime.trigger validation', () => {
   it('rejects a caller-supplied shape with an out-of-range sustain', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
-    const bad = { ...settingsOf().envelope, mode: { type: 'sustain' as const, at: 9 } };
+    const runtime = new EnvelopeRuntime(contextAt(0), configOf());
+    const bad = {
+      ...configOf().envelope,
+      mode: { type: 'sustain' as const, at: 9 },
+    };
 
     expect(() => runtime.trigger(createFakeParam(), 0, { envelope: bad })).toThrow(
       'Invalid envelope settings',
@@ -196,8 +207,8 @@ describe('EnvelopeRuntime.trigger validation', () => {
   });
 
   it('still accepts a valid caller-supplied shape', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
-    const mapped = settingsOf().envelope;
+    const runtime = new EnvelopeRuntime(contextAt(0), configOf());
+    const mapped = configOf().envelope;
 
     expect(() =>
       runtime.trigger(createFakeParam(), 0, {
@@ -212,12 +223,12 @@ describe('EnvelopeRuntime.trigger validation', () => {
 
 describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () => {
   const badShape = () => ({
-    ...settingsOf().envelope,
+    ...configOf().envelope,
     mode: { type: 'sustain' as const, at: 9 },
   });
 
   it('keeps the active player running', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const runtime = new EnvelopeRuntime(contextAt(0), configOf());
     runtime.trigger(createFakeParam(), 0);
     const before = runtime.position();
 
@@ -229,7 +240,7 @@ describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () =>
   });
 
   it('keeps a released run released', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const runtime = new EnvelopeRuntime(contextAt(0), configOf());
     runtime.trigger(createFakeParam(), 0);
     runtime.release(0);
 
@@ -244,56 +255,56 @@ describe('EnvelopeRuntime.trigger leaves run state alone when it rejects', () =>
 });
 
 describe('EnvelopeRuntime.position', () => {
-  // settingsOf() points sit at 0, 0.5, 1 and 1.5.
-  const at = (settings: EnvelopeSettings, currentTime: number, multiplier?: number) => {
+  // configOf() points sit at 0, 0.5, 1 and 1.5.
+  const at = (config: EnvelopeConfig, currentTime: number, multiplier?: number) => {
     const context = contextAt(0);
-    const runtime = new EnvelopeRuntime(context, settings);
+    const runtime = new EnvelopeRuntime(context, config);
     runtime.trigger(createFakeParam(), 0, { timeScaleMultiplier: multiplier });
     context.currentTime = currentTime;
     return runtime;
   };
 
   it('throws on a non-finite time, live run or not', () => {
-    const idle = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const idle = new EnvelopeRuntime(contextAt(0), configOf());
     expect(() => idle.position(NaN)).toThrow(RangeError);
 
-    const live = at(settingsOf(), 0.5);
+    const live = at(configOf(), 0.5);
     expect(() => live.position(NaN)).toThrow(RangeError);
     expect(() => live.position(Infinity)).toThrow(RangeError);
   });
 
   it('is null with no live run', () => {
-    const runtime = new EnvelopeRuntime(contextAt(0), settingsOf());
+    const runtime = new EnvelopeRuntime(contextAt(0), configOf());
     expect(runtime.position()).toBeNull();
   });
 
   it('is null once released, and once stopped', () => {
-    const released = at(settingsOf(), 0.75);
+    const released = at(configOf(), 0.75);
     released.release(0.75);
     expect(released.position()).toBeNull();
 
-    const stopped = at(settingsOf(), 0.75);
+    const stopped = at(configOf(), 0.75);
     stopped.stop();
     expect(stopped.position()).toBeNull();
   });
 
   it('reports seconds of envelope time, matching wall seconds only at timeScale 1', () => {
-    expect(at(settingsOf(), 0.75).position()).toBeCloseTo(0.75);
+    expect(at(configOf(), 0.75).position()).toBeCloseTo(0.75);
   });
 
   it('scales wall seconds by the run timeScale', () => {
     // Twice speed: a quarter second of wall clock is half a second into the shape.
-    expect(at(settingsOf({ timeScale: 2 }), 0.25).position()).toBeCloseTo(0.5);
+    expect(at(configOf({ timeScale: 2 }), 0.25).position()).toBeCloseTo(0.5);
   });
 
   it('folds the host multiplier into the same scale', () => {
-    expect(at(settingsOf(), 0.25, 2).position()).toBeCloseTo(0.5);
+    expect(at(configOf(), 0.25, 2).position()).toBeCloseTo(0.5);
   });
 
   it('clamps at the sustain point while the note is held', () => {
-    const sustained = settingsOf({
+    const sustained = configOf({
       envelope: {
-        ...settingsOf().envelope,
+        ...configOf().envelope,
         mode: { type: 'sustain', at: 1 },
         release: 1,
       },
@@ -303,7 +314,7 @@ describe('EnvelopeRuntime.position', () => {
   });
 
   it('stays at 0 on a loop whose points share one time', () => {
-    const flat = settingsOf({
+    const flat = configOf({
       envelope: {
         points: [
           { time: 0, value: 0 },
@@ -319,8 +330,8 @@ describe('EnvelopeRuntime.position', () => {
   });
 
   it('wraps into the cycle while looping', () => {
-    const looping = settingsOf({
-      envelope: { ...settingsOf().envelope, mode: { type: 'loop' } },
+    const looping = configOf({
+      envelope: { ...configOf().envelope, mode: { type: 'loop' } },
     });
     // Cycle is 1.5 long, so 1.75 of wall clock is 0.25 into the second pass.
     expect(at(looping, 1.75).position()).toBeCloseTo(0.25);

@@ -1,8 +1,8 @@
 import { expect, it } from 'vite-plus/test';
-import type { EnvelopeSettings } from '../../params/envelopes';
+import type { EnvelopeConfig } from '../../params/envelopes';
 import { getLiveSampleEnvelopeSustainValue } from './temporary-sample-envelope-adapters';
 
-const settings: EnvelopeSettings = {
+const config: EnvelopeConfig = {
   enabled: true,
   timeScale: 1,
   envelope: {
@@ -17,7 +17,7 @@ const settings: EnvelopeSettings = {
 };
 
 it('only forwards sustain values that share the active player value domain', () => {
-  expect(getLiveSampleEnvelopeSustainValue('amp-env', settings)).toBe(0.25);
-  expect(getLiveSampleEnvelopeSustainValue('pitch-env', settings)).toBe(0.25);
-  expect(getLiveSampleEnvelopeSustainValue('filter-env', settings)).toBeUndefined();
+  expect(getLiveSampleEnvelopeSustainValue('amp-env', config)).toBe(0.25);
+  expect(getLiveSampleEnvelopeSustainValue('pitch-env', config)).toBe(0.25);
+  expect(getLiveSampleEnvelopeSustainValue('filter-env', config)).toBeUndefined();
 });

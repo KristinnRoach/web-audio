@@ -2,11 +2,11 @@
 export { createSamplePlayer } from './nodes/instruments/Sample/createSamplePlayer';
 export { createAudioRecorder } from './nodes/recorder';
 export {
-  createEnvelopePlayer,
+  createEnvelope,
   EnvelopeRuntime,
-  assertValidEnvelope,
-  assertValidEnvelopeSettings,
-  cloneEnvelopeSettings,
+  assertValidEnvelopeShape,
+  assertValidEnvelopeConfig,
+  cloneEnvelopeConfig,
   envelopePresets,
 } from './nodes/params/envelopes';
 
@@ -20,13 +20,13 @@ export type { LibNode, LibAudioNode, SampleLoader, GainStages } from './nodes';
 export type { SamplePlayerOptions } from './nodes/instruments/Sample/SamplePlayer';
 export type { SampleVoiceChainNode } from './nodes/instruments/Sample/SampleVoice';
 export type {
-  Envelope,
+  EnvelopeShape as Envelope,
   EnvelopeClock,
   EnvelopeMode,
   EnvelopePlayer,
   EnvelopePoint,
   EnvelopeRuntimeTriggerOptions,
-  EnvelopeSettings,
+  EnvelopeConfig,
   EnvelopeTriggerOptions,
   AutomatableParam,
 } from './nodes/params/envelopes';

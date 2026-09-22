@@ -17,7 +17,7 @@ import {
   maxSafeHz,
 } from '@/utils';
 
-import { EnvelopeRuntime, type EnvelopeSettings } from '@/nodes/params/envelopes';
+import { EnvelopeRuntime, type EnvelopeConfig } from '@/nodes/params/envelopes';
 
 import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
 
@@ -26,7 +26,7 @@ import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/g
 import { samplerParams } from './sampler-params';
 import {
   applyOnNextEnvLoopCycle,
-  createDefaultSampleEnvelopeSettings,
+  createDefaultSampleEnvelopeConfig,
   getSampleEnvelopeBaseValue,
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
@@ -239,8 +239,8 @@ export class SampleVoice {
     for (const type of types) {
       // Envelopes start from defaults; SamplePlayer pushes the real state down as soon
       // as it has one, which is also what keeps every voice on the same shape.
-      const settings = createDefaultSampleEnvelopeSettings(type, durationSeconds);
-      const envelope = new EnvelopeRuntime(this.context, settings);
+      const config = createDefaultSampleEnvelopeConfig(type, durationSeconds);
+      const envelope = new EnvelopeRuntime(this.context, config);
       this.#envelopes.set(type, envelope);
     }
   }
@@ -413,7 +413,7 @@ export class SampleVoice {
     return this.#midiNote;
   }
 
-  /** Trigger inputs of the current note, kept so a settings edit can restart from them. */
+  /** Trigger inputs of the current note, kept so a config edit can restart from them. */
   #lastTrigger: { playbackRate: number; velocity?: number } | null = null;
 
   /** Envelopes synced to playback rate stretch with the note; the rest keep their own timing. */
@@ -429,7 +429,7 @@ export class SampleVoice {
     velocity?: number,
     fromPoint = 0,
   ) {
-    if (!shouldTriggerSampleEnvelope(envType, env.settings)) return;
+    if (!shouldTriggerSampleEnvelope(envType, env.config)) return;
     const param = this.getParam(getSampleEnvelopeParamName(envType));
     if (!param) return;
 
@@ -438,7 +438,7 @@ export class SampleVoice {
       playbackRate,
       filterCutoff: this.#keytrackedLpfHz(playbackRate),
     });
-    const target = resolveSampleEnvelopeTrigger(envType, env.settings.envelope, baseValue, param);
+    const target = resolveSampleEnvelopeTrigger(envType, env.config.envelope, baseValue, param);
     const timeScaleMultiplier = this.#timeScaleMultiplier(envType, playbackRate);
 
     env.trigger(param, timestamp, { ...target, timeScaleMultiplier, fromPoint });
@@ -722,16 +722,16 @@ export class SampleVoice {
    * and pushes it down whole, so there is nothing here that can drift out of step with
    * it, and no second entry point that could mean something different.
    */
-  applyEnvelopeSettings = (envType: SampleEnvelopeId, settings: EnvelopeSettings) => {
+  applyEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
     const envelope = this.#envelopes.get(envType);
     if (!envelope) return;
     const apply = () => {
-      envelope.applySettings(settings);
-      const sustainValue = getLiveSampleEnvelopeSustainValue(envType, settings);
+      envelope.update(config);
+      const sustainValue = getLiveSampleEnvelopeSustainValue(envType, config);
       if (sustainValue !== undefined) envelope.setSustainValue(sustainValue);
     };
 
-    if (envelope.enabled && !settings.enabled) {
+    if (envelope.enabled && !config.enabled) {
       apply();
       envelope.stop();
       this.#resetFilterEnvTarget(envType);
@@ -742,7 +742,7 @@ export class SampleVoice {
     // looping yet. Resume from the point it has reached instead, so the shape carries on
     // into its first full cycle rather than snapping back to point 0.
     const resumeFrom =
-      settings.envelope.mode.type === 'loop' && !envelope.loop ? envelope.currentPoint() : null;
+      config.envelope.mode.type === 'loop' && !envelope.loop ? envelope.currentPoint() : null;
     if (resumeFrom !== null) {
       apply();
       this.#retriggerAt(envType, envelope, this.now, resumeFrom);

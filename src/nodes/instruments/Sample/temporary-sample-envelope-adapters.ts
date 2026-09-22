@@ -2,10 +2,10 @@ import {
   envelopePresets,
   hasVariation,
   type AutomatableParam,
-  type Envelope,
+  type EnvelopeShape,
   type EnvelopeRuntime,
   type EnvelopeRuntimeTriggerOptions,
-  type EnvelopeSettings,
+  type EnvelopeConfig,
 } from '@/nodes/params/envelopes';
 
 type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
@@ -22,10 +22,10 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
   return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp-env', 'pitch-env'];
 }
 
-export function createDefaultSampleEnvelopeSettings(
+export function createDefaultSampleEnvelopeConfig(
   id: SampleEnvelopeId,
   durationSeconds: number,
-): EnvelopeSettings {
+): EnvelopeConfig {
   switch (id) {
     case 'amp-env':
       return envelopePresets.amplitude(durationSeconds);
@@ -47,8 +47,8 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
   }
 }
 
-export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, settings: EnvelopeSettings) {
-  return settings.enabled && (id !== 'pitch-env' || hasVariation(settings.envelope));
+export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: EnvelopeConfig) {
+  return config.enabled && (id !== 'pitch-env' || hasVariation(config.envelope));
 }
 
 export function getSampleEnvelopeBaseValue(
@@ -67,7 +67,7 @@ export function getSampleEnvelopeBaseValue(
 
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  envelope: Envelope,
+  envelope: EnvelopeShape,
   baseValue: number,
   param: RangedAutomatableParam,
 ): EnvelopeRuntimeTriggerOptions {
@@ -86,20 +86,20 @@ export function resolveSampleEnvelopeTrigger(
   return { envelope: { ...envelope, points } };
 }
 
-export function getPostFilterEnvelopeOptions(settings: EnvelopeSettings, amount: number) {
+export function getPostFilterEnvelopeOptions(config: EnvelopeConfig, amount: number) {
   return {
-    amount: settings.enabled ? amount : 0,
-    timeScale: settings.timeScale,
+    amount: config.enabled ? amount : 0,
+    timeScale: config.timeScale,
   };
 }
 
 export function getLiveSampleEnvelopeSustainValue(
   id: SampleEnvelopeId,
-  settings: EnvelopeSettings,
+  config: EnvelopeConfig,
 ): number | undefined {
-  const { mode } = settings.envelope;
+  const { mode } = config.envelope;
   if (id === 'filter-env' || mode.type !== 'sustain') return undefined;
-  return settings.envelope.points[mode.at].value;
+  return config.envelope.points[mode.at].value;
 }
 
 /** Applies an envelope edit at the next inaudible loop boundary, when one exists. */

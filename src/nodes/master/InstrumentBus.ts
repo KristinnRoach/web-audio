@@ -9,7 +9,7 @@ import { Message, MessageBus, MessageHandler, createMessageBus } from '@/events'
 
 import { clamp, clampHz, mapToRange, maxSafeHz, midiToPlaybackRate } from '@/utils';
 
-import { EnvelopeRuntime, type Envelope } from '@/nodes/params/envelopes';
+import { EnvelopeRuntime, type EnvelopeShape } from '@/nodes/params/envelopes';
 
 import { DEFAULT } from '@/constants';
 import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from './defaults';
@@ -450,7 +450,7 @@ export class InstrumentBus implements ILibAudioNode {
    * `timeScale` divides every point time, and note-on multiplies it by the triggering
    * MIDI note's playback rate.
    */
-  setLpfEnvelope(envelope: Envelope | null, { amount = 0, timeScale = 1 } = {}): this {
+  setLpfEnvelope(envelope: EnvelopeShape | null, { amount = 0, timeScale = 1 } = {}): this {
     this.#lpfEnvAmount = amount;
 
     if (!envelope || amount === 0) {
@@ -460,9 +460,9 @@ export class InstrumentBus implements ILibAudioNode {
       return this;
     }
 
-    const settings = { enabled: true, timeScale, envelope };
+    const config = { enabled: true, timeScale, envelope };
     if (!this.#lpfEnvelope) {
-      this.#lpfEnvelope = new EnvelopeRuntime(this.#context, settings);
+      this.#lpfEnvelope = new EnvelopeRuntime(this.#context, config);
       return this;
     }
 
@@ -470,7 +470,7 @@ export class InstrumentBus implements ILibAudioNode {
     // loop boundary, where point 0 comes round anyway. A non-looping run has no such
     // seam and returns null, so it keeps its current shape until the next note.
     const at = this.#lpfEnvelope.nextCycleTime();
-    this.#lpfEnvelope.applySettings(settings);
+    this.#lpfEnvelope.update(config);
     if (envelope.mode.type === 'sustain') {
       this.#lpfEnvelope.setSustainValue(envelope.points[envelope.mode.at].value);
     }

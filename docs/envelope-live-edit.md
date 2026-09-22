@@ -12,12 +12,12 @@ Status: partly applied. Scope is `src/nodes/params/envelopes/` only.
 
 Everything needed is in four places. No search required.
 
-| File                                                                 | What to look at                                                                                                   |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | settings compatibility, `trigger()`, and `release()`                                                              |
-| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelopePlayer()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
-| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live settings handover` and `repeated handovers` describes                                                   |
-| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — creates a mapped envelope for one player                                       |
+| File                                                                 | What to look at                                                                                             |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `src/nodes/params/envelopes/EnvelopeRuntime.ts`                      | config compatibility, `trigger()`, and `release()`                                                          |
+| `src/nodes/params/envelopes/Envelope.ts`                             | `createEnvelope()` (closure state, `valueAt`, the `addLoop` refill), `scheduleRange()`, `releaseEnvelope()` |
+| `src/nodes/params/envelopes/EnvelopeRuntime.test.ts`                 | the `live config handover` and `repeated handovers` describes                                               |
+| `src/nodes/instruments/Sample/temporary-sample-envelope-adapters.ts` | `resolveSampleEnvelopeTrigger()` — creates a mapped envelope for one player                                 |
 
 Shipped already (commit `701bc35`): an edit to a running envelope hands over on the
 next loop boundary, where point 0 comes round anyway, so the swap is continuous by
@@ -107,7 +107,7 @@ The deferred sustain question turned out to be two questions with different answ
 **The value is live.** A sustained run schedules points `0..sustain` and stops, so the
 hold is an absence of scheduled events rather than an event. Nothing is queued after it
 to reschedule and no seam has to be waited for: pin, glide, done.
-`EnvelopePlayer.setSustainValue()` does that and `applySettings` forwards to it.
+`EnvelopePlayer.setSustainValue()` does that and `EnvelopeRuntime.update()` forwards to it.
 
 The point is mutated in place on the run's own clone, because `valueAt` and
 `releaseEnvelope` read that same object. Without the mutation the note-off handoff pins

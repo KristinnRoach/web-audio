@@ -28,11 +28,11 @@ import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createIn
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
 import { SampleVoicePool } from './SampleVoicePool';
 import {
-  assertValidEnvelopeSettings,
-  cloneEnvelopeSettings,
+  assertValidEnvelopeConfig,
+  cloneEnvelopeConfig,
   setDuration,
-  type Envelope,
-  type EnvelopeSettings,
+  type EnvelopeShape,
+  type EnvelopeConfig,
 } from '@/nodes/params/envelopes';
 import { ILibInstrumentNode } from '@/nodes/LibAudioNode';
 import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
@@ -43,7 +43,7 @@ import { getAudioContext } from '@/context';
 import type { SampleVoiceChainNode } from './SampleVoice';
 import {
   SAMPLE_ENVELOPE_IDS,
-  createDefaultSampleEnvelopeSettings,
+  createDefaultSampleEnvelopeConfig,
   getPostFilterEnvelopeOptions,
   type SampleEnvelopeId,
 } from './temporary-sample-envelope-adapters';
@@ -71,7 +71,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #initialized = false;
   #initPromise: Promise<void> | null = null;
   #isLoaded = false;
-  private readonly envelopeSettings = new Map<SampleEnvelopeId, EnvelopeSettings>();
+  private readonly envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
   private readonly playbackRateSyncedEnvelopes = new Set<SampleEnvelopeId>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
@@ -281,10 +281,10 @@ export class SamplePlayer implements ILibInstrumentNode {
       // their own defaults, so this is also what first puts them on the owned state -
       // without it the player and its voices would hold different shapes.
       SAMPLE_ENVELOPE_IDS.forEach((id) => {
-        const settings = this.getEnvelopeSettings(id);
-        this.applyEnvelopeSettings(id, {
-          ...settings,
-          envelope: setDuration(settings.envelope, this.#bufferDuration),
+        const config = this.getEnvelopeConfig(id);
+        this.applyEnvelopeConfig(id, {
+          ...config,
+          envelope: setDuration(config.envelope, this.#bufferDuration),
         });
       });
     });
@@ -292,8 +292,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.voicePool.onMessage('voice-pool:initialized', () => {
       // Fresh voices start on defaults, so hand them the owned state before they play.
       SAMPLE_ENVELOPE_IDS.forEach((id) => {
-        const settings = this.getEnvelopeSettings(id);
-        this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, settings));
+        const config = this.getEnvelopeConfig(id);
+        this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeConfig(id, config));
       });
       this.playbackRateSyncedEnvelopes.forEach((id) =>
         this.voicePool.applyToAllVoices((voice) => voice.setEnvelopePlaybackRateSync(id, true)),
@@ -1079,29 +1079,29 @@ export class SamplePlayer implements ILibInstrumentNode {
   /* === ENVELOPES === */
 
   /**
-   * Returns detached, serializable envelope settings.
+   * Returns a detached, serializable envelope config.
    *
-   * This map is the only copy of envelope settings in the instrument. Voices hold a
+   * This map is the only copy of envelope config in the instrument. Voices hold a
    * pushed-down duplicate they can schedule from but never write to, so there is no
    * second authority to read back from and nothing to invalidate.
    */
-  getEnvelopeSettings(id: SampleEnvelopeId): EnvelopeSettings {
-    const stored = this.envelopeSettings.get(id);
-    if (stored) return cloneEnvelopeSettings(stored);
+  getEnvelopeConfig(id: SampleEnvelopeId): EnvelopeConfig {
+    const stored = this.envelopeConfigs.get(id);
+    if (stored) return cloneEnvelopeConfig(stored);
 
-    const settings = createDefaultSampleEnvelopeSettings(id, this.sampleDuration || 1);
-    this.envelopeSettings.set(id, settings);
-    return cloneEnvelopeSettings(settings);
+    const config = createDefaultSampleEnvelopeConfig(id, this.sampleDuration || 1);
+    this.envelopeConfigs.set(id, config);
+    return cloneEnvelopeConfig(config);
   }
 
   /** Applies a complete snapshot and emits one `envelope:changed` message. */
-  applyEnvelopeSettings(id: SampleEnvelopeId, settings: EnvelopeSettings): void {
-    assertValidEnvelopeSettings(settings);
+  applyEnvelopeConfig(id: SampleEnvelopeId, config: EnvelopeConfig): void {
+    assertValidEnvelopeConfig(config);
 
-    const next = cloneEnvelopeSettings(settings);
-    this.envelopeSettings.set(id, next);
+    const next = cloneEnvelopeConfig(config);
+    this.envelopeConfigs.set(id, next);
 
-    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeSettings(id, next));
+    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeConfig(id, next));
 
     if (id === 'filter-env') {
       this.applyPostFilterEnvelope(next);
@@ -1109,7 +1109,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.sendUpstreamMessage('envelope:changed', {
       envelopeId: id,
-      settings: cloneEnvelopeSettings(next),
+      settings: cloneEnvelopeConfig(next),
     });
   }
 
@@ -1117,19 +1117,16 @@ export class SamplePlayer implements ILibInstrumentNode {
    * The post-FX cutoff follows the same envelope definition. `InstrumentBus.noteOn`
    * adds the triggering MIDI note's playback rate to the envelope's own time scale.
    */
-  private applyPostFilterEnvelope(settings: EnvelopeSettings): void {
+  private applyPostFilterEnvelope(config: EnvelopeConfig): void {
     this.setLpfEnvelope(
-      settings.envelope,
-      getPostFilterEnvelopeOptions(settings, this.#filterEnvAmount),
+      config.envelope,
+      getPostFilterEnvelopeOptions(config, this.#filterEnvAmount),
     );
   }
 
   /** Restores one envelope to defaults sized to the current authority sample. */
   resetEnvelope(id: SampleEnvelopeId): void {
-    this.applyEnvelopeSettings(
-      id,
-      createDefaultSampleEnvelopeSettings(id, this.sampleDuration || 1),
-    );
+    this.applyEnvelopeConfig(id, createDefaultSampleEnvelopeConfig(id, this.sampleDuration || 1));
   }
 
   /** Restores all envelopes to defaults sized to the current sample. */
@@ -1193,7 +1190,7 @@ export class SamplePlayer implements ILibInstrumentNode {
    * defaults to wide open, where a sweep upwards is inaudible.
    */
   setLpfEnvelope = (
-    envelope: Envelope | null,
+    envelope: EnvelopeShape | null,
     options: { amount?: number; timeScale?: number } = {},
   ) => {
     this.outBus.setLpfEnvelope(envelope, options);

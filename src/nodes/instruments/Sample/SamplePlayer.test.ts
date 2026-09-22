@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
-import type { EnvelopeSettings } from '../../params/envelopes';
+import type { EnvelopeConfig } from '../../params/envelopes';
 
-const settings: EnvelopeSettings = {
+const envConfig: EnvelopeConfig = {
   enabled: false,
   timeScale: 2,
   envelope: {
@@ -47,18 +47,18 @@ describe('SamplePlayer.applyParams', () => {
   });
 });
 
-describe('SamplePlayer envelope settings', () => {
+describe('SamplePlayer envelope config', () => {
   it('resets an envelope to defaults at the current sample duration', async () => {
     const { SamplePlayer } = await import('./SamplePlayer');
-    const applyEnvelopeSettings = vi.fn();
+    const applyEnvelopeConfig = vi.fn();
     const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      applyEnvelopeSettings,
+      applyEnvelopeConfig,
     }) as SamplePlayer;
     Object.defineProperty(player, 'sampleDuration', { value: 4 });
 
     player.resetEnvelope('pitch-env');
 
-    expect(applyEnvelopeSettings).toHaveBeenCalledWith(
+    expect(applyEnvelopeConfig).toHaveBeenCalledWith(
       'pitch-env',
       expect.objectContaining({
         enabled: false,
@@ -77,18 +77,18 @@ describe('SamplePlayer envelope settings', () => {
     vi.stubGlobal('AudioContext', class {});
     vi.stubGlobal('AudioWorkletNode', class {});
     const { SamplePlayer } = await import('./SamplePlayer');
-    const applyEnvelopeSettings = vi.fn();
+    const applyEnvelopeConfig = vi.fn();
     const sendUpstreamMessage = vi.fn();
-    const input: EnvelopeSettings = {
-      ...settings,
+    const input: EnvelopeConfig = {
+      ...envConfig,
       envelope: {
-        ...settings.envelope,
-        points: settings.envelope.points.map((point) => ({ ...point })),
+        ...envConfig.envelope,
+        points: envConfig.envelope.points.map((point) => ({ ...point })),
       },
     };
-    const voices = [{ applyEnvelopeSettings }, { applyEnvelopeSettings }];
+    const voices = [{ applyEnvelopeConfig }, { applyEnvelopeConfig }];
     const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      envelopeSettings: new Map(),
+      envelopeConfigs: new Map(),
       voicePool: {
         allVoices: voices,
         applyToAllVoices: (fn: (voice: (typeof voices)[number]) => void) => voices.forEach(fn),
@@ -96,11 +96,11 @@ describe('SamplePlayer envelope settings', () => {
       sendUpstreamMessage,
     }) as SamplePlayer;
 
-    player.applyEnvelopeSettings('amp-env', input);
+    player.applyEnvelopeConfig('amp-env', input);
     (input.envelope.points[0] as { value: number }).value = 99;
 
-    expect(applyEnvelopeSettings).toHaveBeenCalledTimes(2);
-    expect(player.getEnvelopeSettings('amp-env').envelope.points[0].value).toBe(0);
+    expect(applyEnvelopeConfig).toHaveBeenCalledTimes(2);
+    expect(player.getEnvelopeConfig('amp-env').envelope.points[0].value).toBe(0);
     expect(sendUpstreamMessage).toHaveBeenCalledOnce();
     expect(sendUpstreamMessage).toHaveBeenCalledWith('envelope:changed', {
       envelopeId: 'amp-env',
@@ -112,7 +112,7 @@ describe('SamplePlayer envelope settings', () => {
     const { SamplePlayer } = await import('./SamplePlayer');
     const applyToAllVoices = vi.fn();
     const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      envelopeSettings: new Map(),
+      envelopeConfigs: new Map(),
       voicePool: {
         allVoices: [],
         applyToAllVoices,
@@ -121,12 +121,12 @@ describe('SamplePlayer envelope settings', () => {
     }) as SamplePlayer;
 
     expect(() =>
-      player.applyEnvelopeSettings('amp-env', { ...settings, timeScale: 0 }),
+      player.applyEnvelopeConfig('amp-env', { ...envConfig, timeScale: 0 }),
     ).toThrowError('Invalid envelope settings');
     expect(() =>
-      player.applyEnvelopeSettings('amp-env', {
-        ...settings,
-        envelope: { ...settings.envelope, release: 99 },
+      player.applyEnvelopeConfig('amp-env', {
+        ...envConfig,
+        envelope: { ...envConfig.envelope, release: 99 },
       }),
     ).toThrowError('Invalid envelope settings');
     expect(applyToAllVoices).not.toHaveBeenCalled();
