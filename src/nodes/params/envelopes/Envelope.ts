@@ -375,25 +375,32 @@ export function releaseEnvelope(
   }
 }
 
-/** Creates a timestamp-anchored envelope player. */
-export function createEnvelopePlayer(
-  clock: EnvelopeClock,
-  param: AutomatableParam,
-): EnvelopePlayer {
-  let envelope: Envelope | undefined;
-  let removeLoop: (() => void) | undefined;
-  let disposed = false;
-  let triggered = false;
-  let base = 0;
-  let amount = 1;
-  let timeScale = 1;
-  let triggerTime = 0;
-  let startTime = 0;
+/**
+ * Timestamp-anchored envelope player.
+ *
+ * `implements EnvelopePlayer` rather than replacing it: the type stays structural so
+ * `observeEnvelopePlayer` can keep returning a plain object as one.
+ */
+class EnvelopePlayerImpl implements EnvelopePlayer {
+  #envelope: Envelope | undefined;
+  #removeLoop: (() => void) | undefined;
+  #disposed = false;
+  #triggered = false;
+  #base = 0;
+  #amount = 1;
+  #timeScale = 1;
+  #triggerTime = 0;
+  #startTime = 0;
 
-  const stopLoop = () => {
-    removeLoop?.();
-    removeLoop = undefined;
-  };
+  constructor(
+    readonly clock: EnvelopeClock,
+    readonly param: AutomatableParam,
+  ) {}
+
+  #stopLoop() {
+    this.#removeLoop?.();
+    this.#removeLoop = undefined;
+  }
 
   /**
    * How far into the shape the run has got at `time`, in seconds of envelope time. See
@@ -403,12 +410,12 @@ export function createEnvelopePlayer(
    * once it reaches the sustain point. A one-shot keeps running through its release
    * marker to the end.
    */
-  const positionAt = (time: number) => {
-    if (!envelope) return 0;
-    const { points, mode } = envelope;
+  #positionAt(time: number) {
+    if (!this.#envelope) return 0;
+    const { points, mode } = this.#envelope;
     if (points.length === 0) return 0;
 
-    let elapsed = Math.max(0, (time - triggerTime) * timeScale);
+    let elapsed = Math.max(0, (time - this.#triggerTime) * this.#timeScale);
 
     if (mode.type === 'loop') {
       // A zero-extent cycle has nowhere to advance to, and `trigger` already declines to
@@ -420,52 +427,192 @@ export function createEnvelopePlayer(
     }
 
     return elapsed;
-  };
+  }
 
   /** The envelope's value at `time`, wherever the shape has got to by then. */
-  const valueAt = (time: number) => {
-    if (!envelope) return base;
-    const { points } = envelope;
-    if (points.length === 0) return base;
+  #valueAt(time: number) {
+    if (!this.#envelope) return this.#base;
+    const { points } = this.#envelope;
+    if (points.length === 0) return this.#base;
 
-    return base + amount * interpolateAtTime(points, points[0].time + positionAt(time));
-  };
+    return (
+      this.#base + this.#amount * interpolateAtTime(points, points[0].time + this.#positionAt(time))
+    );
+  }
 
-  const duration = () => {
-    if (!envelope) return 0;
-    const { points } = envelope;
-    return points.length > 1 ? (points[points.length - 1].time - points[0].time) / timeScale : 0;
-  };
+  trigger(
+    sourceEnvelope: Envelope,
+    time = this.clock.currentTime,
+    options: EnvelopeTriggerOptions = {},
+  ) {
+    if (this.#disposed) throw new Error('Cannot trigger a disposed EnvelopePlayer');
+    assertValidEnvelope(sourceEnvelope);
+    const runEnvelope: Envelope = {
+      ...sourceEnvelope,
+      mode: { ...sourceEnvelope.mode },
+      points: sourceEnvelope.points.map((point) => ({ ...point })),
+    };
+    this.#envelope = runEnvelope;
+    this.#stopLoop();
+    this.#triggered = true;
+    this.#base = options.base ?? 0;
+    this.#amount = options.amount ?? 1;
+    this.#timeScale = options.timeScale ?? 1;
+    this.#triggerTime = time;
+    this.#startTime = time;
 
-  const releaseDuration = () => {
-    if (!envelope) return 0;
-    const { points, release } = envelope;
-    return release < points.length - 1
-      ? (points[points.length - 1].time - points[release].time) / timeScale
-      : 0;
-  };
+    // Local aliases for the run's fixed inputs: read once here, and the refill closure
+    // below reads the same values rather than whatever a later trigger has set.
+    const { param } = this;
+    const base = this.#base;
+    const amount = this.#amount;
+    const timeScale = this.#timeScale;
 
-  const stop = (time = clock.currentTime) => {
-    if (!triggered) return;
-    triggered = false;
-    stopLoop();
-    cancelAndPinParamValue(param, time);
-  };
+    // Clear only. Every scheduling path below opens with its own setValueAtTime at
+    // this same instant, so pinning here would write the param's stale value and be
+    // overwritten by the envelope's first point a moment later.
+    param.cancelScheduledValues(time);
 
-  const release = (time = clock.currentTime) => {
-    if (!triggered || !envelope) return;
+    const { points } = runEnvelope;
+    // A loop repeats the whole envelope. Every other mode schedules one pass;
+    // scheduleEnvelope stops that pass at the sustain point when there is one.
+    const duration =
+      runEnvelope.mode.type === 'loop' && points.length > 0
+        ? (points[points.length - 1].time - points[0].time) / timeScale
+        : 0;
+
+    if (duration <= 0) {
+      scheduleEnvelope(param, runEnvelope, time, { base, amount, timeScale });
+      return;
+    }
+
+    // Opening mid-shape moves the anchor back to where point 0 would have been, so
+    // every cycle boundary below still lands on the same grid and `valueAt` keeps
+    // reading the right phase. The anchor is in the past; nothing is scheduled there.
+    const from = Math.min(Math.max(options.fromPoint ?? 0, 0), points.length - 1);
+    this.#triggerTime = time - (points[from].time - points[0].time) / timeScale;
+
+    // Cycle n opens at time + n * duration, the first pass included, so there is no
+    // pre-loop stage and point 0 lands on the trigger time every pass. Absolute
+    // times, not an accumulated sum, so cycles cannot drift apart.
+    //
+    // Cycle 0 is scheduled here rather than left to the refill below, so a trigger
+    // further ahead than the lookahead still has its opening pass queued the moment
+    // it is triggered, whatever the refill timer does in between.
+    let cycleEnd = scheduleRange(
+      param,
+      runEnvelope,
+      from,
+      points.length - 1,
+      time,
+      base,
+      amount,
+      timeScale,
+    );
+
+    // A partial opening pass ends exactly where cycle 1 begins, so the grid carries on
+    // from here either way.
+    const anchor = this.#triggerTime;
+    let cycle = 1;
+    this.#removeLoop = addLoop(() => {
+      const now = this.clock.currentTime;
+      const horizon = now + LOOKAHEAD_SECONDS;
+
+      while (anchor + (cycle + 1) * duration <= now) cycle++;
+      while (anchor + cycle * duration < horizon) {
+        // A cycle opens on the same instant the previous one closes, but the two
+        // expressions for it can differ by an ULP. When the closing ramp rounds later
+        // than the opening setValueAtTime it overwrites the reset and that pass loses
+        // its attack, so never open a cycle before the previous one has ended.
+        const start = Math.max(anchor + cycle * duration, cycleEnd);
+        cycleEnd = scheduleRange(
+          param,
+          runEnvelope,
+          0,
+          points.length - 1,
+          start,
+          base,
+          amount,
+          timeScale,
+        );
+        cycle++;
+      }
+    });
+  }
+
+  release(time = this.clock.currentTime) {
+    if (!this.#triggered || !this.#envelope) return;
     // Read the shape before anything touches the param, so a future-dated release hands
     // off the value the envelope will actually have reached rather than today's.
-    const holdValue = valueAt(time);
+    const holdValue = this.#valueAt(time);
 
     // Deliberately not stop(): its pin would write the param's stale value at exactly
     // the instant releaseEnvelope pins the right one. The second cancel drops the first
     // write so the timeline ends up correct either way, but only one of them is true.
-    triggered = false;
-    stopLoop();
+    this.#triggered = false;
+    this.#stopLoop();
 
-    releaseEnvelope(param, envelope, time, { base, amount, timeScale }, holdValue);
-  };
+    releaseEnvelope(
+      this.param,
+      this.#envelope,
+      time,
+      { base: this.#base, amount: this.#amount, timeScale: this.#timeScale },
+      holdValue,
+    );
+  }
+
+  duration() {
+    if (!this.#envelope) return 0;
+    const { points } = this.#envelope;
+    return points.length > 1
+      ? (points[points.length - 1].time - points[0].time) / this.#timeScale
+      : 0;
+  }
+
+  releaseDuration() {
+    if (!this.#envelope) return 0;
+    const { points, release } = this.#envelope;
+    return release < points.length - 1
+      ? (points[points.length - 1].time - points[release].time) / this.#timeScale
+      : 0;
+  }
+
+  position(time = this.clock.currentTime) {
+    // Argument first, so a bad timestamp is a bug whether or not a run is live.
+    if (!Number.isFinite(time)) {
+      throw new RangeError('Envelope position time must be a finite number');
+    }
+    return this.#triggered ? this.#positionAt(time) : null;
+  }
+
+  currentPoint(time = this.clock.currentTime) {
+    if (
+      !this.#triggered ||
+      !this.#envelope ||
+      this.#envelope.mode.type === 'loop' ||
+      this.#envelope.points.length === 0
+    ) {
+      return null;
+    }
+
+    const position = this.#positionAt(time);
+    const { points, mode } = this.#envelope;
+    const last = mode.type === 'sustain' ? mode.at : points.length - 1;
+    let index = 0;
+    while (index < last && points[index + 1].time - points[0].time <= position) index++;
+    return index;
+  }
+
+  nextCycleTime(time = this.clock.currentTime) {
+    if (!this.#triggered || !this.#envelope || this.#envelope.mode.type !== 'loop') return null;
+    const cycle = this.duration();
+    if (cycle <= 0) return null;
+
+    // A pickup backdates the phase anchor, but no automation starts before startTime.
+    if (time < this.#startTime) return this.#startTime;
+    const elapsed = time - this.#triggerTime;
+    return this.#triggerTime + (Math.floor(elapsed / cycle) + 1) * cycle;
+  }
 
   /**
    * Moves the sustain point's value mid-note.
@@ -492,162 +639,49 @@ export function createEnvelopePlayer(
    * step by up to the edit distance. Inaudible while `glide` stays short. Track the
    * pending glide in `valueAt` if a long one is ever wanted.
    */
-  const setSustainValue = (value: number, time = clock.currentTime, glide = 0.02) => {
-    if (!envelope) return;
-    const { points, mode } = envelope;
-    if (!triggered || mode.type !== 'sustain') return;
+  setSustainValue(value: number, time = this.clock.currentTime, glide = 0.02) {
+    if (!this.#envelope) return;
+    const { points, mode } = this.#envelope;
+    if (!this.#triggered || mode.type !== 'sustain') return;
     const sustain = mode.at;
     if (points[sustain].value === value) return;
 
-    const sustainTime = triggerTime + (points[sustain].time - points[0].time) / timeScale;
+    const sustainTime =
+      this.#triggerTime + (points[sustain].time - points[0].time) / this.#timeScale;
 
     if (time < sustainTime) return;
 
     // Read the outgoing shape before mutating it, the same ordering release() follows.
-    const holdValue = valueAt(time);
+    const holdValue = this.#valueAt(time);
     (points[sustain] as { value: number }).value = value;
 
-    cancelAndPinParamValue(param, time, holdValue);
+    cancelAndPinParamValue(this.param, time, holdValue);
     schedulePoint(
-      param,
-      valueOf(points, sustain, 0, sustain, base, amount),
+      this.param,
+      valueOf(points, sustain, 0, sustain, this.#base, this.#amount),
       time + glide,
       'linear',
     );
-  };
+  }
 
-  return {
-    trigger(sourceEnvelope, time = clock.currentTime, options = {}) {
-      if (disposed) throw new Error('Cannot trigger a disposed EnvelopePlayer');
-      assertValidEnvelope(sourceEnvelope);
-      const runEnvelope: Envelope = {
-        ...sourceEnvelope,
-        mode: { ...sourceEnvelope.mode },
-        points: sourceEnvelope.points.map((point) => ({ ...point })),
-      };
-      envelope = runEnvelope;
-      stopLoop();
-      triggered = true;
-      base = options.base ?? 0;
-      amount = options.amount ?? 1;
-      timeScale = options.timeScale ?? 1;
-      triggerTime = time;
-      startTime = time;
+  stop(time = this.clock.currentTime) {
+    if (!this.#triggered) return;
+    this.#triggered = false;
+    this.#stopLoop();
+    cancelAndPinParamValue(this.param, time);
+  }
 
-      // Clear only. Every scheduling path below opens with its own setValueAtTime at
-      // this same instant, so pinning here would write the param's stale value and be
-      // overwritten by the envelope's first point a moment later.
-      param.cancelScheduledValues(time);
+  dispose() {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.stop();
+  }
+}
 
-      const { points } = runEnvelope;
-      // A loop repeats the whole envelope. Every other mode schedules one pass;
-      // scheduleEnvelope stops that pass at the sustain point when there is one.
-      const duration =
-        runEnvelope.mode.type === 'loop' && points.length > 0
-          ? (points[points.length - 1].time - points[0].time) / timeScale
-          : 0;
-
-      if (duration <= 0) {
-        scheduleEnvelope(param, runEnvelope, time, { base, amount, timeScale });
-        return;
-      }
-
-      // Opening mid-shape moves the anchor back to where point 0 would have been, so
-      // every cycle boundary below still lands on the same grid and `valueAt` keeps
-      // reading the right phase. The anchor is in the past; nothing is scheduled there.
-      const from = Math.min(Math.max(options.fromPoint ?? 0, 0), points.length - 1);
-      triggerTime = time - (points[from].time - points[0].time) / timeScale;
-
-      // Cycle n opens at time + n * duration, the first pass included, so there is no
-      // pre-loop stage and point 0 lands on the trigger time every pass. Absolute
-      // times, not an accumulated sum, so cycles cannot drift apart.
-      //
-      // Cycle 0 is scheduled here rather than left to the refill below, so a trigger
-      // further ahead than the lookahead still has its opening pass queued the moment
-      // it is triggered, whatever the refill timer does in between.
-      let cycleEnd = scheduleRange(
-        param,
-        runEnvelope,
-        from,
-        points.length - 1,
-        time,
-        base,
-        amount,
-        timeScale,
-      );
-
-      // A partial opening pass ends exactly where cycle 1 begins, so the grid carries on
-      // from here either way.
-      const anchor = triggerTime;
-      let cycle = 1;
-      removeLoop = addLoop(() => {
-        const now = clock.currentTime;
-        const horizon = now + LOOKAHEAD_SECONDS;
-
-        while (anchor + (cycle + 1) * duration <= now) cycle++;
-        while (anchor + cycle * duration < horizon) {
-          // A cycle opens on the same instant the previous one closes, but the two
-          // expressions for it can differ by an ULP. When the closing ramp rounds later
-          // than the opening setValueAtTime it overwrites the reset and that pass loses
-          // its attack, so never open a cycle before the previous one has ended.
-          const start = Math.max(anchor + cycle * duration, cycleEnd);
-          cycleEnd = scheduleRange(
-            param,
-            runEnvelope,
-            0,
-            points.length - 1,
-            start,
-            base,
-            amount,
-            timeScale,
-          );
-          cycle++;
-        }
-      });
-    },
-    release,
-    duration,
-    releaseDuration,
-    position(time = clock.currentTime) {
-      // Argument first, so a bad timestamp is a bug whether or not a run is live.
-      if (!Number.isFinite(time)) {
-        throw new RangeError('Envelope position time must be a finite number');
-      }
-      return triggered ? positionAt(time) : null;
-    },
-    currentPoint(time = clock.currentTime) {
-      if (
-        !triggered ||
-        !envelope ||
-        envelope.mode.type === 'loop' ||
-        envelope.points.length === 0
-      ) {
-        return null;
-      }
-
-      const position = positionAt(time);
-      const { points, mode } = envelope;
-      const last = mode.type === 'sustain' ? mode.at : points.length - 1;
-      let index = 0;
-      while (index < last && points[index + 1].time - points[0].time <= position) index++;
-      return index;
-    },
-    nextCycleTime(time = clock.currentTime) {
-      if (!triggered || !envelope || envelope.mode.type !== 'loop') return null;
-      const cycle = duration();
-      if (cycle <= 0) return null;
-
-      // A pickup backdates the phase anchor, but no automation starts before startTime.
-      if (time < startTime) return startTime;
-      const elapsed = time - triggerTime;
-      return triggerTime + (Math.floor(elapsed / cycle) + 1) * cycle;
-    },
-    setSustainValue,
-    stop,
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      stop();
-    },
-  };
+/** Creates a timestamp-anchored envelope player. */
+export function createEnvelopePlayer(
+  clock: EnvelopeClock,
+  param: AutomatableParam,
+): EnvelopePlayer {
+  return new EnvelopePlayerImpl(clock, param);
 }
