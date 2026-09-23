@@ -117,7 +117,7 @@ export function scheduleRange(
   return last;
 }
 
-/** Schedules the envelope up to its sustain point, or to its end when it has none. */
+/** Schedules through sustain in sustain mode, or through the end otherwise. */
 export function scheduleEnvelope(
   param: AutomatableParam,
   envelope: EnvelopeShape,

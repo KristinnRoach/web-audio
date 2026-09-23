@@ -172,7 +172,7 @@ export class Envelope {
 
     const { points } = runEnvelope;
     // A loop repeats the whole envelope. Every other mode schedules one pass;
-    // scheduleEnvelope stops that pass at the sustain point when there is one.
+    // sustain mode stops that pass at the sustain point.
     const loopDuration = runEnvelope.mode.type === 'loop' ? fullDuration : 0;
 
     if (loopDuration <= 0) {

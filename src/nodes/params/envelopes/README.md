@@ -51,8 +51,7 @@ type EnvelopeMode =
 - Times are measured from the first point, so the first point plays at the trigger time.
 - `release` is the tail's timing anchor. `release()` pins the current value, then schedules
   the points after that index at offsets from its time; its curve controls the first segment,
-  but its value is not replayed. It is independent of a sustain point, though presets
-  normally align them.
+  but its value is not replayed. It is independent of `sustain`, though presets align them.
 - Exponential segments can't reach zero, so any zero at either end is nudged to a tiny value.
 
 An invalid shape throws a `TypeError`. Call `assertValidEnvelopeShape(shape)` to check one

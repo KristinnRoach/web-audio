@@ -487,9 +487,8 @@ test('timeScale speeds up both the sustaining stage and the release', () => {
   });
 });
 
-// A sampler amp envelope decays on its own while the note is held and still has a
-// tail on note-off. A lone sustain cannot express that: it holds where this keeps
-// moving. So the release index has to work without one.
+// A sampler amp envelope decays while held but still has a note-off tail, so release
+// must work in once mode.
 test('once mode plays through and still has a release tail', () => {
   const param = createFakeParam();
   const clock = { currentTime: 0 };

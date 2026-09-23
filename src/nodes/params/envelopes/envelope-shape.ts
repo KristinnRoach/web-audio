@@ -16,8 +16,8 @@ export type EnvelopeMode =
   | { readonly type: 'loop' };
 
 /**
- * Three shapes: play through once, hold at a point until release, or loop until release.
- * A loop repeats the whole envelope, so it and `sustain` are alternatives, not a pair.
+ * Play through once, hold at sustain, or loop until release.
+ * Loop and sustain are exclusive modes.
  */
 export type EnvelopeShape = {
   /**
