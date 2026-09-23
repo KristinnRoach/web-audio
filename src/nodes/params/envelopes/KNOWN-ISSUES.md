@@ -20,6 +20,8 @@ Code observations below are not claims that every case has been reproduced audib
   It changes the run's point immediately; release or another edit during the glide
   reads the target rather than the intermediate value. Sustain-index and mid-attack
   changes remain next-trigger edits. Preserve the trigger snapshot for the release tail.
+  Rescheduling the rest of the attack from the current position was tried for
+  mid-attack edits and still stepped audibly.
 - **Filter sustain mapping.** `getLiveSampleEnvelopeSustainValue` deliberately skips
   filter envelopes. A future implementation needs the active note's normalized-to-Hz
   mapping; recomputing it from current filter settings may use a different range.
@@ -39,9 +41,20 @@ Code observations below are not claims that every case has been reproduced audib
   timestamps, base, amount, pickup indices and sustain-glide inputs are not consistently
   checked. Invalid inputs should eventually leave the existing run untouched.
 - **Reported loop drift.** The cause remains unconfirmed. The existing 3,001-cycle
-  grid check measured roughly 1e-12 seconds of error for a 7 ms loop. Investigate
-  refill starvation (1 s lookahead, 50 ms timer) and sampler playback-rate/time-scale
-  composition before changing the grid. Listen in the consuming app after changes.
+  grid check measured roughly 1e-12 seconds of error for a 7 ms loop, and drift heard
+  after a few cycles is too fast for float error anyway. Two candidates:
+  - _Refill starvation._ A backgrounded tab throttles the 50 ms refill timer to ~1 s
+    while the audio clock runs on, so with a 1 s lookahead a cycle can be scheduled at
+    or after its own start and Web Audio applies it immediately. Probe: advance the
+    clock in 1 s steps, fire the timer once per step, and assert every cycle is
+    scheduled strictly ahead of `clock.currentTime`.
+  - _Time-scale composition._ `SampleVoice.#timeScale` multiplies `timeScale` by
+    `playbackRate`. If the sample's rate lands on a different grid than the envelope's,
+    the two walk apart in proportion to the error. Probe: drive a loop and a sample
+    from one trigger at a non-integer rate and compare cycle boundaries to buffer wraps.
+
+  Listen in the consuming app before landing either fix.
+
 - **Accepted rounding guard.** Keep `Math.max(grid, cycleEnd)` in `Envelope.trigger`:
   it prevents an opening event preceding the previous closing ramp. Its measured
   accumulated error is tiny; do not remove it as an incidental simplification.
@@ -51,7 +64,11 @@ Code observations below are not claims that every case has been reproduced audib
 - `position()` wraps loops and clamps sustain, but one-shots advance beyond their end.
   It becomes null as soon as release is requested, including future release, and does
   not describe the release tail. It is not a completion signal. No envelope-specific
-  browser test currently verifies position against rendered automation.
+  browser test currently verifies position against rendered automation. When adding
+  one (model on `../LFOs/LFO.browser.test.ts`, run with `vp run test:browser`), assert
+  first that `base + amount * interpolateAtTime(points, points[0].time + position())`
+  matches `param.value` on a real `AudioContext`; every consumer inherits any
+  disagreement. Then check that position tracks the real clock and wraps at loop ends.
 - Keep `nextCycleTime()` until a replacement handles future starts and pickup anchors;
   position alone does not provide those. `currentPoint()` currently returns null for loops.
 - `SamplePlayer` owns editable configs; `SampleVoice` still coordinates config storage,
