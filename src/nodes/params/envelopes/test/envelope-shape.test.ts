@@ -5,7 +5,6 @@ import {
   interpolateAtTime,
   deletePoint,
   releaseDuration,
-  releaseStartTime,
   scaledDuration,
   setDuration,
   updatePoint,
@@ -98,13 +97,9 @@ describe('envelope timing', () => {
     expect(scaledDuration(points, 0, 3, 1 * 2)).toBe(1.5);
   });
 
-  it('splits the envelope at its release point', () => {
+  it('measures the release tail from its anchor', () => {
     const { points, release } = envelopeOf();
-    expect(releaseStartTime(points, release)).toBe(2);
     expect(releaseDuration(points, release)).toBe(1);
-    expect(releaseStartTime(points, release) + releaseDuration(points, release)).toBe(
-      baseDuration(points),
-    );
   });
 
   it('returns zero for an invalid span', () => {

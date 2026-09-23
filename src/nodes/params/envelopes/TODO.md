@@ -32,8 +32,6 @@ Ear test before landing either fix.
 
 ## Structure
 
-- `releaseStartTime`, `setReleasePoint`, `setSustainPoint` have no callers outside tests.
-  Delete unless the editor UI lands.
 - `updatePoint` and `setDuration` now return `EnvelopePoint[]`, so a caller rebuilding a
   shape writes `{ ...shape, points: updatePoint(shape.points, ...) }` and gets a new shape
   object even when the edit was rejected. The old versions returned the same shape by

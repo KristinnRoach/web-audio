@@ -142,15 +142,6 @@ export function scaledDuration(
   return Number.isFinite(timeScale) && timeScale > 0 ? duration / timeScale : duration;
 }
 
-/** Offset from point 0 to the release tail's timing anchor. */
-export function releaseStartTime(
-  points: readonly EnvelopePoint[],
-  release: number,
-  timeScale = 1,
-): number {
-  return scaledDuration(points, 0, release, timeScale);
-}
-
 /** Duration from the release tail's timing anchor to the last point. */
 export function releaseDuration(
   points: readonly EnvelopePoint[],
