@@ -31,18 +31,18 @@ export type EnvelopeShape = {
   /** How the envelope advances until it is released. */
   readonly mode: EnvelopeMode;
   /** Point held while the envelope is in sustain mode. */
-  readonly sustain: number;
+  readonly sustainPoint: number;
   /**
    * Index of the point whose time is the start of the release tail's time scale.
    * `release()` holds the run's current value at the requested release time, does not set
-   * the parameter to `points[release].value`, then schedules each later point after the
-   * same time difference it has from `points[release].time`. The release point's curve
+   * the parameter to `points[releasePoint].value`, then schedules each later point after the
+   * same time difference it has from `points[releasePoint].time`. The release point's curve
    * controls the transition to the first later point.
    *
    * Independent of a sustain point, though presets normally align them. This does not
    * mark the end of a loop: a loop repeats the whole envelope.
    */
-  readonly release: number;
+  readonly releasePoint: number;
 };
 
 /** Rejects an envelope that cannot be scheduled predictably. */
@@ -67,8 +67,8 @@ export function assertValidEnvelopeShape(envelope: EnvelopeShape): void {
           point.curve !== 'exponential') ||
         (index > 0 && point.time <= points[index - 1].time),
     ) ||
-    !validMarker(envelope.sustain) ||
-    !validMarker(envelope.release)
+    !validMarker(envelope.sustainPoint) ||
+    !validMarker(envelope.releasePoint)
   ) {
     throw new TypeError('Invalid envelope');
   }
@@ -151,8 +151,10 @@ export function addPoint(
   return {
     ...envelope,
     points: next,
-    sustain: insertAt <= envelope.sustain ? envelope.sustain + 1 : envelope.sustain,
-    release: insertAt <= envelope.release ? envelope.release + 1 : envelope.release,
+    sustainPoint:
+      insertAt <= envelope.sustainPoint ? envelope.sustainPoint + 1 : envelope.sustainPoint,
+    releasePoint:
+      insertAt <= envelope.releasePoint ? envelope.releasePoint + 1 : envelope.releasePoint,
   };
 }
 
@@ -190,8 +192,8 @@ export function deletePoint(envelope: EnvelopeShape, index: number): EnvelopeSha
   return {
     ...envelope,
     points: next,
-    sustain: moveMarker(envelope.sustain),
-    release: moveMarker(envelope.release),
+    sustainPoint: moveMarker(envelope.sustainPoint),
+    releasePoint: moveMarker(envelope.releasePoint),
   };
 }
 
@@ -221,10 +223,10 @@ export function setDuration(
 
 export function setSustainPoint(envelope: EnvelopeShape, index: number): EnvelopeShape {
   if (index < 0 || index >= envelope.points.length) return envelope;
-  return { ...envelope, sustain: index };
+  return { ...envelope, sustainPoint: index };
 }
 
 export function setReleasePoint(envelope: EnvelopeShape, index: number): EnvelopeShape {
   if (index < 0 || index >= envelope.points.length) return envelope;
-  return { ...envelope, release: index };
+  return { ...envelope, releasePoint: index };
 }

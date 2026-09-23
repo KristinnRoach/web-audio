@@ -5,14 +5,14 @@ import type { EnvelopeConfig } from './envelope-config';
 const envConfig: EnvelopeConfig = {
   enabled: false,
   timeScale: 2,
-  envelope: {
+  shape: {
     points: [
       { time: 0, value: 0, curve: 'linear' },
       { time: 1, value: 1, curve: 'exponential' },
     ],
     mode: { type: 'once' },
-    sustain: 1,
-    release: 1,
+    sustainPoint: 1,
+    releasePoint: 1,
   },
 };
 
@@ -51,19 +51,19 @@ describe('SamplePlayer.applyParams', () => {
 describe('SamplePlayer envelope config', () => {
   it('resets an envelope to defaults at the current sample duration', async () => {
     const { SamplePlayer } = await import('./SamplePlayer');
-    const applyEnvelopeConfig = vi.fn();
+    const updateEnvelope = vi.fn();
     const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      applyEnvelopeConfig,
+      updateEnvelope,
     }) as SamplePlayer;
     Object.defineProperty(player, 'sampleDuration', { value: 4 });
 
-    player.resetEnvelope('pitch-env');
+    player.resetEnvelope('pitch');
 
-    expect(applyEnvelopeConfig).toHaveBeenCalledWith(
-      'pitch-env',
+    expect(updateEnvelope).toHaveBeenCalledWith(
+      'pitch',
       expect.objectContaining({
         enabled: false,
-        envelope: expect.objectContaining({
+        shape: expect.objectContaining({
           points: [
             { time: 0, value: 1, curve: 'exponential' },
             { time: 4, value: 1, curve: 'exponential' },
@@ -78,18 +78,18 @@ describe('SamplePlayer envelope config', () => {
     vi.stubGlobal('AudioContext', class {});
     vi.stubGlobal('AudioWorkletNode', class {});
     const { SamplePlayer } = await import('./SamplePlayer');
-    const applyEnvelopeConfig = vi.fn();
+    const setEnvelopeConfig = vi.fn();
     const sendUpstreamMessage = vi.fn();
     const input: EnvelopeConfig = {
       ...envConfig,
-      envelope: {
-        ...envConfig.envelope,
-        points: envConfig.envelope.points.map((point) => ({ ...point })),
+      shape: {
+        ...envConfig.shape,
+        points: envConfig.shape.points.map((point) => ({ ...point })),
       },
     };
-    const voices = [{ applyEnvelopeConfig }, { applyEnvelopeConfig }];
+    const voices = [{ setEnvelopeConfig }, { setEnvelopeConfig }];
     const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      envelopeConfigs: new Map(),
+      envelopeConfigs: new Map([['amp', envConfig]]),
       voicePool: {
         allVoices: voices,
         applyToAllVoices: (fn: (voice: (typeof voices)[number]) => void) => voices.forEach(fn),
@@ -97,15 +97,15 @@ describe('SamplePlayer envelope config', () => {
       sendUpstreamMessage,
     }) as SamplePlayer;
 
-    player.applyEnvelopeConfig('amp-env', input);
-    (input.envelope.points[0] as { value: number }).value = 99;
+    player.updateEnvelope('amp', input);
+    (input.shape.points[0] as { value: number }).value = 99;
 
-    expect(applyEnvelopeConfig).toHaveBeenCalledTimes(2);
-    expect(player.getEnvelopeConfig('amp-env').envelope.points[0].value).toBe(0);
+    expect(setEnvelopeConfig).toHaveBeenCalledTimes(2);
+    expect(player.getEnvelope('amp').shape.points[0].value).toBe(0);
     expect(sendUpstreamMessage).toHaveBeenCalledOnce();
     expect(sendUpstreamMessage).toHaveBeenCalledWith('envelope:changed', {
-      envelopeId: 'amp-env',
-      settings: expect.objectContaining({ enabled: false }),
+      id: 'amp',
+      config: expect.objectContaining({ enabled: false }),
     });
   });
 
@@ -113,7 +113,7 @@ describe('SamplePlayer envelope config', () => {
     const { SamplePlayer } = await import('./SamplePlayer');
     const applyToAllVoices = vi.fn();
     const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      envelopeConfigs: new Map(),
+      envelopeConfigs: new Map([['amp', envConfig]]),
       voicePool: {
         allVoices: [],
         applyToAllVoices,
@@ -121,19 +121,19 @@ describe('SamplePlayer envelope config', () => {
       sendUpstreamMessage: vi.fn(),
     }) as SamplePlayer;
 
+    expect(() => player.updateEnvelope('amp', { ...envConfig, timeScale: 0 })).toThrowError(
+      'Invalid envelope settings',
+    );
     expect(() =>
-      player.applyEnvelopeConfig('amp-env', { ...envConfig, timeScale: 0 }),
-    ).toThrowError('Invalid envelope settings');
-    expect(() =>
-      player.applyEnvelopeConfig('amp-env', {
+      player.updateEnvelope('amp', {
         ...envConfig,
         playbackRateSync: 'yes' as unknown as boolean,
       }),
     ).toThrowError('Invalid envelope settings');
     expect(() =>
-      player.applyEnvelopeConfig('amp-env', {
+      player.updateEnvelope('amp', {
         ...envConfig,
-        envelope: { ...envConfig.envelope, release: 99 },
+        shape: { ...envConfig.shape, releasePoint: 99 },
       }),
     ).toThrowError('Invalid envelope settings');
     expect(applyToAllVoices).not.toHaveBeenCalled();

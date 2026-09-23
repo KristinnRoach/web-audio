@@ -20,8 +20,8 @@ function envelopeOf(overrides: Partial<EnvelopeShape> = {}): EnvelopeShape {
       { time: 3, value: 0, curve: 'exponential' },
     ],
     mode: { type: 'once' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
     ...overrides,
   };
 }
@@ -56,11 +56,11 @@ describe('envelope edits', () => {
   });
 
   it('inserts in time order and carries markers along', () => {
-    const next = addPoint(envelopeOf({ mode: { type: 'sustain' }, sustain: 1 }), 0.5, 0.3);
+    const next = addPoint(envelopeOf({ mode: { type: 'sustain' }, sustainPoint: 1 }), 0.5, 0.3);
     expect(next.points.map((point) => point.time)).toEqual([0, 0.5, 1, 2, 3]);
     expect(next.mode).toEqual({ type: 'sustain' });
-    expect(next.sustain).toBe(2);
-    expect(next.release).toBe(3);
+    expect(next.sustainPoint).toBe(2);
+    expect(next.releasePoint).toBe(3);
   });
 
   it('refuses points outside the anchors', () => {
@@ -82,19 +82,19 @@ describe('envelope edits', () => {
   });
 
   it('removes interior points and adjusts markers', () => {
-    const next = deletePoint(envelopeOf({ mode: { type: 'sustain' }, sustain: 1 }), 1);
+    const next = deletePoint(envelopeOf({ mode: { type: 'sustain' }, sustainPoint: 1 }), 1);
     expect(next.points.map((point) => point.time)).toEqual([0, 2, 3]);
     expect(next.mode).toEqual({ type: 'sustain' });
-    expect(next.sustain).toBe(1);
-    expect(next.release).toBe(1);
+    expect(next.sustainPoint).toBe(1);
+    expect(next.releasePoint).toBe(1);
   });
 
   it('changes the sustain point without changing loop mode', () => {
-    const envelope = envelopeOf({ mode: { type: 'loop' }, sustain: 1 });
+    const envelope = envelopeOf({ mode: { type: 'loop' }, sustainPoint: 1 });
     const next = setSustainPoint(envelope, 2);
 
     expect(next.mode).toEqual({ type: 'loop' });
-    expect(next.sustain).toBe(2);
+    expect(next.sustainPoint).toBe(2);
   });
 
   it('refuses to remove anchors or leave fewer than two points', () => {
@@ -103,7 +103,7 @@ describe('envelope edits', () => {
     expect(deletePoint(envelope, 3)).toBe(envelope);
     const pair = envelopeOf({
       points: envelope.points.slice(0, 2),
-      release: 0,
+      releasePoint: 0,
     });
     expect(deletePoint(pair, 1)).toBe(pair);
   });
@@ -124,8 +124,8 @@ describe('envelope timing', () => {
   });
 
   it("measures the release tail from the release point's time", () => {
-    const { points, release } = envelopeOf();
-    expect(getDuration(points, { fromIndex: release })).toBe(1);
+    const { points, releasePoint } = envelopeOf();
+    expect(getDuration(points, { fromIndex: releasePoint })).toBe(1);
   });
 
   it('returns zero for an invalid span', () => {

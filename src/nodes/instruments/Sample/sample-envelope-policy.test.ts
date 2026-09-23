@@ -5,20 +5,20 @@ import { getLiveSampleEnvelopeSustainValue } from './sample-envelope-policy';
 const config: EnvelopeConfig = {
   enabled: true,
   timeScale: 1,
-  envelope: {
+  shape: {
     points: [
       { time: 0, value: 0 },
       { time: 1, value: 0.25 },
       { time: 2, value: 0 },
     ],
     mode: { type: 'sustain' },
-    sustain: 1,
-    release: 1,
+    sustainPoint: 1,
+    releasePoint: 1,
   },
 };
 
 it('only forwards sustain values that share the active player value domain', () => {
-  expect(getLiveSampleEnvelopeSustainValue('amp-env', config)).toBe(0.25);
-  expect(getLiveSampleEnvelopeSustainValue('pitch-env', config)).toBe(0.25);
-  expect(getLiveSampleEnvelopeSustainValue('filter-env', config)).toBeUndefined();
+  expect(getLiveSampleEnvelopeSustainValue('amp', config)).toBe(0.25);
+  expect(getLiveSampleEnvelopeSustainValue('pitch', config)).toBe(0.25);
+  expect(getLiveSampleEnvelopeSustainValue('filter', config)).toBeUndefined();
 });

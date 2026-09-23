@@ -115,7 +115,7 @@ export class Envelope {
    */
   #positionAt(time: number) {
     if (!this.#envShape) return 0;
-    const { points, mode, sustain } = this.#envShape;
+    const { points, mode, sustainPoint } = this.#envShape;
     if (points.length === 0) return 0;
 
     let elapsed = Math.max(0, (time - this.#triggerTime) * this.#timeScale);
@@ -126,7 +126,7 @@ export class Envelope {
       const cycle = getDuration(points);
       elapsed = cycle > 0 ? elapsed % cycle : 0;
     } else if (mode.type === 'sustain') {
-      elapsed = Math.min(elapsed, points[sustain].time - points[0].time);
+      elapsed = Math.min(elapsed, points[sustainPoint].time - points[0].time);
     }
 
     return elapsed;
@@ -265,8 +265,8 @@ export class Envelope {
 
   /** Release-stage duration, read the same way as `duration`. */
   releaseDuration() {
-    const { points, release } = this.#envShape ?? this.#shape;
-    return getDuration(points, { fromIndex: release, timeScale: this.#timeScale });
+    const { points, releasePoint } = this.#envShape ?? this.#shape;
+    return getDuration(points, { fromIndex: releasePoint, timeScale: this.#timeScale });
   }
 
   /**
@@ -325,8 +325,8 @@ export class Envelope {
     }
 
     const position = this.#positionAt(time);
-    const { points, mode, sustain } = this.#envShape;
-    const last = mode.type === 'sustain' ? sustain : points.length - 1;
+    const { points, mode, sustainPoint } = this.#envShape;
+    const last = mode.type === 'sustain' ? sustainPoint : points.length - 1;
     let index = 0;
     while (index < last && points[index + 1].time - points[0].time <= position) index++;
     return index;
@@ -378,23 +378,24 @@ export class Envelope {
     // step by up to the edit distance. Inaudible while `glide` stays short. Track the
     // pending glide in `valueAt` if a long one is ever wanted.
     if (!this.#envShape) return;
-    const { points, mode, sustain } = this.#envShape;
+    const { points, mode, sustainPoint } = this.#envShape;
     if (!this.#triggered || mode.type !== 'sustain') return;
-    if (points[sustain].value === value) return;
+    if (points[sustainPoint].value === value) return;
 
     const sustainTime =
-      this.#triggerTime + getDuration(points, { toIndex: sustain, timeScale: this.#timeScale });
+      this.#triggerTime +
+      getDuration(points, { toIndex: sustainPoint, timeScale: this.#timeScale });
 
     if (time < sustainTime) return;
 
     // Read the outgoing shape before mutating it, the same ordering release() follows.
     const holdValue = this.#valueAt(time);
-    (points[sustain] as { value: number }).value = value;
+    (points[sustainPoint] as { value: number }).value = value;
 
     cancelAndPinParamValue(this.param, time, holdValue);
     schedulePoint(
       this.param,
-      valueOf(points, sustain, 0, sustain, this.#base, this.#amount),
+      valueOf(points, sustainPoint, 0, sustainPoint, this.#base, this.#amount),
       time + glide,
       'linear',
     );

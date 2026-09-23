@@ -127,13 +127,13 @@ export function scheduleEnvelope(
   const { points } = envelope;
   if (points.length === 0) return;
 
-  const end = envelope.mode.type === 'sustain' ? envelope.sustain : points.length - 1;
+  const end = envelope.mode.type === 'sustain' ? envelope.sustainPoint : points.length - 1;
   scheduleRange(param, envelope, 0, end, startTime, base, amount, timeScale);
 }
 
 /**
- * Holds `holdValue` at `releaseTime`, then schedules the points after the `release` index
- * at their time differences from `points[release].time`.
+ * Holds `holdValue` at `releaseTime`, then schedules the points after `releasePoint`
+ * at their time differences from `points[releasePoint].time`.
  *
  * ponytail: pins a value rather than calling `cancelAndHoldAtTime`, which Firefox
  * still has not implemented (bugzil.la/1308431). Without `holdValue` it falls back to
@@ -147,7 +147,7 @@ export function releaseEnvelope(
   { base = 0, amount = 1, timeScale = 1 }: ScheduleOptions = {},
   holdValue?: number,
 ) {
-  const from = envelope.release;
+  const from = envelope.releasePoint;
 
   const { points } = envelope;
   const exponentialOut = points[from].curve === 'exponential';

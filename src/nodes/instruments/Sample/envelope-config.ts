@@ -7,17 +7,17 @@ export type EnvelopeConfig = {
   readonly timeScale: number;
   /** Scales timing by the note's playback rate, so higher notes run the envelope faster. */
   readonly playbackRateSync?: boolean;
-  readonly envelope: EnvelopeShape;
+  readonly shape: EnvelopeShape;
 };
 
 /** Returns a config snapshot whose shape and points can be safely retained. */
 export function cloneEnvelopeConfig(config: EnvelopeConfig): EnvelopeConfig {
   return {
     ...config,
-    envelope: {
-      ...config.envelope,
-      mode: { ...config.envelope.mode },
-      points: config.envelope.points.map((point) => ({ ...point })),
+    shape: {
+      ...config.shape,
+      mode: { ...config.shape.mode },
+      points: config.shape.points.map((point) => ({ ...point })),
     },
   };
 }
@@ -34,7 +34,7 @@ export function assertValidEnvelopeConfig(config: EnvelopeConfig): void {
   }
 
   try {
-    assertValidEnvelopeShape(config.envelope);
+    assertValidEnvelopeShape(config.shape);
   } catch {
     throw new TypeError('Invalid envelope settings');
   }

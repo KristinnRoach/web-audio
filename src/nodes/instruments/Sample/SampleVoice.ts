@@ -243,7 +243,7 @@ export class SampleVoice {
       const config = createDefaultSampleEnvelopeConfig(type, durationSeconds);
       const param = this.getParam(getSampleEnvelopeParamName(type));
       if (!param) continue;
-      this.#envelopes.set(type, new Envelope(this.context, param, config.envelope));
+      this.#envelopes.set(type, new Envelope(this.context, param, config.shape));
       this.#envelopeConfigs.set(type, config);
     }
   }
@@ -393,8 +393,8 @@ export class SampleVoice {
       midiNote: this.#midiNote,
     });
 
-    // Apply amp, filter and pitch envelopes if enabled
-    this.applyEnvelopes(timestamp, playbackRate, velocity);
+    // Trigger amp, filter and pitch envelopes if enabled
+    this.triggerEnvelopes(timestamp, playbackRate, velocity);
 
     // Trigger effects
     this.#feedback?.trigger(midiNote, {
@@ -452,7 +452,7 @@ export class SampleVoice {
     env.trigger(timestamp, { ...target, timeScale, fromPoint });
   }
 
-  applyEnvelopes(timestamp: number, playbackRate: number, velocity?: number) {
+  triggerEnvelopes(timestamp: number, playbackRate: number, velocity?: number) {
     this.#lastTrigger = { playbackRate, velocity };
     this.#envelopes.forEach((env, envType) => {
       this.#triggerEnvelope(envType, env, timestamp, playbackRate, velocity);
@@ -706,7 +706,7 @@ export class SampleVoice {
 
   /** A disabled filter envelope leaves the cutoff wherever it stopped, so restore it. */
   #resetFilterEnvTarget = (envType: SampleEnvelopeId) => {
-    if (envType === 'filter-env' && this.#chainIncludes('lpf')) {
+    if (envType === 'filter' && this.#chainIncludes('lpf')) {
       const lpf = this.getParam('lpf');
       lpf?.cancelScheduledValues(this.now);
       // Reset to the keytracked cutoff after the envelope is disabled
@@ -714,21 +714,17 @@ export class SampleVoice {
     }
   };
 
-  getEnvelope = (envType: SampleEnvelopeId): Envelope | undefined => {
-    return this.#envelopes.get(envType);
-  };
-
   /**
    * Receives the config owned by SamplePlayer. The sampler policy chooses when to
    * retrigger; Envelope keeps the active run separate from its stored shape.
    */
-  applyEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
+  setEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
     const envelope = this.#envelopes.get(envType);
     if (!envelope) return;
     const wasEnabled = this.#isEnabled(envType);
     const apply = () => {
       this.#envelopeConfigs.set(envType, config);
-      envelope.shape = config.envelope;
+      envelope.shape = config.shape;
       const sustainValue = getLiveSampleEnvelopeSustainValue(envType, config);
       if (sustainValue !== undefined) envelope.setSustainValue(sustainValue);
     };
@@ -740,7 +736,7 @@ export class SampleVoice {
       return;
     }
 
-    applySampleEnvelopeShapeEdit(envelope, config.envelope, apply, (at, fromPoint) =>
+    applySampleEnvelopeShapeEdit(envelope, config.shape, apply, (at, fromPoint) =>
       this.#retriggerAt(envType, envelope, at, fromPoint),
     );
   };
@@ -1051,7 +1047,7 @@ export class SampleVoice {
   }
 
   get releaseTime() {
-    return this.#envelopes.get('amp-env')!.releaseDuration();
+    return this.#envelopes.get('amp')!.releaseDuration();
   }
 
   // Setters

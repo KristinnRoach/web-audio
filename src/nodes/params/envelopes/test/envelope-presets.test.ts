@@ -5,7 +5,7 @@ describe('envelopePresets', () => {
   it('creates a detached amplitude envelope at the requested duration', () => {
     expect(envelopePresets.amplitude(4)).toEqual({
       mode: { type: 'sustain' },
-      sustain: 3,
+      sustainPoint: 3,
       points: [
         { time: 0, value: 0, curve: 'exponential' },
         { time: 0.005, value: 1, curve: 'exponential' },
@@ -13,7 +13,7 @@ describe('envelopePresets', () => {
         { time: 3.6, value: 0.5, curve: 'exponential' },
         { time: 4, value: 0, curve: 'exponential' },
       ],
-      release: 3,
+      releasePoint: 3,
     });
   });
 

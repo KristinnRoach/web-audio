@@ -277,13 +277,9 @@ export class SamplePlayer implements ILibInstrumentNode {
       // their own defaults, so this is also what first puts them on the owned state -
       // without it the player and its voices would hold different shapes.
       SAMPLE_ENVELOPE_IDS.forEach((id) => {
-        const config = this.getEnvelopeConfig(id);
-        this.applyEnvelopeConfig(id, {
-          ...config,
-          envelope: {
-            ...config.envelope,
-            points: setDuration(config.envelope.points, this.#bufferDuration),
-          },
+        const { shape } = this.getEnvelope(id);
+        this.updateEnvelope(id, {
+          shape: { ...shape, points: setDuration(shape.points, this.#bufferDuration) },
         });
       });
     });
@@ -291,8 +287,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.voicePool.onMessage('voice-pool:initialized', () => {
       // Fresh voices start on defaults, so hand them the owned state before they play.
       SAMPLE_ENVELOPE_IDS.forEach((id) => {
-        const config = this.getEnvelopeConfig(id);
-        this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeConfig(id, config));
+        const config = this.getEnvelope(id);
+        this.voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
       });
       this.sendUpstreamMessage('sample-player:initialized', {});
     });
@@ -1079,7 +1075,7 @@ export class SamplePlayer implements ILibInstrumentNode {
    *
    * SamplePlayer owns the editable config; voices receive snapshots to schedule from.
    */
-  getEnvelopeConfig(id: SampleEnvelopeId): EnvelopeConfig {
+  getEnvelope(id: SampleEnvelopeId): EnvelopeConfig {
     const stored = this.envelopeConfigs.get(id);
     if (stored) return cloneEnvelopeConfig(stored);
 
@@ -1088,40 +1084,36 @@ export class SamplePlayer implements ILibInstrumentNode {
     return cloneEnvelopeConfig(config);
   }
 
-  /** Applies a complete snapshot and emits one `envelope:changed` message. */
-  applyEnvelopeConfig(id: SampleEnvelopeId, config: EnvelopeConfig): void {
-    assertValidEnvelopeConfig(config);
+  /**
+   * Merges `patch` into the current config and emits one `envelope:changed` message.
+   * The merge is shallow: a `shape` in the patch replaces the whole shape.
+   */
+  updateEnvelope(id: SampleEnvelopeId, patch: Partial<EnvelopeConfig>): void {
+    const merged = { ...this.getEnvelope(id), ...patch };
+    assertValidEnvelopeConfig(merged);
 
-    const next = cloneEnvelopeConfig(config);
+    const next = cloneEnvelopeConfig(merged);
     this.envelopeConfigs.set(id, next);
 
-    this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeConfig(id, next));
+    this.voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, next));
 
-    this.sendUpstreamMessage('envelope:changed', {
-      envelopeId: id,
-      settings: cloneEnvelopeConfig(next),
-    });
+    this.sendUpstreamMessage('envelope:changed', { id, config: cloneEnvelopeConfig(next) });
   }
 
-  /** Restores one envelope to defaults sized to the current authority sample. */
-  resetEnvelope(id: SampleEnvelopeId): void {
-    this.applyEnvelopeConfig(id, createDefaultSampleEnvelopeConfig(id, this.sampleDuration || 1));
+  /** Restores one envelope, or all when `id` is omitted, to defaults sized to the current sample. */
+  resetEnvelope(id?: SampleEnvelopeId): void {
+    (id ? [id] : SAMPLE_ENVELOPE_IDS).forEach((envId) =>
+      this.updateEnvelope(
+        envId,
+        createDefaultSampleEnvelopeConfig(envId, this.sampleDuration || 1),
+      ),
+    );
   }
 
-  /** Restores all envelopes to defaults sized to the current sample. */
-  resetEnvelopes(): void {
-    SAMPLE_ENVELOPE_IDS.forEach((id) => this.resetEnvelope(id));
-  }
-
-  /** Envelope types on the current voices; empty until the pool is initialized. */
-  get availableEnvelopeIds(): SampleEnvelopeId[] {
+  /** Envelope ids on the current voices; empty until the pool is initialized. */
+  get envelopeIds(): SampleEnvelopeId[] {
     return [...(this.voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
   }
-
-  /** Shorthand for applying the current config with `playbackRateSync` changed. */
-  setEnvelopeSync = (id: SampleEnvelopeId, sync: boolean) => {
-    this.applyEnvelopeConfig(id, { ...this.getEnvelopeConfig(id), playbackRateSync: sync });
-  };
 
   /**
    * Named tap points covering the whole instrument, from inside the voices

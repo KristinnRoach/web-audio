@@ -80,9 +80,3 @@ Code observations below are not claims that every case has been reproduced audib
   `{ ...shape, points }` creates a new shape identity. Revisit only if an editor needs it.
 - Observer callbacks and release-tail visualization are deferred; any future observer
   should remain separate from playback.
-
-## Release bookkeeping
-
-The pending minor changeset documents migration from published 0.4.2, alongside the
-filter changeset. Intermediate APIs such as `EnvelopeRuntime` were never in that
-release. Keep consumer migration notes based on the published API when revisiting it.

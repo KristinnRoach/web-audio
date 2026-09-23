@@ -12,7 +12,7 @@ export const envelopePresets = {
     const duration = durationOf(durationSeconds);
     return {
       mode: { type: 'sustain' },
-      sustain: 3,
+      sustainPoint: 3,
       points: [
         { time: 0, value: 0, curve: 'exponential' },
         {
@@ -24,7 +24,7 @@ export const envelopePresets = {
         { time: 0.9 * duration, value: 0.5, curve: 'exponential' },
         { time: duration, value: 0, curve: 'exponential' },
       ],
-      release: 3,
+      releasePoint: 3,
     };
   },
 
@@ -32,14 +32,14 @@ export const envelopePresets = {
     const duration = durationOf(durationSeconds);
     return {
       mode: { type: 'once' },
-      sustain: 2,
+      sustainPoint: 2,
       points: [
         { time: 0, value: 0, curve: 'exponential' },
         { time: 0.02 * duration, value: 1, curve: 'exponential' },
         { time: 0.3 * duration, value: 0.2, curve: 'exponential' },
         { time: duration, value: 0, curve: 'exponential' },
       ],
-      release: 2,
+      releasePoint: 2,
     };
   },
 };
