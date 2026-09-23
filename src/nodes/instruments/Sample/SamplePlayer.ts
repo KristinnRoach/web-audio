@@ -44,7 +44,7 @@ import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeConfig,
   type SampleEnvelopeId,
-} from './temporary-sample-envelope-adapters';
+} from './sample-envelope-policy';
 
 /**
  * Filter envelope depth, normalized against the filter's usable range.
@@ -104,7 +104,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
-  // #filterEnvAmount: number = DEFAULT_FILTER_ENV_AMOUNT;   // TODO: @POST_ENV_API_READY
   #loopTempoSync = false; // TODO: Implement!
   #MAX_TEMPO = 300;
   #MIN_TEMPO = 20;
@@ -1082,9 +1081,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   /**
    * Returns a detached, serializable envelope config.
    *
-   * This map is the only copy of envelope config in the instrument. Voices hold a
-   * pushed-down duplicate they can schedule from but never write to, so there is no
-   * second authority to read back from and nothing to invalidate.
+   * SamplePlayer owns the editable config; voices receive snapshots to schedule from.
    */
   getEnvelopeConfig(id: SampleEnvelopeId): EnvelopeConfig {
     const stored = this.envelopeConfigs.get(id);
@@ -1103,13 +1100,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.envelopeConfigs.set(id, next);
 
     this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeConfig(id, next));
-
-    // if (id === 'filter-env') {   // TODO: @POST_ENV_API_READY
-    //   this.setLpfEnvelope(config.envelope, {
-    //     amount: this.#filterEnvAmount,
-    //     timeScale: config.timeScale,
-    //   });
-    // }
 
     this.sendUpstreamMessage('envelope:changed', {
       envelopeId: id,
@@ -1176,19 +1166,6 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.outBus.setLpfCutoff(hz);
     }
   };
-
-  // TODO: @POST_ENV_API_READY
-  // /**
-  //  * Envelope for the post-FX lowpass cutoff. See `InstrumentBus.setLpfEnvelope`.
-  //  * Set `setLpfCutoff` low first - it is the base the sweep starts from, and it
-  //  * defaults to wide open, where a sweep upwards is inaudible.
-  //  */
-  // setLpfEnvelope = (
-  //   envelope: EnvelopeShape | null,
-  //   options: { amount?: number; timeScale?: number } = {},
-  // ) => {
-  //   this.outBus.setLpfEnvelope(envelope, options);
-  // };
 
   setHpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' = 'post') => {
     this.#hpfCutoff = hz;

@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test';
 import type { EnvelopeConfig } from './envelope-config';
-import { getLiveSampleEnvelopeSustainValue } from './temporary-sample-envelope-adapters';
+import { getLiveSampleEnvelopeSustainValue } from './sample-envelope-policy';
 
 const config: EnvelopeConfig = {
   enabled: true,

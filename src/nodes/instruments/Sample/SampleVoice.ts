@@ -34,7 +34,7 @@ import {
   resolveSampleEnvelopeTrigger,
   shouldTriggerSampleEnvelope,
   type SampleEnvelopeId,
-} from './temporary-sample-envelope-adapters';
+} from './sample-envelope-policy';
 
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
 
@@ -421,7 +421,6 @@ export class SampleVoice {
   /** Trigger inputs of the current note, kept so a config edit can restart from them. */
   #lastTrigger: { playbackRate: number; velocity?: number } | null = null;
 
-  /** Envelopes synced to playback rate stretch with the note; the rest keep their own timing. */
   /** The envelope's stored scale composed with the playback-rate follow, where it applies. */
   #timeScale(envType: SampleEnvelopeId, playbackRate: number) {
     const multiplier = this.#playbackRateSyncedEnvelopes.has(envType) ? playbackRate : 1;
@@ -722,9 +721,8 @@ export class SampleVoice {
   };
 
   /**
-   * The only way envelope state reaches a voice. `SamplePlayer` owns the single copy
-   * and pushes it down whole, so there is nothing here that can drift out of step with
-   * it, and no second entry point that could mean something different.
+   * Receives the config owned by SamplePlayer. The sampler policy chooses when to
+   * retrigger; Envelope keeps the active run separate from its stored shape.
    */
   applyEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
     const envelope = this.#envelopes.get(envType);
