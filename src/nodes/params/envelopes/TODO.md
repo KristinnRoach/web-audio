@@ -37,3 +37,8 @@ Ear test before landing either fix.
   object even when the edit was rejected. The old versions returned the same shape by
   identity, which memoised editors can use. Revisit if the editor UI wants it back;
   identity at the points array is still preserved.
+
+## Instrument bus
+
+Revisit envelope integration after the API is final and proven in SamplePlayer's voices,
+so there is an established pattern to follow.

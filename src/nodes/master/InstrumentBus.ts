@@ -63,8 +63,6 @@ export class InstrumentBus implements ILibAudioNode {
 
   /** Last cutoff from `setLpfCutoff`, which is the envelope's base. Set in init(). */
   #lpfCutoffHz = 0;
-  // #lpfEnvAmount = 0;   // TODO: @POST_ENV_API_READY
-  // #lpfEnvelope: EnvelopeRuntime | null = null;
   #heldNotes = new Map<number, number>();
 
   #nodes: Partial<BusNodeTypeMap> = {};
@@ -350,27 +348,8 @@ export class InstrumentBus implements ILibAudioNode {
     const delayNode = this.getNode('delay');
     delayNode?.audioNode.sendProcessorMessage({ type: 'trigger' });
 
-    // One filter shared by every note, so a new note simply takes over. Last note wins.
-    // this.#triggerLpfEnvelope(midiNote, this.now + secondsFromNow);   // TODO: @POST_ENV_API_READY
-
     return this;
   }
-
-  // TODO: @POST_ENV_API_READY - Revisit after envelopes module API is finalized, and after the core amplitude envelopes are integrated so consistent patterns can be applied.
-  // #triggerLpfEnvelope(midiNote: number, time: number) {
-  //   if (!this.#lpfEnvelope) return;
-
-  //   const cutoff = this.getNode('lpf')?.audioNode.frequency;
-  //   if (!cutoff) return;
-
-  //   const ceiling = maxSafeHz(this.context.sampleRate);
-  //   this.#lpfEnvelope.trigger(cutoff, time, {
-  //     base: this.#lpfCutoffHz,
-  //     // Keep both upward and inverted sweeps inside the filter's usable range.
-  //     amount: clamp(this.#lpfEnvAmount * ceiling, -this.#lpfCutoffHz, ceiling - this.#lpfCutoffHz),
-  //     timeScale: this.#lpfEnvelope.config.timeScale * midiToPlaybackRate(midiNote),
-  //   });
-  // }
 
   noteOff(midiNote: number): this {
     const count = this.#heldNotes.get(midiNote);
@@ -379,13 +358,11 @@ export class InstrumentBus implements ILibAudioNode {
     if (count > 1) this.#heldNotes.set(midiNote, count - 1);
     else this.#heldNotes.delete(midiNote);
 
-    // if (this.#heldNotes.size === 0) this.#lpfEnvelope?.release(this.now);   // TODO: @POST_ENV_API_READY
     return this;
   }
 
   releaseAll(): this {
     this.#heldNotes.clear();
-    // this.#lpfEnvelope?.release(this.now);   // TODO: @POST_ENV_API_READY
     return this;
   }
 
@@ -429,56 +406,6 @@ export class InstrumentBus implements ILibAudioNode {
     );
     return this;
   }
-
-  // TODO: @POST_ENV_API_READY - Revisit after envelopes module API is finalized, and after the core amplitude envelopes are integrated so consistent patterns can be applied.
-  // /**
-  //  * Envelope for the post-FX cutoff, or null to stop sweeping and settle back on the
-  //  * resting cutoff, wherever the last note left the filter.
-  //  *
-  //  * `amount` is sweep depth normalized against the filter's usable range, so 1 sweeps
-  //  * from the cutoff to just under Nyquist and 0 does not sweep at all. A point value of
-  //  * 0 sits at the cutoff, 1 at the top of that depth. Normalized rather than Hz because
-  //  * the ceiling is a property of the sample rate, which the caller should not have to
-  //  * know; the depth is still resolved per note, so it tracks a sample-rate change.
-  //  *
-  //  * Mark the segments "exponential". That ramp is geometric in Hz, which is how a
-  //  * cutoff sweep is heard; a linear one puts nearly all its motion at the top.
-  //  *
-  //  * Sustain holds and loop repeats until the instrument's last held note is released.
-  //  * An envelope with a `release` and no `sustain` sweeps through on its own while notes
-  //  * are held and still plays its tail on the last note off.
-  //  *
-  //  * `timeScale` divides every point time, and note-on multiplies it by the triggering
-  //  * MIDI note's playback rate.
-  //  */
-  // setLpfEnvelope(envelope: EnvelopeShape | null, { amount = 0, timeScale = 1 } = {}): this {
-  //   this.#lpfEnvAmount = amount;
-
-  //   if (!envelope || amount === 0) {
-  //     this.#lpfEnvelope?.dispose();
-  //     this.#lpfEnvelope = null;
-  //     this.setLpfCutoff(this.#lpfCutoffHz);
-  //     return this;
-  //   }
-
-  //   const config = { enabled: true, timeScale, envelope };
-  //   if (!this.#lpfEnvelope) {
-  //     this.#lpfEnvelope = new EnvelopeRuntime(this.#context, config);
-  //     return this;
-  //   }
-
-  //   // Keep the runtime so a running sweep survives the edit, and hand over on the next
-  //   // loop boundary, where point 0 comes round anyway. A non-looping run has no such
-  //   // seam and returns null, so it keeps its current shape until the next note.
-  //   const at = this.#lpfEnvelope.nextCycleTime();
-  //   this.#lpfEnvelope.update(config);
-  //   if (envelope.mode.type === 'sustain') {
-  //     this.#lpfEnvelope.setSustainValue(envelope.points[envelope.sustain].value);
-  //   }
-  //   const held = Array.from(this.#heldNotes.keys()).pop();
-  //   if (at !== null && held !== undefined) this.#triggerLpfEnvelope(held, at);
-  //   return this;
-  // }
 
   setCompressorParams(params: {
     threshold?: number;
@@ -728,8 +655,6 @@ export class InstrumentBus implements ILibAudioNode {
 
   dispose(): void {
     this.#heldNotes.clear();
-    // this.#lpfEnvelope?.dispose();   // TODO: @POST_ENV_API_READY
-    // this.#lpfEnvelope = null;
 
     // Disconnect all nodes
     for (const name of Object.keys(this.#nodes)) {

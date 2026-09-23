@@ -13,9 +13,6 @@ not a decision already made. Order is roughly by risk, not by effort.
 - A surplus `outBus.noteOff` is inert: `InstrumentBus.noteOff` returns on an unknown count
   before the `size === 0` check, so it cannot fire the envelope release early.
   `InstrumentBus.ts:376`.
-- `InstrumentBus.setLpfEnvelope` scales time by an arbitrary held note:
-  `Array.from(#heldNotes.keys()).pop()`. Undefined which note wins with a chord down.
-  `InstrumentBus.ts:474`.
 - `voicePool.noteOff` releases every voice at a pitch at once, so a doubled pitch cannot
   be released one voice at a time. `SampleVoicePool.ts:194`.
 

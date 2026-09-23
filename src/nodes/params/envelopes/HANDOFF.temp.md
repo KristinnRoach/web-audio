@@ -49,10 +49,6 @@ the "re-triggering one player" tests in `test/Envelope.test.ts`.
 and calls `stop()` on voice reuse, disable and dispose. `resolveSampleEnvelopeTrigger`
 passes the filter's mapped shape through `options.shape`.
 
-`InstrumentBus` usage stays commented out under `// TODO: @POST_ENV_API_READY` until the
-API is final. It is why `DEFAULT_FILTER_ENV_AMOUNT` (`SamplePlayer.ts:54`) warns in lint;
-do not "fix" that by deleting it.
-
 ## Changesets
 
 `@kidlib/web-audio` is published (0.4.2). Deferred on purpose, reconcile at the end.

@@ -129,6 +129,5 @@ cause.
 3. Decide the `nextCycleTime` caveat: expose the anchor, or leave the method alone.
 4. Keep callback observation optional and separate from playback.
 
-`docs/envelope-followups.md` still holds the larger open questions (merging `sustain` and
-`release`, a loop `until` index, splitting `EnvelopeRuntime` into a store and a run
-handle). None of them block the above.
+`docs/envelope-followups.md` still holds the larger open questions (a loop `until` index
+and splitting `EnvelopeRuntime` into a store and a run handle). Neither blocks the above.
