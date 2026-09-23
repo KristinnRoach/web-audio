@@ -365,7 +365,10 @@ export class Envelope {
     // A run that has not reached its sustain point yet is left alone. Up to that instant
     // the points between here and sustain are still queued, and cancelling to write the new
     // value takes the attack peak with them - the parameter heads straight for the sustain
-    // value from wherever it had got to. Rescheduling the remainder would lift that.
+    // value from wherever it had got to. Rescheduling the remainder from the current
+    // position was tried and still stepped audibly. So an earlier call is ignored, not
+    // queued: the edit reaches the note only through the caller's stored shape, on the
+    // next trigger.
     //
     // The cancel is what makes a fast drag safe: a second ramp ending before the first one
     // would otherwise re-target the old value on the way past.

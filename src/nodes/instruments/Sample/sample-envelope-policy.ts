@@ -12,8 +12,8 @@ import type { EnvelopeConfig } from './envelope-config';
 type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
 
 /**
- * Temporary sampler policy around the generic envelope runtime.
- * Keep these functions pure so each can either disappear or move independently.
+ * Sampler defaults, parameter mapping and live-edit decisions.
+ * Envelope owns scheduling; unfinished behavior is tracked in envelopes/KNOWN-ISSUES.md.
  */
 
 export const SAMPLE_ENVELOPE_IDS = ['amp-env', 'pitch-env', 'filter-env'] as const;
@@ -112,7 +112,7 @@ export function getLiveSampleEnvelopeSustainValue(
   return config.envelope.points[sustain].value;
 }
 
-/** Applies an envelope edit at the next inaudible loop boundary, when one exists. */
+/** Applies an envelope edit at the next loop boundary, when one exists. */
 export function applyOnNextEnvLoopCycle(
   envelope: Envelope,
   apply: () => void,

@@ -1,7 +1,12 @@
 # envelopes
 
 Breakpoint envelopes for Web Audio. Draw a shape out of points, bind it to an `AudioParam`,
-then trigger and release it.
+then trigger and release it. See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for all deferred work.
+
+`Envelope` owns parameter scheduling and per-trigger snapshots. `SamplePlayer` owns
+editable configs; `SampleVoice` applies them using
+[`sample-envelope-policy.ts`](../../instruments/Sample/sample-envelope-policy.ts) for
+defaults, parameter mapping and live-edit decisions.
 
 ```ts
 import { Envelope } from '@kidlib/web-audio';
@@ -77,7 +82,9 @@ new Envelope(clock, param, shape);
 | `release(time?)`           | Plays the release stage.                                     |
 | `stop(time?)`              | Ends the run and holds the param where it is.                |
 
-`time` is an `AudioContext` time and defaults to now. A time in the past counts as now.
+`time` is an `AudioContext` time and defaults to now. `trigger` and `release` clamp past
+times to now; `stop` currently uses the supplied time directly. Stop does not currently
+cancel an already-released tail; see [lifecycle follow-ups](KNOWN-ISSUES.md#scheduling-and-lifecycle).
 
 A looping envelope keeps scheduling ahead on a timer until you call `release()` or `stop()`.
 
@@ -106,28 +113,39 @@ filterEnv.trigger(ctx.currentTime, { base: 200, amount: 7800 });
   held. It only works in `sustain` mode after the sustain point is reached, and otherwise
   does nothing.
 
+The sampler also applies edits to running notes: existing loops retrigger at their next
+boundary, enabling loop on a non-looping run picks up from its last reached point, and
+held amplitude/pitch sustain levels can glide. Filter sustain edits wait for a trigger.
+These live-edit behaviors are retained but provisional; their limitations are tracked
+in [live edits](KNOWN-ISSUES.md#live-edits).
+
 ### Reading state
 
-| Method                 | Returns                                                                                |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `duration()`           | Length of the whole shape in seconds, at the current `timeScale`.                      |
-| `releaseDuration()`    | Length of the release stage in seconds.                                                |
-| `position(time?)`      | Seconds into the shape, or `null` when nothing is playing.                             |
-| `currentPoint(time?)`  | Index of the last point reached, or `null` when nothing is playing or the shape loops. |
-| `nextCycleTime(time?)` | Start time of the next loop cycle, or `null` if the envelope isn't looping.            |
+| Method                 | Returns                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| `duration()`           | Length of the latest run's shape at its time scale; stored shape at scale 1 before any run.   |
+| `releaseDuration()`    | Length of the release stage in seconds.                                                       |
+| `position(time?)`      | Seconds from the first point, wrapped for loops and held at sustain; null after release/stop. |
+| `currentPoint(time?)`  | Index of the last point reached, or `null` when nothing is playing or the shape loops.        |
+| `nextCycleTime(time?)` | Start time of the next loop cycle, or `null` if the envelope isn't looping.                   |
+
+One-shot position currently continues past the final point. Release tails have no reported
+position; these accessors are not completion notifications.
 
 ## Presets
 
 Each preset takes a total duration in seconds (default `1`) and returns a shape.
 
 ```ts
-import { envelopePresets } from 'envelopes';
+import { envelopePresets } from '@kidlib/web-audio';
 
 envelopePresets.amplitude(2); // attack, decay, sustain, release
 envelopePresets.filter(0.5); // quick sweep up, then back down, plays once
 ```
 
-## Helpers
+## Internal helpers
+
+These are available inside the source module, not exported from the package root.
 
 - `setDuration(points, seconds)` returns new points stretched to a total length.
 - `hasVariation(points)` returns `false` if every point has the same value (within 0.001).
