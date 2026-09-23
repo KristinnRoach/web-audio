@@ -16,18 +16,18 @@ type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
  * Envelope owns scheduling; unfinished behavior is tracked in envelopes/KNOWN-ISSUES.md.
  */
 
-export const SAMPLE_ENVELOPE_IDS = ['amp-env', 'pitch-env', 'filter-env'] as const;
+export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter'] as const;
 export type SampleEnvelopeId = (typeof SAMPLE_ENVELOPE_IDS)[number];
 
 export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEnvelopeId[] {
-  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp-env', 'pitch-env'];
+  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch'];
 }
 
 /** Flat at 1, so the pitch env is an identity until someone edits it. */
 function flatPitchShape(durationSeconds: number): EnvelopeShape {
   return {
     mode: { type: 'once' },
-    sustain: 0,
+    sustainPoint: 0,
     points: setDuration(
       [
         { time: 0, value: 1, curve: 'exponential' },
@@ -35,7 +35,7 @@ function flatPitchShape(durationSeconds: number): EnvelopeShape {
       ],
       durationSeconds,
     ),
-    release: 0,
+    releasePoint: 0,
   };
 }
 
@@ -44,28 +44,43 @@ export function createDefaultSampleEnvelopeConfig(
   durationSeconds: number,
 ): EnvelopeConfig {
   switch (id) {
-    case 'amp-env':
-      return { enabled: true, timeScale: 1, envelope: envelopePresets.amplitude(durationSeconds) };
-    case 'pitch-env':
-      return { enabled: false, timeScale: 1, envelope: flatPitchShape(durationSeconds) };
-    case 'filter-env':
-      return { enabled: false, timeScale: 1, envelope: envelopePresets.filter(durationSeconds) };
+    case 'amp':
+      return {
+        enabled: true,
+        timeScale: 1,
+        playbackRateSync: false,
+        shape: envelopePresets.amplitude(durationSeconds),
+      };
+    case 'pitch':
+      return {
+        enabled: false,
+        timeScale: 1,
+        playbackRateSync: false,
+        shape: flatPitchShape(durationSeconds),
+      };
+    case 'filter':
+      return {
+        enabled: false,
+        timeScale: 1,
+        playbackRateSync: false,
+        shape: envelopePresets.filter(durationSeconds),
+      };
   }
 }
 
 export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
   switch (id) {
-    case 'amp-env':
+    case 'amp':
       return 'envGain';
-    case 'pitch-env':
+    case 'pitch':
       return 'playbackRate';
-    case 'filter-env':
+    case 'filter':
       return 'lpf';
   }
 }
 
 export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: EnvelopeConfig) {
-  return config.enabled && (id !== 'pitch-env' || hasVariation(config.envelope.points));
+  return config.enabled && (id !== 'pitch' || hasVariation(config.shape.points));
 }
 
 export function getSampleEnvelopeBaseValue(
@@ -73,11 +88,11 @@ export function getSampleEnvelopeBaseValue(
   values: { velocity?: number; playbackRate: number; filterCutoff: number },
 ): number {
   switch (id) {
-    case 'amp-env':
+    case 'amp':
       return values.velocity === undefined ? 1 : values.velocity / 127;
-    case 'pitch-env':
+    case 'pitch':
       return values.playbackRate;
-    case 'filter-env':
+    case 'filter':
       return values.filterCutoff;
   }
 }
@@ -88,7 +103,7 @@ export function resolveSampleEnvelopeTrigger(
   baseValue: number,
   param: RangedAutomatableParam,
 ): Pick<EnvelopeTriggerOptions, 'amount' | 'shape'> {
-  if (id !== 'filter-env') return { amount: baseValue };
+  if (id !== 'filter') return { amount: baseValue };
 
   const low = Math.max(baseValue, 1e-3);
   const high = Math.max(param.maxValue, low);
@@ -107,9 +122,9 @@ export function getLiveSampleEnvelopeSustainValue(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,
 ): number | undefined {
-  const { mode, sustain } = config.envelope;
-  if (id === 'filter-env' || mode.type !== 'sustain') return undefined;
-  return config.envelope.points[sustain].value;
+  const { mode, points, sustainPoint } = config.shape;
+  if (id === 'filter' || mode.type !== 'sustain') return undefined;
+  return points[sustainPoint].value;
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */

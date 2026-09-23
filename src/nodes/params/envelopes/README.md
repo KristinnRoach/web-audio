@@ -22,8 +22,8 @@ const env = new Envelope(ctx, gain.gain, {
     { time: 0.5, value: 0 }, // release
   ],
   mode: { type: 'sustain' },
-  sustain: 2,
-  release: 2,
+  sustainPoint: 2,
+  releasePoint: 2,
 });
 
 env.trigger(); // note on
@@ -36,8 +36,8 @@ env.release(); // note off
 type EnvelopeShape = {
   readonly points: readonly EnvelopePoint[];
   readonly mode: EnvelopeMode;
-  readonly sustain: number;
-  readonly release: number;
+  readonly sustainPoint: number; // point index
+  readonly releasePoint: number; // point index
 };
 
 type EnvelopePoint = {
@@ -48,17 +48,17 @@ type EnvelopePoint = {
 
 type EnvelopeMode =
   | { type: 'once' } // play through to the end
-  | { type: 'sustain' } // stop at `sustain` and hold until release
+  | { type: 'sustain' } // stop at `sustainPoint` and hold until release
   | { type: 'loop' }; // repeat the whole shape until release
 ```
 
 - A shape needs at least 2 points with strictly increasing times.
 - Times are measured from the first point, so the first point plays at the trigger time.
-- `release` is the index of the point whose time defines the release tail's timing.
+- `releasePoint` is the point whose time defines the release tail's timing.
   `release()` holds the envelope's current value at note-off; it does not set the parameter
   to the release point's value. It then schedules each later point using its time difference
-  from the release point. The release point's curve controls the first transition. `release`
-  is independent of `sustain`, though presets align them.
+  from the release point. The release point's curve controls the first transition. `releasePoint`
+  is independent of `sustainPoint`, though presets align them.
 - Exponential segments can't reach zero, so any zero at either end is nudged to a tiny value.
 
 An invalid shape throws a `TypeError`. Call `assertValidEnvelopeShape(shape)` to check one

@@ -16,8 +16,8 @@ test('schedules through sustain, then schedules the remaining points on release'
       { time: 0.8, value: 0 },
     ],
     mode: { type: 'sustain' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
   };
 
   scheduleEnvelope(param, envelope, 10);
@@ -58,8 +58,8 @@ test('treats point times as offsets from the first point, not as a pre-delay', (
       { time: 0.9, value: 0.25 },
     ],
     mode: { type: 'sustain' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
   };
 
   scheduleEnvelope(param, envelope, 10);
@@ -85,8 +85,8 @@ test('keeps an exponential segment off zero at both ends', () => {
       { time: 1, value: 0, curve: 'exponential' },
     ],
     mode: { type: 'sustain' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
   };
 
   scheduleEnvelope(param, envelope, 10, { amount: 20000 });
@@ -124,8 +124,8 @@ test('leaves values alone when no exponential segment touches them', () => {
         { time: 0.3, value: 0, curve: 'linear' },
       ],
       mode: { type: 'sustain' },
-      sustain: 2,
-      release: 2,
+      sustainPoint: 2,
+      releasePoint: 2,
     },
     10,
   );
@@ -150,8 +150,8 @@ test("places the shape on the parameter's range with base and amount", () => {
       { time: 0.2, value: 0.5 },
     ],
     mode: { type: 'sustain' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
   };
 
   const scheduled = (options?: { base?: number; amount?: number }) => {
@@ -178,8 +178,8 @@ test('keeps an inverted exponential envelope on its own side of zero', () => {
         { time: 0.1, value: 1, curve: 'exponential' },
       ],
       mode: { type: 'sustain' },
-      sustain: 1,
-      release: 1,
+      sustainPoint: 1,
+      releasePoint: 1,
     },
     0,
     { amount: -1 },
@@ -204,8 +204,8 @@ test('anchors every rolling loop cycle to the original trigger time', () => {
       { time: 0.1, value: 1 },
       { time: 0.2, value: 0 },
     ],
-    release: 1,
-    sustain: 1,
+    releasePoint: 1,
+    sustainPoint: 1,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -237,8 +237,8 @@ test('player release stops its loop and schedules the scaled release stage', () 
       { time: 0.2, value: 0.5 },
       { time: 0.5, value: 0.2 },
     ],
-    release: 2,
-    sustain: 2,
+    releasePoint: 2,
+    sustainPoint: 2,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -273,8 +273,8 @@ test('opens every loop cycle on the trigger time plus a whole number of periods'
       { time: 0.6, value: 1 },
       { time: 0.9, value: 0.25 },
     ],
-    release: 2,
-    sustain: 2,
+    releasePoint: 2,
+    sustainPoint: 2,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -320,8 +320,8 @@ test('keeps loop cycles on the trigger grid over thousands of cycles', () => {
       { time: span * 0.1, value: 1, curve: 'linear' },
       { time: span, value: 0.2, curve: 'linear' },
     ],
-    release: 2,
-    sustain: 2,
+    releasePoint: 2,
+    sustainPoint: 2,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -363,8 +363,8 @@ test('never opens a loop cycle before the previous one has closed', () => {
     ],
     // This test never releases, so pointing `release` at the last point leaves that
     // stage empty.
-    release: 2,
-    sustain: 2,
+    releasePoint: 2,
+    sustainPoint: 2,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -406,8 +406,8 @@ test('release exits a whole-envelope loop and plays its release tail', () => {
       { time: 0.4, value: 0.5 },
       { time: 1.4, value: 0 },
     ],
-    release: 2,
-    sustain: 2,
+    releasePoint: 2,
+    sustainPoint: 2,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -438,8 +438,8 @@ test('loop mode repeats the whole envelope', () => {
       { time: 0.5, value: 1 },
       { time: 1, value: 0 },
     ],
-    release: 1,
-    sustain: 1,
+    releasePoint: 1,
+    sustainPoint: 1,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -463,8 +463,8 @@ test('timeScale speeds up both the sustaining stage and the release', () => {
       { time: 0.6, value: 0 },
     ],
     mode: { type: 'sustain' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
   };
 
   scheduleEnvelope(param, envelope, 10, { timeScale: 2 });
@@ -500,8 +500,8 @@ test('once mode plays through and still has a release tail', () => {
       { time: 1.3, value: 0 },
     ],
     mode: { type: 'once' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
   };
   const env = new Envelope(clock, param, envelope);
 
@@ -536,8 +536,8 @@ test('opens a fromPoint run mid-shape and anchors its cycles on point 0', () => 
       { time: 0.4, value: 0.5 },
       { time: 1, value: 0 },
     ],
-    release: 2,
-    sustain: 2,
+    releasePoint: 2,
+    sustainPoint: 2,
     mode: { type: 'loop' },
   };
   const env = new Envelope(clock, param, envelope);
@@ -583,8 +583,8 @@ test('an envelope player owns its envelope shape', () => {
       { time: 1, value: 0 },
     ],
     mode: { type: 'sustain' },
-    sustain: 1,
-    release: 1,
+    sustainPoint: 1,
+    releasePoint: 1,
   };
   const envPlayer = new Envelope(clock, createFakeParam(), envelope);
 
@@ -601,8 +601,8 @@ test('an envelope player rejects an empty envelope', () => {
       new Envelope({ currentTime: 0 }, createFakeParam(), {
         points: [],
         mode: { type: 'once' },
-        sustain: 0,
-        release: 0,
+        sustainPoint: 0,
+        releasePoint: 0,
       }),
   ).toThrow('Invalid envelope');
 });
@@ -615,8 +615,8 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
       { time: 1, value: 1 },
       { time: 2, value: 0 },
     ],
-    release: 1,
-    sustain: 1,
+    releasePoint: 1,
+    sustainPoint: 1,
     mode: { type: 'loop' },
   };
   const player = new Envelope({ currentTime: 0 }, createFakeParam(), envelope);
@@ -638,8 +638,8 @@ describe('Envelope lifecycle', () => {
       { time: 1, value: 1 },
     ],
     mode: { type: 'once' },
-    sustain: 0,
-    release: 0,
+    sustainPoint: 0,
+    releasePoint: 0,
   };
 
   it('can trigger again after stop', () => {
@@ -663,7 +663,7 @@ describe('Envelope lifecycle', () => {
     player.trigger(0);
     const eventCount = param.events.length;
 
-    expect(() => player.trigger(0.5, { shape: { ...envelope, release: 9 } })).toThrow(
+    expect(() => player.trigger(0.5, { shape: { ...envelope, releasePoint: 9 } })).toThrow(
       'Invalid envelope',
     );
     expect(() => player.trigger(0.5, { timeScale: 0 })).toThrow(RangeError);
@@ -680,8 +680,8 @@ describe('Envelope lifecycle', () => {
         { time: 1, value: 1 },
       ],
       mode: { type: 'sustain' },
-      sustain: 1,
-      release: 1,
+      sustainPoint: 1,
+      releasePoint: 1,
     };
     const player = new Envelope({ currentTime: 0 }, param, definition);
 
@@ -711,8 +711,8 @@ describe('Envelope lifecycle', () => {
         { time: 2, value: 0 },
       ],
       mode: { type: 'sustain' },
-      sustain: 1,
-      release: 1,
+      sustainPoint: 1,
+      releasePoint: 1,
     });
 
     player.trigger(1);
@@ -732,8 +732,8 @@ describe('re-triggering one player', () => {
       { time: 1, value: 1 },
       { time: 2, value: 0 },
     ],
-    release: 1,
-    sustain: 1,
+    releasePoint: 1,
+    sustainPoint: 1,
     mode: { type: 'loop' },
   };
   // Spans 0 to 1.5, with the release point at 1.
@@ -745,14 +745,14 @@ describe('re-triggering one player', () => {
       { time: 1.5, value: 0 },
     ],
     mode: { type: 'once' },
-    sustain: 2,
-    release: 2,
+    sustainPoint: 2,
+    releasePoint: 2,
   };
 
   it('rejects a shape without a mode, sustain point, or release point', () => {
     const { mode: _mode, ...noMode } = oneShot;
-    const { sustain: _sustain, ...noSustain } = oneShot;
-    const { release: _release, ...noRelease } = oneShot;
+    const { sustainPoint: _sustain, ...noSustain } = oneShot;
+    const { releasePoint: _release, ...noRelease } = oneShot;
     expect(
       () => new Envelope({ currentTime: 0 }, createFakeParam(), noMode as EnvelopeShape),
     ).toThrow('Invalid envelope');
@@ -836,8 +836,8 @@ describe('re-triggering one player', () => {
     const player = new Envelope(clock, param, {
       ...oneShot,
       mode: { type: 'sustain' },
-      sustain: 1,
-      release: 1,
+      sustainPoint: 1,
+      releasePoint: 1,
     });
     player.trigger(0);
 
@@ -860,7 +860,7 @@ describe('re-triggering one player', () => {
 
     expect(() =>
       player.trigger(0, {
-        shape: { ...oneShot, mode: { type: 'sustain' }, sustain: 9 },
+        shape: { ...oneShot, mode: { type: 'sustain' }, sustainPoint: 9 },
       }),
     ).toThrow('Invalid envelope');
 
