@@ -127,6 +127,12 @@ describe('SamplePlayer envelope config', () => {
     expect(() =>
       player.applyEnvelopeConfig('amp-env', {
         ...envConfig,
+        playbackRateSync: 'yes' as unknown as boolean,
+      }),
+    ).toThrowError('Invalid envelope settings');
+    expect(() =>
+      player.applyEnvelopeConfig('amp-env', {
+        ...envConfig,
         envelope: { ...envConfig.envelope, release: 99 },
       }),
     ).toThrowError('Invalid envelope settings');

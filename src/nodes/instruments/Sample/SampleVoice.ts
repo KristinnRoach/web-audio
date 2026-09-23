@@ -24,7 +24,6 @@ import { LFO } from '@/nodes/params/LFOs/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
 import {
-  applyOnNextEnvLoopCycle,
   applySampleEnvelopeShapeEdit,
   createDefaultSampleEnvelopeConfig,
   getSampleEnvelopeBaseValue,
@@ -56,9 +55,8 @@ export class SampleVoice {
   #feedback: HarmonicFeedback | null = null;
 
   #envelopes = new Map<SampleEnvelopeId, Envelope>();
-  /** Host policy the envelope does not know about: `enabled` and the stored `timeScale`. */
+  /** Host policy the envelope does not know about: `enabled`, `timeScale` and `playbackRateSync`. */
   #envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
-  #playbackRateSyncedEnvelopes = new Set<SampleEnvelopeId>();
 
   #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
@@ -423,8 +421,8 @@ export class SampleVoice {
 
   /** The envelope's stored scale composed with the playback-rate follow, where it applies. */
   #timeScale(envType: SampleEnvelopeId, playbackRate: number) {
-    const multiplier = this.#playbackRateSyncedEnvelopes.has(envType) ? playbackRate : 1;
-    return this.#envelopeConfigs.get(envType)!.timeScale * multiplier;
+    const config = this.#envelopeConfigs.get(envType)!;
+    return config.timeScale * (config.playbackRateSync ? playbackRate : 1);
   }
 
   #isEnabled(envType: SampleEnvelopeId) {
@@ -753,25 +751,6 @@ export class SampleVoice {
     const { playbackRate, velocity } = this.#lastTrigger;
     this.#triggerEnvelope(envType, envelope, at, playbackRate, velocity, fromPoint);
   }
-
-  /**
-   * The sync flag is read at trigger time, so a running envelope only takes the new
-   * time scale on a re-trigger; hand it over on the next loop boundary like a shape edit.
-   */
-  setEnvelopePlaybackRateSync = (envType: SampleEnvelopeId, sync: boolean) => {
-    const apply = () => {
-      if (sync) this.#playbackRateSyncedEnvelopes.add(envType);
-      else this.#playbackRateSyncedEnvelopes.delete(envType);
-    };
-
-    const envelope = this.#envelopes.get(envType);
-    if (!envelope) {
-      apply();
-      return;
-    }
-
-    applyOnNextEnvLoopCycle(envelope, apply, (at) => this.#retriggerAt(envType, envelope, at));
-  };
 
   get envelopes() {
     return this.#envelopes;

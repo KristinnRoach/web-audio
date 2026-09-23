@@ -5,6 +5,8 @@ export type EnvelopeConfig = {
   readonly enabled: boolean;
   /** Timing multiplier; values above 1 play the envelope faster. */
   readonly timeScale: number;
+  /** Scales timing by the note's playback rate, so higher notes run the envelope faster. */
+  readonly playbackRateSync?: boolean;
   readonly envelope: EnvelopeShape;
 };
 
@@ -25,7 +27,8 @@ export function assertValidEnvelopeConfig(config: EnvelopeConfig): void {
   if (
     typeof config?.enabled !== 'boolean' ||
     !Number.isFinite(config?.timeScale) ||
-    config.timeScale <= 0
+    config.timeScale <= 0 ||
+    (config.playbackRateSync !== undefined && typeof config.playbackRateSync !== 'boolean')
   ) {
     throw new TypeError('Invalid envelope settings');
   }
