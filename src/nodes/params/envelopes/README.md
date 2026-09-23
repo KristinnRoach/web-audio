@@ -47,11 +47,13 @@ type EnvelopeMode =
   | { type: 'loop' }; // repeat the whole shape until release
 ```
 
-- A shape needs at least 2 points, sorted by time.
+- A shape needs at least 2 points with strictly increasing times.
 - Times are measured from the first point, so the first point plays at the trigger time.
-- `release` is the tail's timing anchor. `release()` pins the current value, then schedules
-  the points after that index at offsets from its time; its curve controls the first segment,
-  but its value is not replayed. It is independent of `sustain`, though presets align them.
+- `release` is the index of the point whose time defines the release tail's timing.
+  `release()` holds the envelope's current value at note-off; it does not set the parameter
+  to the release point's value. It then schedules each later point using its time difference
+  from the release point. The release point's curve controls the first transition. `release`
+  is independent of `sustain`, though presets align them.
 - Exponential segments can't reach zero, so any zero at either end is nudged to a tiny value.
 
 An invalid shape throws a `TypeError`. Call `assertValidEnvelopeShape(shape)` to check one

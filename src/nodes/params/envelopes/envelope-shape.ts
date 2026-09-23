@@ -33,9 +33,11 @@ export type EnvelopeShape = {
   /** Point held while the envelope is in sustain mode. */
   readonly sustain: number;
   /**
-   * Timing anchor for the release tail. `release()` pins the run's current value, then
-   * schedules the points after this index at offsets from this point's time; this point's
-   * curve controls the first segment, but its value is not replayed.
+   * Index of the point whose time is the start of the release tail's time scale.
+   * `release()` holds the run's current value at the requested release time, does not set
+   * the parameter to `points[release].value`, then schedules each later point after the
+   * same time difference it has from `points[release].time`. The release point's curve
+   * controls the transition to the first later point.
    *
    * Independent of a sustain point, though presets normally align them. This does not
    * mark the end of a loop: a loop repeats the whole envelope.
@@ -63,7 +65,7 @@ export function assertValidEnvelopeShape(envelope: EnvelopeShape): void {
           point.curve !== 'step' &&
           point.curve !== 'linear' &&
           point.curve !== 'exponential') ||
-        (index > 0 && point.time < points[index - 1].time),
+        (index > 0 && point.time <= points[index - 1].time),
     ) ||
     !validMarker(envelope.sustain) ||
     !validMarker(envelope.release)

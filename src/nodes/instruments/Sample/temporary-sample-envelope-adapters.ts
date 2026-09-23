@@ -122,3 +122,25 @@ export function applyOnNextEnvLoopCycle(
   apply();
   if (at !== null) retrigger(at);
 }
+
+/** Applies a sampler shape edit without interrupting an existing loop mid-cycle. */
+export function applySampleEnvelopeShapeEdit(
+  envelope: Envelope,
+  nextShape: EnvelopeShape,
+  apply: () => void,
+  retrigger: (at: number, fromPoint: number) => void,
+): void {
+  // A non-looping run has no cycle boundary. When loop is switched on, resume from the
+  // last point it reached so a sustained run carries on into its first full cycle.
+  const resumeFrom =
+    nextShape.mode.type === 'loop' && envelope.shape.mode.type !== 'loop'
+      ? envelope.currentPoint()
+      : null;
+  if (resumeFrom !== null) {
+    apply();
+    retrigger(envelope.clock.currentTime, resumeFrom);
+    return;
+  }
+
+  applyOnNextEnvLoopCycle(envelope, apply, (at) => retrigger(at, 0));
+}

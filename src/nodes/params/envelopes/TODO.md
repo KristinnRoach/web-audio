@@ -2,6 +2,10 @@
 
 Temporary. Fold into issues or delete once the module settles.
 
+Before finalizing the envelope module, audit its existing callers and consolidate their
+envelope policy so no accidental logic remains scattered across `SampleVoice`,
+`SamplePlayer`, or their adapters.
+
 ## Investigate reported loop drift
 
 Kiddi hears the loop walking out of phase after a few cycles. The scheduling grid is
@@ -37,6 +41,15 @@ Ear test before landing either fix.
   object even when the edit was rejected. The old versions returned the same shape by
   identity, which memoised editors can use. Revisit if the editor UI wants it back;
   identity at the points array is still preserved.
+
+## Sampler policy
+
+- Preserve the live sustain-to-loop handoff while avoiding a point-quantized restart when
+  loop is enabled mid-segment, which can step the parameter and click. The caller needs a
+  reliable way to distinguish a run parked at sustain from one still crossing a segment.
+- Forward live filter sustain edits by retaining the active run's normalized-to-Hz
+  mapping. Recomputing it from current filter state may not match the mapping captured
+  when the run was triggered.
 
 ## Instrument bus
 

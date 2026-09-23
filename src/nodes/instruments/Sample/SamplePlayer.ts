@@ -51,7 +51,7 @@ import {
  *
  * 0.13 is roughly the 3 kHz this was fixed at before, at a 48 kHz sample rate.
  */
-const DEFAULT_FILTER_ENV_AMOUNT = 0.13;
+// const DEFAULT_FILTER_ENV_AMOUNT = 0.13; // TODO: @POST_ENV_API_READY
 
 export type SamplePlayerOptions = {
   context?: AudioContext;

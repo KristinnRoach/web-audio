@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   addPoint,
+  assertValidEnvelopeShape,
   getDuration,
   interpolateAtTime,
   deletePoint,
@@ -26,6 +27,22 @@ function envelopeOf(overrides: Partial<EnvelopeShape> = {}): EnvelopeShape {
 }
 
 describe('envelope edits', () => {
+  it('rejects coincident point times consistently', () => {
+    const envelope = envelopeOf();
+    expect(addPoint(envelope, 1, 0.5)).toBe(envelope);
+    expect(updatePoint(envelope.points, 1, 2)).toBe(envelope.points);
+
+    const invalid = envelopeOf({
+      points: [
+        { time: 0, value: 0 },
+        { time: 1, value: 1 },
+        { time: 1, value: 0 },
+      ],
+    });
+
+    expect(() => assertValidEnvelopeShape(invalid)).toThrow(TypeError);
+  });
+
   it('never mutates the envelope it was given', () => {
     const envelope = envelopeOf();
     const before = JSON.stringify(envelope);
@@ -106,7 +123,7 @@ describe('envelope timing', () => {
     expect(getDuration(points, { fromIndex: 0, toIndex: 3, timeScale: 2 })).toBe(1.5);
   });
 
-  it('measures the release tail from its anchor', () => {
+  it("measures the release tail from the release point's time", () => {
     const { points, release } = envelopeOf();
     expect(getDuration(points, { fromIndex: release })).toBe(1);
   });

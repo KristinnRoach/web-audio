@@ -25,6 +25,7 @@ import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/g
 import { samplerParams } from './sampler-params';
 import {
   applyOnNextEnvLoopCycle,
+  applySampleEnvelopeShapeEdit,
   createDefaultSampleEnvelopeConfig,
   getSampleEnvelopeBaseValue,
   getSampleEnvelopeIds,
@@ -743,20 +744,9 @@ export class SampleVoice {
       return;
     }
 
-    // Loop switched on mid-note has no cycle boundary to hand over on: the run is not
-    // looping yet. Resume from the point it has reached instead, so the shape carries on
-    // into its first full cycle rather than snapping back to point 0.
-    const resumeFrom =
-      config.envelope.mode.type === 'loop' && envelope.shape.mode.type !== 'loop'
-        ? envelope.currentPoint()
-        : null;
-    if (resumeFrom !== null) {
-      apply();
-      this.#retriggerAt(envType, envelope, this.now, resumeFrom);
-      return;
-    }
-
-    applyOnNextEnvLoopCycle(envelope, apply, (at) => this.#retriggerAt(envType, envelope, at));
+    applySampleEnvelopeShapeEdit(envelope, config.envelope, apply, (at, fromPoint) =>
+      this.#retriggerAt(envType, envelope, at, fromPoint),
+    );
   };
 
   /** Restarts an envelope from the current note's trigger inputs, for a live edit. */
