@@ -31,10 +31,12 @@ export type EnvelopeShape = {
   /** How the envelope advances until it is released. */
   readonly mode: EnvelopeMode;
   /**
-   * Point the release stage starts from. Presets normally use the second-last point.
+   * Timing anchor for the release tail. `release()` pins the run's current value, then
+   * schedules the points after this index at offsets from this point's time; this point's
+   * curve controls the first segment, but its value is not replayed.
    *
-   * This is an alternate exit path used when `release()` interrupts playback; it does
-   * not mark the end of a loop. A loop repeats the whole envelope.
+   * Independent of a sustain point, though presets normally align them. This does not
+   * mark the end of a loop: a loop repeats the whole envelope.
    */
   readonly release: number;
 };
@@ -140,7 +142,7 @@ export function scaledDuration(
   return Number.isFinite(timeScale) && timeScale > 0 ? duration / timeScale : duration;
 }
 
-/** Offset from point 0 to the point the release stage starts from. */
+/** Offset from point 0 to the release tail's timing anchor. */
 export function releaseStartTime(
   points: readonly EnvelopePoint[],
   release: number,
@@ -149,7 +151,7 @@ export function releaseStartTime(
   return scaledDuration(points, 0, release, timeScale);
 }
 
-/** Duration of the release stage: the release point through to the last point. */
+/** Duration from the release tail's timing anchor to the last point. */
 export function releaseDuration(
   points: readonly EnvelopePoint[],
   release: number,

@@ -47,8 +47,10 @@ type EnvelopeMode =
 
 - A shape needs at least 2 points, sorted by time.
 - Times are measured from the first point, so the first point plays at the trigger time.
-- `release` is the index of the point the release stage starts from. On `release()`, the
-  envelope glides from wherever it is through the points after that index.
+- `release` is the tail's timing anchor. `release()` pins the current value, then schedules
+  the points after that index at offsets from its time; its curve controls the first segment,
+  but its value is not replayed. It is independent of a sustain point, though presets
+  normally align them.
 - Exponential segments can't reach zero, so any zero at either end is nudged to a tiny value.
 
 An invalid shape throws a `TypeError`. Call `assertValidEnvelopeShape(shape)` to check one
@@ -120,7 +122,6 @@ import { envelopePresets } from 'envelopes';
 
 envelopePresets.amplitude(2); // attack, decay, sustain, release
 envelopePresets.filter(0.5); // quick sweep up, then back down, plays once
-envelopePresets.pitch(); // flat at 1, a starting point to edit
 ```
 
 ## Helpers

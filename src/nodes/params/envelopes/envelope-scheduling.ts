@@ -127,7 +127,7 @@ export function scheduleEnvelope(
 }
 
 /**
- * Releases an envelope from `holdValue` through the points after its release index.
+ * Pins `holdValue`, then schedules the points after the release timing anchor.
  *
  * ponytail: pins a value rather than calling `cancelAndHoldAtTime`, which Firefox
  * still has not implemented (bugzil.la/1308431). Without `holdValue` it falls back to
