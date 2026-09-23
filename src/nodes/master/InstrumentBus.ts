@@ -473,7 +473,7 @@ export class InstrumentBus implements ILibAudioNode {
   //   const at = this.#lpfEnvelope.nextCycleTime();
   //   this.#lpfEnvelope.update(config);
   //   if (envelope.mode.type === 'sustain') {
-  //     this.#lpfEnvelope.setSustainValue(envelope.points[envelope.mode.at].value);
+  //     this.#lpfEnvelope.setSustainValue(envelope.points[envelope.sustain].value);
   //   }
   //   const held = Array.from(this.#heldNotes.keys()).pop();
   //   if (at !== null && held !== undefined) this.#triggerLpfEnvelope(held, at);

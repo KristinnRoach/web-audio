@@ -115,7 +115,7 @@ export class Envelope {
    */
   #positionAt(time: number) {
     if (!this.#envShape) return 0;
-    const { points, mode } = this.#envShape;
+    const { points, mode, sustain } = this.#envShape;
     if (points.length === 0) return 0;
 
     let elapsed = Math.max(0, (time - this.#triggerTime) * this.#timeScale);
@@ -126,7 +126,7 @@ export class Envelope {
       const cycle = getDuration(points);
       elapsed = cycle > 0 ? elapsed % cycle : 0;
     } else if (mode.type === 'sustain') {
-      elapsed = Math.min(elapsed, points[mode.at].time - points[0].time);
+      elapsed = Math.min(elapsed, points[sustain].time - points[0].time);
     }
 
     return elapsed;
@@ -325,8 +325,8 @@ export class Envelope {
     }
 
     const position = this.#positionAt(time);
-    const { points, mode } = this.#envShape;
-    const last = mode.type === 'sustain' ? mode.at : points.length - 1;
+    const { points, mode, sustain } = this.#envShape;
+    const last = mode.type === 'sustain' ? sustain : points.length - 1;
     let index = 0;
     while (index < last && points[index + 1].time - points[0].time <= position) index++;
     return index;
@@ -375,9 +375,8 @@ export class Envelope {
     // step by up to the edit distance. Inaudible while `glide` stays short. Track the
     // pending glide in `valueAt` if a long one is ever wanted.
     if (!this.#envShape) return;
-    const { points, mode } = this.#envShape;
+    const { points, mode, sustain } = this.#envShape;
     if (!this.#triggered || mode.type !== 'sustain') return;
-    const sustain = mode.at;
     if (points[sustain].value === value) return;
 
     const sustainTime =

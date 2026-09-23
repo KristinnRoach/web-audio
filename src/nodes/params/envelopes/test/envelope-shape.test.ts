@@ -5,6 +5,7 @@ import {
   interpolateAtTime,
   deletePoint,
   setDuration,
+  setSustainPoint,
   updatePoint,
 } from '../envelope-shape';
 import type { EnvelopeShape } from '../envelope-shape';
@@ -18,6 +19,7 @@ function envelopeOf(overrides: Partial<EnvelopeShape> = {}): EnvelopeShape {
       { time: 3, value: 0, curve: 'exponential' },
     ],
     mode: { type: 'once' },
+    sustain: 2,
     release: 2,
     ...overrides,
   };
@@ -37,9 +39,10 @@ describe('envelope edits', () => {
   });
 
   it('inserts in time order and carries markers along', () => {
-    const next = addPoint(envelopeOf({ mode: { type: 'sustain', at: 1 } }), 0.5, 0.3);
+    const next = addPoint(envelopeOf({ mode: { type: 'sustain' }, sustain: 1 }), 0.5, 0.3);
     expect(next.points.map((point) => point.time)).toEqual([0, 0.5, 1, 2, 3]);
-    expect(next.mode).toEqual({ type: 'sustain', at: 2 });
+    expect(next.mode).toEqual({ type: 'sustain' });
+    expect(next.sustain).toBe(2);
     expect(next.release).toBe(3);
   });
 
@@ -62,10 +65,19 @@ describe('envelope edits', () => {
   });
 
   it('removes interior points and adjusts markers', () => {
-    const next = deletePoint(envelopeOf({ mode: { type: 'sustain', at: 1 } }), 1);
+    const next = deletePoint(envelopeOf({ mode: { type: 'sustain' }, sustain: 1 }), 1);
     expect(next.points.map((point) => point.time)).toEqual([0, 2, 3]);
-    expect(next.mode).toEqual({ type: 'once' });
+    expect(next.mode).toEqual({ type: 'sustain' });
+    expect(next.sustain).toBe(1);
     expect(next.release).toBe(1);
+  });
+
+  it('changes the sustain point without changing loop mode', () => {
+    const envelope = envelopeOf({ mode: { type: 'loop' }, sustain: 1 });
+    const next = setSustainPoint(envelope, 2);
+
+    expect(next.mode).toEqual({ type: 'loop' });
+    expect(next.sustain).toBe(2);
   });
 
   it('refuses to remove anchors or leave fewer than two points', () => {

@@ -11,6 +11,7 @@ const envConfig: EnvelopeConfig = {
       { time: 1, value: 1, curve: 'exponential' },
     ],
     mode: { type: 'once' },
+    sustain: 1,
     release: 1,
   },
 };

@@ -127,7 +127,7 @@ export function scheduleEnvelope(
   const { points } = envelope;
   if (points.length === 0) return;
 
-  const end = envelope.mode.type === 'sustain' ? envelope.mode.at : points.length - 1;
+  const end = envelope.mode.type === 'sustain' ? envelope.sustain : points.length - 1;
   scheduleRange(param, envelope, 0, end, startTime, base, amount, timeScale);
 }
 

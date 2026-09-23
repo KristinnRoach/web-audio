@@ -4,7 +4,8 @@ import { envelopePresets } from '../envelope-presets';
 describe('envelopePresets', () => {
   it('creates a detached amplitude envelope at the requested duration', () => {
     expect(envelopePresets.amplitude(4)).toEqual({
-      mode: { type: 'sustain', at: 3 },
+      mode: { type: 'sustain' },
+      sustain: 3,
       points: [
         { time: 0, value: 0, curve: 'exponential' },
         { time: 0.005, value: 1, curve: 'exponential' },

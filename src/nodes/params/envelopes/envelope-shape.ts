@@ -10,8 +10,8 @@ export type EnvelopePoint = {
 export type EnvelopeMode =
   /** Play through once. */
   | { readonly type: 'once' }
-  /** Hold `at`'s value until release. */
-  | { readonly type: 'sustain'; readonly at: number }
+  /** Hold the envelope's sustain point until release. */
+  | { readonly type: 'sustain' }
   /** Repeat the whole envelope until release. */
   | { readonly type: 'loop' };
 
@@ -30,6 +30,8 @@ export type EnvelopeShape = {
   readonly points: readonly EnvelopePoint[];
   /** How the envelope advances until it is released. */
   readonly mode: EnvelopeMode;
+  /** Point held while the envelope is in sustain mode. */
+  readonly sustain: number;
   /**
    * Timing anchor for the release tail. `release()` pins the run's current value, then
    * schedules the points after this index at offsets from this point's time; this point's
@@ -47,10 +49,7 @@ export function assertValidEnvelopeShape(envelope: EnvelopeShape): void {
   const validMarker = (index: number) =>
     Number.isInteger(index) && Array.isArray(points) && index >= 0 && index < points.length;
   const mode = envelope?.mode;
-  const validMode =
-    mode?.type === 'once' ||
-    mode?.type === 'loop' ||
-    (mode?.type === 'sustain' && validMarker(mode.at));
+  const validMode = mode?.type === 'once' || mode?.type === 'loop' || mode?.type === 'sustain';
 
   if (
     !Array.isArray(points) ||
@@ -66,6 +65,7 @@ export function assertValidEnvelopeShape(envelope: EnvelopeShape): void {
           point.curve !== 'exponential') ||
         (index > 0 && point.time < points[index - 1].time),
     ) ||
+    !validMarker(envelope.sustain) ||
     !validMarker(envelope.release)
   ) {
     throw new TypeError('Invalid envelope');
@@ -149,10 +149,7 @@ export function addPoint(
   return {
     ...envelope,
     points: next,
-    mode:
-      envelope.mode.type === 'sustain' && insertAt <= envelope.mode.at
-        ? { ...envelope.mode, at: envelope.mode.at + 1 }
-        : envelope.mode,
+    sustain: insertAt <= envelope.sustain ? envelope.sustain + 1 : envelope.sustain,
     release: insertAt <= envelope.release ? envelope.release + 1 : envelope.release,
   };
 }
@@ -185,22 +182,14 @@ export function deletePoint(envelope: EnvelopeShape, index: number): EnvelopeSha
   const next = clonePoints(points);
   next.splice(index, 1);
   const end = next.length - 1;
-  const release = envelope.release > index ? envelope.release - 1 : envelope.release;
-  const mode =
-    envelope.mode.type !== 'sustain'
-      ? envelope.mode
-      : envelope.mode.at === index
-        ? { type: 'once' as const }
-        : {
-            ...envelope.mode,
-            at: envelope.mode.at > index ? envelope.mode.at - 1 : envelope.mode.at,
-          };
+  const moveMarker = (marker: number) =>
+    marker === index ? Math.min(index, Math.max(0, end - 1)) : marker > index ? marker - 1 : marker;
 
   return {
     ...envelope,
     points: next,
-    mode,
-    release: envelope.release === index ? Math.min(index, Math.max(0, end - 1)) : release,
+    sustain: moveMarker(envelope.sustain),
+    release: moveMarker(envelope.release),
   };
 }
 
@@ -228,12 +217,9 @@ export function setDuration(
   }));
 }
 
-export function setSustainPoint(envelope: EnvelopeShape, index?: number): EnvelopeShape {
-  if (index !== undefined && (index < 0 || index >= envelope.points.length)) return envelope;
-  return {
-    ...envelope,
-    mode: index === undefined ? { type: 'once' } : { type: 'sustain', at: index },
-  };
+export function setSustainPoint(envelope: EnvelopeShape, index: number): EnvelopeShape {
+  if (index < 0 || index >= envelope.points.length) return envelope;
+  return { ...envelope, sustain: index };
 }
 
 export function setReleasePoint(envelope: EnvelopeShape, index: number): EnvelopeShape {

@@ -27,6 +27,7 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
 function flatPitchShape(durationSeconds: number): EnvelopeShape {
   return {
     mode: { type: 'once' },
+    sustain: 0,
     points: setDuration(
       [
         { time: 0, value: 1, curve: 'exponential' },
@@ -106,9 +107,9 @@ export function getLiveSampleEnvelopeSustainValue(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,
 ): number | undefined {
-  const { mode } = config.envelope;
+  const { mode, sustain } = config.envelope;
   if (id === 'filter-env' || mode.type !== 'sustain') return undefined;
-  return config.envelope.points[mode.at].value;
+  return config.envelope.points[sustain].value;
 }
 
 /** Applies an envelope edit at the next inaudible loop boundary, when one exists. */

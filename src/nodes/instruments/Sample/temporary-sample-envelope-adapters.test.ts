@@ -11,7 +11,8 @@ const config: EnvelopeConfig = {
       { time: 1, value: 0.25 },
       { time: 2, value: 0 },
     ],
-    mode: { type: 'sustain', at: 1 },
+    mode: { type: 'sustain' },
+    sustain: 1,
     release: 1,
   },
 };

@@ -16,7 +16,8 @@ const env = new Envelope(ctx, gain.gain, {
     { time: 0.2, value: 0.6 }, // decay to sustain
     { time: 0.5, value: 0 }, // release
   ],
-  mode: { type: 'sustain', at: 2 },
+  mode: { type: 'sustain' },
+  sustain: 2,
   release: 2,
 });
 
@@ -30,6 +31,7 @@ env.release(); // note off
 type EnvelopeShape = {
   points: EnvelopePoint[];
   mode: EnvelopeMode;
+  sustain: number;
   release: number;
 };
 
@@ -41,7 +43,7 @@ type EnvelopePoint = {
 
 type EnvelopeMode =
   | { type: 'once' } // play through to the end
-  | { type: 'sustain'; at: number } // stop at point `at` and hold until release
+  | { type: 'sustain' } // stop at `sustain` and hold until release
   | { type: 'loop' }; // repeat the whole shape until release
 ```
 
