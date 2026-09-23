@@ -19,6 +19,6 @@ const config: EnvelopeConfig = {
 
 it('only forwards sustain values that share the active player value domain', () => {
   expect(getLiveSampleEnvelopeSustainValue('amp', config)).toBe(0.25);
-  expect(getLiveSampleEnvelopeSustainValue('pitch', config)).toBe(0.25);
+  expect(getLiveSampleEnvelopeSustainValue('pitch', config)).toBe(2 ** 0.25);
   expect(getLiveSampleEnvelopeSustainValue('filter', config)).toBeUndefined();
 });

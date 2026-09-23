@@ -65,8 +65,8 @@ describe('SamplePlayer envelope config', () => {
         enabled: false,
         shape: expect.objectContaining({
           points: [
-            { time: 0, value: 1, curve: 'exponential' },
-            { time: 4, value: 1, curve: 'exponential' },
+            { time: 0, value: 0, curve: 'exponential' },
+            { time: 4, value: 0, curve: 'exponential' },
           ],
         }),
       }),

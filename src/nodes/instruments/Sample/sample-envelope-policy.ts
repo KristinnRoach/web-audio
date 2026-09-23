@@ -23,15 +23,23 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
   return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch'];
 }
 
-/** Flat at 1, so the pitch env is an identity until someone edits it. */
+/**
+ * Pitch shape values are bipolar: -1..1 spans this many semitones down..up, 0 is unison.
+ * ponytail: fixed range; make it configurable once there is a place to persist it.
+ */
+const PITCH_ENVELOPE_SEMITONES = 12;
+
+const pitchRatio = (value: number) => 2 ** ((value * PITCH_ENVELOPE_SEMITONES) / 12);
+
+/** Flat at 0, so the pitch env is an identity until someone edits it. */
 function flatPitchShape(durationSeconds: number): EnvelopeShape {
   return {
     mode: { type: 'once' },
     sustainPoint: 0,
     points: setDuration(
       [
-        { time: 0, value: 1, curve: 'exponential' },
-        { time: 1, value: 1, curve: 'exponential' },
+        { time: 0, value: 0, curve: 'exponential' },
+        { time: 1, value: 0, curve: 'exponential' },
       ],
       durationSeconds,
     ),
@@ -103,7 +111,18 @@ export function resolveSampleEnvelopeTrigger(
   baseValue: number,
   param: RangedAutomatableParam,
 ): Pick<EnvelopeTriggerOptions, 'amount' | 'shape'> {
-  if (id !== 'filter') return { amount: baseValue };
+  if (id === 'amp') return { amount: baseValue };
+
+  if (id === 'pitch') {
+    // Ratios scale the note's rate through `amount`, so live sustain edits can pass a
+    // ratio too. Exponential in rate is linear in pitch; steps stay steps.
+    const points = envelope.points.map((point) => ({
+      ...point,
+      value: pitchRatio(point.value),
+      curve: point.curve === 'step' ? ('step' as const) : ('exponential' as const),
+    }));
+    return { amount: baseValue, shape: { ...envelope, points } };
+  }
 
   const low = Math.max(baseValue, 1e-3);
   const high = Math.max(param.maxValue, low);
@@ -124,7 +143,8 @@ export function getLiveSampleEnvelopeSustainValue(
 ): number | undefined {
   const { mode, points, sustainPoint } = config.shape;
   if (id === 'filter' || mode.type !== 'sustain') return undefined;
-  return points[sustainPoint].value;
+  const { value } = points[sustainPoint];
+  return id === 'pitch' ? pitchRatio(value) : value;
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */
