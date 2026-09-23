@@ -4,7 +4,7 @@ Breakpoint envelopes for Web Audio. Draw a shape out of points, bind it to an `A
 then trigger and release it.
 
 ```ts
-import { Envelope } from 'envelopes';
+import { Envelope } from '@kidlib/web-audio';
 
 const ctx = new AudioContext();
 const gain = ctx.createGain();
@@ -29,16 +29,16 @@ env.release(); // note off
 
 ```ts
 type EnvelopeShape = {
-  points: EnvelopePoint[];
-  mode: EnvelopeMode;
-  sustain: number;
-  release: number;
+  readonly points: readonly EnvelopePoint[];
+  readonly mode: EnvelopeMode;
+  readonly sustain: number;
+  readonly release: number;
 };
 
 type EnvelopePoint = {
-  time: number; // seconds
-  value: number;
-  curve?: 'linear' | 'exponential' | 'step'; // curve to the next point, default 'linear'
+  readonly time: number; // seconds
+  readonly value: number;
+  readonly curve?: 'linear' | 'exponential' | 'step'; // curve to the next point, default 'linear'
 };
 
 type EnvelopeMode =

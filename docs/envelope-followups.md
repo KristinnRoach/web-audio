@@ -20,16 +20,16 @@ not a decision already made. Order is roughly by risk, not by effort.
 
 - The release stage deliberately binds at trigger. Editing it mid-note affects the next
   trigger, like other definition changes; `setSustainValue()` is the explicit live
-  exception. `docs/envelope-live-edit.md:34`.
+  exception.
 - `Envelope.release` is required. Presets default it to the second-last point. Decide
   whether an envelope without a release stage is expressible.
 - Coincident point times are now rejected on insert (#60) to match `updatePoint`'s strict
   ordering. The player and interpolation still tolerate them, so a shape built by other
   means can carry them. `envelope-shape.ts:43,72`.
 - Loop-on mid-attack snaps to a point rather than splitting the segment, so a toggle mid
-  segment is off by up to one segment. See `EnvelopePlayer.currentPoint()`.
+  segment is off by up to one segment. See `Envelope.currentPoint()`.
 - Release pins a value instead of `cancelAndHoldAtTime` (Firefox gap). Revisit when that
-  lands. See `releaseEnvelope()` and `EnvelopePlayer.release()`.
+  lands.
 
 ## Sampler policy
 
@@ -37,7 +37,7 @@ not a decision already made. Order is roughly by risk, not by effort.
   target selection, value mapping and timing policy. Dissolve into the caller or promote
   into the core; the file name is the only thing marking it as temporary.
 - Live edits to a non-looping run, and to a held note's sustain _index_, wait for the next
-  trigger. No inaudible seam exists for either. `docs/envelope-live-edit.md:178`.
+  trigger. No inaudible seam exists for either.
 - The temporary sampler adapter skips live sustain forwarding for a filter envelope whose
   stored values are normalized but whose active player shape is mapped to Hz.
 
