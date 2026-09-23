@@ -11,9 +11,8 @@ import {
 } from './envelope-scheduling';
 import {
   assertValidEnvelopeShape,
-  baseDuration,
+  getDuration,
   interpolateAtTime,
-  releaseDuration as releaseStageDuration,
   type EnvelopeShape,
 } from './envelope-shape';
 
@@ -123,8 +122,8 @@ export class Envelope {
 
     if (mode.type === 'loop') {
       // A zero-extent cycle has nowhere to advance to, and `trigger` already declines to
-      // loop it. Both read the same `spanBetween`, so they cannot disagree.
-      const cycle = baseDuration(points);
+      // loop it. Both read the same duration helper, so they cannot disagree.
+      const cycle = getDuration(points);
       elapsed = cycle > 0 ? elapsed % cycle : 0;
     } else if (mode.type === 'sustain') {
       elapsed = Math.min(elapsed, points[mode.at].time - points[0].time);
@@ -148,13 +147,15 @@ export class Envelope {
   trigger(time = this.clock.currentTime, options: EnvelopeTriggerOptions = {}) {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
     const runEnvelope = snapshot(options.shape ?? this.#shape);
+    const timeScale = options.timeScale ?? 1;
+    const fullDuration = getDuration(runEnvelope.points, { timeScale });
     time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;
     this.#stopLoop();
     this.#triggered = true;
     this.#base = options.base ?? 0;
     this.#amount = options.amount ?? 1;
-    this.#timeScale = options.timeScale ?? 1;
+    this.#timeScale = timeScale;
     this.#triggerTime = time;
     this.#startTime = time;
 
@@ -163,7 +164,6 @@ export class Envelope {
     const { param } = this;
     const base = this.#base;
     const amount = this.#amount;
-    const timeScale = this.#timeScale;
 
     // Clear only. Every scheduling path below opens with its own setValueAtTime at
     // this same instant, so pinning here would write the param's stale value and be
@@ -173,9 +173,9 @@ export class Envelope {
     const { points } = runEnvelope;
     // A loop repeats the whole envelope. Every other mode schedules one pass;
     // scheduleEnvelope stops that pass at the sustain point when there is one.
-    const duration = runEnvelope.mode.type === 'loop' ? baseDuration(points) / timeScale : 0;
+    const loopDuration = runEnvelope.mode.type === 'loop' ? fullDuration : 0;
 
-    if (duration <= 0) {
+    if (loopDuration <= 0) {
       scheduleEnvelope(param, runEnvelope, time, { base, amount, timeScale });
       return;
     }
@@ -184,7 +184,7 @@ export class Envelope {
     // every cycle boundary below still lands on the same grid and `valueAt` keeps
     // reading the right phase. The anchor is in the past; nothing is scheduled there.
     const from = Math.min(Math.max(options.fromPoint ?? 0, 0), points.length - 1);
-    this.#triggerTime = time - (points[from].time - points[0].time) / timeScale;
+    this.#triggerTime = time - getDuration(points, { toIndex: from, timeScale });
 
     // Cycle n opens at time + n * duration, the first pass included, so there is no
     // pre-loop stage and point 0 lands on the trigger time every pass. Absolute
@@ -212,13 +212,13 @@ export class Envelope {
       const now = this.clock.currentTime;
       const horizon = now + LOOKAHEAD_SECONDS;
 
-      while (anchor + (cycle + 1) * duration <= now) cycle++;
-      while (anchor + cycle * duration < horizon) {
+      while (anchor + (cycle + 1) * loopDuration <= now) cycle++;
+      while (anchor + cycle * loopDuration < horizon) {
         // A cycle opens on the same instant the previous one closes, but the two
         // expressions for it can differ by an ULP. When the closing ramp rounds later
         // than the opening setValueAtTime it overwrites the reset and that pass loses
         // its attack, so never open a cycle before the previous one has ended.
-        const start = Math.max(anchor + cycle * duration, cycleEnd);
+        const start = Math.max(anchor + cycle * loopDuration, cycleEnd);
         cycleEnd = scheduleRange(
           param,
           runEnvelope,
@@ -260,13 +260,13 @@ export class Envelope {
   /** Full duration of the latest run at its time scale; before any run, `shape` at 1. */
   duration() {
     const { points } = this.#envShape ?? this.#shape;
-    return baseDuration(points) / this.#timeScale;
+    return getDuration(points, { timeScale: this.#timeScale });
   }
 
   /** Release-stage duration, read the same way as `duration`. */
   releaseDuration() {
     const { points, release } = this.#envShape ?? this.#shape;
-    return releaseStageDuration(points, release, this.#timeScale);
+    return getDuration(points, { fromIndex: release, timeScale: this.#timeScale });
   }
 
   /**
@@ -381,7 +381,7 @@ export class Envelope {
     if (points[sustain].value === value) return;
 
     const sustainTime =
-      this.#triggerTime + (points[sustain].time - points[0].time) / this.#timeScale;
+      this.#triggerTime + getDuration(points, { toIndex: sustain, timeScale: this.#timeScale });
 
     if (time < sustainTime) return;
 

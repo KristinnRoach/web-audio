@@ -647,6 +647,7 @@ describe('Envelope lifecycle', () => {
     expect(() => player.trigger(0.5, { shape: { ...envelope, release: 9 } })).toThrow(
       'Invalid envelope',
     );
+    expect(() => player.trigger(0.5, { timeScale: 0 })).toThrow(RangeError);
     expect(player.position(0.5)).toBe(0.5);
     expect(param.events).toHaveLength(eventCount);
     player.stop();

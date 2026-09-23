@@ -1,6 +1,11 @@
 import { cancelAndPinParamValue } from '../audioparam-utils';
 
-import type { EnvelopeCurve, EnvelopePoint, EnvelopeShape } from './envelope-shape';
+import {
+  getDuration,
+  type EnvelopeCurve,
+  type EnvelopePoint,
+  type EnvelopeShape,
+} from './envelope-shape';
 
 /** The automation surface an envelope needs; native `AudioParam` is one implementation. */
 export type AutomatableParam = {
@@ -100,7 +105,7 @@ export function scheduleRange(
   let last = startTime;
 
   for (let index = from + 1; index <= to; index++) {
-    last = startTime + (points[index].time - points[from].time) / timeScale;
+    last = startTime + getDuration(points, { fromIndex: from, toIndex: index, timeScale });
     schedulePoint(
       param,
       valueOf(points, index, from, to, base, amount),
@@ -144,7 +149,6 @@ export function releaseEnvelope(
   const from = envelope.release;
 
   const { points } = envelope;
-  const fromTime = points[from].time;
   const exponentialOut = points[from].curve === 'exponential';
 
   // An exponential first segment cannot leave zero, so the handoff is floored the same
@@ -158,7 +162,7 @@ export function releaseEnvelope(
     schedulePoint(
       param,
       valueOf(points, index, from, points.length - 1, base, amount),
-      releaseTime + (points[index].time - fromTime) / timeScale,
+      releaseTime + getDuration(points, { fromIndex: from, toIndex: index, timeScale }),
       points[index - 1].curve ?? 'linear',
     );
   }

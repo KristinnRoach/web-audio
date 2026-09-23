@@ -104,51 +104,20 @@ export function interpolateAtTime(points: readonly EnvelopePoint[], time: number
 const clonePoints = (points: readonly EnvelopePoint[]) => points.map((point) => ({ ...point }));
 const lastIndex = (points: readonly EnvelopePoint[]) => points.length - 1;
 
-/**
- * Unscaled seconds between two points, or 0 when the range is empty or out of bounds.
- *
- * The single expression for "how long is this stretch of the shape". Every duration in
- * the module goes through here, including the player's, so a loop's cycle length and the
- * grid its cycles are placed on cannot round differently and walk apart.
- */
-export function spanBetween(
+/** Duration in seconds, optionally bounded by point indices and scaled for playback. */
+export function getDuration(
   points: readonly EnvelopePoint[],
-  fromIndex: number,
-  toIndex: number,
+  {
+    fromIndex = 0,
+    toIndex = lastIndex(points),
+    timeScale = 1,
+  }: { fromIndex?: number; toIndex?: number; timeScale?: number } = {},
 ): number {
+  if (!Number.isFinite(timeScale) || timeScale <= 0) {
+    throw new RangeError('Envelope time scale must be greater than zero');
+  }
   if (fromIndex < 0 || toIndex > lastIndex(points) || fromIndex >= toIndex) return 0;
-  return points[toIndex].time - points[fromIndex].time;
-}
-
-export function baseDuration(points: readonly EnvelopePoint[]): number {
-  return spanBetween(points, 0, lastIndex(points));
-}
-
-/**
- * `spanBetween` divided by `timeScale`, which is dimensionless, so values above 1 shorten
- * the result. A non-finite or non-positive scale is ignored rather than throwing, since
- * these are display-side queries.
- *
- * Callers holding a stored scale and a per-run multiplier compose the two themselves;
- * there is no second multiplier parameter here.
- */
-export function scaledDuration(
-  points: readonly EnvelopePoint[],
-  fromIndex: number,
-  toIndex: number,
-  timeScale = 1,
-): number {
-  const duration = spanBetween(points, fromIndex, toIndex);
-  return Number.isFinite(timeScale) && timeScale > 0 ? duration / timeScale : duration;
-}
-
-/** Duration from the release tail's timing anchor to the last point. */
-export function releaseDuration(
-  points: readonly EnvelopePoint[],
-  release: number,
-  timeScale = 1,
-): number {
-  return scaledDuration(points, release, lastIndex(points), timeScale);
+  return (points[toIndex].time - points[fromIndex].time) / timeScale;
 }
 
 export function hasVariation(points: readonly EnvelopePoint[]): boolean {
@@ -247,7 +216,7 @@ export function setDuration(
   if (points.length < 2) return points;
 
   const start = points[0].time;
-  const current = baseDuration(points);
+  const current = getDuration(points);
   return points.map((point, index) => ({
     ...point,
     time:

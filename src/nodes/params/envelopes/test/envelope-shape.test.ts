@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   addPoint,
-  baseDuration,
+  getDuration,
   interpolateAtTime,
   deletePoint,
-  releaseDuration,
-  scaledDuration,
   setDuration,
   updatePoint,
 } from '../envelope-shape';
@@ -84,7 +82,7 @@ describe('envelope edits', () => {
   it('scales every point about the first one', () => {
     const next = setDuration(envelopeOf().points, 6);
     expect(next.map((point) => point.time)).toEqual([0, 2, 4, 6]);
-    expect(baseDuration(next)).toBe(6);
+    expect(getDuration(next)).toBe(6);
     expect(() => setDuration(next, 0)).toThrow(RangeError);
   });
 });
@@ -92,21 +90,27 @@ describe('envelope edits', () => {
 describe('envelope timing', () => {
   it('divides the span by the time scale it is handed', () => {
     const { points } = envelopeOf();
-    expect(scaledDuration(points, 0, 3)).toBe(3);
-    expect(scaledDuration(points, 0, 3, 2)).toBe(1.5);
-    expect(scaledDuration(points, 0, 3, 1 * 2)).toBe(1.5);
+    expect(getDuration(points)).toBe(3);
+    expect(getDuration(points, { fromIndex: 0, toIndex: 3, timeScale: 2 })).toBe(1.5);
   });
 
   it('measures the release tail from its anchor', () => {
     const { points, release } = envelopeOf();
-    expect(releaseDuration(points, release)).toBe(1);
+    expect(getDuration(points, { fromIndex: release })).toBe(1);
   });
 
   it('returns zero for an invalid span', () => {
     const { points } = envelopeOf();
-    expect(scaledDuration(points, 2, 1)).toBe(0);
-    expect(scaledDuration(points, 0, 99)).toBe(0);
-    expect(scaledDuration(points, -1, 2)).toBe(0);
+    expect(getDuration(points, { fromIndex: 2, toIndex: 1 })).toBe(0);
+    expect(getDuration(points, { toIndex: 99 })).toBe(0);
+    expect(getDuration(points, { fromIndex: -1, toIndex: 2 })).toBe(0);
+  });
+
+  it('rejects an invalid time scale', () => {
+    const { points } = envelopeOf();
+    for (const scale of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => getDuration(points, { timeScale: scale })).toThrow(RangeError);
+    }
   });
 });
 
