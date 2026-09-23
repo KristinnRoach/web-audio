@@ -70,7 +70,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   #initPromise: Promise<void> | null = null;
   #isLoaded = false;
   private readonly envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
-  private readonly playbackRateSyncedEnvelopes = new Set<SampleEnvelopeId>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
   #initialAudioBuffer: AudioBuffer | null = null;
@@ -295,9 +294,6 @@ export class SamplePlayer implements ILibInstrumentNode {
         const config = this.getEnvelopeConfig(id);
         this.voicePool.applyToAllVoices((voice) => voice.applyEnvelopeConfig(id, config));
       });
-      this.playbackRateSyncedEnvelopes.forEach((id) =>
-        this.voicePool.applyToAllVoices((voice) => voice.setEnvelopePlaybackRateSync(id, true)),
-      );
       this.sendUpstreamMessage('sample-player:initialized', {});
     });
 
@@ -1122,10 +1118,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     return [...(this.voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
   }
 
+  /** Shorthand for applying the current config with `playbackRateSync` changed. */
   setEnvelopeSync = (id: SampleEnvelopeId, sync: boolean) => {
-    if (sync) this.playbackRateSyncedEnvelopes.add(id);
-    else this.playbackRateSyncedEnvelopes.delete(id);
-    this.voicePool.applyToAllVoices((voice) => voice.setEnvelopePlaybackRateSync(id, sync));
+    this.applyEnvelopeConfig(id, { ...this.getEnvelopeConfig(id), playbackRateSync: sync });
   };
 
   /**

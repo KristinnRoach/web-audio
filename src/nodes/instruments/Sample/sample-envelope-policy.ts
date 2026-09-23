@@ -113,7 +113,7 @@ export function getLiveSampleEnvelopeSustainValue(
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */
-export function applyOnNextEnvLoopCycle(
+function applyOnNextEnvLoopCycle(
   envelope: Envelope,
   apply: () => void,
   retrigger: (at: number) => void,
