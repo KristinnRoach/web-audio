@@ -2,6 +2,7 @@
 '@kidlib/web-audio': patch
 ---
 
-setLpfCutoff now targets both filters by default and setHpfCutoff the post-FX one; both previously defaulted to pre-FX only. Voice and bus filters share one Q and one cutoff smoothing constant, the voice chain puts the LPF last, and filter keytracking is off by default.
-
-Cutoff glide timing is fixed: `glideTime` is a ramp duration, but it was passed straight to `setTargetAtTime` as an exponential time constant, so a glide took roughly 3x as long as requested. It is now divided by 3. The direct cutoff setters also honour `options.cancelPrevious` instead of always clearing scheduled automation. `HarmonicFeedback.setDelay` and `setDelayMultiplier` had the same gap: a negative glide time slipped past their `=== 0` guard.
+- `SamplePlayer.setLpfCutoff` now targets both pre- and post-FX filters by default; `setHpfCutoff` targets post-FX. Pass `'pre'` explicitly to retain the previous defaults.
+- Filter keytracking is off by default, and voice and bus filters use the same Q and cutoff smoothing.
+- Cutoff `glideTime` now represents ramp duration, and cutoff setters honor `cancelPrevious: false` to preserve scheduled automation.
+- Added the root `DEFAULT` export for shared library defaults.

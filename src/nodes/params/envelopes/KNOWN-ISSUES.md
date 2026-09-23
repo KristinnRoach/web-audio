@@ -66,10 +66,6 @@ Code observations below are not claims that every case has been reproduced audib
 
 ## Release bookkeeping
 
-Reconcile changesets before publishing. The existing pending patch changeset covers
-filter changes, not the envelope API migration. Earlier envelope work replaced
-`EnvelopeRuntime`, `createEnvelope` and `EnvelopePlayer` with `new Envelope(...)`;
-the old `Envelope` shape type is now `EnvelopeShape`, presets return shapes, and
-`stop()` replaces player disposal. Config validation/cloning now live in the sampler
-and are not root exports. Document the consumer migration and choose the version
-bump together; this cleanup introduces no API or playback changes.
+The pending minor changeset documents migration from published 0.4.2, alongside the
+filter changeset. Intermediate APIs such as `EnvelopeRuntime` were never in that
+release. Keep consumer migration notes based on the published API when revisiting it.
