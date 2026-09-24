@@ -361,7 +361,7 @@ test('never opens a loop cycle before the previous one has closed', () => {
       { time: 0.02, value: 1, curve: 'exponential' },
       { time: 0.3, value: 0.15, curve: 'linear' },
     ],
-    // This test never releases, so pointing `release` at the last point leaves that
+    // This test never releases, so pointing `releasePoint` at the last point leaves that
     // stage empty.
     releasePoint: 2,
     sustainPoint: 2,
