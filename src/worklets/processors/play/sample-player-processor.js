@@ -400,6 +400,20 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     let calcLoopStart = clamp(lpStart);
     let calcLoopEnd = clamp(lpEnd);
 
+    // An audio-rate loop's length is its pitch, and the range edges snap to zero
+    // crossings the loop points don't know about. Shift such a loop into the range
+    // instead of letting the clamp shorten it. A loop longer than the range still
+    // clamps as above.
+    const loopLength = lpEnd - lpStart;
+    if (
+      loopLength >= 1 &&
+      loopLength <= this.PITCH_PRESERVATION_THRESHOLD &&
+      loopLength <= playbackRange.durationSamples
+    ) {
+      calcLoopStart = Math.min(calcLoopStart, playbackRange.endSamples - loopLength);
+      calcLoopEnd = calcLoopStart + loopLength;
+    }
+
     if (calcLoopEnd - calcLoopStart < 1) {
       calcLoopStart = playbackRange.startSamples;
       calcLoopEnd = playbackRange.endSamples;

@@ -46,7 +46,7 @@ function makeParameters(overrides: Record<string, number> = {}): Parameters {
   );
 }
 
-async function startProcessor() {
+async function startProcessor(zeroCrossingSeconds: number[] = []) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
@@ -56,6 +56,9 @@ async function startProcessor() {
       buffer: [new Float32Array(TEST_SAMPLE_RATE)],
       durationSeconds: 1,
     },
+  } as MessageEvent);
+  processor.port.onmessage?.({
+    data: { type: 'voice:setZeroCrossings', zeroCrossings: zeroCrossingSeconds },
   } as MessageEvent);
   processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
   processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
@@ -93,5 +96,55 @@ describe('loop range clamping', () => {
 
     expect(processor.playbackPosition).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
     expect(processor.playbackPosition).toBeLessThan(TEST_SAMPLE_RATE / 2 + 200);
+  });
+
+  // The playback start snaps forward to a zero crossing, past a loop sitting on
+  // the trim start. Clamping that loop would shorten it, and an audio-rate
+  // loop's length is its pitch.
+  it('keeps an audio-rate loop at its length when the range start moves past it', async () => {
+    const start = TEST_SAMPLE_RATE / 2;
+    const loopLength = 92;
+    const processor = await startProcessor([(start + 20) / TEST_SAMPLE_RATE, 0.9]);
+    const parameters = makeParameters({
+      startPoint: start / TEST_SAMPLE_RATE,
+      endPoint: 1,
+      loopStart: start / TEST_SAMPLE_RATE,
+      loopEnd: (start + loopLength) / TEST_SAMPLE_RATE,
+    });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < loopLength * 4; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    // Distance between consecutive wraps is the loop length.
+    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    expect(wraps[1] - wraps[0]).toBeCloseTo(loopLength, 0);
+  });
+
+  it('keeps an audio-rate loop at its length when the range end moves before it', async () => {
+    const end = TEST_SAMPLE_RATE * 0.75;
+    const loopLength = 92;
+    const processor = await startProcessor([0.5, (end - 20) / TEST_SAMPLE_RATE]);
+    const parameters = makeParameters({
+      startPoint: 0.5,
+      endPoint: end / TEST_SAMPLE_RATE,
+      loopStart: (end - loopLength) / TEST_SAMPLE_RATE,
+      loopEnd: end / TEST_SAMPLE_RATE,
+    });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE / 4 + loopLength * 3; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    expect(wraps[1] - wraps[0]).toBeCloseTo(loopLength, 0);
+    // Never plays past the snapped range end (within Float32 parameter precision).
+    expect(Math.max(...positions)).toBeLessThan(end - 20 + 1);
   });
 });
