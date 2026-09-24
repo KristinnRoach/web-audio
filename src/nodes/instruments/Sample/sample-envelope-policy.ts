@@ -107,7 +107,7 @@ export function getSampleEnvelopeBaseValue(
 
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  envelope: EnvelopeShape,
+  envelopeShape: EnvelopeShape,
   baseValue: number,
   param: RangedAutomatableParam,
 ): Pick<EnvelopeTriggerOptions, 'amount' | 'shape'> {
@@ -116,25 +116,25 @@ export function resolveSampleEnvelopeTrigger(
   if (id === 'pitch') {
     // Ratios scale the note's rate through `amount`, so live sustain edits can pass a
     // ratio too. Exponential in rate is linear in pitch; steps stay steps.
-    const points = envelope.points.map((point) => ({
+    const points = envelopeShape.points.map((point) => ({
       ...point,
       value: pitchRatio(point.value),
       curve: point.curve === 'step' ? ('step' as const) : ('exponential' as const),
     }));
-    return { amount: baseValue, shape: { ...envelope, points } };
+    return { amount: baseValue, shape: { ...envelopeShape, points } };
   }
 
   const low = Math.max(baseValue, 1e-3);
   const high = Math.max(param.maxValue, low);
   const logLow = Math.log(low);
   const logRange = Math.log(high) - logLow;
-  const points = envelope.points.map((point) => ({
+  const points = envelopeShape.points.map((point) => ({
     ...point,
     value: Math.exp(logLow + logRange * point.value),
     curve: 'exponential' as const,
   }));
 
-  return { shape: { ...envelope, points } };
+  return { shape: { ...envelopeShape, points } };
 }
 
 export function getLiveSampleEnvelopeSustainValue(

@@ -632,7 +632,7 @@ test('a future pickup hands over no earlier than its scheduled opening', () => {
 });
 
 describe('Envelope lifecycle', () => {
-  const envelope: EnvelopeShape = {
+  const envelopeShape: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
       { time: 1, value: 1 },
@@ -644,7 +644,7 @@ describe('Envelope lifecycle', () => {
 
   it('can trigger again after stop', () => {
     const param = createFakeParam();
-    const player = new Envelope({ currentTime: 0 }, param, envelope);
+    const player = new Envelope({ currentTime: 0 }, param, envelopeShape);
 
     player.trigger(0);
     player.stop(0.25);
@@ -658,12 +658,12 @@ describe('Envelope lifecycle', () => {
 
   it('leaves the active run unchanged when a trigger is invalid', () => {
     const param = createFakeParam();
-    const player = new Envelope({ currentTime: 0 }, param, envelope);
+    const player = new Envelope({ currentTime: 0 }, param, envelopeShape);
 
     player.trigger(0);
     const eventCount = param.events.length;
 
-    expect(() => player.trigger(0.5, { shape: { ...envelope, releasePoint: 9 } })).toThrow(
+    expect(() => player.trigger(0.5, { shape: { ...envelopeShape, releasePoint: 9 } })).toThrow(
       'Invalid envelope',
     );
     expect(() => player.trigger(0.5, { timeScale: 0 })).toThrow(RangeError);
