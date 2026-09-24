@@ -1142,7 +1142,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.outBus.setSendAmount(effect, amount);
   };
 
-  setLpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' | 'all' = 'all') => {
+  setLpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' | 'all' = 'pre') => {
     this.#lpfCutoff = hz;
     if (preOrPostFx === 'pre' || preOrPostFx === 'all') {
       this.voicePool.applyToAllVoices((v) => {
