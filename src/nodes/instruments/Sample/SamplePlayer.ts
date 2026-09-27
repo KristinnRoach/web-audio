@@ -603,10 +603,15 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === PLAYBACK === */
 
+  /**
+   * `secondsFromNow` schedules the note on the audio clock. The voice is
+   * allocated now, so a scheduled note counts toward polyphony straight away.
+   */
   play(
     midiNote: MidiValue,
     velocity: MidiValue = 100,
     glideTime = this.getGlideTime(),
+    secondsFromNow = 0,
   ): MidiValue | null {
     const safeVelocity = isMidiValue(velocity) ? velocity : 100;
     const transposedMidiNote = midiNote + this.#transposedBySemitones;
@@ -620,12 +625,13 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#pitchLFO?.setMusicalNote(transposedMidiNote, { divisor: 4 });
     }
 
-    this.outBus.noteOn(transposedMidiNote, safeVelocity, 0, glideTime);
+    this.outBus.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
 
-    return this.voicePool.noteOn(transposedMidiNote, safeVelocity, 0, glideTime);
+    return this.voicePool.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
   }
 
-  release(midiNote: MidiValue): this {
+  /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
+  release(midiNote: MidiValue, secondsFromNow = 0): this {
     if (this.holdEnabled || this.#holdLocked) return this;
 
     const transposedMidiNote = midiNote + this.#transposedBySemitones;
@@ -641,7 +647,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     // Remove from sustained notes if it was there
     this.#sustainedNotes.delete(transposedMidiNote);
 
-    this.voicePool.noteOff(transposedMidiNote);
+    this.voicePool.noteOff(transposedMidiNote, secondsFromNow);
     this.outBus.noteOff(transposedMidiNote);
     this.sendUpstreamMessage('note:off', { transposedMidiNote });
     return this;
