@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.5.4
+
+### Patch Changes
+
+- ea3ac7b: `SamplePlayer.play()` and `release()` take an optional `secondsFromNow`, which schedules the note on the audio clock. It was already supported by the voice pool but not reachable from the player. Existing calls are unchanged.
+
 ## 0.5.3
 
 ### Patch Changes
