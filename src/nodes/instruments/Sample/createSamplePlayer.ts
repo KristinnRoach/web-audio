@@ -1,10 +1,8 @@
 // createSamplePlayer.ts
 
-import { getAudioContext, ensureAudioCtx } from '@/context';
-import { SamplePlayer, type SamplePlayerOptions } from './SamplePlayer';
-import { assert } from '@/utils';
-
 import { initProcessors } from '@/worklets';
+import { ensureAudioCtx, logAudioContextStats } from '@/context';
+import { SamplePlayer, type SamplePlayerOptions } from './SamplePlayer';
 
 /**
  * Creates a new SamplePlayer instance
@@ -15,11 +13,14 @@ import { initProcessors } from '@/worklets';
  */
 export async function createSamplePlayer(
   buffer: AudioBuffer | ArrayBuffer,
-  options: Omit<SamplePlayerOptions, 'audioBuffer'> = {},
+  options: Partial<SamplePlayerOptions> = {},
 ): Promise<SamplePlayer> {
-  const context = options.context ?? getAudioContext();
-  await ensureAudioCtx();
-  assert(context, 'Audio context is not available');
+  console.info('Creating SamplePlayer...');
+  if (!options.context) {
+    console.info('No AudioContext provided in options; using Audiolib global AudioContext');
+  }
+  const context = options.context ?? (await ensureAudioCtx());
+  logAudioContextStats(context);
 
   const workletResult = await initProcessors(context); // Ensure worklets are registered
 
