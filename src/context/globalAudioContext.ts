@@ -72,6 +72,14 @@ function setupAutoResume(): Promise<void> {
   });
 }
 
+export function logAudioContextStats(context: AudioContext): void {
+  console.info('[GlobalAudioContext] AudioContext stats:');
+  console.info(`  State: ${context.state}`);
+  console.info(`  Sample Rate: ${context.sampleRate}`);
+  console.info(`  Base Latency: ${context.baseLatency}`);
+  console.info(`  Output Latency: ${context.outputLatency}`);
+}
+
 // --- Output device selection ---
 
 type SinkCapableContext = AudioContext & {

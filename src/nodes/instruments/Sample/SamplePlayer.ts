@@ -2,7 +2,7 @@
 
 import { Message, MessageHandler } from '@/events';
 import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
-import { clamp, ROOT_NOTES } from '@/utils';
+import { clamp, ROOT_NOTES, assert } from '@/utils';
 
 import {
   preProcessAudioBuffer,
@@ -38,7 +38,6 @@ import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { createSampleVoicePool } from './createSampleVoicePool';
-import { getAudioContext } from '@/context';
 import type { SampleVoiceChainNode } from './SampleVoice';
 import {
   SAMPLE_ENVELOPE_IDS,
@@ -54,7 +53,7 @@ import {
 // const DEFAULT_FILTER_ENV_AMOUNT = 0.13; // TODO: @POST_ENV_API_READY
 
 export type SamplePlayerOptions = {
-  context?: AudioContext;
+  context: AudioContext;
   polyphony?: number;
   audioBuffer?: AudioBuffer;
   voiceSignalChain?: readonly SampleVoiceChainNode[];
@@ -121,13 +120,12 @@ export class SamplePlayer implements ILibInstrumentNode {
   // ? move to input controller ?
   #sustainedNotes = new Map<MidiValue, number>();
 
-  constructor(options: SamplePlayerOptions = {}) {
+  constructor(options: SamplePlayerOptions) {
+    assert(options.context, '[SamplePlayer] Constructor requires an AudioContext in options');
+
     this.nodeId = registerNode('sample-player', this);
-    this.context = options.context ?? getAudioContext();
-
-    // Synchronus setup
+    this.context = options.context;
     this.#messages = createMessageBus<Message>(this.nodeId);
-
     this.#masterOut = new GainNode(this.context, { gain: 0.5 });
 
     // Seconds; the real loop range is set from the buffer duration in
