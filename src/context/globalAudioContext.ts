@@ -5,18 +5,33 @@ import { assert, tryCatch } from '@/utils';
 
 let globalAudioContext: AudioContext | null = null;
 let resumePromise: Promise<void> | null = null;
+let globalConfig: AudioContextConfig = {};
 
 export type AudioContextConfig = {
   sampleRate?: number;
   latencyHint?: AudioContextLatencyCategory;
 };
 
+/** Sets the config the global AudioContext is created with. Call it before anything
+ *  touches audio: the context is created once, so later calls cannot change it.
+ *  Throws if the context already exists at a different sample rate. */
+export function configureAudioContext(config: AudioContextConfig): void {
+  if (globalAudioContext) {
+    assert(
+      !config.sampleRate || globalAudioContext.sampleRate === config.sampleRate,
+      `global AudioContext already created at ${globalAudioContext.sampleRate} Hz, cannot configure ${config.sampleRate} Hz`,
+    );
+    return;
+  }
+  globalConfig = config;
+}
+
 // Non-async for use in constructors and synchronous code - Use ensureAudioCtx when possible
 export function getAudioContext(config?: AudioContextConfig): AudioContext {
   if (!globalAudioContext) {
     globalAudioContext = new AudioContext({
-      sampleRate: config?.sampleRate || DEFAULT.audioConfig.sampleRate,
-      latencyHint: config?.latencyHint || 'interactive',
+      sampleRate: config?.sampleRate || globalConfig.sampleRate || DEFAULT.audioConfig.sampleRate,
+      latencyHint: config?.latencyHint || globalConfig.latencyHint || 'interactive',
     });
 
     // Set up auto-resume on first creation, but don't await it
@@ -110,24 +125,22 @@ export async function getAudioInputDevices(): Promise<MediaDeviceInfo[]> {
   return devices.filter((d) => d.kind === 'audioinput');
 }
 
-/** Routes the global AudioContext (all audiolib output) to the given output device.
+/** Routes `context` (default: the global AudioContext) to the given output device.
  *  Pass '' or 'default' to restore the system default output. */
-export async function setAudioOutputDevice(deviceId: string): Promise<void> {
+export async function setAudioOutputDevice(
+  deviceId: string,
+  context?: AudioContext,
+): Promise<void> {
   assert(canSetOutputDevice(), 'AudioContext.setSinkId is not supported in this browser');
-  const ctx = (await ensureAudioCtx()) as SinkCapableContext;
+  const ctx = (context ?? (await ensureAudioCtx())) as SinkCapableContext;
   await ctx.setSinkId(deviceId === 'default' ? '' : deviceId);
 }
 
-export function getCurrentOutputDeviceId(): string {
-  const ctx = getAudioContext() as Partial<SinkCapableContext>;
-  const { sinkId } = ctx;
-  if (typeof sinkId === 'string') {
-    return sinkId;
-  }
-  if (sinkId?.type === 'none') {
-    return '';
-  }
-  return '';
+/** Output device id of `context` (default: the global AudioContext). '' means system default. */
+export function getCurrentOutputDeviceId(context?: AudioContext): string {
+  const { sinkId } = (context ?? getAudioContext()) as Partial<SinkCapableContext>;
+  // AudioSinkInfo ({ type: 'none' }) is silent output, not a device
+  return typeof sinkId === 'string' ? sinkId : '';
 }
 
 export async function decodeAudioData(

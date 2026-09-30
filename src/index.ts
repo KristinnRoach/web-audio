@@ -25,7 +25,8 @@ export type { EnvelopeConfig } from './nodes/instruments/Sample/envelope-config'
 export type { SampleEnvelopeId } from './nodes/instruments/Sample/sample-envelope-policy';
 
 // =*=*= Utilities =*=*= \\
-export { getAudioContext, ensureAudioCtx } from './context';
+export { getAudioContext, ensureAudioCtx, configureAudioContext } from './context';
+export type { AudioContextConfig } from './context';
 export {
   canSetOutputDevice,
   getAudioInputDevices,
