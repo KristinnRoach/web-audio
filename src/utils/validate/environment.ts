@@ -17,10 +17,6 @@ class Environment {
         return;
       }
 
-      // Audio capabilities
-      const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
-      const ctx = new AudioContextConstructor();
-
       // Keyboard capabilities
       const hasKeyboardAPI = typeof navigator !== 'undefined' && 'keyboard' in navigator;
       const hasModifierState =
@@ -28,12 +24,12 @@ class Environment {
         typeof KeyboardEvent.prototype.getModifierState === 'function';
 
       this.#capabilities = {
-        workletSupported: typeof ctx.audioWorklet === 'object',
+        // Prototype check: constructing an AudioContext at import time costs an audio
+        // thread and trips the autoplay warning in every consumer
+        workletSupported: 'audioWorklet' in BaseAudioContext.prototype,
         keyboardAPISupported: hasKeyboardAPI,
         modifierStateSupported: hasModifierState,
       };
-
-      ctx.close().catch(console.error);
     } catch {
       // Fallback for test environment
       this.#capabilities = {
