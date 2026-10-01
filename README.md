@@ -44,6 +44,7 @@ It returns `null` when no singleton exists yet.
 ```ts
 import {
   configureGlobalAudioContext,
+  createSamplePlayer,
   getOrCreateGlobalAudioContext,
   isGlobalAudioContext,
 } from '@kidlib/web-audio';
@@ -52,9 +53,14 @@ configureGlobalAudioContext({ sampleRate: 48_000 });
 const context = getOrCreateGlobalAudioContext();
 console.log(isGlobalAudioContext(context)); // true
 
+// Keep the decoded AudioBuffer: decodeAudioData detaches the ArrayBuffer,
+// and an AudioBuffer can be reused on a replacement context.
+const sample = await context.decodeAudioData(sampleData);
+let player = await createSamplePlayer(sample);
+
 // Later, e.g. to match an external device's rate:
 const next = configureGlobalAudioContext({ sampleRate: 44_100 });
-if (next) player = await createSamplePlayer({ context: next });
+if (next) player = await createSamplePlayer(sample, { context: next });
 ```
 
 `isGlobalAudioContext(context)` checks identity against the current library
