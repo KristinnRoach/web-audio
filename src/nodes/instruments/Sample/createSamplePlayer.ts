@@ -16,9 +16,6 @@ export async function createSamplePlayer(
   options: Partial<SamplePlayerOptions> = {},
 ): Promise<SamplePlayer> {
   console.info('Creating SamplePlayer...');
-  if (!options.context) {
-    console.info('No AudioContext provided in options; using Audiolib global AudioContext');
-  }
   const context = options.context ?? getOrCreateGlobalAudioContext();
   logAudioContextStats(context);
 
@@ -36,8 +33,9 @@ export async function createSamplePlayer(
   if (buffer instanceof AudioBuffer) {
     audioBuffer = buffer;
   } else if (buffer instanceof ArrayBuffer) {
+    // decodeAudioData detaches its input; copy so callers can reuse the same ArrayBuffer
     try {
-      audioBuffer = await context.decodeAudioData(buffer);
+      audioBuffer = await context.decodeAudioData(buffer.slice(0));
     } catch (error) {
       console.error('Failed to decode sample audiodata when creating SamplePlayer:', error);
       throw error;
