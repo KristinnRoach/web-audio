@@ -26,6 +26,7 @@ async function loadWithSinkId(sinkId: string | { readonly type: 'none' }) {
     }
 
     close() {
+      this.state = 'closed';
       return Promise.resolve();
     }
   }
@@ -109,11 +110,65 @@ describe('configureGlobalAudioContext', () => {
     expect(getOrCreateGlobalAudioContext().sampleRate).toBe(44_100);
   });
 
-  it('throws once the global context exists at a different rate', async () => {
-    const { configureGlobalAudioContext, getOrCreateGlobalAudioContext } = await loadWithSinkId('');
-    getOrCreateGlobalAudioContext();
+  it('returns null and creates nothing before the global context exists', async () => {
+    const { configureGlobalAudioContext, created } = await loadWithSinkId('');
 
-    expect(() => configureGlobalAudioContext({ sampleRate: 44_100 })).toThrow(/48000 Hz/);
-    expect(() => configureGlobalAudioContext({ sampleRate: 48_000 })).not.toThrow();
+    expect(configureGlobalAudioContext({ sampleRate: 44_100 })).toBeNull();
+    expect(created).toHaveLength(0);
+  });
+
+  it('keeps the live context when nothing changes', async () => {
+    const { configureGlobalAudioContext, getOrCreateGlobalAudioContext } = await loadWithSinkId('');
+    const first = getOrCreateGlobalAudioContext();
+
+    expect(configureGlobalAudioContext({ sampleRate: 48_000 })).toBe(first);
+    expect(first.state).not.toBe('closed');
+  });
+
+  it('closes and replaces the live context when an option changes', async () => {
+    const { configureGlobalAudioContext, getOrCreateGlobalAudioContext } = await loadWithSinkId('');
+    const first = getOrCreateGlobalAudioContext();
+
+    const next = configureGlobalAudioContext({ sampleRate: 44_100 });
+
+    expect(next).not.toBe(first);
+    expect(next?.sampleRate).toBe(44_100);
+    expect(first.state).toBe('closed');
+    expect(getOrCreateGlobalAudioContext()).toBe(next);
+  });
+
+  it('carries the output device over to the replacement context', async () => {
+    const { configureGlobalAudioContext, setAudioOutputDevice } = await loadWithSinkId('');
+    await setAudioOutputDevice('speaker-1');
+
+    const next = configureGlobalAudioContext({ sampleRate: 44_100 });
+
+    expect((next as unknown as { sinkCalls: string[] }).sinkCalls).toEqual(['speaker-1']);
+  });
+
+  it('merges options across calls', async () => {
+    const { configureGlobalAudioContext, getOrCreateGlobalAudioContext } = await loadWithSinkId('');
+    configureGlobalAudioContext({ sampleRate: 44_100 });
+    configureGlobalAudioContext({ latencyHint: 'playback' });
+
+    expect(getOrCreateGlobalAudioContext().sampleRate).toBe(44_100);
+  });
+});
+
+describe('getOrCreateGlobalAudioContext', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('replaces a closed global context', async () => {
+    const { getOrCreateGlobalAudioContext } = await loadWithSinkId('');
+    const first = getOrCreateGlobalAudioContext();
+    await first.close();
+
+    expect(getOrCreateGlobalAudioContext()).not.toBe(first);
   });
 });

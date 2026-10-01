@@ -29,12 +29,17 @@ player.play(60);
 
 ## Global audio context
 
-`getOrCreateGlobalAudioContext()` returns the library singleton synchronously, creating
-it if needed; it can still be suspended. `ensureGlobalAudioContext()` uses the
-existing user-interaction auto-resume flow and recreates a closed singleton.
-Call `configureGlobalAudioContext(config)` before creating the singleton to set
-its sample rate and latency hint. Both `getOrCreateGlobalAudioContext()` and
-`ensureGlobalAudioContext()` use these configured global defaults.
+`getOrCreateGlobalAudioContext()` returns the library singleton synchronously,
+creating it if needed (or replacing a closed one). It can be suspended; the next
+click, touch or key press resumes it. To wait until audio runs, call
+`await context.resume()` in your own gesture handler.
+
+`configureGlobalAudioContext(options)` takes standard `AudioContextOptions`
+(`sampleRate`, `latencyHint`) and merges them into the current ones.
+It can be called any time. If the singleton exists and an option changes, it is
+closed and replaced, since an `AudioContext`'s options are fixed at construction.
+Nodes built on the old context stop working, so rebuild them on the returned one.
+It returns `null` when no singleton exists yet.
 
 ```ts
 import {
@@ -46,6 +51,10 @@ import {
 configureGlobalAudioContext({ sampleRate: 48_000 });
 const context = getOrCreateGlobalAudioContext();
 console.log(isGlobalAudioContext(context)); // true
+
+// Later, e.g. to match an external device's rate:
+const next = configureGlobalAudioContext({ sampleRate: 44_100 });
+if (next) player = await createSamplePlayer({ context: next });
 ```
 
 `isGlobalAudioContext(context)` checks identity against the current library
@@ -54,5 +63,5 @@ The player and recorder factories use a supplied context, or the global singleto
 when omitted. Voices, buses, reverb, and feedback require an explicit context.
 `createPitchDivideEffect(context, audioBuffer, divider)` also requires a context.
 
-The global helpers were renamed from `getAudioContext`, `ensureAudioCtx`, and
-`configureAudioContext`; update existing imports to the names above.
+`getAudioContext` was renamed `getOrCreateGlobalAudioContext`, and
+`ensureAudioCtx` was removed; update existing imports.

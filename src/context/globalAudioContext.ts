@@ -1,93 +1,72 @@
 // globalAudioContext.ts
 
 import { DEFAULT } from '@/constants';
-import { assert, tryCatch } from '@/utils';
+import { assert } from '@/utils';
 
 let globalAudioContext: AudioContext | null = null;
-let resumePromise: Promise<void> | null = null;
-let globalConfig: AudioContextConfig = {};
-
-export type AudioContextConfig = {
-  sampleRate?: number;
-  latencyHint?: AudioContextLatencyCategory;
+let autoResumeArmed = false;
+// Always the options the live global context was created with: any change replaces it
+let globalOptions: AudioContextOptions = {
+  sampleRate: DEFAULT.audioConfig.sampleRate,
+  latencyHint: 'interactive',
 };
 
-/** Sets the config the global AudioContext is created with. Call it before anything
- *  touches audio: the context is created once, so later calls cannot change it.
- *  Throws if the context already exists at a different sample rate. */
-export function configureGlobalAudioContext(config: AudioContextConfig): void {
-  if (globalAudioContext) {
-    assert(
-      !config.sampleRate || globalAudioContext.sampleRate === config.sampleRate,
-      `global AudioContext already created at ${globalAudioContext.sampleRate} Hz, cannot configure ${config.sampleRate} Hz`,
-    );
-    return;
+/** Sets the options the global AudioContext is created with. Can be called any time;
+ *  options merge into the current ones. If the global context exists and an option
+ *  changes, it is closed and replaced (AudioContext options are fixed at construction).
+ *  Nodes built on the old context are dead, so rebuild them on the returned one.
+ *  Returns the live global context, or null if none exists yet (created lazily). */
+export function configureGlobalAudioContext(options: AudioContextOptions): AudioContext | null {
+  const prev = globalOptions;
+  globalOptions = { ...prev, ...options };
+
+  const ctx = globalAudioContext;
+  if (!ctx || ctx.state === 'closed') return null;
+
+  const unchanged = (Object.keys(options) as (keyof AudioContextOptions)[]).every(
+    (key) => options[key] === prev[key],
+  );
+  if (unchanged) return ctx;
+
+  const sinkId = getCurrentOutputDeviceId(ctx);
+  releaseGlobalAudioContext();
+  const next = getOrCreateGlobalAudioContext();
+  // Keep the output device picked with setAudioOutputDevice
+  if (sinkId) {
+    setAudioOutputDevice(sinkId, next).catch((err) => {
+      console.warn('[GlobalAudioContext] could not restore output device', err);
+    });
   }
-  globalConfig = config;
+  return next;
 }
 
-/** Returns the library global singleton, creating it if needed.
- * Synchronous: it may still be suspended. Uses the configured global defaults. */
+/** Returns the library global singleton, creating it (or replacing a closed one) with
+ *  the configured options. Synchronous: it may be suspended until the first user
+ *  gesture, which resumes it automatically. */
 export function getOrCreateGlobalAudioContext(): AudioContext {
-  if (!globalAudioContext) {
-    globalAudioContext = new AudioContext({
-      sampleRate: globalConfig.sampleRate || DEFAULT.audioConfig.sampleRate,
-      latencyHint: globalConfig.latencyHint || 'interactive',
-    });
-
-    // Set up auto-resume on first creation, but don't await it
-    if (globalAudioContext.state === 'suspended') {
-      resumePromise = resumePromise || setupAutoResume();
-    }
+  if (!globalAudioContext || globalAudioContext.state === 'closed') {
+    globalAudioContext = new AudioContext(globalOptions);
   }
-
-  // Always return the context immediately, even if suspended
+  if (globalAudioContext.state === 'suspended') armAutoResume();
   return globalAudioContext;
 }
-/** Returns the global singleton after the existing auto-resume flow completes.
- * Recreates a closed singleton using the configured global defaults. */
-export async function ensureGlobalAudioContext(): Promise<AudioContext> {
-  const context = getOrCreateGlobalAudioContext();
 
-  if (context.state === 'running') {
-    return context;
-  }
-  if (context.state === 'closed') {
-    globalAudioContext = null;
-    const ctxResult = await tryCatch(() => ensureGlobalAudioContext()); // creates a fresh context
-    assert(
-      ctxResult.data instanceof AudioContext && !ctxResult.error,
-      'failed to re-created closed audio context',
-      ctxResult.error,
-    );
-    return ctxResult.data;
-  }
-  // If resumePromise is null, set it up
-  resumePromise = resumePromise || setupAutoResume();
-  await resumePromise;
-
-  return context;
-}
-
-function setupAutoResume(): Promise<void> {
+/** Resumes the global context on the next user gesture. Re-armed whenever
+ *  getOrCreateGlobalAudioContext finds it suspended again. */
+function armAutoResume(): void {
   /* istanbul ignore next – browser-only safeguard */
-  if (typeof document === 'undefined') {
-    return Promise.resolve();
-  }
+  if (autoResumeArmed || typeof document === 'undefined') return;
+  autoResumeArmed = true;
   const resumeEvents = ['click', 'touchstart', 'keydown'];
 
-  return new Promise((resolve) => {
-    const handler = async () => {
-      if (globalAudioContext) {
-        await globalAudioContext.resume();
+  const handler = () => {
+    resumeEvents.forEach((event) => document.removeEventListener(event, handler));
+    autoResumeArmed = false;
+    // Called synchronously inside the gesture, which iOS Safari requires
+    void globalAudioContext?.resume();
+  };
 
-        resumeEvents.forEach((event) => document.removeEventListener(event, handler));
-        resolve();
-      }
-    };
-
-    resumeEvents.forEach((event) => document.addEventListener(event, handler, { once: true }));
-  });
+  resumeEvents.forEach((event) => document.addEventListener(event, handler));
 }
 
 /** Whether context is the current library global singleton. Does not create one. */
@@ -141,7 +120,7 @@ export async function setAudioOutputDevice(
   context?: AudioContext,
 ): Promise<void> {
   assert(canSetOutputDevice(), 'AudioContext.setSinkId is not supported in this browser');
-  const ctx = (context ?? (await ensureGlobalAudioContext())) as SinkCapableContext;
+  const ctx = (context ?? getOrCreateGlobalAudioContext()) as SinkCapableContext;
   await ctx.setSinkId(deviceId === 'default' ? '' : deviceId);
 }
 
@@ -152,17 +131,14 @@ export function getCurrentOutputDeviceId(context?: AudioContext): string {
   return typeof sinkId === 'string' ? sinkId : '';
 }
 
-/** Starts closing the global singleton and clears it after close settles. */
+/** Clears the global singleton and starts closing it. The next
+ *  getOrCreateGlobalAudioContext call creates a fresh one. */
 export function releaseGlobalAudioContext(): void {
-  if (globalAudioContext) {
-    void globalAudioContext
-      .close()
-      .catch((err) => {
-        console.warn('[GlobalAudioContext] close() failed', err);
-      })
-      .then(() => {
-        globalAudioContext = null;
-        resumePromise = null;
-      });
-  }
+  const ctx = globalAudioContext;
+  if (!ctx) return;
+  // Clear first: clearing after close() settles would wipe out a context created meanwhile
+  globalAudioContext = null;
+  void ctx.close().catch((err) => {
+    console.warn('[GlobalAudioContext] close() failed', err);
+  });
 }
