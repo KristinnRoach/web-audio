@@ -1,6 +1,6 @@
 import { ILibAudioNode } from '../LibAudioNode';
 import { NodeType } from '@/nodes/LibNode';
-import { getAudioContext } from '@/context';
+import { getGlobalAudioContext } from '@/context';
 import { registerNode, unregisterNode } from '@/nodes/node-store';
 import { clamp, interpolate, mapToRange } from '@/utils';
 import { createFeedbackDelay } from '@/worklets/worklet-factory';
@@ -31,7 +31,7 @@ export class HarmonicFeedback implements ILibAudioNode {
   #MIN_DELAY_TIME = 0.00012656238799684143; // B8 natural (H) in seconds
   #MAX_DELAY_TIME = 2;
 
-  constructor(context: AudioContext = getAudioContext()) {
+  constructor(context: AudioContext = getGlobalAudioContext()) {
     this.nodeId = registerNode(this.nodeType, this);
     this.#context = context;
 

@@ -92,7 +92,7 @@ describe('setAudioOutputDevice', () => {
   });
 });
 
-describe('configureAudioContext', () => {
+describe('configureGlobalAudioContext', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -102,18 +102,18 @@ describe('configureAudioContext', () => {
   });
 
   it('sets the sample rate the global context is created with', async () => {
-    const { configureAudioContext, getAudioContext } = await loadWithSinkId('');
+    const { configureGlobalAudioContext, getGlobalAudioContext } = await loadWithSinkId('');
 
-    configureAudioContext({ sampleRate: 44_100 });
+    configureGlobalAudioContext({ sampleRate: 44_100 });
 
-    expect(getAudioContext().sampleRate).toBe(44_100);
+    expect(getGlobalAudioContext().sampleRate).toBe(44_100);
   });
 
   it('throws once the global context exists at a different rate', async () => {
-    const { configureAudioContext, getAudioContext } = await loadWithSinkId('');
-    getAudioContext();
+    const { configureGlobalAudioContext, getGlobalAudioContext } = await loadWithSinkId('');
+    getGlobalAudioContext();
 
-    expect(() => configureAudioContext({ sampleRate: 44_100 })).toThrow(/48000 Hz/);
-    expect(() => configureAudioContext({ sampleRate: 48_000 })).not.toThrow();
+    expect(() => configureGlobalAudioContext({ sampleRate: 44_100 })).toThrow(/48000 Hz/);
+    expect(() => configureGlobalAudioContext({ sampleRate: 48_000 })).not.toThrow();
   });
 });

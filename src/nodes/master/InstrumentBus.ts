@@ -3,7 +3,7 @@
 import { ILibAudioNode, LibAudioNode } from '@/nodes/LibAudioNode';
 import { registerNode, NodeID, unregisterNode } from '@/nodes/node-store';
 import { GainStages } from '@/nodes/LibNode';
-import { getAudioContext } from '@/context';
+import { getGlobalAudioContext } from '@/context';
 
 import { Message, MessageBus, MessageHandler, createMessageBus } from '@/events';
 
@@ -75,7 +75,7 @@ export class InstrumentBus implements ILibAudioNode {
 
   constructor(context?: AudioContext) {
     this.nodeId = registerNode(this.nodeType, this);
-    this.#context = context || getAudioContext();
+    this.#context = context || getGlobalAudioContext();
     this.#messages = createMessageBus(this.nodeId);
   }
 
