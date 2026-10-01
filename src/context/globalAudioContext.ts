@@ -9,7 +9,7 @@ const DEFAULT_OPTIONS: AudioContextOptions = {
 };
 
 let globalAudioContext: AudioContext | null = null;
-// Options of the latest createGlobalAudioContext call, reused when a closed context is recreated
+// Options of the latest configureAudio call, reused when a closed context is recreated
 let globalOptions = DEFAULT_OPTIONS;
 let autoResumeArmed = false;
 
@@ -24,21 +24,27 @@ export function getGlobalAudioContext(): AudioContext {
   return globalAudioContext;
 }
 
-/** Creates a new global AudioContext and closes the previous one. Every node built on
- *  the previous context stops, so rebuild them on the returned one. Options not given
- *  use the library defaults. */
-export function createGlobalAudioContext(options: AudioContextOptions = {}): AudioContext {
+/** Sets the global AudioContext options; options not given use the library defaults.
+ *  Before first use this only stores them. Afterwards, changed options replace the
+ *  context and close the previous one, so every node built on it stops; rebuild them.
+ *  Unchanged options are a no-op. */
+export function configureAudio(options: AudioContextOptions): void {
+  const next = { ...DEFAULT_OPTIONS, ...options };
+  // ponytail: shallow compare, fine for flat AudioContextOptions
+  const changed = (Object.keys(next) as (keyof AudioContextOptions)[]).some(
+    (key) => next[key] !== globalOptions[key],
+  );
+  globalOptions = next;
   const previous = globalAudioContext;
-  globalOptions = { ...DEFAULT_OPTIONS, ...options };
+  if (!changed || !previous) return;
   // Swap before closing, so the async close can't race with the new context
   globalAudioContext = null;
-  const next = getGlobalAudioContext();
-  if (previous && previous.state !== 'closed') {
+  getGlobalAudioContext();
+  if (previous.state !== 'closed') {
     void previous.close().catch((err) => {
       console.warn('[GlobalAudioContext] close() failed', err);
     });
   }
-  return next;
 }
 
 /** Resumes the global context on the next user gesture. Re-armed whenever
