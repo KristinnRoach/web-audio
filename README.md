@@ -29,37 +29,26 @@ player.play(60);
 
 ## Global audio context
 
-`getGlobalAudioContext()` returns the library's global `AudioContext`
-synchronously, creating it on first use (or replacing a closed one). It can be
-suspended; the next click, touch or key press resumes it. To wait until audio
-runs, call `await context.resume()` in your own gesture handler.
+Factories use the library's global `AudioContext` unless you pass `{ context }`.
+It may start suspended; the first click, touch or key press resumes it.
 
-`configureGlobalAudioContext(options)` sets the global context's standard
-`AudioContextOptions` (unset ones use the library defaults). Before first use
-it only stores them. Afterwards, changed options replace the global context:
-the library closes the previous one, so every player and node built on it
-stops. Rebuild them, and consider confirming with the user first if audio may
-be playing. Calling it with unchanged options does nothing.
+To set options such as `sampleRate`, call `createGlobalAudioContext(options)`
+before anything uses the global context; it throws while one is open. Nodes
+can't move between contexts, so a later change means rebuilding:
 
 ```ts
-import { configureGlobalAudioContext, createSamplePlayer } from '@kidlib/web-audio';
+import { createGlobalAudioContext, createSamplePlayer } from '@kidlib/web-audio';
 
-configureGlobalAudioContext({ sampleRate: savedRate }); // at startup; creates no context yet
+createGlobalAudioContext({ sampleRate: savedRate }); // at startup
 let player = await createSamplePlayer(sampleData);
 
 async function setSampleRate(sampleRate: number) {
   player.dispose();
-  configureGlobalAudioContext({ sampleRate });
-  player = await createSamplePlayer(sampleData); // uses the new context
+  await player.context.close(); // state is only 'closed' once this resolves
+  createGlobalAudioContext({ sampleRate });
+  player = await createSamplePlayer(sampleData);
 }
 ```
 
-To keep a context under your own control, create it yourself and pass it to the
-factories with `{ context }`; the library never closes it.
-
-The player and recorder factories use a supplied context, or the global one
-when omitted. Voices, buses, reverb, and feedback require an explicit context.
-`createPitchDivideEffect(context, audioBuffer, divider)` also requires a context.
-
-`getAudioContext` was renamed `getGlobalAudioContext`, and `ensureAudioCtx`
-was removed; update existing imports.
+The output device set with `setAudioOutputDevice` does not carry over to the new
+context.

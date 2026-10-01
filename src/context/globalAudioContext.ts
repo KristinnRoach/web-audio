@@ -9,42 +9,31 @@ const DEFAULT_OPTIONS: AudioContextOptions = {
 };
 
 let globalAudioContext: AudioContext | null = null;
-// Options of the latest configureGlobalAudioContext call, reused when a closed context is recreated
+// Reused when a closed global context is recreated
 let globalOptions = DEFAULT_OPTIONS;
 let autoResumeArmed = false;
 
-/** Returns the library's global AudioContext, creating it (or replacing a closed one)
- *  on first use. Synchronous: it may be suspended until the first user gesture,
- *  which resumes it automatically. */
+/** Throws while a global context is open. To change options, dispose the nodes on it
+ *  and `await` its `close()` first: `state` only becomes 'closed' once that resolves. */
+export function createGlobalAudioContext(options: AudioContextOptions = {}): AudioContext {
+  assert(
+    !globalAudioContext || globalAudioContext.state === 'closed',
+    'A global AudioContext already exists. Use getGlobalAudioContext(), or await its close() before creating a new one.',
+  );
+  globalOptions = { ...DEFAULT_OPTIONS, ...options };
+  globalAudioContext = new AudioContext(globalOptions);
+  if (globalAudioContext.state === 'suspended') armAutoResume();
+  return globalAudioContext;
+}
+
+/** Creates the global context on first use, or recreates a closed one with the last
+ *  options. May return it suspended; the next user gesture resumes it. */
 export function getGlobalAudioContext(): AudioContext {
   if (!globalAudioContext || globalAudioContext.state === 'closed') {
     globalAudioContext = new AudioContext(globalOptions);
   }
   if (globalAudioContext.state === 'suspended') armAutoResume();
   return globalAudioContext;
-}
-
-/** Sets the global AudioContext options; options not given use the library defaults.
- *  Before first use this only stores them. Afterwards, changed options replace the
- *  context and close the previous one, so every node built on it stops; rebuild them.
- *  Unchanged options are a no-op. */
-export function configureGlobalAudioContext(options: AudioContextOptions): void {
-  const next = { ...DEFAULT_OPTIONS, ...options };
-  // ponytail: shallow compare, fine for flat AudioContextOptions
-  const changed = (Object.keys(next) as (keyof AudioContextOptions)[]).some(
-    (key) => next[key] !== globalOptions[key],
-  );
-  globalOptions = next;
-  const previous = globalAudioContext;
-  if (!changed || !previous) return;
-  // Swap before closing, so the async close can't race with the new context
-  globalAudioContext = null;
-  getGlobalAudioContext();
-  if (previous.state !== 'closed') {
-    void previous.close().catch((err) => {
-      console.warn('[GlobalAudioContext] close() failed', err);
-    });
-  }
 }
 
 /** Resumes the global context on the next user gesture. Re-armed whenever

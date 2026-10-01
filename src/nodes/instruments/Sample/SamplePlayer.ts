@@ -120,12 +120,20 @@ export class SamplePlayer implements ILibInstrumentNode {
   // ? move to input controller ?
   #sustainedNotes = new Map<MidiValue, number>();
 
+  // Nodes on a closed context go silent without throwing
+  #onContextStateChange = () => {
+    if (this.context.state !== 'closed') return;
+    console.warn(`[SamplePlayer ${this.nodeId}] AudioContext closed; player is silent.`);
+    this.sendUpstreamMessage('context:closed', {});
+  };
+
   constructor(options: SamplePlayerOptions) {
     assert(options.context, '[SamplePlayer] Constructor requires an AudioContext in options');
 
     this.nodeId = registerNode('sample-player', this);
     this.context = options.context;
     this.#messages = createMessageBus<Message>(this.nodeId);
+    this.context.addEventListener('statechange', this.#onContextStateChange);
     this.#masterOut = new GainNode(this.context, { gain: 0.5 });
 
     // Seconds; the real loop range is set from the buffer duration in
@@ -1362,6 +1370,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   dispose(): void {
     try {
+      this.context.removeEventListener('statechange', this.#onContextStateChange);
       this.releaseAll();
 
       // Clear sustained notes

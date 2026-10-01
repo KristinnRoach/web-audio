@@ -118,7 +118,7 @@ describe('getGlobalAudioContext', () => {
   });
 });
 
-describe('configureGlobalAudioContext', () => {
+describe('createGlobalAudioContext', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -127,43 +127,38 @@ describe('configureGlobalAudioContext', () => {
     vi.unstubAllGlobals();
   });
 
-  it('only stores options before first use', async () => {
-    const { getGlobalAudioContext, configureGlobalAudioContext, created } =
-      await loadWithSinkId('');
+  it('creates the global context with the given options', async () => {
+    const { getGlobalAudioContext, createGlobalAudioContext } = await loadWithSinkId('');
 
-    configureGlobalAudioContext({ sampleRate: 44_100 });
+    const context = createGlobalAudioContext({ sampleRate: 44_100 });
 
-    expect(created).toHaveLength(0);
-    expect(getGlobalAudioContext().sampleRate).toBe(44_100);
+    expect(context.sampleRate).toBe(44_100);
+    expect(getGlobalAudioContext()).toBe(context);
   });
 
-  it('replaces the global context when options change and closes the previous', async () => {
-    const { getGlobalAudioContext, configureGlobalAudioContext } = await loadWithSinkId('');
-    const previous = getGlobalAudioContext();
+  it('throws while a global context exists', async () => {
+    const { getGlobalAudioContext, createGlobalAudioContext } = await loadWithSinkId('');
+    getGlobalAudioContext();
 
-    configureGlobalAudioContext({ sampleRate: 44_100 });
-    const next = getGlobalAudioContext();
+    expect(() => createGlobalAudioContext({ sampleRate: 44_100 })).toThrow(
+      'A global AudioContext already exists',
+    );
+  });
+
+  it('replaces a closed global context', async () => {
+    const { getGlobalAudioContext, createGlobalAudioContext } = await loadWithSinkId('');
+    const previous = getGlobalAudioContext();
+    await previous.close();
+
+    const next = createGlobalAudioContext({ sampleRate: 44_100 });
 
     expect(next).not.toBe(previous);
-    expect(next.sampleRate).toBe(44_100);
-    expect(previous.state).toBe('closed');
-  });
-
-  it('keeps the global context when options are unchanged', async () => {
-    const { getGlobalAudioContext, configureGlobalAudioContext } = await loadWithSinkId('');
-    configureGlobalAudioContext({ sampleRate: 44_100 });
-    const context = getGlobalAudioContext();
-
-    configureGlobalAudioContext({ sampleRate: 44_100 });
-
-    expect(getGlobalAudioContext()).toBe(context);
-    expect(context.state).not.toBe('closed');
+    expect(getGlobalAudioContext()).toBe(next);
   });
 
   it('reuses its options when a closed global context is recreated', async () => {
-    const { getGlobalAudioContext, configureGlobalAudioContext } = await loadWithSinkId('');
-    configureGlobalAudioContext({ sampleRate: 44_100 });
-    await getGlobalAudioContext().close();
+    const { getGlobalAudioContext, createGlobalAudioContext } = await loadWithSinkId('');
+    await createGlobalAudioContext({ sampleRate: 44_100 }).close();
 
     expect(getGlobalAudioContext().sampleRate).toBe(44_100);
   });
