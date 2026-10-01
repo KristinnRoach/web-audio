@@ -118,7 +118,7 @@ describe('getGlobalAudioContext', () => {
   });
 });
 
-describe('configureAudio', () => {
+describe('configureGlobalAudioContext', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -128,19 +128,20 @@ describe('configureAudio', () => {
   });
 
   it('only stores options before first use', async () => {
-    const { getGlobalAudioContext, configureAudio, created } = await loadWithSinkId('');
+    const { getGlobalAudioContext, configureGlobalAudioContext, created } =
+      await loadWithSinkId('');
 
-    configureAudio({ sampleRate: 44_100 });
+    configureGlobalAudioContext({ sampleRate: 44_100 });
 
     expect(created).toHaveLength(0);
     expect(getGlobalAudioContext().sampleRate).toBe(44_100);
   });
 
   it('replaces the global context when options change and closes the previous', async () => {
-    const { getGlobalAudioContext, configureAudio } = await loadWithSinkId('');
+    const { getGlobalAudioContext, configureGlobalAudioContext } = await loadWithSinkId('');
     const previous = getGlobalAudioContext();
 
-    configureAudio({ sampleRate: 44_100 });
+    configureGlobalAudioContext({ sampleRate: 44_100 });
     const next = getGlobalAudioContext();
 
     expect(next).not.toBe(previous);
@@ -149,19 +150,19 @@ describe('configureAudio', () => {
   });
 
   it('keeps the global context when options are unchanged', async () => {
-    const { getGlobalAudioContext, configureAudio } = await loadWithSinkId('');
-    configureAudio({ sampleRate: 44_100 });
+    const { getGlobalAudioContext, configureGlobalAudioContext } = await loadWithSinkId('');
+    configureGlobalAudioContext({ sampleRate: 44_100 });
     const context = getGlobalAudioContext();
 
-    configureAudio({ sampleRate: 44_100 });
+    configureGlobalAudioContext({ sampleRate: 44_100 });
 
     expect(getGlobalAudioContext()).toBe(context);
     expect(context.state).not.toBe('closed');
   });
 
   it('reuses its options when a closed global context is recreated', async () => {
-    const { getGlobalAudioContext, configureAudio } = await loadWithSinkId('');
-    configureAudio({ sampleRate: 44_100 });
+    const { getGlobalAudioContext, configureGlobalAudioContext } = await loadWithSinkId('');
+    configureGlobalAudioContext({ sampleRate: 44_100 });
     await getGlobalAudioContext().close();
 
     expect(getGlobalAudioContext().sampleRate).toBe(44_100);

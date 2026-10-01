@@ -34,7 +34,7 @@ synchronously, creating it on first use (or replacing a closed one). It can be
 suspended; the next click, touch or key press resumes it. To wait until audio
 runs, call `await context.resume()` in your own gesture handler.
 
-`configureAudio(options)` sets the global context's standard
+`configureGlobalAudioContext(options)` sets the global context's standard
 `AudioContextOptions` (unset ones use the library defaults). Before first use
 it only stores them. Afterwards, changed options replace the global context:
 the library closes the previous one, so every player and node built on it
@@ -42,14 +42,14 @@ stops. Rebuild them, and consider confirming with the user first if audio may
 be playing. Calling it with unchanged options does nothing.
 
 ```ts
-import { configureAudio, createSamplePlayer } from '@kidlib/web-audio';
+import { configureGlobalAudioContext, createSamplePlayer } from '@kidlib/web-audio';
 
-configureAudio({ sampleRate: savedRate }); // at startup; creates no context yet
+configureGlobalAudioContext({ sampleRate: savedRate }); // at startup; creates no context yet
 let player = await createSamplePlayer(sampleData);
 
 async function setSampleRate(sampleRate: number) {
   player.dispose();
-  configureAudio({ sampleRate });
+  configureGlobalAudioContext({ sampleRate });
   player = await createSamplePlayer(sampleData); // uses the new context
 }
 ```

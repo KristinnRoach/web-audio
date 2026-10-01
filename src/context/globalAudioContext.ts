@@ -9,7 +9,7 @@ const DEFAULT_OPTIONS: AudioContextOptions = {
 };
 
 let globalAudioContext: AudioContext | null = null;
-// Options of the latest configureAudio call, reused when a closed context is recreated
+// Options of the latest configureGlobalAudioContext call, reused when a closed context is recreated
 let globalOptions = DEFAULT_OPTIONS;
 let autoResumeArmed = false;
 
@@ -28,7 +28,7 @@ export function getGlobalAudioContext(): AudioContext {
  *  Before first use this only stores them. Afterwards, changed options replace the
  *  context and close the previous one, so every node built on it stops; rebuild them.
  *  Unchanged options are a no-op. */
-export function configureAudio(options: AudioContextOptions): void {
+export function configureGlobalAudioContext(options: AudioContextOptions): void {
   const next = { ...DEFAULT_OPTIONS, ...options };
   // ponytail: shallow compare, fine for flat AudioContextOptions
   const changed = (Object.keys(next) as (keyof AudioContextOptions)[]).some(
