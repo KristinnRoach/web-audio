@@ -1,6 +1,5 @@
 import { ILibAudioNode } from '../LibAudioNode';
 import { NodeType } from '@/nodes/LibNode';
-import { getGlobalAudioContext } from '@/context';
 import { registerNode, NodeID, unregisterNode } from '@/nodes/node-store';
 
 import { mapToRange } from '@/utils';
@@ -89,7 +88,7 @@ export class DattorroReverb implements ILibAudioNode {
     // },
   } as const;
 
-  constructor(context: AudioContext = getGlobalAudioContext()) {
+  constructor(context: AudioContext) {
     this.nodeId = registerNode(this.nodeType, this);
     this.#context = context;
 

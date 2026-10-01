@@ -1,12 +1,12 @@
-import { getGlobalAudioContext } from '@/context';
 import { findWaveCycles } from '@/utils/audiodata/wavecycles/findWaveCycles';
 
+/** Creates a processed buffer using the supplied context. */
 export function createPitchDivideEffect(
+  ctx: AudioContext,
   audioBuffer: AudioBuffer,
   divider: number = 2,
 ): AudioBuffer {
   const cycles = findWaveCycles(audioBuffer);
-  const ctx = getGlobalAudioContext();
   const outputBuffer = ctx.createBuffer(
     audioBuffer.numberOfChannels,
     audioBuffer.length,

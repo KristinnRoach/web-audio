@@ -102,16 +102,16 @@ describe('configureGlobalAudioContext', () => {
   });
 
   it('sets the sample rate the global context is created with', async () => {
-    const { configureGlobalAudioContext, getGlobalAudioContext } = await loadWithSinkId('');
+    const { configureGlobalAudioContext, getOrCreateGlobalAudioContext } = await loadWithSinkId('');
 
     configureGlobalAudioContext({ sampleRate: 44_100 });
 
-    expect(getGlobalAudioContext().sampleRate).toBe(44_100);
+    expect(getOrCreateGlobalAudioContext().sampleRate).toBe(44_100);
   });
 
   it('throws once the global context exists at a different rate', async () => {
-    const { configureGlobalAudioContext, getGlobalAudioContext } = await loadWithSinkId('');
-    getGlobalAudioContext();
+    const { configureGlobalAudioContext, getOrCreateGlobalAudioContext } = await loadWithSinkId('');
+    getOrCreateGlobalAudioContext();
 
     expect(() => configureGlobalAudioContext({ sampleRate: 44_100 })).toThrow(/48000 Hz/);
     expect(() => configureGlobalAudioContext({ sampleRate: 48_000 })).not.toThrow();

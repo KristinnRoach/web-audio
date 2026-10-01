@@ -27,12 +27,12 @@ export function configureGlobalAudioContext(config: AudioContextConfig): void {
 }
 
 /** Returns the library global singleton, creating it if needed.
- * Synchronous: it may still be suspended. Config applies only on creation. */
-export function getGlobalAudioContext(config?: AudioContextConfig): AudioContext {
+ * Synchronous: it may still be suspended. Uses the configured global defaults. */
+export function getOrCreateGlobalAudioContext(): AudioContext {
   if (!globalAudioContext) {
     globalAudioContext = new AudioContext({
-      sampleRate: config?.sampleRate || globalConfig.sampleRate || DEFAULT.audioConfig.sampleRate,
-      latencyHint: config?.latencyHint || globalConfig.latencyHint || 'interactive',
+      sampleRate: globalConfig.sampleRate || DEFAULT.audioConfig.sampleRate,
+      latencyHint: globalConfig.latencyHint || 'interactive',
     });
 
     // Set up auto-resume on first creation, but don't await it
@@ -45,16 +45,16 @@ export function getGlobalAudioContext(config?: AudioContextConfig): AudioContext
   return globalAudioContext;
 }
 /** Returns the global singleton after the existing auto-resume flow completes.
- * Recreates a closed singleton. Config applies only on creation. */
-export async function ensureGlobalAudioContext(config?: AudioContextConfig): Promise<AudioContext> {
-  const context = getGlobalAudioContext(config);
+ * Recreates a closed singleton using the configured global defaults. */
+export async function ensureGlobalAudioContext(): Promise<AudioContext> {
+  const context = getOrCreateGlobalAudioContext();
 
   if (context.state === 'running') {
     return context;
   }
   if (context.state === 'closed') {
     globalAudioContext = null;
-    const ctxResult = await tryCatch(() => ensureGlobalAudioContext(config)); // creates a fresh context
+    const ctxResult = await tryCatch(() => ensureGlobalAudioContext()); // creates a fresh context
     assert(
       ctxResult.data instanceof AudioContext && !ctxResult.error,
       'failed to re-created closed audio context',
@@ -147,18 +147,9 @@ export async function setAudioOutputDevice(
 
 /** Output device id of `context` (default: the global AudioContext). '' means system default. */
 export function getCurrentOutputDeviceId(context?: AudioContext): string {
-  const { sinkId } = (context ?? getGlobalAudioContext()) as Partial<SinkCapableContext>;
+  const { sinkId } = (context ?? getOrCreateGlobalAudioContext()) as Partial<SinkCapableContext>;
   // AudioSinkInfo ({ type: 'none' }) is silent output, not a device
   return typeof sinkId === 'string' ? sinkId : '';
-}
-
-/** Decodes audio using the global singleton and its existing auto-resume flow. */
-export async function decodeGlobalAudioData(
-  arrayBuffer: ArrayBuffer,
-  config?: AudioContextConfig,
-): Promise<AudioBuffer | null> {
-  const audioCtx = await ensureGlobalAudioContext(config);
-  return audioCtx.decodeAudioData(arrayBuffer);
 }
 
 /** Starts closing the global singleton and clears it after close settles. */

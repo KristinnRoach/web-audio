@@ -29,29 +29,30 @@ player.play(60);
 
 ## Global audio context
 
-`getGlobalAudioContext()` returns the library singleton synchronously, creating
+`getOrCreateGlobalAudioContext()` returns the library singleton synchronously, creating
 it if needed; it can still be suspended. `ensureGlobalAudioContext()` uses the
 existing user-interaction auto-resume flow and recreates a closed singleton.
 Call `configureGlobalAudioContext(config)` before creating the singleton to set
-its sample rate and latency hint. Configuration passed to either getter only
-applies when creating a context.
+its sample rate and latency hint. Both `getOrCreateGlobalAudioContext()` and
+`ensureGlobalAudioContext()` use these configured global defaults.
 
 ```ts
 import {
   configureGlobalAudioContext,
-  getGlobalAudioContext,
+  getOrCreateGlobalAudioContext,
   isGlobalAudioContext,
 } from '@kidlib/web-audio';
 
 configureGlobalAudioContext({ sampleRate: 48_000 });
-const context = getGlobalAudioContext();
+const context = getOrCreateGlobalAudioContext();
 console.log(isGlobalAudioContext(context)); // true
 ```
 
 `isGlobalAudioContext(context)` checks identity against the current library
 singleton without creating one. A caller-created context returns false.
-Factories accepting a context use the supplied instance; omitting it selects
-the global singleton where documented.
+The player and recorder factories use a supplied context, or the global singleton
+when omitted. Voices, buses, reverb, and feedback require an explicit context.
+`createPitchDivideEffect(context, audioBuffer, divider)` also requires a context.
 
 The global helpers were renamed from `getAudioContext`, `ensureAudioCtx`, and
 `configureAudioContext`; update existing imports to the names above.

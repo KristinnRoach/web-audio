@@ -1,5 +1,5 @@
 import { Recorder } from './Recorder';
-import { getGlobalAudioContext } from '@/context';
+import { getOrCreateGlobalAudioContext } from '@/context';
 
 /**
  * Creates and initializes a new audio recorder
@@ -8,7 +8,7 @@ import { getGlobalAudioContext } from '@/context';
  * @returns A promise that resolves to the initialized Recorder instance // ! unnecessary async
  */
 async function createAudioRecorder(context?: AudioContext): Promise<Recorder> {
-  const audioContext = context || getGlobalAudioContext();
+  const audioContext = context || getOrCreateGlobalAudioContext();
   return new Recorder(audioContext);
 }
 

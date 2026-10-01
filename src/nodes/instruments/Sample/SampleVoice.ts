@@ -1,5 +1,4 @@
 import { LibAudioNode, Destination, NodeType } from '@/nodes';
-import { getGlobalAudioContext } from '@/context';
 import { DEFAULT } from '@/constants';
 import { registerNode, NodeID, unregisterNode } from '@/nodes/node-store';
 import { VoiceState } from '../VoiceState';
@@ -94,7 +93,7 @@ export class SampleVoice {
   // }
 
   constructor(
-    private context: AudioContext = getGlobalAudioContext(),
+    private context: AudioContext,
     options: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] } = {},
   ) {
     const signalChain = options.internalSignalChain ?? DEFAULT_CHAIN_ORDER;
