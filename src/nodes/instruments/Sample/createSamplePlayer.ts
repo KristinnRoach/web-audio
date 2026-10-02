@@ -7,7 +7,7 @@ import { SamplePlayer, type SamplePlayerOptions } from './SamplePlayer';
 /**
  * Creates a new SamplePlayer instance
  *
- * @param options - Optional player configuration; `sample` is loaded on init
+ * @param options - Optional player configuration; `audio` is loaded on init
  * @returns A new SamplePlayer instance
  */
 export async function createSamplePlayer(

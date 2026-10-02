@@ -352,7 +352,7 @@ export class Recorder implements LibNode {
 
     if (this.#destination) {
       // Auto load sample. The destination owns preprocessing.
-      await this.#destination.loadSample(buffer);
+      await this.#destination.loadAudio(buffer);
     }
 
     this.#state = AudioRecorderState.STOPPED;

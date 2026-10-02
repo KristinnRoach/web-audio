@@ -14,7 +14,7 @@ import {
 import { isValidAudioBuffer, isMidiValue } from '@/utils';
 
 import { MacroParam, NormalizeOptions } from '@/nodes/params';
-import { GainStages } from '@/nodes/LibNode';
+import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
   isValidSamplerParamValue,
@@ -56,7 +56,7 @@ import {
 export type SamplePlayerOptions = {
   context: AudioContext;
   polyphony?: number;
-  sample?: ArrayBuffer | AudioBuffer;
+  audio?: AudioInput | AudioInput[];
   voiceSignalChain?: readonly SampleVoiceChainNode[];
 };
 
@@ -72,7 +72,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   private readonly envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
-  #initialBuffer: ArrayBuffer | AudioBuffer | null = null;
+  #initialAudio: AudioInput | AudioInput[] | null = null;
 
   #connections = new Set<NodeID>();
   #incoming = new Set<NodeID>();
@@ -144,7 +144,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     // Store configuration for async init
     this.#polyphony = options.polyphony ?? 16;
     this.#voiceSignalChain = options.voiceSignalChain ? [...options.voiceSignalChain] : undefined;
-    this.#initialBuffer = options.sample ?? null;
+    this.#initialAudio = options.audio ?? null;
   }
 
   async init(): Promise<void> {
@@ -170,8 +170,8 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.#setupMessageHandling();
 
         // Load initial sample if provided
-        if (this.#initialBuffer) {
-          await this.loadSample(this.#initialBuffer, {
+        if (this.#initialAudio) {
+          await this.loadAudio(this.#initialAudio, {
             skipPreProcessing: true, // Skip preprocessing for init sample (likely already processed)
           });
         }
@@ -439,27 +439,16 @@ export class SamplePlayer implements ILibInstrumentNode {
   #isLoading = false;
 
   /**
-   * Load a single sample. Equivalent to `loadSamples([buffer])`: any previously
-   * loaded extra samples are cleared.
+   * Replace the whole sample set with one sample or several. Samples are
+   * summed inside the voice worklet at one shared playhead, so they play in
+   * unison and sample 0 is the authority for duration, loop points, start/end
+   * and zero crossings. Samples shorter than sample 0 fall silent at their own
+   * end; longer ones are truncated. Every sample is converted to the context's
+   * sample rate: encoded input by decodeAudioData, AudioBuffers by
+   * resampleAudioBuffer. Always resolves to an array, even for one sample.
    */
-  async loadSample(
-    buffer: AudioBuffer | ArrayBuffer,
-    preprocessOptions?: Partial<PreProcessOptions>,
-  ): Promise<AudioBuffer | null> {
-    const loaded = await this.loadSamples([buffer], preprocessOptions);
-    return loaded?.[0] ?? null;
-  }
-
-  /**
-   * Replace the whole sample set. Samples are summed inside the voice worklet at
-   * one shared playhead, so they play in unison and sample 0 is the authority
-   * for duration, loop points, start/end and zero crossings. Samples shorter
-   * than sample 0 fall silent at their own end; longer ones are truncated.
-   * Every sample is converted to the context's sample rate: encoded input by
-   * decodeAudioData, AudioBuffers by resampleAudioBuffer.
-   */
-  async loadSamples(
-    buffers: (AudioBuffer | ArrayBuffer)[],
+  async loadAudio(
+    audio: AudioInput | AudioInput[],
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer[] | null> {
     if (this.#isLoading) {
@@ -467,6 +456,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
     this.#isLoading = true;
     let unsubscribe: (() => void) | undefined;
+    let buffers = Array.isArray(audio) ? audio : [audio];
 
     try {
       if (buffers.length > SamplePlayer.MAX_SAMPLES) {
@@ -586,9 +576,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     const croppedBuffer = trimAudioBuffer(this.context, buffer, startSample, endSample, fadeMs);
 
-    return this.loadSample(croppedBuffer, {
+    const loaded = await this.loadAudio(croppedBuffer, {
       skipPreProcessing: true,
     });
+    return loaded?.[0] ?? null;
   }
 
   /* === PLAYBACK === */
