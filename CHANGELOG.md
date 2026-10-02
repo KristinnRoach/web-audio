@@ -1,5 +1,44 @@
 # @kidlib/web-audio
 
+## 0.6.0
+
+### Minor Changes
+
+- 6afd27b: Breaking: `getAudioContext` is renamed `getGlobalAudioContext`, and `ensureAudioCtx` is removed; to wait for audio, call `await context.resume()` in your own gesture handler. The global context no longer sets a `sampleRate`, so it runs at the output device's native rate.
+
+  Add `createGlobalAudioContext(options)` for options such as `sampleRate`. It throws while a global context is open; to change options, dispose your nodes and `await` the old context's `close()` first.
+
+  Breaking: `new SamplePlayer(options)` requires `options.context` and throws without it; it no longer falls back to the global context. `createSamplePlayer` still uses the global context when none is given.
+
+  `createSamplePlayer` no longer waits for a user gesture to resume the context, so it can resolve with the context still `suspended`. Audio starts on the next click, touch or key press; `await context.resume()` in a gesture handler if you need it running first.
+
+  `setAudioOutputDevice` and `getCurrentOutputDeviceId` take an optional context. `SamplePlayer` warns and emits `context:closed` when its context closes. `createSamplePlayer` no longer detaches the `ArrayBuffer` passed to it. Importing the package no longer creates an `AudioContext`.
+
+- 1e89f45: Breaking: exports with no known consumer are removed. They can come back once something uses them.
+
+  - The `@kidlib/web-audio/components` entry point (`KnobElement`, `registerKnobElement`, `defineElement`).
+  - `@kidlib/web-audio/io` now exports only `inputController`, `getMidiSupportInfo` and the types `NoteTarget`, `NoteEvent`, `ControlChangeEvent`. Everything else there is removed; `keymaps`, `DEFAULT_KEYMAP_KEY`, `getAudioInputDevices` and `getAudioOutputDevices` remain on the root entry.
+  - `Envelope`, `envelopePresets`, `assertValidEnvelopeShape` and the types `EnvelopeClock`, `EnvelopeTriggerOptions`, `AutomatableParam`. Configure envelopes through `SamplePlayer`'s `getEnvelope` and `updateEnvelope`.
+  - `Oscilloscope`, `DEFAULT`, `defaultKeymap`, `generateKeymap` and the types `LibNode`, `LibAudioNode`, `SamplerParamPatch`. `defaultKeymap` is still available as `keymaps.piano`.
+
+- 6485643: Breaking: `SamplePlayer` loads audio through one method and uses "sample" instead of "layer".
+
+  - `loadSample(buffer, options)` and `loadLayers(buffers, options)` → `loadAudio(audio, options)`. `audio` is one `ArrayBuffer | AudioBuffer` or an array of them, and the result is always an array (or `null`). The unused `modSampleRate` parameter is dropped, so preprocess options are the second argument.
+  - `SampleLoader` now requires `loadAudio` instead of `loadSample`. The new `AudioInput` type is `ArrayBuffer | AudioBuffer`.
+  - `layers` getter → `samples`
+  - `SamplePlayer.MAX_LAYERS` → `SamplePlayer.MAX_SAMPLES`
+  - `SamplePlayerOptions.audioBuffer` → `audio`, which takes the same input as `loadAudio`
+
+  Breaking: `createSamplePlayer(buffer, options?)` → `createSamplePlayer(options?)`. Pass the audio as `{ audio }`. Calling it without audio now returns a player with nothing loaded instead of throwing; load some later with `loadAudio`.
+
+  `AudioBuffer` samples whose sample rate differs from the player's context are now resampled to match, instead of throwing `RangeError` (sample 0) or being skipped (other samples). Encoded `ArrayBuffer` input was already converted by `decodeAudioData`, so both input types now load at the context's rate.
+
+  `init()` now rejects when `audio` is given but nothing usable loads (for example an empty array or an invalid first `AudioBuffer`), instead of resolving with an empty player.
+
+  A `SamplePlayer` whose `init()` fails, for example on an undecodable sample, now disposes itself instead of staying registered with its context listener attached.
+
+  `cropSample()` crops all loaded samples to the same frame range, zero-padding shorter samples instead of dropping additional samples.
+
 ## 0.5.4
 
 ### Patch Changes
