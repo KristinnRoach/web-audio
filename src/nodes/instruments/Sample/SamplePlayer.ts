@@ -452,6 +452,14 @@ export class SamplePlayer implements ILibInstrumentNode {
     audio: AudioInput | AudioInput[],
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer[] | null> {
+    return this.#loadAudio(audio, preprocessOptions);
+  }
+
+  async #loadAudio(
+    audio: AudioInput | AudioInput[],
+    preprocessOptions?: Partial<PreProcessOptions>,
+    validatedCrop = false,
+  ): Promise<AudioBuffer[] | null> {
     if (this.#isLoading) {
       throw new Error('A sample load is already in progress');
     }
@@ -481,7 +489,7 @@ export class SamplePlayer implements ILibInstrumentNode {
           }
         }
 
-        if (!isValidAudioBuffer(buffer)) {
+        if (!validatedCrop && !isValidAudioBuffer(buffer)) {
           console.error(`Invalid AudioBuffer provided for sample ${index}`);
           if (index === 0) return null;
           continue;
@@ -563,17 +571,13 @@ export class SamplePlayer implements ILibInstrumentNode {
    *
    * Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
-   * Rejects when multiple samples are loaded; cropping currently supports
-   * only a single sample and leaves a multi-sample set unchanged.
+   * Crops all samples to sample 0's frame range, zero-padding shorter samples.
    */
   async cropSample(
     startSeconds = this.getStartPoint(),
     endSeconds = this.getEndPoint(),
     fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
-    if (this.#audioData.length > 1) {
-      throw new Error('cropSample only supports a single loaded sample');
-    }
     const buffer = this.audiobuffer;
     if (!buffer) return null;
     if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {
@@ -585,11 +589,13 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     if (endSample <= startSample) return null;
 
-    const croppedBuffer = trimAudioBuffer(this.context, buffer, startSample, endSample, fadeMs);
+    const cropped = this.#audioData.map((sample) =>
+      trimAudioBuffer(this.context, sample, startSample, endSample, fadeMs),
+    );
 
-    const loaded = await this.loadAudio(croppedBuffer, {
-      skipPreProcessing: true,
-    });
+    // A valid crop can leave an extra sample entirely silent; retain it so
+    // the sample count (and therefore the worklet's mix gain) stays unchanged.
+    const loaded = await this.#loadAudio(cropped, { skipPreProcessing: true }, true);
     return loaded?.[0] ?? null;
   }
 

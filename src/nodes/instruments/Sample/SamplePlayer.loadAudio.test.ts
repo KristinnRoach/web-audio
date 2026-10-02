@@ -76,15 +76,34 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     expect(player.samples).toEqual([firstBuffer]);
     await expect(player.loadAudio(firstBuffer)).resolves.toEqual([firstBuffer]);
 
-    // Experimental multi-sample sets must not lose samples when cropped.
+    // Crop actual PCM through the existing loader harness, including silence.
+    const createBuffer = (_channels: number, length: number, sampleRate: number) => {
+      const data = new Float32Array(length);
+      return {
+        length,
+        sampleRate,
+        numberOfChannels: 1,
+        duration: length / sampleRate,
+        getChannelData: () => data,
+      } as unknown as AudioBuffer;
+    };
+    Object.assign(context, { createBuffer });
+    const originals = [480, 120, 48].map((length) => {
+      const buffer = createBuffer(1, length, 48000);
+      buffer.getChannelData(0).fill(0.5);
+      return buffer;
+    });
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
-    await player.loadAudio([firstBuffer, later]);
-    publish.mockClear();
-    await expect(player.cropSample(0, 0.5)).rejects.toThrow(
-      'cropSample only supports a single loaded sample',
-    );
-    expect(publish).not.toHaveBeenCalled();
-    expect(player.samples).toEqual([firstBuffer, later]);
+    await player.loadAudio(originals);
+    const cropped = await player.cropSample(0.002, 0.006, { in: 0, out: 0 });
+    expect(cropped).toBe(player.samples[0]);
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([192, 192, 192]);
+    expect(Array.from(player.samples[0].getChannelData(0))).toEqual(Array(192).fill(0.5));
+    expect(Array.from(player.samples[1].getChannelData(0))).toEqual([
+      ...Array(24).fill(0.5),
+      ...Array(168).fill(0),
+    ]);
+    expect(Array.from(player.samples[2].getChannelData(0))).toEqual(Array(192).fill(0));
   } finally {
     player.dispose();
   }

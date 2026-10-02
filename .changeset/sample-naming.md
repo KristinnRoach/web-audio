@@ -16,4 +16,4 @@ Breaking: `createSamplePlayer(buffer, options?)` → `createSamplePlayer(options
 
 A `SamplePlayer` whose `init()` fails, for example on an undecodable sample, now disposes itself instead of staying registered with its context listener attached.
 
-`cropSample()` currently supports a single loaded sample. It rejects without changing the loaded audio when multiple samples are present, instead of silently dropping the additional samples.
+`cropSample()` crops all loaded samples to the same frame range, zero-padding shorter samples instead of dropping additional samples.
