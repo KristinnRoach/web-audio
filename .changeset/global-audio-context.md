@@ -2,7 +2,7 @@
 '@kidlib/web-audio': minor
 ---
 
-Breaking: `getAudioContext` is renamed `getGlobalAudioContext`, and `ensureAudioCtx` is removed; to wait for audio, call `await context.resume()` in your own gesture handler. The global context no longer sets a `sampleRate`, so it runs at the output device's native rate. `DEFAULT.audioConfig`, `DEFAULT.DEFAULT_SAMPLE_RATE` and `DEFAULT.DEFAULT_NUMBER_OF_CHANNELS` are removed.
+Breaking: `getAudioContext` is renamed `getGlobalAudioContext`, and `ensureAudioCtx` is removed; to wait for audio, call `await context.resume()` in your own gesture handler. The global context no longer sets a `sampleRate`, so it runs at the output device's native rate.
 
 Add `createGlobalAudioContext(options)` for options such as `sampleRate`. It throws while a global context is open; to change options, dispose your nodes and `await` the old context's `close()` first.
 
