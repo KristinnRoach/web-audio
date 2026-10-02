@@ -139,3 +139,42 @@ describe('SamplePlayer envelope config', () => {
     expect(applyToAllVoices).not.toHaveBeenCalled();
   });
 });
+
+describe('SamplePlayer context watch', () => {
+  it('warns and emits context:closed when its context closes, until disposed', async () => {
+    vi.resetModules();
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('AudioContext', class {});
+    vi.stubGlobal('AudioWorkletNode', class {});
+    vi.stubGlobal('GainNode', class {});
+    vi.doMock('@/nodes/params', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      MacroParam: class {
+        dispose() {}
+      },
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { SamplePlayer } = await import('./SamplePlayer');
+
+    const context = Object.assign(new EventTarget(), { state: 'running' });
+    const player = new SamplePlayer({ context: context as unknown as AudioContext });
+    const closed = vi.fn();
+    player.onMessage('context:closed', closed);
+
+    context.dispatchEvent(new Event('statechange'));
+    expect(warn).not.toHaveBeenCalled();
+
+    context.state = 'closed';
+    context.dispatchEvent(new Event('statechange'));
+    expect(warn).toHaveBeenCalledOnce();
+    expect(closed).toHaveBeenCalledOnce();
+
+    player.dispose();
+    context.dispatchEvent(new Event('statechange'));
+    expect(warn).toHaveBeenCalledOnce();
+
+    warn.mockRestore();
+    vi.doUnmock('@/nodes/params');
+    vi.unstubAllGlobals();
+  });
+});

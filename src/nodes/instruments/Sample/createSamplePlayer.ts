@@ -1,7 +1,7 @@
 // createSamplePlayer.ts
 
 import { initProcessors } from '@/worklets';
-import { ensureAudioCtx, logAudioContextStats } from '@/context';
+import { getGlobalAudioContext, logAudioContextStats } from '@/context';
 import { SamplePlayer, type SamplePlayerOptions } from './SamplePlayer';
 
 /**
@@ -16,10 +16,7 @@ export async function createSamplePlayer(
   options: Partial<SamplePlayerOptions> = {},
 ): Promise<SamplePlayer> {
   console.info('Creating SamplePlayer...');
-  if (!options.context) {
-    console.info('No AudioContext provided in options; using Audiolib global AudioContext');
-  }
-  const context = options.context ?? (await ensureAudioCtx());
+  const context = options.context ?? getGlobalAudioContext();
   logAudioContextStats(context);
 
   const workletResult = await initProcessors(context); // Ensure worklets are registered
@@ -36,8 +33,9 @@ export async function createSamplePlayer(
   if (buffer instanceof AudioBuffer) {
     audioBuffer = buffer;
   } else if (buffer instanceof ArrayBuffer) {
+    // decodeAudioData detaches its input; copy so callers can reuse the same ArrayBuffer
     try {
-      audioBuffer = await context.decodeAudioData(buffer);
+      audioBuffer = await context.decodeAudioData(buffer.slice(0));
     } catch (error) {
       console.error('Failed to decode sample audiodata when creating SamplePlayer:', error);
       throw error;

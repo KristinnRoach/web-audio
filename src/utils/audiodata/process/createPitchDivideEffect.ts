@@ -1,4 +1,3 @@
-import { getAudioContext } from '@/context';
 import { findWaveCycles } from '@/utils/audiodata/wavecycles/findWaveCycles';
 
 export function createPitchDivideEffect(
@@ -6,12 +5,12 @@ export function createPitchDivideEffect(
   divider: number = 2,
 ): AudioBuffer {
   const cycles = findWaveCycles(audioBuffer);
-  const ctx = getAudioContext();
-  const outputBuffer = ctx.createBuffer(
-    audioBuffer.numberOfChannels,
-    audioBuffer.length,
-    audioBuffer.sampleRate,
-  );
+  // An AudioBuffer doesn't belong to a context; no AudioContext needed
+  const outputBuffer = new AudioBuffer({
+    numberOfChannels: audioBuffer.numberOfChannels,
+    length: audioBuffer.length,
+    sampleRate: audioBuffer.sampleRate,
+  });
 
   const inputData = audioBuffer.getChannelData(0);
   const outputData = outputBuffer.getChannelData(0);
