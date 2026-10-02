@@ -1,7 +1,11 @@
 // offlineAudioContext.ts
-import { DEFAULT } from '@/constants';
 
 const offlineInstances = new Map<string, OfflineAudioContext>();
+
+const OFFLINE_DEFAULTS = {
+  sampleRate: 44100,
+  numberOfChannels: 2,
+} as const;
 
 export type OfflineContextConfig = {
   length: number;
@@ -10,7 +14,7 @@ export type OfflineContextConfig = {
 };
 
 function generateContextKey(config: OfflineContextConfig): string {
-  return `${config.length}-${config.numberOfChannels || 2}-${config.sampleRate || DEFAULT.audioConfig.sampleRate}`;
+  return `${config.length}-${config.numberOfChannels || OFFLINE_DEFAULTS.numberOfChannels}-${config.sampleRate || OFFLINE_DEFAULTS.sampleRate}`;
 }
 
 export function getOfflineAudioContext(config: OfflineContextConfig): OfflineAudioContext {
@@ -30,8 +34,8 @@ export function getOfflineAudioContext(config: OfflineContextConfig): OfflineAud
 
   const newContext = new OfflineAudioContext({
     length: config.length,
-    numberOfChannels: config.numberOfChannels || 2,
-    sampleRate: config.sampleRate || DEFAULT.audioConfig.sampleRate,
+    numberOfChannels: config.numberOfChannels || OFFLINE_DEFAULTS.numberOfChannels,
+    sampleRate: config.sampleRate || OFFLINE_DEFAULTS.sampleRate,
   });
   offlineInstances.set(key, newContext);
 

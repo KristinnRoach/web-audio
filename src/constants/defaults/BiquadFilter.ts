@@ -1,11 +1,3 @@
-export const DEFAULT_SAMPLE_RATE = 44100;
-export const DEFAULT_NUMBER_OF_CHANNELS = 2;
-
-export const audioConfig = {
-  sampleRate: DEFAULT_SAMPLE_RATE,
-  numberOfChannels: DEFAULT_NUMBER_OF_CHANNELS,
-} as const;
-
 /**
  * Filter Q shared by every lowpass/highpass in the lib. One value for both so
  * pre-FX (voice) and post-FX (bus) filters have the same slope knee and can be
