@@ -171,9 +171,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
         // Load initial sample if provided
         if (this.#initialAudio) {
-          await this.loadAudio(this.#initialAudio, {
+          const loaded = await this.loadAudio(this.#initialAudio, {
             skipPreProcessing: true, // Skip preprocessing for init sample (likely already processed)
           });
+          if (!loaded) throw new Error('No usable initial audio');
         }
 
         this.#initialized = true;

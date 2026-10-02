@@ -12,4 +12,6 @@ Breaking: `SamplePlayer` loads audio through one method and uses "sample" instea
 
 Breaking: `createSamplePlayer(buffer, options?)` → `createSamplePlayer(options?)`. Pass the audio as `{ audio }`. Calling it without audio now returns a player with nothing loaded instead of throwing; load some later with `loadAudio`.
 
+`init()` now rejects when `audio` is given but nothing usable loads (for example an empty array or an invalid first `AudioBuffer`), instead of resolving with an empty player.
+
 A `SamplePlayer` whose `init()` fails, for example on an undecodable sample, now disposes itself instead of staying registered with its context listener attached.
