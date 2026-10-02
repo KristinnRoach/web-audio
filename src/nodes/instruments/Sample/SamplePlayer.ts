@@ -2,6 +2,7 @@
 
 import { Message, MessageHandler } from '@/events';
 import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
+import { resampleAudioBuffer } from '@/utils/audiodata/convert/resampleAudioBuffer';
 import { clamp, ROOT_NOTES, assert } from '@/utils';
 
 import {
@@ -13,7 +14,7 @@ import {
 import { isValidAudioBuffer, isMidiValue } from '@/utils';
 
 import { MacroParam, NormalizeOptions } from '@/nodes/params';
-import { GainStages } from '@/nodes/LibNode';
+import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
   isValidSamplerParamValue,
@@ -55,7 +56,7 @@ import {
 export type SamplePlayerOptions = {
   context: AudioContext;
   polyphony?: number;
-  audioBuffer?: AudioBuffer;
+  audio?: AudioInput | AudioInput[];
   voiceSignalChain?: readonly SampleVoiceChainNode[];
 };
 
@@ -71,14 +72,13 @@ export class SamplePlayer implements ILibInstrumentNode {
   private readonly envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
-  #initialAudioBuffer: AudioBuffer | null = null;
+  #initialAudio: AudioInput | AudioInput[] | null = null;
 
   #connections = new Set<NodeID>();
   #incoming = new Set<NodeID>();
 
-  #audiobuffer: AudioBuffer | null = null;
-  #layers: AudioBuffer[] = [];
-  static readonly MAX_LAYERS = 4;
+  #audioData: AudioBuffer[] = [];
+  static readonly MAX_SAMPLES = 4;
   #bufferDuration: number = 0;
 
   #loopEnabled = false;
@@ -144,7 +144,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     // Store configuration for async init
     this.#polyphony = options.polyphony ?? 16;
     this.#voiceSignalChain = options.voiceSignalChain ? [...options.voiceSignalChain] : undefined;
-    this.#initialAudioBuffer = options.audioBuffer ?? null;
+    this.#initialAudio = options.audio ?? null;
   }
 
   async init(): Promise<void> {
@@ -170,18 +170,18 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.#setupMessageHandling();
 
         // Load initial sample if provided
-        if (this.#initialAudioBuffer) {
-          await this.loadSample(this.#initialAudioBuffer, undefined, {
+        if (this.#initialAudio) {
+          const loaded = await this.loadAudio(this.#initialAudio, {
             skipPreProcessing: true, // Skip preprocessing for init sample (likely already processed)
           });
+          if (!loaded) throw new Error('No usable initial audio');
         }
 
         this.#initialized = true;
       } catch (error) {
-        // Cleanup any partial initialization
-        this.voicePool?.dispose();
-        this.#macroLoopStart?.dispose();
-        this.#macroLoopEnd?.dispose();
+        // A failed init (e.g. an undecodable sample) leaves nothing usable, so
+        // release everything the constructor registered too.
+        this.dispose();
 
         const errorMessage = error instanceof Error ? error.message : String(error);
         throw new Error(`Failed to initialize SamplePlayer: ${errorMessage}`);
@@ -440,39 +440,37 @@ export class SamplePlayer implements ILibInstrumentNode {
   #isLoading = false;
 
   /**
-   * Load a single sample. Equivalent to `loadLayers([buffer])`: any previously
-   * loaded extra layers are cleared.
+   * Replace the whole sample set with one sample or several. Samples are
+   * summed inside the voice worklet at one shared playhead, so they play in
+   * unison and sample 0 is the authority for duration, loop points, start/end
+   * and zero crossings. Samples shorter than sample 0 fall silent at their own
+   * end; longer ones are truncated. Every sample is converted to the context's
+   * sample rate: encoded input by decodeAudioData, AudioBuffers by
+   * resampleAudioBuffer. Always resolves to an array, even for one sample.
    */
-  async loadSample(
-    buffer: AudioBuffer | ArrayBuffer,
-    modSampleRate?: number,
+  async loadAudio(
+    audio: AudioInput | AudioInput[],
     preprocessOptions?: Partial<PreProcessOptions>,
-  ): Promise<AudioBuffer | null> {
-    const loaded = await this.loadLayers([buffer], modSampleRate, preprocessOptions);
-    return loaded?.[0] ?? null;
+  ): Promise<AudioBuffer[] | null> {
+    return this.#loadAudio(audio, preprocessOptions);
   }
 
-  /**
-   * Replace the whole layer set. Layers are summed inside the voice worklet at
-   * one shared playhead, so they play in unison and layer 0 is the authority
-   * for duration, loop points, start/end and zero crossings. Layers shorter
-   * than layer 0 fall silent at their own end; longer ones are truncated.
-   */
-  async loadLayers(
-    buffers: (AudioBuffer | ArrayBuffer)[],
-    modSampleRate?: number,
+  async #loadAudio(
+    audio: AudioInput | AudioInput[],
     preprocessOptions?: Partial<PreProcessOptions>,
+    validatedCrop = false,
   ): Promise<AudioBuffer[] | null> {
     if (this.#isLoading) {
       throw new Error('A sample load is already in progress');
     }
     this.#isLoading = true;
     let unsubscribe: (() => void) | undefined;
+    let buffers = Array.isArray(audio) ? audio : [audio];
 
     try {
-      if (buffers.length > SamplePlayer.MAX_LAYERS) {
-        console.warn(`Ignoring layers past ${SamplePlayer.MAX_LAYERS}; got ${buffers.length}`);
-        buffers = buffers.slice(0, SamplePlayer.MAX_LAYERS);
+      if (buffers.length > SamplePlayer.MAX_SAMPLES) {
+        console.warn(`Ignoring samples past ${SamplePlayer.MAX_SAMPLES}; got ${buffers.length}`);
+        buffers = buffers.slice(0, SamplePlayer.MAX_SAMPLES);
       }
 
       const decoded: AudioBuffer[] = [];
@@ -486,54 +484,45 @@ export class SamplePlayer implements ILibInstrumentNode {
             buffer = await this.context.decodeAudioData(buffer.slice(0));
           } catch (error) {
             if (index === 0) throw error;
-            console.warn(`Failed to decode layer ${index}; skipping`, error);
+            console.warn(`Failed to decode sample ${index}; skipping`, error);
             continue;
           }
         }
 
-        if (!isValidAudioBuffer(buffer)) {
-          console.error(`Invalid AudioBuffer provided for layer ${index}`);
+        if (!validatedCrop && !isValidAudioBuffer(buffer)) {
+          console.error(`Invalid AudioBuffer provided for sample ${index}`);
           if (index === 0) return null;
           continue;
         }
 
-        if (buffer.sampleRate !== this.context.sampleRate) {
-          // Layer 0 is the authority, so a mismatch there is fatal as before.
-          // Extra layers are dropped individually and the rest still play.
-          const message = `Sample rate mismatch: layer ${index} rate ${buffer.sampleRate}, context rate ${this.context.sampleRate}`;
-          if (index === 0) throw new RangeError(message);
-          console.warn(message);
-          continue;
+        // The voice worklet plays buffers at the context's rate.
+        try {
+          decoded.push(await resampleAudioBuffer(buffer, this.context.sampleRate));
+        } catch (error) {
+          if (index === 0) throw error;
+          console.warn(`Failed to resample sample ${index}; skipping`, error);
         }
-
-        decoded.push(buffer);
       }
 
       if (!decoded.length) return null;
 
-      if (modSampleRate && this.context.sampleRate !== modSampleRate) {
-        console.warn(
-          `Sample rate mismatch: context rate ${this.context.sampleRate}, requested rate ${modSampleRate}`,
-        );
-      }
-
-      const layers: AudioBuffer[] = [];
+      const audioData: AudioBuffer[] = [];
       let newZeroCrossings: number[] = [];
 
       for (const [index, buffer] of decoded.entries()) {
         if (!this.#preprocessAudio) {
-          layers.push(buffer);
+          audioData.push(buffer);
           continue;
         }
 
-        // Preprocess each layer (re-pitch, trim, normalize, etc.).
-        // Zero crossings are only used for the authority layer.
+        // Preprocess each sample (re-pitch, trim, normalize, etc.).
+        // Zero crossings are only used for the authority (index 0).
         const processed: PreProcessResults = await preProcessAudioBuffer(
           this.context,
           buffer,
           preprocessOptions,
         );
-        layers.push(processed.audiobuffer);
+        audioData.push(processed.audiobuffer);
 
         if (index === 0 && this.#useZeroCrossings && processed.zeroCrossings) {
           newZeroCrossings = processed.zeroCrossings;
@@ -544,9 +533,8 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.releaseAll(0);
       this.transposeSemitones = 0;
       this.#isLoaded = false;
-      this.#layers = layers;
-      this.#audiobuffer = layers[0];
-      this.#bufferDuration = layers[0].duration;
+      this.#audioData = audioData;
+      this.#bufferDuration = audioData[0].duration;
       this.#zeroCrossings = newZeroCrossings;
 
       const loadedPromise = new Promise<void>((resolve) => {
@@ -555,7 +543,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         });
       });
 
-      this.voicePool.setLayers(layers, newZeroCrossings);
+      this.voicePool.setAudioData(audioData, newZeroCrossings);
       this.#resetMacros();
 
       const defaultScaleOptions = {
@@ -570,7 +558,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.setScale(defaultScaleOptions);
 
       await loadedPromise;
-      return [...layers];
+      return [...audioData];
     } finally {
       unsubscribe?.();
       this.#isLoading = false;
@@ -583,13 +571,14 @@ export class SamplePlayer implements ILibInstrumentNode {
    *
    * Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
+   * Crops all samples to sample 0's frame range, zero-padding shorter samples.
    */
   async cropSample(
     startSeconds = this.getStartPoint(),
     endSeconds = this.getEndPoint(),
     fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
-    const buffer = this.#audiobuffer;
+    const buffer = this.audiobuffer;
     if (!buffer) return null;
     if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {
       return null;
@@ -600,11 +589,14 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     if (endSample <= startSample) return null;
 
-    const croppedBuffer = trimAudioBuffer(this.context, buffer, startSample, endSample, fadeMs);
+    const cropped = this.#audioData.map((sample) =>
+      trimAudioBuffer(this.context, sample, startSample, endSample, fadeMs),
+    );
 
-    return this.loadSample(croppedBuffer, undefined, {
-      skipPreProcessing: true,
-    });
+    // A valid crop can leave an extra sample entirely silent; retain it so
+    // the sample count (and therefore the worklet's mix gain) stays unchanged.
+    const loaded = await this.#loadAudio(cropped, { skipPreProcessing: true }, true);
+    return loaded?.[0] ?? null;
   }
 
   /* === PLAYBACK === */
@@ -1358,12 +1350,12 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   get audiobuffer() {
-    return this.#audiobuffer;
+    return this.#audioData[0] ?? null;
   }
 
-  /** All loaded layers. Index 0 is the authority layer (=== `audiobuffer`). */
-  get layers(): readonly AudioBuffer[] {
-    return [...this.#layers];
+  /** All loaded samples. Index 0 is the authority sample (=== `audiobuffer`). */
+  get samples(): readonly AudioBuffer[] {
+    return [...this.#audioData];
   }
 
   /* === CLEANUP === */
@@ -1398,8 +1390,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       // Reset state variables
       this.#bufferDuration = 0;
-      this.#audiobuffer = null;
-      this.#layers = [];
+      this.#audioData = [];
       this.#initialized = false;
       this.#isLoaded = false;
       this.#zeroCrossings = [];

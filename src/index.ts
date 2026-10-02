@@ -10,7 +10,7 @@ export { Envelope } from './nodes/params/envelopes';
 
 // =*=*=  Types =*=*= \\
 export type { Recorder, RecorderInput, RecorderStartOptions } from './nodes/recorder';
-export type { LibNode, LibAudioNode, SampleLoader, GainStages } from './nodes';
+export type { LibNode, LibAudioNode, SampleLoader, AudioInput, GainStages } from './nodes';
 export type { SamplePlayerOptions } from './nodes/instruments/Sample/SamplePlayer';
 export type { SampleVoiceChainNode } from './nodes/instruments/Sample/SampleVoice';
 export type {

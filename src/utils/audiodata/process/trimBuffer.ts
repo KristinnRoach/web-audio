@@ -66,10 +66,8 @@ export function trimAudioBuffer(
     const input = buffer.getChannelData(ch);
     const output = trimmedBuffer.getChannelData(ch);
 
-    // Copy data
-    for (let i = 0; i < newLength; i++) {
-      output[i] = input[start + i];
-    }
+    // Unfilled frames remain zero when the requested range exceeds the input.
+    output.set(input.subarray(start, end));
 
     // Fade only if the ramps fit. Equal is fine: they abut, they don't overlap,
     // and a disabled side contributes 0, so one fade may fill the whole buffer.

@@ -14,11 +14,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     super();
 
     // Only set properties that should persist across resets.
-    // Layer 0 is the authority: every buffer-derived range (duration, playback
+    // audioData[0] is the authority: every buffer-derived range (duration, playback
     // range, loop amplitude, click compensation) reads it via the `buffer`
-    // getter below. Extra layers only contribute samples to the mix.
-    this.layers = [];
-    this.layerGain = 1;
+    // getter below. Extra entries only contribute samples to the mix.
+    this.audioData = [];
+    this.audioDataGain = 1;
     this.minZeroCrossing = 0;
     this.maxZeroCrossing = 0;
 
@@ -48,9 +48,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'initialized' });
   }
 
-  /** Authority layer. All range and duration math reads through this. */
+  /** Authority audio data. All range and duration math reads through this. */
   get buffer() {
-    return this.layers[0] ?? null;
+    return this.audioData[0] ?? null;
   }
 
   // ===== MESSAGE HANDLING =====
@@ -60,7 +60,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       type,
       value,
       buffer,
-      layers,
+      audioData,
       timestamp,
       durationSeconds,
       zeroCrossings,
@@ -75,19 +75,19 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:setBuffer':
-      case 'voice:setLayers': {
-        // Both messages replace the entire layer set, so state resets exactly
+      case 'voice:setAudioData': {
+        // Both messages replace all audio data, so state resets exactly
         // once and there is no partially-loaded window to get wrong.
         this.#resetState();
         this.zeroCrossings = [];
         this.minZeroCrossing = 0;
         this.maxZeroCrossing = 0;
 
-        this.layers = (layers ?? (buffer ? [buffer] : [])).filter(Boolean);
-        // ponytail: 1/L is correct for fully coherent layers (the same sample
-        // stacked) and 3dB conservative otherwise. Add per-layer user gain
+        this.audioData = (audioData ?? (buffer ? [buffer] : [])).filter(Boolean);
+        // ponytail: 1/N is correct for fully coherent entries (the same sample
+        // stacked) and 3dB conservative otherwise. Add per-entry user gain
         // when a UI needs it.
-        this.layerGain = this.layers.length ? 1 / this.layers.length : 1;
+        this.audioDataGain = this.audioData.length ? 1 / this.audioData.length : 1;
 
         this.port.postMessage({
           type: 'voice:loaded',
@@ -877,22 +877,22 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           continue;
         }
 
-        // Sum every loaded layer at the shared playhead. Mono layers use
-        // channel 0 for both outputs; layers shorter than the authority read
+        // Sum all loaded audio data at the shared playhead. Mono entries use
+        // channel 0 for both outputs; entries shorter than the authority read
         // past their end and contribute 0.
-        // ponytail: one shared position for all layers, so layers play in
-        // unison. Per-layer detune means a position per layer here (or baking
+        // ponytail: one shared position for all entries, so they play in
+        // unison. Per-entry detune means a position per entry here (or baking
         // the transposition into the buffer at load).
         let interpolatedSample = 0;
-        for (let l = 0; l < this.layers.length; l++) {
-          const layer = this.layers[l];
-          const layerChannel = layer[Math.min(channel, layer.length - 1)];
+        for (let d = 0; d < this.audioData.length; d++) {
+          const data = this.audioData[d];
+          const channelData = data[Math.min(channel, data.length - 1)];
 
           // Linear interpolation between current and next positions
-          const currentSample = layerChannel[currentPosition] || 0;
-          const nextSample = layerChannel[nextPosition] || 0;
+          const currentSample = channelData[currentPosition] || 0;
+          const nextSample = channelData[nextPosition] || 0;
           interpolatedSample +=
-            (currentSample + interpWeight * (nextSample - currentSample)) * this.layerGain;
+            (currentSample + interpWeight * (nextSample - currentSample)) * this.audioDataGain;
         }
 
         // Original click compensation (still active)

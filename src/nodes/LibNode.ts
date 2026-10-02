@@ -48,8 +48,11 @@ export type Destination = ILibAudioNode | AudioNode | AudioParam;
  */
 export type GainStages = Record<string, AudioNode | AudioNode[]>;
 
+/** Audio a sample loader accepts: encoded file bytes or decoded PCM. */
+export type AudioInput = ArrayBuffer | AudioBuffer;
+
 export interface SampleLoader {
-  loadSample(buffer: AudioBuffer | ArrayBuffer): Promise<AudioBuffer | null>;
+  loadAudio(audio: AudioInput | AudioInput[]): Promise<AudioBuffer[] | null>;
 }
 
 // Base interface for all nodes
