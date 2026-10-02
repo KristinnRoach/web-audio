@@ -1,11 +1,11 @@
 // globalAudioContext.ts
 
-import { DEFAULT } from '@/constants';
 import { assert } from '@/utils';
 
 let globalAudioContext: AudioContext | null = null;
-// Reused when getGlobalAudioContext replaces a closed global context
-let globalOptions: AudioContextOptions = { sampleRate: DEFAULT.audioConfig.sampleRate };
+// Reused when getGlobalAudioContext replaces a closed global context. Empty by
+// default, so the browser uses the output device's native sample rate.
+let globalOptions: AudioContextOptions = {};
 let autoResumeArmed = false;
 
 /** Throws while a global context is open. To change options, dispose the nodes on it
@@ -15,7 +15,7 @@ export function createGlobalAudioContext(options: AudioContextOptions = {}): Aud
     !globalAudioContext || globalAudioContext.state === 'closed',
     'A global AudioContext already exists. Use getGlobalAudioContext(), or await its close() before creating a new one.',
   );
-  globalOptions = { sampleRate: DEFAULT.audioConfig.sampleRate, ...options };
+  globalOptions = options;
   globalAudioContext = new AudioContext(globalOptions);
   if (globalAudioContext.state === 'suspended') armAutoResume();
   return globalAudioContext;
