@@ -2,6 +2,7 @@
 
 import { Message, MessageHandler } from '@/events';
 import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
+import { resampleAudioBuffer } from '@/utils/audiodata/convert/resampleAudioBuffer';
 import { clamp, ROOT_NOTES, assert } from '@/utils';
 
 import {
@@ -171,7 +172,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
         // Load initial sample if provided
         if (this.#initialAudioBuffer) {
-          await this.loadSample(this.#initialAudioBuffer, undefined, {
+          await this.loadSample(this.#initialAudioBuffer, {
             skipPreProcessing: true, // Skip preprocessing for init sample (likely already processed)
           });
         }
@@ -445,10 +446,9 @@ export class SamplePlayer implements ILibInstrumentNode {
    */
   async loadSample(
     buffer: AudioBuffer | ArrayBuffer,
-    modSampleRate?: number,
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer | null> {
-    const loaded = await this.loadLayers([buffer], modSampleRate, preprocessOptions);
+    const loaded = await this.loadLayers([buffer], preprocessOptions);
     return loaded?.[0] ?? null;
   }
 
@@ -457,10 +457,11 @@ export class SamplePlayer implements ILibInstrumentNode {
    * one shared playhead, so they play in unison and layer 0 is the authority
    * for duration, loop points, start/end and zero crossings. Layers shorter
    * than layer 0 fall silent at their own end; longer ones are truncated.
+   * Every layer is converted to the context's sample rate: encoded input by
+   * decodeAudioData, AudioBuffers by resampleAudioBuffer.
    */
   async loadLayers(
     buffers: (AudioBuffer | ArrayBuffer)[],
-    modSampleRate?: number,
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer[] | null> {
     if (this.#isLoading) {
@@ -497,25 +498,11 @@ export class SamplePlayer implements ILibInstrumentNode {
           continue;
         }
 
-        if (buffer.sampleRate !== this.context.sampleRate) {
-          // Layer 0 is the authority, so a mismatch there is fatal as before.
-          // Extra layers are dropped individually and the rest still play.
-          const message = `Sample rate mismatch: layer ${index} rate ${buffer.sampleRate}, context rate ${this.context.sampleRate}`;
-          if (index === 0) throw new RangeError(message);
-          console.warn(message);
-          continue;
-        }
-
-        decoded.push(buffer);
+        // The voice worklet plays buffers at the context's rate.
+        decoded.push(await resampleAudioBuffer(buffer, this.context.sampleRate));
       }
 
       if (!decoded.length) return null;
-
-      if (modSampleRate && this.context.sampleRate !== modSampleRate) {
-        console.warn(
-          `Sample rate mismatch: context rate ${this.context.sampleRate}, requested rate ${modSampleRate}`,
-        );
-      }
 
       const layers: AudioBuffer[] = [];
       let newZeroCrossings: number[] = [];
@@ -602,7 +589,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     const croppedBuffer = trimAudioBuffer(this.context, buffer, startSample, endSample, fadeMs);
 
-    return this.loadSample(croppedBuffer, undefined, {
+    return this.loadSample(croppedBuffer, {
       skipPreProcessing: true,
     });
   }
