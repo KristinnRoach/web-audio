@@ -488,7 +488,12 @@ export class SamplePlayer implements ILibInstrumentNode {
         }
 
         // The voice worklet plays buffers at the context's rate.
-        decoded.push(await resampleAudioBuffer(buffer, this.context.sampleRate));
+        try {
+          decoded.push(await resampleAudioBuffer(buffer, this.context.sampleRate));
+        } catch (error) {
+          if (index === 0) throw error;
+          console.warn(`Failed to resample sample ${index}; skipping`, error);
+        }
       }
 
       if (!decoded.length) return null;
