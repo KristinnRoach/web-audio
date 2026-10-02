@@ -15,3 +15,5 @@ Breaking: `createSamplePlayer(buffer, options?)` → `createSamplePlayer(options
 `init()` now rejects when `audio` is given but nothing usable loads (for example an empty array or an invalid first `AudioBuffer`), instead of resolving with an empty player.
 
 A `SamplePlayer` whose `init()` fails, for example on an undecodable sample, now disposes itself instead of staying registered with its context listener attached.
+
+`cropSample()` currently supports a single loaded sample. It rejects without changing the loaded audio when multiple samples are present, instead of silently dropping the additional samples.

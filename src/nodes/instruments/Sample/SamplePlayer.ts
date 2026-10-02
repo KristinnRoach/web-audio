@@ -563,12 +563,17 @@ export class SamplePlayer implements ILibInstrumentNode {
    *
    * Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
+   * Rejects when multiple samples are loaded; cropping currently supports
+   * only a single sample and leaves a multi-sample set unchanged.
    */
   async cropSample(
     startSeconds = this.getStartPoint(),
     endSeconds = this.getEndPoint(),
     fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
+    if (this.#audioData.length > 1) {
+      throw new Error('cropSample only supports a single loaded sample');
+    }
     const buffer = this.audiobuffer;
     if (!buffer) return null;
     if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {

@@ -75,6 +75,16 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     expect(publish).not.toHaveBeenCalled();
     expect(player.samples).toEqual([firstBuffer]);
     await expect(player.loadAudio(firstBuffer)).resolves.toEqual([firstBuffer]);
+
+    // Experimental multi-sample sets must not lose samples when cropped.
+    vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
+    await player.loadAudio([firstBuffer, later]);
+    publish.mockClear();
+    await expect(player.cropSample(0, 0.5)).rejects.toThrow(
+      'cropSample only supports a single loaded sample',
+    );
+    expect(publish).not.toHaveBeenCalled();
+    expect(player.samples).toEqual([firstBuffer, later]);
   } finally {
     player.dispose();
   }
