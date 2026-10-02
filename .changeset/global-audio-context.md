@@ -2,7 +2,7 @@
 '@kidlib/web-audio': minor
 ---
 
-Breaking: `getAudioContext` is renamed `getGlobalAudioContext`, and `ensureAudioCtx` is removed; to wait for audio, call `await context.resume()` in your own gesture handler. `SampleVoice`, `InstrumentBus`, `DattorroReverb`, `HarmonicFeedback` and `createPitchDivideEffect` (now its first argument) require an explicit context.
+Breaking: `getAudioContext` is renamed `getGlobalAudioContext`, and `ensureAudioCtx` is removed; to wait for audio, call `await context.resume()` in your own gesture handler. The global context's default sample rate (`DEFAULT.audioConfig.sampleRate`) is now 44100 instead of 48000.
 
 Add `createGlobalAudioContext(options)` for options such as `sampleRate`. It throws while a global context is open; to change options, dispose your nodes and `await` the old context's `close()` first.
 

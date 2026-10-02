@@ -3,14 +3,9 @@
 import { DEFAULT } from '@/constants';
 import { assert } from '@/utils';
 
-const DEFAULT_OPTIONS: AudioContextOptions = {
-  sampleRate: DEFAULT.audioConfig.sampleRate,
-  latencyHint: 'interactive',
-};
-
 let globalAudioContext: AudioContext | null = null;
-// Reused when a closed global context is recreated
-let globalOptions = DEFAULT_OPTIONS;
+// Reused when getGlobalAudioContext replaces a closed global context
+let globalOptions: AudioContextOptions = { sampleRate: DEFAULT.audioConfig.sampleRate };
 let autoResumeArmed = false;
 
 /** Throws while a global context is open. To change options, dispose the nodes on it
@@ -20,17 +15,17 @@ export function createGlobalAudioContext(options: AudioContextOptions = {}): Aud
     !globalAudioContext || globalAudioContext.state === 'closed',
     'A global AudioContext already exists. Use getGlobalAudioContext(), or await its close() before creating a new one.',
   );
-  globalOptions = { ...DEFAULT_OPTIONS, ...options };
+  globalOptions = { sampleRate: DEFAULT.audioConfig.sampleRate, ...options };
   globalAudioContext = new AudioContext(globalOptions);
   if (globalAudioContext.state === 'suspended') armAutoResume();
   return globalAudioContext;
 }
 
-/** Creates the global context on first use, or recreates a closed one with the last
+/** Creates the global context on first use, or replaces a closed one using the last
  *  options. May return it suspended; the next user gesture resumes it. */
 export function getGlobalAudioContext(): AudioContext {
   if (!globalAudioContext || globalAudioContext.state === 'closed') {
-    globalAudioContext = new AudioContext(globalOptions);
+    return createGlobalAudioContext(globalOptions);
   }
   if (globalAudioContext.state === 'suspended') armAutoResume();
   return globalAudioContext;
