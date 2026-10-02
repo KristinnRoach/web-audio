@@ -9,7 +9,7 @@ editable configs; `SampleVoice` applies them using
 defaults, parameter mapping and live-edit decisions.
 
 ```ts
-import { Envelope } from '@kidlib/web-audio';
+import { Envelope } from '@/nodes/params/envelopes';
 
 const ctx = new AudioContext();
 const gain = ctx.createGain();
@@ -137,7 +137,7 @@ position; these accessors are not completion notifications.
 Each preset takes a total duration in seconds (default `1`) and returns a shape.
 
 ```ts
-import { envelopePresets } from '@kidlib/web-audio';
+import { envelopePresets } from '@/nodes/params/envelopes';
 
 envelopePresets.amplitude(2); // attack, decay, sustain, release
 envelopePresets.filter(0.5); // quick sweep up, then back down, plays once

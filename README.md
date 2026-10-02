@@ -14,7 +14,6 @@ pnpm add @kidlib/web-audio
 ```ts
 import { createSamplePlayer } from '@kidlib/web-audio';
 import { inputController } from '@kidlib/web-audio/io';
-import { registerKnobElement } from '@kidlib/web-audio/components';
 
 const response = await fetch('/samples/kick.wav');
 if (!response.ok) {

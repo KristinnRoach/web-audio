@@ -21,10 +21,6 @@
       "types": "./dist/io.d.ts",
       "import": "./dist/io.js"
     },
-    "./components": {
-      "types": "./dist/components.d.ts",
-      "import": "./dist/components.js"
-    },
     "./debug": {
       "types": "./dist/debug.d.ts",
       "import": "./dist/debug.js"
