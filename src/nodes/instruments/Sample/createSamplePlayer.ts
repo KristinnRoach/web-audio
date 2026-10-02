@@ -1,7 +1,7 @@
 // createSamplePlayer.ts
 
 import { initProcessors } from '@/worklets';
-import { getGlobalAudioContext, logAudioContextStats } from '@/context';
+import { getGlobalAudioContext } from '@/context';
 import { SamplePlayer, type SamplePlayerOptions } from './SamplePlayer';
 
 /**
@@ -13,9 +13,7 @@ import { SamplePlayer, type SamplePlayerOptions } from './SamplePlayer';
 export async function createSamplePlayer(
   options: Partial<SamplePlayerOptions> = {},
 ): Promise<SamplePlayer> {
-  console.info('Creating SamplePlayer...');
   const context = options.context ?? getGlobalAudioContext();
-  logAudioContextStats(context);
 
   const workletResult = await initProcessors(context); // Ensure worklets are registered
 
