@@ -33,6 +33,7 @@ export {
   setAudioOutputDevice,
   getCurrentOutputDeviceId,
 } from './context';
+export { resampleAudioBuffer } from './utils/audiodata/convert/resampleAudioBuffer';
 
 // =*=*= Parameter descriptors =*=*= \\
 export { samplerParams } from './nodes/instruments/Sample/sampler-params';
