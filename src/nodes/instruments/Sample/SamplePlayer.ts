@@ -56,7 +56,7 @@ import {
 export type SamplePlayerOptions = {
   context: AudioContext;
   polyphony?: number;
-  audioBuffer?: AudioBuffer;
+  sample?: ArrayBuffer | AudioBuffer;
   voiceSignalChain?: readonly SampleVoiceChainNode[];
 };
 
@@ -72,14 +72,13 @@ export class SamplePlayer implements ILibInstrumentNode {
   private readonly envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
-  #initialAudioBuffer: AudioBuffer | null = null;
+  #initialBuffer: ArrayBuffer | AudioBuffer | null = null;
 
   #connections = new Set<NodeID>();
   #incoming = new Set<NodeID>();
 
-  #audiobuffer: AudioBuffer | null = null;
-  #layers: AudioBuffer[] = [];
-  static readonly MAX_LAYERS = 4;
+  #audioData: AudioBuffer[] = [];
+  static readonly MAX_SAMPLES = 4;
   #bufferDuration: number = 0;
 
   #loopEnabled = false;
@@ -145,7 +144,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     // Store configuration for async init
     this.#polyphony = options.polyphony ?? 16;
     this.#voiceSignalChain = options.voiceSignalChain ? [...options.voiceSignalChain] : undefined;
-    this.#initialAudioBuffer = options.audioBuffer ?? null;
+    this.#initialBuffer = options.sample ?? null;
   }
 
   async init(): Promise<void> {
@@ -171,18 +170,17 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.#setupMessageHandling();
 
         // Load initial sample if provided
-        if (this.#initialAudioBuffer) {
-          await this.loadSample(this.#initialAudioBuffer, {
+        if (this.#initialBuffer) {
+          await this.loadSample(this.#initialBuffer, {
             skipPreProcessing: true, // Skip preprocessing for init sample (likely already processed)
           });
         }
 
         this.#initialized = true;
       } catch (error) {
-        // Cleanup any partial initialization
-        this.voicePool?.dispose();
-        this.#macroLoopStart?.dispose();
-        this.#macroLoopEnd?.dispose();
+        // A failed init (e.g. an undecodable sample) leaves nothing usable, so
+        // release everything the constructor registered too.
+        this.dispose();
 
         const errorMessage = error instanceof Error ? error.message : String(error);
         throw new Error(`Failed to initialize SamplePlayer: ${errorMessage}`);
@@ -441,26 +439,26 @@ export class SamplePlayer implements ILibInstrumentNode {
   #isLoading = false;
 
   /**
-   * Load a single sample. Equivalent to `loadLayers([buffer])`: any previously
-   * loaded extra layers are cleared.
+   * Load a single sample. Equivalent to `loadSamples([buffer])`: any previously
+   * loaded extra samples are cleared.
    */
   async loadSample(
     buffer: AudioBuffer | ArrayBuffer,
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer | null> {
-    const loaded = await this.loadLayers([buffer], preprocessOptions);
+    const loaded = await this.loadSamples([buffer], preprocessOptions);
     return loaded?.[0] ?? null;
   }
 
   /**
-   * Replace the whole layer set. Layers are summed inside the voice worklet at
-   * one shared playhead, so they play in unison and layer 0 is the authority
-   * for duration, loop points, start/end and zero crossings. Layers shorter
-   * than layer 0 fall silent at their own end; longer ones are truncated.
-   * Every layer is converted to the context's sample rate: encoded input by
+   * Replace the whole sample set. Samples are summed inside the voice worklet at
+   * one shared playhead, so they play in unison and sample 0 is the authority
+   * for duration, loop points, start/end and zero crossings. Samples shorter
+   * than sample 0 fall silent at their own end; longer ones are truncated.
+   * Every sample is converted to the context's sample rate: encoded input by
    * decodeAudioData, AudioBuffers by resampleAudioBuffer.
    */
-  async loadLayers(
+  async loadSamples(
     buffers: (AudioBuffer | ArrayBuffer)[],
     preprocessOptions?: Partial<PreProcessOptions>,
   ): Promise<AudioBuffer[] | null> {
@@ -471,9 +469,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     let unsubscribe: (() => void) | undefined;
 
     try {
-      if (buffers.length > SamplePlayer.MAX_LAYERS) {
-        console.warn(`Ignoring layers past ${SamplePlayer.MAX_LAYERS}; got ${buffers.length}`);
-        buffers = buffers.slice(0, SamplePlayer.MAX_LAYERS);
+      if (buffers.length > SamplePlayer.MAX_SAMPLES) {
+        console.warn(`Ignoring samples past ${SamplePlayer.MAX_SAMPLES}; got ${buffers.length}`);
+        buffers = buffers.slice(0, SamplePlayer.MAX_SAMPLES);
       }
 
       const decoded: AudioBuffer[] = [];
@@ -487,13 +485,13 @@ export class SamplePlayer implements ILibInstrumentNode {
             buffer = await this.context.decodeAudioData(buffer.slice(0));
           } catch (error) {
             if (index === 0) throw error;
-            console.warn(`Failed to decode layer ${index}; skipping`, error);
+            console.warn(`Failed to decode sample ${index}; skipping`, error);
             continue;
           }
         }
 
         if (!isValidAudioBuffer(buffer)) {
-          console.error(`Invalid AudioBuffer provided for layer ${index}`);
+          console.error(`Invalid AudioBuffer provided for sample ${index}`);
           if (index === 0) return null;
           continue;
         }
@@ -504,23 +502,23 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       if (!decoded.length) return null;
 
-      const layers: AudioBuffer[] = [];
+      const audioData: AudioBuffer[] = [];
       let newZeroCrossings: number[] = [];
 
       for (const [index, buffer] of decoded.entries()) {
         if (!this.#preprocessAudio) {
-          layers.push(buffer);
+          audioData.push(buffer);
           continue;
         }
 
-        // Preprocess each layer (re-pitch, trim, normalize, etc.).
-        // Zero crossings are only used for the authority layer.
+        // Preprocess each sample (re-pitch, trim, normalize, etc.).
+        // Zero crossings are only used for the authority (index 0).
         const processed: PreProcessResults = await preProcessAudioBuffer(
           this.context,
           buffer,
           preprocessOptions,
         );
-        layers.push(processed.audiobuffer);
+        audioData.push(processed.audiobuffer);
 
         if (index === 0 && this.#useZeroCrossings && processed.zeroCrossings) {
           newZeroCrossings = processed.zeroCrossings;
@@ -531,9 +529,8 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.releaseAll(0);
       this.transposeSemitones = 0;
       this.#isLoaded = false;
-      this.#layers = layers;
-      this.#audiobuffer = layers[0];
-      this.#bufferDuration = layers[0].duration;
+      this.#audioData = audioData;
+      this.#bufferDuration = audioData[0].duration;
       this.#zeroCrossings = newZeroCrossings;
 
       const loadedPromise = new Promise<void>((resolve) => {
@@ -542,7 +539,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         });
       });
 
-      this.voicePool.setLayers(layers, newZeroCrossings);
+      this.voicePool.setAudioData(audioData, newZeroCrossings);
       this.#resetMacros();
 
       const defaultScaleOptions = {
@@ -557,7 +554,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.setScale(defaultScaleOptions);
 
       await loadedPromise;
-      return [...layers];
+      return [...audioData];
     } finally {
       unsubscribe?.();
       this.#isLoading = false;
@@ -576,7 +573,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     endSeconds = this.getEndPoint(),
     fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
-    const buffer = this.#audiobuffer;
+    const buffer = this.audiobuffer;
     if (!buffer) return null;
     if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {
       return null;
@@ -1345,12 +1342,12 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   get audiobuffer() {
-    return this.#audiobuffer;
+    return this.#audioData[0] ?? null;
   }
 
-  /** All loaded layers. Index 0 is the authority layer (=== `audiobuffer`). */
-  get layers(): readonly AudioBuffer[] {
-    return [...this.#layers];
+  /** All loaded samples. Index 0 is the authority sample (=== `audiobuffer`). */
+  get samples(): readonly AudioBuffer[] {
+    return [...this.#audioData];
   }
 
   /* === CLEANUP === */
@@ -1385,8 +1382,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       // Reset state variables
       this.#bufferDuration = 0;
-      this.#audiobuffer = null;
-      this.#layers = [];
+      this.#audioData = [];
       this.#initialized = false;
       this.#isLoaded = false;
       this.#zeroCrossings = [];

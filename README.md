@@ -21,7 +21,7 @@ if (!response.ok) {
   throw new Error(`Failed to fetch sample: ${response.status} ${response.statusText}`);
 }
 const sampleData = await response.arrayBuffer();
-const player = await createSamplePlayer(sampleData);
+const player = await createSamplePlayer({ sample: sampleData });
 player.play(60);
 ```
 
@@ -40,13 +40,13 @@ can't move between contexts, so a later change means rebuilding:
 import { createGlobalAudioContext, createSamplePlayer } from '@kidlib/web-audio';
 
 createGlobalAudioContext({ sampleRate: savedRate }); // at startup
-let player = await createSamplePlayer(sampleData);
+let player = await createSamplePlayer({ sample: sampleData });
 
 async function setSampleRate(sampleRate: number) {
   player.dispose();
   await player.context.close(); // state is only 'closed' once this resolves
   createGlobalAudioContext({ sampleRate });
-  player = await createSamplePlayer(sampleData);
+  player = await createSamplePlayer({ sample: sampleData });
 }
 ```
 

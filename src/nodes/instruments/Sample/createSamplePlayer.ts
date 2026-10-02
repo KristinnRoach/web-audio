@@ -7,12 +7,10 @@ import { SamplePlayer, type SamplePlayerOptions } from './SamplePlayer';
 /**
  * Creates a new SamplePlayer instance
  *
- * @param buffer - Audio buffer data to use for the player
- * @param options - Optional player configuration
+ * @param options - Optional player configuration; `sample` is loaded on init
  * @returns A new SamplePlayer instance
  */
 export async function createSamplePlayer(
-  buffer: AudioBuffer | ArrayBuffer,
   options: Partial<SamplePlayerOptions> = {},
 ): Promise<SamplePlayer> {
   console.info('Creating SamplePlayer...');
@@ -29,24 +27,7 @@ export async function createSamplePlayer(
     );
   }
 
-  let audioBuffer: AudioBuffer;
-  if (buffer instanceof AudioBuffer) {
-    audioBuffer = buffer;
-  } else if (buffer instanceof ArrayBuffer) {
-    // decodeAudioData detaches its input; copy so callers can reuse the same ArrayBuffer
-    try {
-      audioBuffer = await context.decodeAudioData(buffer.slice(0));
-    } catch (error) {
-      console.error('Failed to decode sample audiodata when creating SamplePlayer:', error);
-      throw error;
-    }
-  } else {
-    throw new Error(
-      'createSamplePlayer requires an AudioBuffer or ArrayBuffer. No default sample is bundled.',
-    );
-  }
-
-  const samplePlayer = new SamplePlayer({ ...options, context, audioBuffer });
+  const samplePlayer = new SamplePlayer({ ...options, context });
 
   await samplePlayer.init();
 

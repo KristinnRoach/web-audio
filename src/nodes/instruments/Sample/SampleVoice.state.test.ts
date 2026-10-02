@@ -72,7 +72,7 @@ function newVoice() {
 async function loadedVoice() {
   const voice = newVoice();
   await voice.init();
-  await voice.loadLayers([fakeBuffer()]);
+  await voice.loadAudioData([fakeBuffer()]);
   audio.posted = [];
   return voice;
 }
@@ -202,7 +202,7 @@ describe('SampleVoice state', () => {
     expect(voice.midiNote).toBe(64);
   });
 
-  it('distinguishes a load acknowledgement from replacing the loaded layers', async () => {
+  it('distinguishes a load acknowledgement from replacing the loaded audio data', async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
 
@@ -211,7 +211,7 @@ describe('SampleVoice state', () => {
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(60);
 
-    await voice.loadLayers([fakeBuffer()]);
+    await voice.loadAudioData([fakeBuffer()]);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 });

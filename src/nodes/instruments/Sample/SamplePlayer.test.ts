@@ -177,4 +177,41 @@ describe('SamplePlayer context watch', () => {
     vi.doUnmock('@/nodes/params');
     vi.unstubAllGlobals();
   });
+
+  it('disposes itself when init fails', async () => {
+    vi.resetModules();
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('AudioContext', class {});
+    vi.stubGlobal('AudioWorkletNode', class {});
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        disconnect() {}
+      },
+    );
+    vi.doMock('@/nodes/params', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      MacroParam: class {
+        dispose() {}
+      },
+    }));
+    vi.doMock('@/nodes/master/createInstrumentBus', () => ({
+      createInstrumentBus: () => Promise.reject(new Error('boom')),
+    }));
+    const { SamplePlayer } = await import('./SamplePlayer');
+    const { getNodeById } = await import('../../node-store');
+
+    const context = Object.assign(new EventTarget(), { state: 'running' });
+    const removeListener = vi.spyOn(context, 'removeEventListener');
+    const player = new SamplePlayer({ context: context as unknown as AudioContext });
+    expect(getNodeById(player.nodeId)).toBe(player);
+
+    await expect(player.init()).rejects.toThrow('Failed to initialize SamplePlayer: boom');
+    expect(getNodeById(player.nodeId)).toBeNull();
+    expect(removeListener).toHaveBeenCalledWith('statechange', expect.any(Function));
+
+    vi.doUnmock('@/nodes/params');
+    vi.doUnmock('@/nodes/master/createInstrumentBus');
+    vi.unstubAllGlobals();
+  });
 });

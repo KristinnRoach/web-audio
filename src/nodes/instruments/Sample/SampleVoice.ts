@@ -60,9 +60,9 @@ export class SampleVoice {
   #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
 
-  // Set once `voice:setLayers` is on the wire rather than on the processor's
+  // Set once `voice:setAudioData` is on the wire rather than on the processor's
   // `voice:loaded` ack: the port preserves order, so a `voice:start` posted in
-  // the round trip still arrives after the layers are in place.
+  // the round trip still arrives after the audio data is in place.
   #hasLoadedAudio = false;
 
   #midiNote: number | null = null;
@@ -248,16 +248,16 @@ export class SampleVoice {
   }
 
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
-    return this.loadLayers([buffer], zeroCrossings);
+    return this.loadAudioData([buffer], zeroCrossings);
   }
 
   /**
-   * Replace the whole layer set. Layers are summed at one shared playhead, so
-   * layer 0 is the authority for duration and all range math; the rest only
-   * add samples. A layer at the wrong sample rate is dropped on its own,
-   * leaving the others playable, except layer 0: losing it fails the load.
+   * Replace all loaded audio data. Entries are summed at one shared playhead,
+   * so index 0 is the authority for duration and all range math; the rest only
+   * add samples. An entry at the wrong sample rate is dropped on its own,
+   * leaving the others playable, except index 0: losing it fails the load.
    */
-  async loadLayers(buffers: AudioBuffer[], zeroCrossings?: number[]): Promise<boolean> {
+  async loadAudioData(buffers: AudioBuffer[], zeroCrossings?: number[]): Promise<boolean> {
     const usable = buffers.filter((buffer) => {
       if (buffer.sampleRate !== this.context.sampleRate) {
         console.warn(
@@ -268,27 +268,27 @@ export class SampleVoice {
       return true;
     });
 
-    // Layer 0 is the authority for duration and loop range, so if it was
-    // dropped the remaining layers would silently play to the wrong ranges.
+    // Index 0 is the authority for duration and loop range, so if it was
+    // dropped the remaining entries would silently play to the wrong ranges.
     if (!usable.length || usable[0] !== buffers[0]) {
       console.error(
-        'SampleVoice.loadLayers: layer 0 is unusable, nothing loaded. Layer 0 sets duration and loop range for all layers.',
+        'SampleVoice.loadAudioData: audio data 0 is unusable, nothing loaded. Index 0 sets duration and loop range for all entries.',
       );
       return false;
     }
 
     // postMessage structured-clones each channel, so no local copy needed
-    const layers = usable.map((buffer) =>
+    const audioData = usable.map((buffer) =>
       Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)),
     );
 
-    // The processor drops isPlaying when it swaps layers and never echoes a
+    // The processor drops isPlaying when it swaps audio data and never echoes a
     // stop for it, so end the note here or the voice stays PLAYING in silence.
     this.stop();
 
     this.sendToProcessor({
-      type: 'voice:setLayers',
-      layers,
+      type: 'voice:setAudioData',
+      audioData,
       durationSeconds: usable[0].duration,
     });
     this.#hasLoadedAudio = true;
