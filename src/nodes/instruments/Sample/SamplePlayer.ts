@@ -543,9 +543,6 @@ export class SamplePlayer implements ILibInstrumentNode {
         });
       });
 
-      this.voicePool.setAudioData(audioData, newZeroCrossings);
-      this.#resetMacros();
-
       const defaultScaleOptions = {
         rootNote: 'C' as keyof typeof ROOT_NOTES,
         scale: [0],
@@ -556,6 +553,11 @@ export class SamplePlayer implements ILibInstrumentNode {
       };
 
       this.setScale(defaultScaleOptions);
+      // setScale updates the longest period used for audio rate loop quantization, which is passed to the processor.
+      // TODO: Move loop-points and quantization logic to the processor?
+
+      this.voicePool.setAudioData(audioData, newZeroCrossings);
+      this.#resetMacros();
 
       await loadedPromise;
       return [...audioData];
@@ -694,7 +696,17 @@ export class SamplePlayer implements ILibInstrumentNode {
       snapToZeroCrossings: this.#zeroCrossings,
       ...options,
     });
+    this.setPitchPreservationThreshold();
+
     return this;
+  }
+
+  private setPitchPreservationThreshold(): void {
+    const value = this.#macroLoopEnd.longestPeriod ?? 0;
+
+    this.voicePool.applyToAllVoices((voice) => {
+      voice.sendToProcessor({ type: 'setPitchPreservationThreshold', value });
+    });
   }
 
   /** Transposes playback to the new root and rebuilds both loop macros' periods. */
@@ -709,6 +721,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.#macroLoopEnd.setRootNote(note);
     this.#macroLoopStart.setRootNote(note);
+    this.setPitchPreservationThreshold();
 
     return this;
   }

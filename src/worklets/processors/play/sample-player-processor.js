@@ -69,6 +69,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = event.data;
 
     switch (type) {
+      case 'setPitchPreservationThreshold':
+        if (Number.isFinite(value) && value >= 0) {
+          this.PITCH_PRESERVATION_THRESHOLD = value * sampleRate;
+        }
+        break;
+
       case 'voice:reset':
         this.#resetState();
         this.port.postMessage({ type: 'voice:reset' });
