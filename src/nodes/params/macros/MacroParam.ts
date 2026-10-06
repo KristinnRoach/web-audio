@@ -251,6 +251,10 @@ export class MacroParam {
     return this.#paramType;
   }
 
+  get longestPeriodSeconds(): number {
+    return this.#snapper.longestPeriodSeconds;
+  }
+
   get longestPeriod(): number {
     return this.#snapper.longestPeriod;
   }

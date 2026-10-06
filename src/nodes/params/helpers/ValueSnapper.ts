@@ -36,6 +36,7 @@ const normalizeRange = (
 export class ValueSnapper {
   #allowedValues: number[] = [];
   #allowedPeriods: number[] = [];
+  #longestPeriodSeconds = 0; // Only needed if normalize is used and value is needed in seconds (otherwise, longestPeriod is the last element of #allowedPeriods)
 
   #currentRootNote: keyof typeof ROOT_NOTES = 'C';
   #currentScalePattern: number[] = [];
@@ -111,6 +112,9 @@ export class ValueSnapper {
     normalize: NormalizeOptions | false,
     _snapToZeroCrossings: number[] | false = false,
   ) {
+    // Retain value in seconds before normalization
+    this.#longestPeriodSeconds = periods.reduce((longest, period) => Math.max(longest, period), 0);
+
     const values = normalize ? (normalizeRange([...periods], normalize) as number[]) : periods;
 
     this.#allowedPeriods = [...values].sort((a, b) => a - b);
@@ -192,6 +196,10 @@ export class ValueSnapper {
 
   get shortestPeriod() {
     return this.#allowedPeriods[0];
+  }
+
+  get longestPeriodSeconds() {
+    return this.#longestPeriodSeconds;
   }
 
   get longestPeriod() {
