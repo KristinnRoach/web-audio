@@ -706,6 +706,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #setPitchPreservationThreshold(): void {
     if (!this.voicePool) return;
     const value = this.#macroLoopEnd.longestPeriodSeconds ?? 0;
+    if (value === 0) return;
     this.voicePool.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setPitchPreservationThreshold', value });
     });
