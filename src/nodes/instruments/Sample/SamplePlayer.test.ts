@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
+import type { SampleVoicePool } from './SampleVoicePool';
 import type { EnvelopeConfig } from './envelope-config';
 
 const envConfig: EnvelopeConfig = {
@@ -15,6 +16,66 @@ const envConfig: EnvelopeConfig = {
     releasePoint: 1,
   },
 };
+
+it('sends the loop-end period in seconds to voices after scale and root updates', async () => {
+  vi.resetModules();
+  vi.doUnmock('@/nodes/params');
+  vi.stubGlobal('window', {});
+  vi.stubGlobal('AudioContext', class {});
+  vi.stubGlobal('AudioWorkletNode', class {});
+  vi.stubGlobal(
+    'GainNode',
+    class {
+      disconnect() {}
+    },
+  );
+  const { SamplePlayer } = await import('./SamplePlayer');
+  const context = Object.assign(new EventTarget(), {
+    currentTime: 0,
+    createConstantSource: () => ({
+      offset: { setValueAtTime() {} },
+      start() {},
+      stop() {},
+      disconnect() {},
+    }),
+  });
+  const player = new SamplePlayer({ context: context as unknown as AudioContext });
+  const sendToProcessor = vi.fn();
+  player.voicePool = {
+    applyToAllVoices: (apply) => apply({ sendToProcessor } as never),
+    dispose() {},
+  } as SampleVoicePool;
+
+  try {
+    player.setScale({
+      rootNote: 'C',
+      scale: [0],
+      tuningOffset: 0,
+      lowestOctave: 0,
+      highestOctave: 5,
+      normalize: { from: [0, 1], to: [0, 100] },
+    });
+    const macro = player.getMacro('loopEnd');
+    const initialPeriod = macro.longestPeriodSeconds;
+    expect(initialPeriod).toBeGreaterThan(0);
+    expect(macro.longestPeriod).not.toBe(initialPeriod);
+    expect(sendToProcessor).toHaveBeenLastCalledWith({
+      type: 'setPitchPreservationThreshold',
+      value: initialPeriod,
+    });
+
+    player.setRootNote('D');
+    expect(macro.longestPeriodSeconds).not.toBe(initialPeriod);
+    expect(sendToProcessor).toHaveBeenCalledTimes(2);
+    expect(sendToProcessor).toHaveBeenLastCalledWith({
+      type: 'setPitchPreservationThreshold',
+      value: macro.longestPeriodSeconds,
+    });
+  } finally {
+    player.dispose();
+    vi.unstubAllGlobals();
+  }
+});
 
 describe('SamplePlayer.applyParams', () => {
   it('applies only valid parameter values', async () => {
