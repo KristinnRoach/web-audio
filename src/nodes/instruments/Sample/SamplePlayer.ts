@@ -161,8 +161,6 @@ export class SamplePlayer implements ILibInstrumentNode {
           this.#voiceSignalChain,
         );
 
-        this.#resetMacros();
-
         // Connect audio chain
         this.#connectAudioChain();
         this.#connectVoicesToMacros();
@@ -176,6 +174,9 @@ export class SamplePlayer implements ILibInstrumentNode {
           });
           if (!loaded) throw new Error('No usable initial audio');
         }
+
+        this.#resetMacros();
+        this.#setPitchPreservationThreshold();
 
         this.#initialized = true;
       } catch (error) {
@@ -543,6 +544,8 @@ export class SamplePlayer implements ILibInstrumentNode {
         });
       });
 
+      this.voicePool.setAudioData(audioData, newZeroCrossings);
+
       const defaultScaleOptions = {
         rootNote: 'C' as keyof typeof ROOT_NOTES,
         scale: [0],
@@ -552,12 +555,11 @@ export class SamplePlayer implements ILibInstrumentNode {
         normalize: false as NormalizeOptions | false,
       };
 
-      this.setScale(defaultScaleOptions);
       // setScale updates the longest period used for audio rate loop quantization, which is passed to the processor.
       // TODO: Move loop-points and quantization logic to the processor?
-
-      this.voicePool.setAudioData(audioData, newZeroCrossings);
+      this.setScale(defaultScaleOptions);
       this.#resetMacros();
+      this.#setPitchPreservationThreshold();
 
       await loadedPromise;
       return [...audioData];
@@ -696,14 +698,14 @@ export class SamplePlayer implements ILibInstrumentNode {
       snapToZeroCrossings: this.#zeroCrossings,
       ...options,
     });
-    this.setPitchPreservationThreshold();
+    this.#setPitchPreservationThreshold();
 
     return this;
   }
 
-  private setPitchPreservationThreshold(): void {
+  #setPitchPreservationThreshold(): void {
+    if (!this.voicePool) return;
     const value = this.#macroLoopEnd.longestPeriodSeconds ?? 0;
-
     this.voicePool.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setPitchPreservationThreshold', value });
     });
@@ -721,7 +723,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.#macroLoopEnd.setRootNote(note);
     this.#macroLoopStart.setRootNote(note);
-    this.setPitchPreservationThreshold();
+    this.#setPitchPreservationThreshold();
 
     return this;
   }
