@@ -69,6 +69,7 @@ export class Recorder implements LibNode {
   #messages: MessageBus<Message>;
   #destination: (LibNode & SampleLoader) | null = null;
   #state: AudioRecorderState = AudioRecorderState.IDLE;
+  #disposed = false;
 
   // Single audio monitoring setup
   #mediaSourceNode: MediaStreamAudioSourceNode | null = null;
@@ -100,8 +101,10 @@ export class Recorder implements LibNode {
   }
 
   async start(options: RecorderStartOptions = {}): Promise<this> {
+    if (this.#disposed) return this;
     if (this.#context.state === 'suspended') {
       await this.#context.resume();
+      if (this.#disposed) return this;
     }
 
     // Stop previous stream if exists
@@ -145,6 +148,13 @@ export class Recorder implements LibNode {
     } else {
       streamResult = await tryCatch(() => getMicrophone(undefined, input.deviceId));
       assert(!streamResult.error, `Failed to get audio input: ${streamResult.error}`, streamResult);
+    }
+
+    // dispose() can run while the input is acquired; release it instead of arming.
+    if (this.#disposed) {
+      streamResult.data.getTracks().forEach((track) => track.stop());
+      this.#cleanupAudioNodeConnection();
+      return this;
     }
 
     this.#stream = streamResult.data;
@@ -419,6 +429,7 @@ export class Recorder implements LibNode {
   }
 
   dispose(): void {
+    this.#disposed = true;
     this.#cleanupMonitoring();
     this.#cleanupAudioNodeConnection();
     this.#stream?.getTracks().forEach((track) => track.stop());

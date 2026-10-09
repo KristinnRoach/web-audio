@@ -16,6 +16,8 @@ export default defineConfig({
       provider: playwright({
         launchOptions: {
           channel: 'chrome',
+          // A new AudioContext otherwise stays suspended and resume() never settles.
+          args: ['--autoplay-policy=no-user-gesture-required'],
         },
       }),
       headless: true, // Set to false to see the browser
