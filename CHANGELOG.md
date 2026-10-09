@@ -1,5 +1,12 @@
 # @kidlib/web-audio
 
+## 0.6.1
+
+### Patch Changes
+
+- 063ec4c: `MacroParam.getValue()` is replaced by the `value` getter. Loop pitch preservation now follows the longest period in the loop-end scale (it was fixed at C0), and amplitude compensation only applies to loops shorter than a C2 period.
+- 0fa742e: `Recorder.start()` no longer arms or records when `dispose()` runs while it is still acquiring its input. The acquired stream is released instead. `start()` on a disposed recorder does nothing.
+
 ## 0.6.0
 
 ### Minor Changes
