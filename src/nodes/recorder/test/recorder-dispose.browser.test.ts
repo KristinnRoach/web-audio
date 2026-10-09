@@ -22,4 +22,18 @@ describe('Recorder', () => {
     expect(stop).toHaveBeenCalledOnce();
     await ctx.close();
   });
+
+  it('does not request the microphone when disposed while resuming', async () => {
+    const getUserMedia = vi.spyOn(navigator.mediaDevices, 'getUserMedia');
+    const ctx = new AudioContext();
+    await ctx.suspend();
+    const recorder = new Recorder(ctx);
+
+    const pending = recorder.start();
+    recorder.dispose();
+    await pending;
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+    await ctx.close();
+  });
 });

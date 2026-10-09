@@ -104,6 +104,7 @@ export class Recorder implements LibNode {
     if (this.#disposed) return this;
     if (this.#context.state === 'suspended') {
       await this.#context.resume();
+      if (this.#disposed) return this;
     }
 
     // Stop previous stream if exists
