@@ -161,8 +161,6 @@ export class SamplePlayer implements ILibInstrumentNode {
           this.#voiceSignalChain,
         );
 
-        this.#resetMacros();
-
         // Connect audio chain
         this.#connectAudioChain();
         this.#connectVoicesToMacros();
@@ -176,6 +174,9 @@ export class SamplePlayer implements ILibInstrumentNode {
           });
           if (!loaded) throw new Error('No usable initial audio');
         }
+
+        this.#resetMacros();
+        this.#setPitchPreservationThreshold();
 
         this.#initialized = true;
       } catch (error) {
@@ -544,7 +545,6 @@ export class SamplePlayer implements ILibInstrumentNode {
       });
 
       this.voicePool.setAudioData(audioData, newZeroCrossings);
-      this.#resetMacros();
 
       const defaultScaleOptions = {
         rootNote: 'C' as keyof typeof ROOT_NOTES,
@@ -555,7 +555,11 @@ export class SamplePlayer implements ILibInstrumentNode {
         normalize: false as NormalizeOptions | false,
       };
 
+      // setScale updates the longest period used for audio rate loop quantization, which is passed to the processor.
+      // TODO: Move loop-points and quantization logic to the processor?
       this.setScale(defaultScaleOptions);
+      this.#resetMacros();
+      this.#setPitchPreservationThreshold();
 
       await loadedPromise;
       return [...audioData];
@@ -694,7 +698,18 @@ export class SamplePlayer implements ILibInstrumentNode {
       snapToZeroCrossings: this.#zeroCrossings,
       ...options,
     });
+    this.#setPitchPreservationThreshold();
+
     return this;
+  }
+
+  #setPitchPreservationThreshold(): void {
+    if (!this.voicePool) return;
+    const value = this.#macroLoopEnd.longestPeriodSeconds ?? 0;
+    if (value === 0) return;
+    this.voicePool.applyToAllVoices((voice) => {
+      voice.sendToProcessor({ type: 'setPitchPreservationThreshold', value });
+    });
   }
 
   /** Transposes playback to the new root and rebuilds both loop macros' periods. */
@@ -709,6 +724,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.#macroLoopEnd.setRootNote(note);
     this.#macroLoopStart.setRootNote(note);
+    this.#setPitchPreservationThreshold();
 
     return this;
   }

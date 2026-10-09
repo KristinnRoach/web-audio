@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
-// Both loop lengths stay under PITCH_PRESERVATION_THRESHOLD (floor(48000 * 0.061) = 2928)
+// Both loop lengths stay under PITCH_PRESERVATION_THRESHOLD (floor(48000 / 16.35) = 2935)
 // so no zero-crossing snapping runs against the silent test buffer.
 const WIDE_LOOP_SAMPLES = 2000;
 const NARROW_LOOP_SAMPLES = 100;

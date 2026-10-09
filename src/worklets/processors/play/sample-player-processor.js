@@ -36,9 +36,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // C0 (lowest piano note) = ~16.35 Hz
     // Period = 1/16.35 ≈ 0.061 seconds
-    this.PITCH_PRESERVATION_THRESHOLD = Math.floor(sampleRate * 0.061);
+    this.PITCH_PRESERVATION_THRESHOLD = Math.floor(sampleRate / 16.35);
 
-    this.AMPLITUDE_COMPENSATION_THRESHOLD = Math.floor(sampleRate / 16.35);
+    this.AMPLITUDE_COMPENSATION_THRESHOLD = Math.floor(sampleRate / 65.406);
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -69,6 +69,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = event.data;
 
     switch (type) {
+      case 'setPitchPreservationThreshold':
+        if (Number.isFinite(value) && value >= 0) {
+          this.PITCH_PRESERVATION_THRESHOLD = value * sampleRate;
+        }
+        break;
+
       case 'voice:reset':
         this.#resetState();
         this.port.postMessage({ type: 'voice:reset' });
@@ -592,7 +598,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     const loopDuration = loopEnd - loopStart;
 
-    // Only analyze very short loops (shorter than C3 period)
+    // Only analyze very short loops
     if (loopDuration >= this.AMPLITUDE_COMPENSATION_THRESHOLD) {
       return 1.0;
     }

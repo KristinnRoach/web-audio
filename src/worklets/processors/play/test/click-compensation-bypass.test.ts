@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
 const AUDIO_RATE_LOOP_SAMPLES = 192;
-const LONG_LOOP_SAMPLES = Math.floor(TEST_SAMPLE_RATE * 0.061) + 64;
+const LONG_LOOP_SAMPLES = Math.floor(TEST_SAMPLE_RATE / 16.35) + 64;
 
 type WorkletPort = {
   onmessage: ((event: MessageEvent) => void) | null;

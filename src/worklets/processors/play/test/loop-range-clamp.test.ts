@@ -46,9 +46,15 @@ function makeParameters(overrides: Record<string, number> = {}): Parameters {
   );
 }
 
-async function startProcessor(zeroCrossingSeconds: number[] = []) {
+async function startProcessor(zeroCrossingSeconds: number[] = [], pitchThresholdSeconds?: number) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
+
+  if (pitchThresholdSeconds !== undefined) {
+    processor.port.onmessage?.({
+      data: { type: 'setPitchPreservationThreshold', value: pitchThresholdSeconds },
+    } as MessageEvent);
+  }
 
   processor.port.onmessage?.({
     data: {
@@ -101,28 +107,33 @@ describe('loop range clamping', () => {
   // The playback start snaps forward to a zero crossing, past a loop sitting on
   // the trim start. Clamping that loop would shorten it, and an audio-rate
   // loop's length is its pitch.
-  it('keeps an audio-rate loop at its length when the range start moves past it', async () => {
-    const start = TEST_SAMPLE_RATE / 2;
-    const loopLength = 92;
-    const processor = await startProcessor([(start + 20) / TEST_SAMPLE_RATE, 0.9]);
-    const parameters = makeParameters({
-      startPoint: start / TEST_SAMPLE_RATE,
-      endPoint: 1,
-      loopStart: start / TEST_SAMPLE_RATE,
-      loopEnd: (start + loopLength) / TEST_SAMPLE_RATE,
-    });
+  it.each([92, 4800])(
+    'keeps a %i-sample pitched loop at its length at the range start',
+    async (loopLength) => {
+      const start = TEST_SAMPLE_RATE / 2;
+      const processor = await startProcessor(
+        [(start + 20) / TEST_SAMPLE_RATE, 0.9],
+        loopLength > 92 ? 0.101 : undefined,
+      );
+      const parameters = makeParameters({
+        startPoint: start / TEST_SAMPLE_RATE,
+        endPoint: 1,
+        loopStart: start / TEST_SAMPLE_RATE,
+        loopEnd: (start + loopLength) / TEST_SAMPLE_RATE,
+      });
 
-    const positions: number[] = [];
-    for (let frame = 0; frame < loopLength * 4; frame++) {
-      processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
-    }
+      const positions: number[] = [];
+      for (let frame = 0; frame < loopLength * 4; frame++) {
+        processor.process([], [[new Float32Array(1)]], parameters);
+        positions.push(processor.playbackPosition);
+      }
 
-    // Distance between consecutive wraps is the loop length.
-    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
-    expect(wraps.length).toBeGreaterThanOrEqual(2);
-    expect(wraps[1] - wraps[0]).toBeCloseTo(loopLength, 0);
-  });
+      // Distance between consecutive wraps is the loop length.
+      const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+      expect(wraps.length).toBeGreaterThanOrEqual(2);
+      expect(wraps[1] - wraps[0]).toBeCloseTo(loopLength, 0);
+    },
+  );
 
   it('keeps an audio-rate loop at its length when the range end moves before it', async () => {
     const end = TEST_SAMPLE_RATE * 0.75;

@@ -109,7 +109,7 @@ export class MacroParam {
 
     const targetPeriod = Math.abs(targetValue - constant);
 
-    if (this.#snapper.hasPeriodSnapping && targetPeriod < this.#snapper.longestPeriod) {
+    if (this.#snapper.hasPeriodSnapping && targetPeriod <= this.#snapper.longestPeriod) {
       const quantizedPeriod = this.#snapper.snapToMusicalPeriod(targetPeriod);
 
       let result;
@@ -206,7 +206,9 @@ export class MacroParam {
     return this;
   }
 
-  getValue = (): number => this.#controller.value;
+  get value(): number {
+    return this.#controller.value;
+  }
 
   get targetValue(): number {
     return this.#currentTargetValue;
@@ -247,6 +249,10 @@ export class MacroParam {
 
   get type(): string {
     return this.#paramType;
+  }
+
+  get longestPeriodSeconds(): number {
+    return this.#snapper.longestPeriodSeconds;
   }
 
   get longestPeriod(): number {

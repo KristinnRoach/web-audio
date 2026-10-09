@@ -303,7 +303,7 @@ export const samplerParams = defineSamplerParams({
     curve: 4,
     format: (v, duration) => {
       const s = v * duration;
-      return s <= 0.061 ? `${(s * 1000).toFixed(0)}ms` : `${s.toFixed(2)} s`;
+      return s <= 1 ? `${(s * 1000).toFixed(0)}ms` : `${s.toFixed(2)} s`;
     },
     apply: (p, v) => p.setLoopDuration(v * p.sampleDuration),
   },
