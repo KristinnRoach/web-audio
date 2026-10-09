@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
 import type { SampleVoicePool } from './SampleVoicePool';
 import type { EnvelopeConfig } from './envelope-config';
+import { NOTE_PERIODS } from '../../../utils/music-theory/constants';
 
 const envConfig: EnvelopeConfig = {
   enabled: false,
@@ -55,21 +56,17 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
       highestOctave: 5,
       normalize: { from: [0, 1], to: [0, 100] },
     });
-    const macro = player.getMacro('loopEnd');
-    const initialPeriod = macro.longestPeriodSeconds;
-    expect(initialPeriod).toBeGreaterThan(0);
-    expect(macro.longestPeriod).not.toBe(initialPeriod);
+    // Longest period is the lowest root in octave 0, in seconds despite `normalize`.
     expect(sendToProcessor).toHaveBeenLastCalledWith({
       type: 'setPitchPreservationThreshold',
-      value: initialPeriod,
+      value: NOTE_PERIODS[0], // C0
     });
 
     player.setRootNote('D');
-    expect(macro.longestPeriodSeconds).not.toBe(initialPeriod);
     expect(sendToProcessor).toHaveBeenCalledTimes(2);
     expect(sendToProcessor).toHaveBeenLastCalledWith({
       type: 'setPitchPreservationThreshold',
-      value: macro.longestPeriodSeconds,
+      value: NOTE_PERIODS[2], // D0
     });
   } finally {
     player.dispose();
