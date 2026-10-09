@@ -38,7 +38,12 @@ export function createScale(
     pattern.forEach((interval: number) => {
       const absoluteIndex = octave * 12 + ((rootIdx + interval) % 12);
 
-      if (absoluteIndex < NOTE_FREQUENCIES.length) {
+      if (absoluteIndex < 0) {
+        const freq = 440 * 2 ** ((absoluteIndex - 57) / 12);
+        frequencies.push(freq);
+        periodsInSec.push(1 / freq);
+        noteNames.push(`${absoluteIndex}`);
+      } else if (absoluteIndex < NOTE_FREQUENCIES.length) {
         frequencies.push(NOTE_FREQUENCIES[absoluteIndex]);
         periodsInSec.push(NOTE_PERIODS[absoluteIndex]);
         noteNames.push(NOTE_NAMES_WITH_OCTAVE[absoluteIndex]);
