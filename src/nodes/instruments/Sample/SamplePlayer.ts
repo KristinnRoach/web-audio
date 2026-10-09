@@ -313,28 +313,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === MACROS === */
 
-  getMacrosAudioParam(paramName: 'loopStart' | 'loopEnd') {
-    switch (paramName) {
-      case 'loopStart':
-        return this.#macroLoopStart.audioParam;
-      case 'loopEnd':
-        return this.#macroLoopEnd.audioParam;
-      default:
-        throw new Error('Unknown macro parameter');
-    }
-  }
-
-  getMacro(paramName: 'loopStart' | 'loopEnd') {
-    switch (paramName) {
-      case 'loopStart':
-        return this.#macroLoopStart;
-      case 'loopEnd':
-        return this.#macroLoopEnd;
-      default:
-        throw new Error('Unknown macro parameter');
-    }
-  }
-
   #connectVoicesToMacros(): this {
     const voices = this.voicePool.allVoices;
 
