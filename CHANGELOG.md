@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.6.2
+
+### Patch Changes
+
+- 4204e4e: Remove `SamplePlayer.getMacro()` and `SamplePlayer.getMacrosAudioParam()`. The loop AudioParams remain available through `getAudioParam('loopStart' | 'loopEnd')`.
+
 ## 0.6.1
 
 ### Patch Changes
