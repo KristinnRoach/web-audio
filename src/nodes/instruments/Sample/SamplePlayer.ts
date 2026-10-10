@@ -679,9 +679,15 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
+  /**
+   * The pitch-preservation threshold is the processor's audio-rate crossover.
+   * It is a separate concept from the snapping range, deliberately set to the
+   * same value so loops snapped to a pitch are always treated as audio rate.
+   */
   #setPitchPreservationThreshold(): void {
     if (!this.voicePool) return;
-    const value = this.#macroLoopEnd.longestPeriodSeconds ?? 0;
+    const longestSnapPeriod = this.#macroLoopEnd.longestPeriodSeconds ?? 0;
+    const value = longestSnapPeriod;
     if (value === 0) return;
     this.voicePool.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setPitchPreservationThreshold', value });
