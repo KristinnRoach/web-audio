@@ -500,7 +500,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       const defaultScaleOptions = {
         rootNote: 'C' as keyof typeof ROOT_NOTES,
-        scale: [0, 2, 4, 5, 7, 9, 11], // Major: 0,2,4,5,7,9,11
+        scale: [0], // Major: 0,2,4,5,7,9,11
         lowestOctave: 0,
         highestOctave: 5,
         tuningOffset: 0,

@@ -291,6 +291,7 @@ export const samplerParams = defineSamplerParams({
     // 1s sample. Reaching MIN_LOOP_DURATION_SECONDS (1/523.25 = 1.91ms) needs
     // step * sampleDuration <= 1.91ms, so samples longer than ~19s step past the minimum.
     step: 0.0001,
+    curve: 4, // ! Testing, set actual value before merging
     format: seconds,
     apply: (p, v) => p.setLoopStart(v * p.sampleDuration),
   },
@@ -300,7 +301,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 1,
     step: 0.0001, // See loopStart: ~19s sample length ceiling before the step exceeds the minimum loop duration.
-    curve: 5,
+    curve: 4, // ! Testing, set actual value before merging
     format: seconds,
     apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },

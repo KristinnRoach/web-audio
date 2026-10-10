@@ -38,6 +38,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Period = 1/16.35 ≈ 0.061 seconds
     this.PITCH_PRESERVATION_THRESHOLD = Math.floor(sampleRate / 16.35);
 
+    // Experiment: glide time constant between snapped loop lengths. 0 = stepped.
+    this.LOOP_GLIDE_SECONDS = 0.05;
+    this.loopGlideLogLength = null;
+
     this.AMPLITUDE_COMPENSATION_THRESHOLD = Math.floor(sampleRate / 65.406);
 
     this.port.onmessage = this.#handleMessage.bind(this);
@@ -122,6 +126,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.isPlaying = true;
         this.triggerId = triggerId;
         this.loopCount = 0;
+        this.loopGlideLogLength = null; // new notes start on the target length
 
         // will be set in process() using parameters
         this.playbackPosition = 0;
@@ -404,6 +409,24 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return periods.reduce((best, p) => (Math.abs(p - length) < Math.abs(best - length) ? p : best));
   }
 
+  // Experiment: one-pole glide in the log domain (even pitch glide), once per block.
+  // Only inside the snapping range; outside it, or entering it, the length jumps.
+  #glideLoopLength(target) {
+    const periods = this.loopSnapPeriods;
+    if (!periods?.length || target < 1 || target > periods[periods.length - 1]) {
+      this.loopGlideLogLength = null;
+      return target;
+    }
+    const logTarget = Math.log(target);
+    if (this.loopGlideLogLength === null) {
+      this.loopGlideLogLength = logTarget;
+    } else {
+      const k = 1 - Math.exp(-128 / sampleRate / this.LOOP_GLIDE_SECONDS);
+      this.loopGlideLogLength += (logTarget - this.loopGlideLogLength) * k;
+    }
+    return Math.exp(this.loopGlideLogLength);
+  }
+
   #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
     const lpStart = params.loopStartSamples;
     const lpEnd = params.loopEndSamples;
@@ -421,7 +444,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // crossings the loop points don't know about. Shift such a loop into the range
     // instead of letting the clamp shorten it. A loop longer than the range still
     // clamps as above.
-    const loopLength = this.#snapLoopLength(lpEnd - lpStart);
+    const loopLength = this.#glideLoopLength(this.#snapLoopLength(lpEnd - lpStart));
     if (
       loopLength >= 1 &&
       loopLength <= this.PITCH_PRESERVATION_THRESHOLD &&
