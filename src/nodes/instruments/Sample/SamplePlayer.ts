@@ -525,7 +525,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       const defaultScaleOptions = {
         rootNote: 'C' as keyof typeof ROOT_NOTES,
-        scale: [0],
+        scale: [0, 2, 4, 5, 7, 9, 11], // Major: 0,2,4,5,7,9,11
         lowestOctave: 0,
         highestOctave: 5,
         tuningOffset: 0,
@@ -689,8 +689,11 @@ export class SamplePlayer implements ILibInstrumentNode {
     const longestSnapPeriod = this.#macroLoopEnd.longestPeriodSeconds ?? 0;
     const value = longestSnapPeriod;
     if (value === 0) return;
+    // ponytail: experiment, assumes `normalize: false` so periods are in seconds.
+    const periods = this.#macroLoopEnd.snapper.periods;
     this.voicePool.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setPitchPreservationThreshold', value });
+      voice.sendToProcessor({ type: 'setLoopSnapPeriods', value: periods });
     });
   }
 

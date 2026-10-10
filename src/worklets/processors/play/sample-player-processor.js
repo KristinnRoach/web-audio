@@ -69,6 +69,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = event.data;
 
     switch (type) {
+      case 'setLoopSnapPeriods':
+        this.loopSnapPeriods = value.map((seconds) => seconds * sampleRate);
+        break;
+
       case 'setPitchPreservationThreshold':
         if (Number.isFinite(value) && value >= 0) {
           this.PITCH_PRESERVATION_THRESHOLD = value * sampleRate;
@@ -393,6 +397,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @param {number} playbackRate - Current playback rate
    * @returns {Object} - Effective loop start and end positions with drift applied
    */
+  // Experiment: snap per block, so a ramped loop length steps through the allowed periods.
+  #snapLoopLength(length) {
+    const periods = this.loopSnapPeriods;
+    if (!periods?.length || length < 1 || length > periods[periods.length - 1]) return length;
+    return periods.reduce((best, p) => (Math.abs(p - length) < Math.abs(best - length) ? p : best));
+  }
+
   #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
     const lpStart = params.loopStartSamples;
     const lpEnd = params.loopEndSamples;
@@ -410,7 +421,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // crossings the loop points don't know about. Shift such a loop into the range
     // instead of letting the clamp shorten it. A loop longer than the range still
     // clamps as above.
-    const loopLength = lpEnd - lpStart;
+    const loopLength = this.#snapLoopLength(lpEnd - lpStart);
     if (
       loopLength >= 1 &&
       loopLength <= this.PITCH_PRESERVATION_THRESHOLD &&
