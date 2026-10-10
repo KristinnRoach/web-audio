@@ -176,7 +176,6 @@ export class SamplePlayer implements ILibInstrumentNode {
         }
 
         this.#resetMacros();
-        this.#setPitchPreservationThreshold();
 
         this.#initialized = true;
       } catch (error) {
@@ -537,7 +536,6 @@ export class SamplePlayer implements ILibInstrumentNode {
       // TODO: Move loop-points and quantization logic to the processor?
       this.setScale(defaultScaleOptions);
       this.#resetMacros();
-      this.#setPitchPreservationThreshold();
 
       await loadedPromise;
       return [...audioData];
