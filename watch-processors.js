@@ -14,7 +14,7 @@ watcher.on('change', (eventType, filename) => {
     console.log(`${filename.toString()} changed, rebuilding processors...`);
 
     // Execute the build-processors.js script
-    exec('vp node build-processors.js', (error, stdout, stderr) => {
+    exec(`"${process.execPath}" build-processors.js`, (error, stdout, stderr) => {
       if (error) {
         console.error(`Error: ${error.message}`);
         return;
