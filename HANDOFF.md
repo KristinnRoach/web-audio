@@ -28,7 +28,7 @@
    - `#glideLoopLength` adds a one-pole glide in the log domain. The time constant is `LOOP_GLIDE_SECONDS`; `0` means stepped. It only glides inside the snapping range and resets on `voice:start`.
    - `#calculateLoopRange` uses both, so the start stays fixed and the end moves.
    - The audible results are promising, but Kiddi hasn't reviewed the code yet. `LOOP_GLIDE_SECONDS` is a time constant, not an arrival time (~95% after 3x).
-4. Testing values marked `// ! Testing` must be set before merging:
+4. Testing values to set before merging (the first two are marked `// ! Testing`):
    - the `loopRampDuration` default is `0.001`
    - the `loopStart` and `loopEnd` curves are `4`
    - the default scale is `[0]`, and its "Major" comment is a leftover
