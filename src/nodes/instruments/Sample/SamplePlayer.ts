@@ -13,7 +13,8 @@ import {
 
 import { isValidAudioBuffer, isMidiValue } from '@/utils';
 
-import { MacroParam, NormalizeOptions } from '@/nodes/params';
+import type { NormalizeOptions } from '@/nodes/params';
+import { createScale, offsetPeriodsBySemitones } from '@/utils/music-theory/utils/scale-utils';
 import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
@@ -89,8 +90,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #masterOut: GainNode;
 
-  #macroLoopStart: MacroParam;
-  #macroLoopEnd: MacroParam;
+  #loopStart = 0;
+  #loopEnd = 0;
+  #loopScaleOptions: Parameters<SamplePlayer['setScale']>[0] | null = null;
+  #loopSnapPeriods: number[] = [];
   #gainLFO: LFO | null = null;
   #pitchLFO: LFO | null = null;
 
@@ -136,11 +139,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.context.addEventListener('statechange', this.#onContextStateChange);
     this.#masterOut = new GainNode(this.context, { gain: 0.5 });
 
-    // Seconds; the real loop range is set from the buffer duration in
-    // #resetMacros once a sample is loaded.
-    this.#macroLoopStart = new MacroParam(this.context, 0);
-    this.#macroLoopEnd = new MacroParam(this.context, 0);
-
     // Store configuration for async init
     this.#polyphony = options.polyphony ?? 16;
     this.#voiceSignalChain = options.voiceSignalChain ? [...options.voiceSignalChain] : undefined;
@@ -163,7 +161,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
         // Connect audio chain
         this.#connectAudioChain();
-        this.#connectVoicesToMacros();
         this.#setupLFOs();
         this.#setupMessageHandling();
 
@@ -175,7 +172,7 @@ export class SamplePlayer implements ILibInstrumentNode {
           if (!loaded) throw new Error('No usable initial audio');
         }
 
-        this.#resetMacros();
+        this.#resetLoopPoints();
 
         this.#initialized = true;
       } catch (error) {
@@ -310,36 +307,14 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  /* === MACROS === */
-
-  #connectVoicesToMacros(): this {
-    const voices = this.voicePool.allVoices;
-
-    voices.forEach((voice) => {
-      const loopStartParam = voice.getParam('loopStart');
-      const loopEndParam = voice.getParam('loopEnd');
-
-      if (loopStartParam) {
-        this.#macroLoopStart.addTarget(loopStartParam, 'loopStart');
-      } else {
-        console.error('loopStart param is null!');
-      }
-
-      if (loopEndParam) {
-        this.#macroLoopEnd.addTarget(loopEndParam, 'loopEnd');
-      } else {
-        console.error('loopEnd param is null!');
-      }
+  #resetLoopPoints() {
+    this.#loopStart = 0;
+    this.#loopEnd = this.#bufferDuration;
+    const timestamp = this.context.currentTime;
+    this.voicePool.applyToAllVoices((voice) => {
+      voice.setParam('loopStart', this.#loopStart, timestamp);
+      voice.setParam('loopEnd', this.#loopEnd, timestamp);
     });
-
-    return this;
-  }
-
-  #resetMacros() {
-    this.#macroLoopStart.setValue(0);
-
-    this.#macroLoopEnd.setValue(this.#bufferDuration);
-
     return this;
   }
 
@@ -533,9 +508,8 @@ export class SamplePlayer implements ILibInstrumentNode {
       };
 
       // setScale updates the longest period used for audio rate loop quantization, which is passed to the processor.
-      // TODO: Move loop-points and quantization logic to the processor?
       this.setScale(defaultScaleOptions);
-      this.#resetMacros();
+      this.#resetLoopPoints();
 
       await loadedPromise;
       return [...audioData];
@@ -653,8 +627,8 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   /**
-   * Sets the periods both loop macros snap to, using the loaded sample's zero
-   * crossings. Called on every sample load, so it must run after the buffer.
+   * Sends scale periods in seconds to every voice for processor-side snapping.
+   * normalize is retained for compatibility; it does not change physical periods.
    */
   setScale(options: {
     rootNote: keyof typeof ROOT_NOTES;
@@ -666,14 +640,10 @@ export class SamplePlayer implements ILibInstrumentNode {
     lowestOctave: number;
     normalize: NormalizeOptions | false;
   }) {
-    this.#macroLoopStart.setScale({
-      snapToZeroCrossings: this.#zeroCrossings,
-      ...options,
-    });
-    this.#macroLoopEnd.setScale({
-      snapToZeroCrossings: this.#zeroCrossings,
-      ...options,
-    });
+    this.#loopScaleOptions = { ...options, scale: [...options.scale] };
+    const { rootNote, scale, lowestOctave, highestOctave, tuningOffset } = options;
+    const periods = createScale(rootNote, scale, lowestOctave, highestOctave).periodsInSec;
+    this.#loopSnapPeriods = offsetPeriodsBySemitones(periods, tuningOffset).sort((a, b) => a - b);
     this.#setPitchPreservationThreshold();
 
     return this;
@@ -686,18 +656,16 @@ export class SamplePlayer implements ILibInstrumentNode {
    */
   #setPitchPreservationThreshold(): void {
     if (!this.voicePool) return;
-    const longestSnapPeriod = this.#macroLoopEnd.longestPeriodSeconds ?? 0;
+    const longestSnapPeriod = this.#loopSnapPeriods.at(-1) ?? 0;
     const value = longestSnapPeriod;
-    if (value === 0) return;
-    // ponytail: experiment, assumes `normalize: false` so periods are in seconds.
-    const periods = this.#macroLoopEnd.snapper.periods;
+    const periods = this.#loopSnapPeriods;
     this.voicePool.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setPitchPreservationThreshold', value });
       voice.sendToProcessor({ type: 'setLoopSnapPeriods', value: periods });
     });
   }
 
-  /** Transposes playback to the new root and rebuilds both loop macros' periods. */
+  /** Transposes playback to the new root and rebuilds processor snapping periods. */
   setRootNote(note: keyof typeof ROOT_NOTES) {
     const rootNoteNumber = ROOT_NOTES[note];
 
@@ -707,9 +675,9 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.transposeSemitones = semitones;
 
-    this.#macroLoopEnd.setRootNote(note);
-    this.#macroLoopStart.setRootNote(note);
-    this.#setPitchPreservationThreshold();
+    if (this.#loopScaleOptions) {
+      this.setScale({ ...this.#loopScaleOptions, rootNote: note });
+    }
 
     return this;
   }
@@ -932,7 +900,14 @@ export class SamplePlayer implements ILibInstrumentNode {
         loopStart = loopEnd - this.MIN_LOOP_DURATION_SECONDS;
       }
 
-      this.#macroLoopStart.ramp(loopStart, rampDuration, loopEnd);
+      this.#loopStart = loopStart;
+      const timestamp = this.context.currentTime;
+      this.voicePool.applyToAllVoices((voice) => {
+        voice.setParam('loopStart', loopStart, timestamp, {
+          glideTime: rampDuration,
+          cancelPrevious: true,
+        });
+      });
     } else if (loopPoint === 'end' && loopEnd !== this.loopEnd) {
       // handle tempo loop sync for loop end
       if (this.#loopTempoSync) {
@@ -945,7 +920,14 @@ export class SamplePlayer implements ILibInstrumentNode {
         loopEnd = loopStart + this.MIN_LOOP_DURATION_SECONDS;
       }
 
-      this.#macroLoopEnd.ramp(loopEnd, rampDuration, loopStart);
+      this.#loopEnd = loopEnd;
+      const timestamp = this.context.currentTime;
+      this.voicePool.applyToAllVoices((voice) => {
+        voice.setParam('loopEnd', loopEnd, timestamp, {
+          glideTime: rampDuration,
+          cancelPrevious: true,
+        });
+      });
     }
 
     this.sendUpstreamMessage('loop-points:updated', {
@@ -958,8 +940,12 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   scrollLoopPoints(loopStart: number, loopEnd: number) {
     const timestamp = this.context.currentTime;
-    this.#macroLoopStart.setValue(loopStart, timestamp);
-    this.#macroLoopEnd.setValue(loopEnd, timestamp);
+    this.#loopStart = loopStart;
+    this.#loopEnd = loopEnd;
+    this.voicePool.applyToAllVoices((voice) => {
+      voice.setParam('loopStart', loopStart, timestamp);
+      voice.setParam('loopEnd', loopEnd, timestamp);
+    });
 
     this.sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
@@ -1010,16 +996,9 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /** PARAM GETTERS  */
 
-  getAudioParam(name: string): AudioParam | null {
-    switch (name) {
-      case 'loopStart':
-        return this.#macroLoopStart.audioParam;
-      case 'loopEnd':
-        return this.#macroLoopEnd.audioParam;
-      default:
-        console.warn(`Parameter '${name}' not found on SamplePlayer`);
-        return null;
-    }
+  // Loop controls now belong to individual voices; there is no shared AudioParam.
+  getAudioParam(_name: string): AudioParam | null {
+    return null;
   }
 
   // TODO: Consider moving source of truth from SampleVoice to SamplePlayer, or convert to MacroParams, symmetrical with the loop start/end points
@@ -1339,11 +1318,11 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   get loopStart(): number {
-    return this.#macroLoopStart.targetValue;
+    return this.#loopStart;
   }
 
   get loopEnd(): number {
-    return this.#macroLoopEnd.targetValue;
+    return this.#loopEnd;
   }
 
   get isLoaded() {
@@ -1378,11 +1357,6 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.outBus.dispose();
         this.outBus = null as unknown as InstrumentBus;
       }
-
-      this.#macroLoopStart?.dispose();
-      this.#macroLoopEnd?.dispose();
-      this.#macroLoopStart = null as unknown as MacroParam;
-      this.#macroLoopEnd = null as unknown as MacroParam;
 
       this.#gainLFO?.dispose();
       this.#pitchLFO?.dispose();

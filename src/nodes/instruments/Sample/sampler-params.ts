@@ -10,8 +10,16 @@ export interface SamplerParamDescriptor {
   label: string;
   min: number;
   max: number;
+  /**
+   * Suggested initial control position. Not applied automatically: the player starts
+   * from its own internal state, which can differ. Call `apply(player, defaultValue)`
+   * to make the player match.
+   */
   defaultValue: number;
-  /** UI taper hint: 1 = linear, >1 = more resolution at the low end */
+  /**
+   * Control taper: `value = min + (max - min) * position ** curve`, position in [0, 1].
+   * 1 (default) = linear, >1 = finer control near min, <1 = finer control near max.
+   */
   curve?: number;
   /** Snap increment for UI controls */
   step?: number;
@@ -292,6 +300,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 1,
     step: 0.0001, // See loopStart: ~19s sample length ceiling before the step exceeds the minimum loop duration.
+    curve: 5,
     format: seconds,
     apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },
@@ -311,7 +320,7 @@ export const samplerParams = defineSamplerParams({
     label: 'Loop Ramp',
     min: 0.001,
     max: 1,
-    defaultValue: 0.5,
+    defaultValue: 0.001, // ! Testing, set actual value before merging
     step: 0.001,
     apply: (p, v) => p.setLoopRampDuration(v),
   },
