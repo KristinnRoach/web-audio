@@ -12,13 +12,15 @@ import {
   midiToPlaybackRate,
   getKeytrackedFilterHz,
 } from '@/utils';
-import { clampHz, durationToTimeConstant, maxSafeHz } from '@/nodes/params/audioparam-utils';
-
+import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
+import {
+  cancelAndPinParamValue,
+  clampHz,
+  durationToTimeConstant,
+  maxSafeHz,
+} from '@/nodes/params/audioparam-utils';
 import { Envelope } from '@/nodes/params/envelopes';
 import type { EnvelopeConfig } from './envelope-config';
-
-import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
-
 import { LFO } from '@/nodes/params/LFOs/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
@@ -125,12 +127,6 @@ export class SampleVoice {
 
         // Create nodes
         this.#initInternalSignalChainNodes();
-
-        // ? Why is this necessary ?
-        // Initialize loopEnd to 0 to force the macro parameter to update
-        // This ensures the macro's value will be applied when connected
-        this.setParam('loopStart', 0, this.now);
-        this.setParam('loopEnd', 0, this.now);
 
         // Connect nodes
         this.#connectAudioChain();
@@ -769,14 +765,21 @@ export class SampleVoice {
     } = {},
   ): this {
     const param = this.getParam(name);
-    if (!param || param.value === targetValue) return this;
+    if (!param) return this;
 
     const { glideTime = 0, cancelPrevious = true } = options;
 
-    if (cancelPrevious) param.cancelScheduledValues(timestamp);
-
-    if (glideTime <= 0) param.setValueAtTime(targetValue, Math.max(timestamp, this.now + 0.001));
-    else param.linearRampToValueAtTime(targetValue, timestamp + Math.max(glideTime, 0.001));
+    if (glideTime <= 0) {
+      if (cancelPrevious) param.cancelScheduledValues(timestamp);
+      param.setValueAtTime(targetValue, Math.max(timestamp, this.now + 0.001));
+    } else {
+      // param.value is only valid now: a future glide falls back to a plain cancel.
+      if (cancelPrevious) {
+        if (timestamp <= this.now) cancelAndPinParamValue(param, timestamp);
+        else param.cancelScheduledValues(timestamp);
+      }
+      param.linearRampToValueAtTime(targetValue, timestamp + Math.max(glideTime, 0.001));
+    }
 
     return this;
   }
@@ -799,30 +802,16 @@ export class SampleVoice {
     return this;
   }
 
-  setLoopPoints(start: number, end: number, timestamp = this.now, rampTime = 0): this {
-    if (start >= end) return this;
-
-    if (start !== undefined) {
-      this.setParam('loopStart', start, timestamp, {
-        glideTime: rampTime,
-        cancelPrevious: true,
-      });
-    }
-    if (end !== undefined) {
-      this.setParam('loopEnd', end, timestamp, {
-        glideTime: rampTime,
-        cancelPrevious: true,
-      });
-    }
-
-    return this;
-  }
-
   syncLoopToTempo(enabled: boolean) {
     this.sendToProcessor({
       type: 'syncLoopToTempo',
       value: enabled,
     });
+    return this;
+  }
+
+  setLoopRampDuration(seconds: number) {
+    this.sendToProcessor({ type: 'setLoopRampDuration', value: seconds });
     return this;
   }
 
