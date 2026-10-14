@@ -990,7 +990,7 @@ export class SampleVoice {
   getPlaybackDuration() {
     const startPoint = this.getParam('startPoint')!.value;
     const endPoint = this.getParam('endPoint')!.value;
-    return endPoint - startPoint;
+    return Math.abs(endPoint - startPoint);
   }
 
   get feedback() {

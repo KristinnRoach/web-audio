@@ -2,6 +2,23 @@ import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-pa
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { DurationPreserver } from './duration-preservation.js';
 
+/**
+ * Resolves two raw points into an ordered range inside [lo, hi], at least
+ * `minLength` long (or as long as the bounds allow). Points arrive raw from the
+ * main thread, so either may be set first and they may be equal.
+ */
+function resolveRange(a, b, lo, hi, minLength) {
+  const clamp = (value) => Math.min(Math.max(value, lo), hi);
+  let start = clamp(Math.min(a, b));
+  let end = clamp(Math.max(a, b));
+  if (end - start < minLength) {
+    // Grow the end, then pull the start back if the end hit the upper bound
+    end = Math.min(start + minLength, hi);
+    start = Math.max(lo, end - minLength);
+  }
+  return [start, end];
+}
+
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== PARAMETER DESCRIPTORS =====
   static get parameterDescriptors() {
@@ -39,6 +56,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.PITCH_PRESERVATION_THRESHOLD = Math.floor(sampleRate / 16.35);
 
     this.AMPLITUDE_COMPENSATION_THRESHOLD = Math.floor(sampleRate / 65.406);
+
+    // Shortest trim or loop range: one C5 period (SamplePlayer.MIN_LOOP_DURATION_SECONDS)
+    this.MIN_RANGE_SAMPLES = sampleRate / 523.25;
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -149,14 +169,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:setPlaybackDirection': {
-        const reverse = playbackDirection === 'reverse';
-
-        // Reverse interpolation reads ~1 sample behind forward at the same
-        // position; shift so the emitted value stays continuous across the flip.
-        if (reverse !== this.reversePlayback && this.playbackPosition > 0) {
-          this.playbackPosition += reverse ? 1 : -1;
-        }
-        this.reversePlayback = reverse;
+        // Global invert; inverted trim points flip it again in process()
+        this.reversePlayback = playbackDirection === 'reverse';
 
         this.port.postMessage({
           type: 'voice:playbackDirectionChange',
@@ -199,6 +213,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
     this.reversePlayback = false;
+    this.playingReverse = false; // effective direction last block
     this.playbackPosition = 0;
 
     this.debugCounter = 0;
@@ -367,20 +382,28 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    */
   #calculatePlaybackRange(params) {
     const bufferLength = this.buffer?.[0]?.length || 0;
+    const { startPointSamples: a, endPointSamples: b } = params;
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
 
-    const start = Math.max(0, params.startPointSamples);
-    const end =
-      params.endPointSamples > start
-        ? Math.min(bufferLength, params.endPointSamples)
-        : bufferLength;
-
-    const snappedStart = this.#findNearestZeroCrossing(start, 'right'); // Snap forward
-    const snappedEnd = this.#findNearestZeroCrossing(end, 'left'); // Snap backward
+    // Snap inward to zero crossings, then resolve like the loop points. Directional
+    // snaps clamp to the outermost crossing, so keep them only if they stay inside.
+    const snapStart = this.#findNearestZeroCrossing(lo, 'right');
+    const snapEnd = this.#findNearestZeroCrossing(hi, 'left');
+    const inward = lo <= snapStart && snapStart < snapEnd && snapEnd <= hi;
+    const [startSamples, endSamples] = resolveRange(
+      inward ? snapStart : lo,
+      inward ? snapEnd : hi,
+      0,
+      bufferLength,
+      this.MIN_RANGE_SAMPLES,
+    );
 
     return {
-      startSamples: snappedStart,
-      endSamples: snappedEnd,
-      durationSamples: snappedEnd - snappedStart,
+      startSamples,
+      endSamples,
+      durationSamples: endSamples - startSamples,
+      inverted: a > b, // start past end plays the range backward
     };
   }
 
@@ -394,36 +417,32 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @returns {Object} - Effective loop start and end positions with drift applied
    */
   #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
-    const lpStart = params.loopStartSamples;
-    const lpEnd = params.loopEndSamples;
-
-    // Loop points clamp into the playback range, so a loop reaching past an edge
-    // loops up to that edge instead of silently becoming the whole range. Only an
-    // unset or degenerate loop falls back to the full playback range.
-    const clamp = (value) =>
-      Math.min(Math.max(value, playbackRange.startSamples), playbackRange.endSamples);
-
-    let calcLoopStart = clamp(lpStart);
-    let calcLoopEnd = clamp(lpEnd);
+    const { startSamples: rangeStart, endSamples: rangeEnd } = playbackRange;
+    let lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
+    let lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
 
     // An audio-rate loop's length is its pitch, and the range edges snap to zero
     // crossings the loop points don't know about. Shift such a loop into the range
-    // instead of letting the clamp shorten it. A loop longer than the range still
-    // clamps as above.
+    // instead of letting the clamp below shorten it. A longer loop clamps.
     const loopLength = lpEnd - lpStart;
     if (
       loopLength >= 1 &&
       loopLength <= this.PITCH_PRESERVATION_THRESHOLD &&
       loopLength <= playbackRange.durationSamples
     ) {
-      calcLoopStart = Math.min(calcLoopStart, playbackRange.endSamples - loopLength);
-      calcLoopEnd = calcLoopStart + loopLength;
+      lpStart = Math.min(Math.max(lpStart, rangeStart), rangeEnd - loopLength);
+      lpEnd = lpStart + loopLength;
     }
 
-    if (calcLoopEnd - calcLoopStart < 1) {
-      calcLoopStart = playbackRange.startSamples;
-      calcLoopEnd = playbackRange.endSamples;
-    }
+    // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
+    // default) clamps to the full range.
+    let [calcLoopStart, calcLoopEnd] = resolveRange(
+      lpStart,
+      lpEnd,
+      rangeStart,
+      rangeEnd,
+      this.MIN_RANGE_SAMPLES,
+    );
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
@@ -698,6 +717,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     const playbackRange = this.#calculatePlaybackRange(positionParams);
 
+    const reverse = this.reversePlayback !== playbackRange.inverted;
+    // Reverse interpolation reads ~1 sample behind forward at the same
+    // position; shift so the emitted value stays continuous across the flip.
+    if (reverse !== this.playingReverse && this.playbackPosition > 0) {
+      this.playbackPosition += reverse ? 1 : -1;
+    }
+    this.playingReverse = reverse;
+
     // Loop-length math needs the rate playback actually advances at
     const effectivePlaybackRate = parameters.playbackRate[0];
 
@@ -746,9 +773,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // ===== Init playback position =====
 
     if (this.playbackPosition === 0) {
-      this.playbackPosition = this.reversePlayback
-        ? playbackRange.endSamples - 1
-        : playbackRange.startSamples;
+      this.playbackPosition = reverse ? playbackRange.endSamples - 1 : playbackRange.startSamples;
       this.durationPreserver.reset(this.playbackPosition);
     }
 
@@ -760,12 +785,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
 
-      const playbackStep = this.reversePlayback ? -Math.abs(baseRate) : Math.abs(baseRate);
+      const playbackStep = reverse ? -Math.abs(baseRate) : Math.abs(baseRate);
 
       // Handle looping
       const canWrapLoop = this.loopEnabled && this.loopCount < parameters.maxLoopCount[0];
       if (canWrapLoop) {
-        if (!this.reversePlayback && this.playbackPosition >= loopRange.loopEndSamples) {
+        if (!reverse && this.playbackPosition >= loopRange.loopEndSamples) {
           // Get the actual samples we're transitioning between
           // In the silent tail the buffer still holds audio we aren't outputting,
           // so the sample we actually just emitted is 0.
@@ -791,7 +816,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           this.nextDriftGenerated = false;
         }
         // Reverse playback
-        else if (this.reversePlayback && this.playbackPosition <= loopRange.loopStartSamples) {
+        else if (reverse && this.playbackPosition <= loopRange.loopStartSamples) {
           // Mirror of the forward wrap: last emitted sample sits at the loop
           // start, the next pass begins at the loop end (0 in the silent tail).
           this.#smoothLoopWrap(
@@ -825,12 +850,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // Check for end of playback range (forward & reversed)
       // Don't stop if we're looping and within the playback range
       const shouldStopForward =
-        !this.reversePlayback &&
+        !reverse &&
         (durationPreservationActive
           ? this.durationPreserver.timelinePosition
           : this.playbackPosition) >= playbackRange.endSamples;
       const shouldStopReverse =
-        this.reversePlayback &&
+        reverse &&
         (durationPreservationActive
           ? this.durationPreserver.timelinePosition
           : this.playbackPosition) <= playbackRange.startSamples;
@@ -864,7 +889,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       // Pre-calculate interpolation positions outside channel loop
       let nextPosition, interpWeight;
-      if (this.reversePlayback) {
+      if (reverse) {
         nextPosition = Math.max(currentPosition - 1, playbackRange.startSamples);
         interpWeight = 1 - positionOffset; // Reverse: weight toward previous sample
       } else {

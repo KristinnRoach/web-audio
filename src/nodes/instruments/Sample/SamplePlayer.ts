@@ -102,7 +102,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
-  #loopTempoSync = false; // TODO: Implement!
   #MAX_TEMPO = 300;
   #MIN_TEMPO = 20;
 
@@ -549,7 +548,7 @@ export class SamplePlayer implements ILibInstrumentNode {
    * Replace the loaded sample with the region between its start and end points,
    * reloading it without re-running preprocessing.
    *
-   * Seconds are clamped to the buffer. Returns null if there is no sample
+   * Points may be in either order. Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
    * Crops all samples to sample 0's frame range, zero-padding shorter samples.
    */
@@ -564,8 +563,11 @@ export class SamplePlayer implements ILibInstrumentNode {
       return null;
     }
 
-    const startSample = Math.max(0, Math.floor(startSeconds * buffer.sampleRate));
-    const endSample = Math.min(buffer.length, Math.ceil(endSeconds * buffer.sampleRate));
+    // Inverted points (reverse playback) crop the same region
+    const lo = Math.min(startSeconds, endSeconds);
+    const hi = Math.max(startSeconds, endSeconds);
+    const startSample = Math.max(0, Math.floor(lo * buffer.sampleRate));
+    const endSample = Math.min(buffer.length, Math.ceil(hi * buffer.sampleRate));
 
     if (endSample <= startSample) return null;
 
@@ -900,49 +902,20 @@ export class SamplePlayer implements ILibInstrumentNode {
     loopEndSeconds: number,
     rampDuration: number = this.getLoopRampDuration(),
   ) {
-    let loopStart =
-      loopPoint === 'start'
-        ? clamp(loopStartSeconds, this.MIN_LOOP_DURATION_SECONDS / 2, loopEndSeconds)
-        : loopStartSeconds;
-
-    if (loopPoint === 'start' && loopStart === this.loopStart) return this;
-
-    let loopEnd = clamp(
-      loopEndSeconds,
-      loopStart,
-      this.#bufferDuration - this.MIN_LOOP_DURATION_SECONDS / 2,
+    // Each point is stored as given so the result doesn't depend on set order.
+    // The processor resolves ordering, minimum length and trim containment.
+    const seconds = clamp(
+      loopPoint === 'start' ? loopStartSeconds : loopEndSeconds,
+      0,
+      this.#bufferDuration,
     );
 
-    if (loopPoint === 'end' && loopEnd === this.loopEnd) return this;
-
-    const targetLoopDuration = loopEnd - loopStart;
-
-    if (loopPoint === 'start' && loopStart !== this.loopStart) {
-      // handle tempo loop sync for loop start
-      if (this.#loopTempoSync) {
-        const beatDuration = 60 / this.#tempo;
-        const numBeats = Math.round(targetLoopDuration / beatDuration);
-        loopStart = loopEnd - numBeats * beatDuration;
-      }
-
-      if (targetLoopDuration < this.MIN_LOOP_DURATION_SECONDS) {
-        loopStart = loopEnd - this.MIN_LOOP_DURATION_SECONDS;
-      }
-
-      this.#macroLoopStart.ramp(loopStart, rampDuration, loopEnd);
-    } else if (loopPoint === 'end' && loopEnd !== this.loopEnd) {
-      // handle tempo loop sync for loop end
-      if (this.#loopTempoSync) {
-        const beatDuration = 60 / this.#tempo;
-        const numBeats = Math.round(targetLoopDuration / beatDuration);
-        loopEnd = loopStart + numBeats * beatDuration;
-      }
-
-      if (targetLoopDuration < this.MIN_LOOP_DURATION_SECONDS) {
-        loopEnd = loopStart + this.MIN_LOOP_DURATION_SECONDS;
-      }
-
-      this.#macroLoopEnd.ramp(loopEnd, rampDuration, loopStart);
+    if (loopPoint === 'start') {
+      if (seconds === this.loopStart) return this;
+      this.#macroLoopStart.ramp(seconds, rampDuration, this.loopEnd);
+    } else {
+      if (seconds === this.loopEnd) return this;
+      this.#macroLoopEnd.ramp(seconds, rampDuration, this.loopStart);
     }
 
     this.sendUpstreamMessage('loop-points:updated', {
