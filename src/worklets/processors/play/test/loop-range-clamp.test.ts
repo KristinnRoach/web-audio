@@ -176,13 +176,62 @@ describe('loop range clamping', () => {
     expect(wraps[1] - wraps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 4, -1);
   });
 
-  it('extends a loop shorter than the C5 period to the minimum length', async () => {
+  // Inverted trim points play the range backward; the global reverse flag inverts that again.
+  it.each([
+    ['forward', true],
+    ['reverse', false],
+  ])('plays inverted trim points backward (global %s)', async (direction, backward) => {
+    const length = TEST_SAMPLE_RATE * 0.4;
+    const processor = await startProcessor();
+    processor.port.onmessage?.({
+      data: { type: 'voice:setPlaybackDirection', playbackDirection: direction },
+    } as MessageEvent);
+    const parameters = makeParameters({ startPoint: 0.9, endPoint: 0.5 });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < length * 3; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    expect(positions[1] < positions[0]).toBe(backward);
+    const wraps = positions.flatMap((p, i) =>
+      i > 0 && (backward ? p > positions[i - 1] : p < positions[i - 1]) ? [i] : [],
+    );
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    expect(Math.abs(wraps[1] - wraps[0] - length)).toBeLessThan(5);
+    expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2 - 1);
+    expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.9);
+  });
+
+  // Equal trim points resolve by the loop rule: the C5 minimum.
+  it.each([[0.5, 0.5, TEST_SAMPLE_RATE / 523.25]])(
+    'resolves trim points %f..%f like loop points',
+    async (startPoint, endPoint, length) => {
+      const processor = await startProcessor();
+      const parameters = makeParameters({ startPoint, endPoint });
+
+      const positions: number[] = [];
+      for (let frame = 0; frame < length * 3; frame++) {
+        processor.process([], [[new Float32Array(1)]], parameters);
+        positions.push(processor.playbackPosition);
+      }
+
+      const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+      expect(wraps.length).toBeGreaterThanOrEqual(2);
+      // Trim points are floored to whole samples, so allow a few samples of slack.
+      expect(Math.abs(wraps[1] - wraps[0] - length)).toBeLessThan(5);
+      expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
+    },
+  );
+
+  it.each([10, 0])('extends a %i-sample loop to the C5 period', async (loopLength) => {
     const start = TEST_SAMPLE_RATE / 2;
     const processor = await startProcessor();
     const parameters = makeParameters({
       endPoint: 1,
       loopStart: start / TEST_SAMPLE_RATE,
-      loopEnd: (start + 10) / TEST_SAMPLE_RATE,
+      loopEnd: (start + loopLength) / TEST_SAMPLE_RATE,
     });
 
     const positions: number[] = [];

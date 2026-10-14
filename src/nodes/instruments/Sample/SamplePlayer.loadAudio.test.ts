@@ -95,7 +95,8 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     });
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
     await player.loadAudio(originals);
-    const cropped = await player.cropSample(0.002, 0.006, { in: 0, out: 0 });
+    // Inverted points crop the same 0.002..0.006 region
+    const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });
     expect(cropped).toBe(player.samples[0]);
     expect(player.samples.map((buffer) => buffer.length)).toEqual([192, 192, 192]);
     expect(Array.from(player.samples[0].getChannelData(0))).toEqual(Array(192).fill(0.5));

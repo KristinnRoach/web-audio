@@ -548,7 +548,7 @@ export class SamplePlayer implements ILibInstrumentNode {
    * Replace the loaded sample with the region between its start and end points,
    * reloading it without re-running preprocessing.
    *
-   * Seconds are clamped to the buffer. Returns null if there is no sample
+   * Points may be in either order. Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
    * Crops all samples to sample 0's frame range, zero-padding shorter samples.
    */
@@ -563,8 +563,11 @@ export class SamplePlayer implements ILibInstrumentNode {
       return null;
     }
 
-    const startSample = Math.max(0, Math.floor(startSeconds * buffer.sampleRate));
-    const endSample = Math.min(buffer.length, Math.ceil(endSeconds * buffer.sampleRate));
+    // Inverted points (reverse playback) crop the same region
+    const lo = Math.min(startSeconds, endSeconds);
+    const hi = Math.max(startSeconds, endSeconds);
+    const startSample = Math.max(0, Math.floor(lo * buffer.sampleRate));
+    const endSample = Math.min(buffer.length, Math.ceil(hi * buffer.sampleRate));
 
     if (endSample <= startSample) return null;
 
