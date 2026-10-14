@@ -394,8 +394,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @returns {Object} - Effective loop start and end positions with drift applied
    */
   #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
-    const lpStart = params.loopStartSamples;
-    const lpEnd = params.loopEndSamples;
+    // Loop points arrive raw from the main thread, so either may be set first.
+    const lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
+    const lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
 
     // Loop points clamp into the playback range, so a loop reaching past an edge
     // loops up to that edge instead of silently becoming the whole range. Only an
@@ -418,6 +419,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     ) {
       calcLoopStart = Math.min(calcLoopStart, playbackRange.endSamples - loopLength);
       calcLoopEnd = calcLoopStart + loopLength;
+    }
+
+    // Minimum loop length (C5 period). Grow the end, then pull the start back if the
+    // end hit the range edge. Equal raw points stay degenerate (full range below).
+    const minLoopSamples = sampleRate / 523.25; // SamplePlayer.MIN_LOOP_DURATION_SECONDS
+    if (lpEnd > lpStart && calcLoopEnd - calcLoopStart < minLoopSamples) {
+      calcLoopEnd = Math.min(calcLoopStart + minLoopSamples, playbackRange.endSamples);
+      calcLoopStart = Math.max(playbackRange.startSamples, calcLoopEnd - minLoopSamples);
     }
 
     if (calcLoopEnd - calcLoopStart < 1) {

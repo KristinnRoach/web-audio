@@ -158,4 +158,41 @@ describe('loop range clamping', () => {
     // Never plays past the snapped range end (within Float32 parameter precision).
     expect(Math.max(...positions)).toBeLessThan(end - 20 + 1);
   });
+
+  // Loop points arrive raw (web-audio#86), so a start past the end is just the
+  // other order of the same two points.
+  it('loops between inverted loop points', async () => {
+    const processor = await startProcessor();
+    const parameters = makeParameters({ endPoint: 1, loopStart: 0.75, loopEnd: 0.5 });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE * 1.3; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    expect(wraps[1] - wraps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 4, -1);
+  });
+
+  it('extends a loop shorter than the C5 period to the minimum length', async () => {
+    const start = TEST_SAMPLE_RATE / 2;
+    const processor = await startProcessor();
+    const parameters = makeParameters({
+      endPoint: 1,
+      loopStart: start / TEST_SAMPLE_RATE,
+      loopEnd: (start + 10) / TEST_SAMPLE_RATE,
+    });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < start + 92 * 4; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    expect(wraps[1] - wraps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 523.25, 0);
+  });
 });
