@@ -35,7 +35,10 @@ export class WorkletNode<
       console.warn(`Parameter '${String(name)}' not found on worklet node`);
       return this;
     }
-    param.setValueAtTime(value, this.context.currentTime);
+    // ponytail: smoothing assumes continuous params; add an opt-out when a discrete one shows up
+    // param.cancelAndHoldAtTime(now); // or use cancelAndPinParamValue() to hold the current value and cancel future ramps?
+    // param.linearRampToValueAtTime(value, this.context.currentTime + 0.001);
+    param.setTargetAtTime(value, this.context.currentTime, 0.005);
     return this;
   }
 
