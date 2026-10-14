@@ -383,11 +383,17 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #calculatePlaybackRange(params) {
     const bufferLength = this.buffer?.[0]?.length || 0;
     const { startPointSamples: a, endPointSamples: b } = params;
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
 
-    // Snap inward to zero crossings, then resolve like the loop points
+    // Snap inward to zero crossings, then resolve like the loop points. Directional
+    // snaps clamp to the outermost crossing, so keep them only if they stay inside.
+    const snapStart = this.#findNearestZeroCrossing(lo, 'right');
+    const snapEnd = this.#findNearestZeroCrossing(hi, 'left');
+    const inward = lo <= snapStart && snapStart < snapEnd && snapEnd <= hi;
     const [startSamples, endSamples] = resolveRange(
-      this.#findNearestZeroCrossing(Math.min(a, b), 'right'),
-      this.#findNearestZeroCrossing(Math.max(a, b), 'left'),
+      inward ? snapStart : lo,
+      inward ? snapEnd : hi,
       0,
       bufferLength,
       this.MIN_RANGE_SAMPLES,

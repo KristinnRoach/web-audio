@@ -225,6 +225,22 @@ describe('loop range clamping', () => {
     },
   );
 
+  // Directional snaps clamp to the outermost crossing; a trim between two
+  // crossings must not widen to them.
+  it('keeps a trim between two zero crossings unsnapped', async () => {
+    const processor = await startProcessor([0.5, 0.6]);
+    const parameters = makeParameters({ startPoint: 0.55, endPoint: 0.56 });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.03; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE * 0.55 - 1);
+    expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.56 + 1);
+  });
+
   it.each([10, 0])('extends a %i-sample loop to the C5 period', async (loopLength) => {
     const start = TEST_SAMPLE_RATE / 2;
     const processor = await startProcessor();
