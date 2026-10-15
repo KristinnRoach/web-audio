@@ -152,6 +152,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.triggerId = triggerId;
         this.loopCount = 0;
         this.loopGlideLogLength = null; // new notes start on the target length
+        this.previousLoopRange = null;
 
         // will be set in process() using parameters
         this.playbackPosition = 0;
@@ -457,7 +458,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const k = 1 - Math.exp(-128 / sampleRate / this.loopRampDuration);
       this.loopGlideLogLength += (logTarget - this.loopGlideLogLength) * k;
     }
-    return Math.exp(this.loopGlideLogLength);
+    // The log round trip can exceed the longest period by an ULP and bypass snapping.
+    return Math.min(Math.exp(this.loopGlideLogLength), periods.at(-1));
   }
 
   #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
