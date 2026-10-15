@@ -178,6 +178,38 @@ describe('loop range clamping', () => {
     expect(wraps[1] - wraps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 4, -1);
   });
 
+  it.each([0.501, 0.503])(
+    'fills trim ending at %f when a snapped period cannot fit, respecting the trim minimum',
+    async (endPoint) => {
+      const processor = await startProcessor([], [0.004]);
+      render(
+        processor,
+        makeParameters({
+          startPoint: 0.5,
+          endPoint,
+          loopStart: 0.5005,
+          loopEnd: 0.5045,
+        }),
+        1,
+      );
+
+      const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
+      const loop = messages.find((message) => message.type === 'loop:range');
+      const trim = messages.find((message) => message.type === 'trim:range');
+      const expectedLength = Math.max(
+        (endPoint - 0.5) * TEST_SAMPLE_RATE,
+        processor.MIN_RANGE_SAMPLES,
+      );
+
+      expect(loop.loopStart).toBe(trim.startPoint);
+      expect(loop.loopEnd).toBe(trim.endPoint);
+      // Position params arrive as float32 seconds and trim resolves to source samples.
+      expect(
+        Math.abs((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE - expectedLength),
+      ).toBeLessThan(1);
+    },
+  );
+
   // Inverted trim points play the range backward; the global reverse flag inverts that again.
   it.each([
     ['forward', true],

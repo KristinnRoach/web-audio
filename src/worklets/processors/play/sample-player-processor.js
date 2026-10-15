@@ -459,22 +459,19 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     let lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
     let lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
 
-    // An audio-rate loop's length is its pitch, and the range edges snap to zero
-    // crossings the loop points don't know about. Shift such a loop into the range
-    // instead of letting the clamp below shorten it. A longer loop clamps.
+    // An audio-rate loop's length is its pitch. Shift it inside effective trim
+    // to preserve its period when possible; longer loops clamp below.
     // With a scale set, a zero-length loop (end dragged onto start) floors at 1 sample
     // and snapping lifts it to the shortest period. Without one it floors at MIN_RANGE_SAMPLES.
     const minLength = this.loopSnapPeriods?.length ? 1 : this.MIN_RANGE_SAMPLES;
     const loopLength = this.#glideLoopLength(
       this.#snapLoopLength(Math.max(minLength, lpEnd - lpStart)),
     );
-    if (
-      loopLength >= 1 &&
-      loopLength <= this.PITCH_PRESERVATION_THRESHOLD &&
-      loopLength <= playbackRange.durationSamples
-    ) {
-      lpStart = Math.min(Math.max(lpStart, rangeStart), rangeEnd - loopLength);
-      lpEnd = lpStart + loopLength;
+    if (loopLength >= 1 && loopLength <= this.PITCH_PRESERVATION_THRESHOLD) {
+      // Preserve the period when it fits; otherwise fill trim without changing the target.
+      const fittedLength = Math.min(loopLength, playbackRange.durationSamples);
+      lpStart = Math.min(Math.max(lpStart, rangeStart), rangeEnd - fittedLength);
+      lpEnd = lpStart + fittedLength;
     }
 
     // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
