@@ -38,6 +38,8 @@
 - Loop points are stored raw (#99). `#calculateLoopRange`: min/max order, floor at 1 sample, snap, glide, shift into the trim range, `resolveRange` with a 1-sample minimum. The loop floors at 1 sample with a scale set (snapping lifts it) and at `MIN_RANGE_SAMPLES` (C5) without one. Trim keeps the C5 minimum.
 - `#zeroCrossings` (unused) removed.
 
+- Audio-rate loops: the playhead moves with the loop start so moving loops keep their period. An occasional glitch on fast zooming remains: see the Traycer ticket `fix-loop-glitch-on-fast-point-updates`.
+
 ## Open questions
 
 - Which loop point moves when the length snaps. The experiment keeps the start fixed.

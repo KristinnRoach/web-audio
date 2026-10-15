@@ -286,6 +286,39 @@ describe('loop range clamping', () => {
     expect(Math.abs(wraps[1] - wraps[0] - TEST_SAMPLE_RATE * 0.07)).toBeLessThan(2);
   });
 
+  // Zooming moves all points together every block. The playhead travels with an
+  // audio-rate loop, so every cycle keeps the loop's length (its pitch) while it
+  // moves, instead of shortening or stretching by the distance moved per block.
+  it.each([-0.0005, 0.005, -0.005])(
+    'keeps a moving audio-rate loop at its length (%f s per block)',
+    async (perBlock) => {
+      const loopLength = 96;
+      const processor = (await startProcessor()) as TestProcessor & { loopCount: number };
+      const at = (d: number) =>
+        makeParameters({
+          startPoint: 0.2 + d,
+          endPoint: 0.9 + d,
+          loopStart: 0.4 + d,
+          loopEnd: 0.4 + d + loopLength / TEST_SAMPLE_RATE,
+        });
+
+      const block = 128;
+      const counts: number[] = [];
+      for (let k = 0; k < 340; k++) {
+        const parameters = at(Math.max(0, k - 300) * perBlock);
+        for (let i = 0; i < block; i++) {
+          processor.process([], [[new Float32Array(1)]], parameters);
+          counts.push(processor.loopCount);
+        }
+      }
+
+      const wraps = counts.flatMap((c, i) => (i > 300 * block && c > counts[i - 1] ? [i] : []));
+      const cycles = wraps.slice(1).map((w, i) => w - wraps[i]);
+      expect(cycles.length).toBeGreaterThan(40);
+      for (const cycle of cycles) expect(Math.abs(cycle - loopLength)).toBeLessThanOrEqual(1);
+    },
+  );
+
   // loopEnd dragged onto loopStart: the loop floors at 1 sample and snaps up to the
   // shortest allowed period, instead of falling back to the full playback range.
   it('snaps a zero-length loop to the shortest period', async () => {

@@ -230,6 +230,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.debugCounter = 0;
     this.loopCount = 0;
+    this.previousLoopRange = null;
 
     this.applyClickCompensation = false;
     this.loopClickCompensation = 0;
@@ -830,6 +831,21 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.playbackPosition = reverse ? playbackRange.endSamples - 1 : playbackRange.startSamples;
       this.durationPreserver.reset(this.playbackPosition);
     }
+
+    // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
+    // so a moving loop would shift its phase every block and shorten or stretch the
+    // cycles while it moves. Carry the playhead with the loop start instead.
+    const previous = this.previousLoopRange;
+    if (
+      previous &&
+      this.loopEnabled &&
+      loopRange.loopDurationSamples <= this.PITCH_PRESERVATION_THRESHOLD &&
+      this.playbackPosition >= previous.loopStartSamples &&
+      this.playbackPosition <= previous.loopEndSamples
+    ) {
+      this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
+    }
+    this.previousLoopRange = loopRange;
 
     // ===== AUDIO PROCESSING =====
 

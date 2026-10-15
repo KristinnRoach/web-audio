@@ -132,6 +132,11 @@ describe('loop wrap with an overshoot larger than the loop', () => {
     );
     render(processor, narrow, 1);
 
-    expect(processor.playbackPosition).toBeCloseTo(WIDE_LOOP_SAMPLES - 1);
+    // The playhead travels with the loop start, so it lands near the top of the
+    // narrow loop rather than exactly one sample below its end.
+    expect(processor.playbackPosition).toBeGreaterThanOrEqual(
+      WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES,
+    );
+    expect(processor.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES);
   });
 });
