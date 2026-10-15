@@ -13,6 +13,20 @@ import {
 describe('loop range clamping', () => {
   setupProcessorGlobals();
 
+  it.each([
+    [0.25, 0.75],
+    [0, 1],
+    [0, 99_999],
+  ])('keeps a long loop covering trim at %f..%f unsnapped', async (loopStart, loopEnd) => {
+    const processor = await startProcessor([0.3, 0.7], [0.004, 0.01]);
+    render(processor, makeParameters({ startPoint: 0.25, endPoint: 0.75, loopStart, loopEnd }), 1);
+    const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
+    const loop = messages.find((message) => message.type === 'loop:range');
+    const trim = messages.find((message) => message.type === 'trim:range');
+    expect(loop.loopStart).toBe(trim.startPoint);
+    expect(loop.loopEnd).toBe(trim.endPoint);
+  });
+
   it('wraps to startPoint when loopStart sits before it', async () => {
     const processor = await startProcessor();
     // Default loopStart of 0 is outside a playback range starting at 0.5 s.

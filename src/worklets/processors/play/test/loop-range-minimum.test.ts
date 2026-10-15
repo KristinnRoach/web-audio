@@ -10,6 +10,22 @@ import {
 describe('trim and loop minimum lengths', () => {
   setupProcessorGlobals();
 
+  it('derives the crossover from periods and restores the default when cleared', async () => {
+    const processor = await startProcessor();
+    const defaultThreshold = processor.PITCH_PRESERVATION_THRESHOLD;
+    expect(defaultThreshold).toBe(Math.floor(TEST_SAMPLE_RATE / 16.35));
+
+    processor.port.onmessage?.({
+      data: { type: 'setLoopSnapPeriods', value: [0.004, 0.01] },
+    } as MessageEvent);
+    expect(processor.PITCH_PRESERVATION_THRESHOLD).toBe(0.01 * TEST_SAMPLE_RATE);
+
+    processor.port.onmessage?.({
+      data: { type: 'setLoopSnapPeriods', value: [] },
+    } as MessageEvent);
+    expect(processor.PITCH_PRESERVATION_THRESHOLD).toBe(defaultThreshold);
+  });
+
   it.each([
     [60, []], // Raw length above the scale range but below C5.
     [192, [0, 0.5 + 132 / TEST_SAMPLE_RATE, 0.504, 1]], // Start snap would leave 60 samples.

@@ -2,6 +2,8 @@ import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-pa
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { DurationPreserver } from './duration-preservation.js';
 
+const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 16.35; // One C0 period.
+
 /**
  * Resolves two raw points into an ordered range inside [lo, hi], at least
  * `minLength` long (or as long as the bounds allow). Points arrive raw from the
@@ -51,10 +53,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.durationPreserver = new DurationPreserver(sampleRate);
 
-    // C0 (lowest piano note) = ~16.35 Hz
-    // Period = 1/16.35 ≈ 0.061 seconds
-    this.PITCH_PRESERVATION_THRESHOLD = Math.floor(sampleRate / 16.35);
-
     // Glide time constant between snapped loop lengths, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
     this.loopRampDuration = 0.125;
@@ -79,6 +77,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return this.audioData[0] ?? null;
   }
 
+  get PITCH_PRESERVATION_THRESHOLD() {
+    return (
+      this.loopSnapPeriods?.at(-1) ??
+      Math.floor(sampleRate * DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS)
+    );
+  }
+
   // ===== MESSAGE HANDLING =====
 
   #handleMessage(event) {
@@ -97,8 +102,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     switch (type) {
       case 'setLoopSnapPeriods':
         this.loopSnapPeriods = value.map((seconds) => seconds * sampleRate); // convert seconds to samples and store
-        this.PITCH_PRESERVATION_THRESHOLD =
-          this.loopSnapPeriods.at(-1) ?? this.PITCH_PRESERVATION_THRESHOLD; // longest period
         // TODO: should MIN_RANGE be synced to shortest period?
         break;
 
@@ -464,9 +467,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // With a scale set, a zero-length loop (end dragged onto start) floors at 1 sample
     // and snapping lifts it to the shortest period. Without one it floors at MIN_RANGE_SAMPLES.
     const minLength = this.loopSnapPeriods?.length ? 1 : this.MIN_RANGE_SAMPLES;
-    const loopLength = this.#glideLoopLength(
-      this.#snapLoopLength(Math.max(minLength, lpEnd - lpStart)),
-    );
+    let targetLength = this.#snapLoopLength(Math.max(minLength, lpEnd - lpStart));
+    if (
+      targetLength > playbackRange.durationSamples &&
+      playbackRange.durationSamples <= this.PITCH_PRESERVATION_THRESHOLD
+    ) {
+      targetLength =
+        this.loopSnapPeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
+        targetLength;
+    }
+    const loopLength = this.#glideLoopLength(targetLength);
     if (loopLength >= 1 && loopLength <= this.PITCH_PRESERVATION_THRESHOLD) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
       const fittedLength = Math.min(loopLength, playbackRange.durationSamples);
