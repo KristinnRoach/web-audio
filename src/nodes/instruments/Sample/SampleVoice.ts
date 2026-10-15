@@ -1057,7 +1057,6 @@ export class SampleVoice {
       value: enabled,
     });
 
-    if (!enabled && this.#state === VoiceState.PLAYING) this.release({});
     return this;
   }
 

@@ -361,6 +361,24 @@ describe('loop range clamping', () => {
     expect(posts[0].inverted).toBe(true);
   });
 
+  // Turning the loop off mid-note plays on through the rest of the trim range, then ends.
+  it('plays to the range end after the loop is switched off', async () => {
+    const processor = await startProcessor();
+    const parameters = makeParameters({ endPoint: 0.75, loopStart: 0.25, loopEnd: 0.5 });
+    render(processor, parameters, TEST_SAMPLE_RATE * 0.6);
+
+    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: false } } as MessageEvent);
+    const positions: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.6; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    expect(Math.max(...positions)).toBeGreaterThan(TEST_SAMPLE_RATE * 0.74);
+    const ended = processor.port.postMessage.mock.calls.filter(([m]) => m.type === 'voice:ended');
+    expect(ended).toHaveLength(1);
+  });
+
   // loopEnd dragged onto loopStart: the loop floors at 1 sample and snaps up to the
   // shortest allowed period, instead of falling back to the full playback range.
   it('snaps a zero-length loop to the shortest period', async () => {
