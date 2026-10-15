@@ -290,6 +290,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         const config = this.getEnvelope(id);
         this.voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
       });
+      this.voicePool.applyToAllVoices((voice) => voice.setLoopRampDuration(this.#loopRampDuration));
       this.sendUpstreamMessage('sample-player:initialized', {});
     });
 
@@ -726,7 +727,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   // Glide time constant between snapped loop lengths, applied in the processor. 0 = stepped.
   setLoopRampDuration(seconds: number): this {
     this.#loopRampDuration = seconds;
-    this.voicePool.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
+    this.voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
     return this;
   }
 
