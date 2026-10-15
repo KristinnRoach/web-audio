@@ -300,7 +300,7 @@ export const samplerParams = defineSamplerParams({
     // 1s sample. Reaching the shortest snap period needs step * sampleDuration at or
     // below it: C5 (1.91ms) allows samples up to ~19s, C6 (0.96ms) ~9.5s, C7 ~4.8s.
     step: 0.0001,
-    curve: 3, // ! Testing, set actual value before merging
+    curve: 1,
     format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopStart(v * p.sampleDuration),
   },
@@ -310,7 +310,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 1,
     step: 0.0001, // See loopStart: sample length ceiling before the step exceeds the shortest snap period.
-    curve: 3, // ! Testing, set actual value before merging
+    curve: 1,
     format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },

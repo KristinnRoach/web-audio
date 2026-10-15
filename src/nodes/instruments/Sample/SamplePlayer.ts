@@ -911,7 +911,11 @@ export class SamplePlayer implements ILibInstrumentNode {
   scrollLoopPoints(loopStart: number) {
     const timestamp = this.context.currentTime;
     const loopDuration = this.loopEnd - this.loopStart;
-    loopStart = clamp(loopStart, 0, this.#bufferDuration - loopDuration);
+    loopStart = clamp(
+      loopStart,
+      Math.max(0, -loopDuration),
+      this.#bufferDuration - Math.max(0, loopDuration),
+    );
     const loopEnd = loopStart + loopDuration;
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;

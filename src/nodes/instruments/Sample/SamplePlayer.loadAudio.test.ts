@@ -33,7 +33,7 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
   const { SamplePlayer } = await import('./SamplePlayer');
   const { resampleAudioBuffer } =
     await import('../../../utils/audiodata/convert/resampleAudioBuffer');
-  const context = Object.assign(new EventTarget(), { sampleRate: 48000 });
+  const context = Object.assign(new EventTarget(), { sampleRate: 48000, currentTime: 0 });
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
   const first = {
     duration: 1,
@@ -75,6 +75,21 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     expect(publish).not.toHaveBeenCalled();
     expect(player.samples).toEqual([firstBuffer]);
     await expect(player.loadAudio(firstBuffer)).resolves.toEqual([firstBuffer]);
+
+    // Scrolling preserves the signed length and keeps both points inside the sample.
+    for (const [start, end, requested, expectedStart, expectedEnd] of [
+      [0.8, 0.2, 0, 0.6, 0],
+      [0.8, 0.2, 2, 1, 0.4],
+      [0.2, 0.8, -1, 0, 0.6],
+      [0.2, 0.8, 2, 0.4, 1],
+    ]) {
+      player.setLoopStart(start);
+      player.setLoopEnd(end);
+      player.scrollLoopPoints(requested);
+      expect(player.loopStart).toBeCloseTo(expectedStart);
+      expect(player.loopEnd).toBeCloseTo(expectedEnd);
+      expect(player.loopEnd - player.loopStart).toBeCloseTo(end - start);
+    }
 
     // Crop actual PCM through the existing loader harness, including silence.
     const createBuffer = (_channels: number, length: number, sampleRate: number) => {
