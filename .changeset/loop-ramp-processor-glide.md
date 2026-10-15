@@ -10,3 +10,4 @@ Loop length snapping to the scale now runs in the audio processor instead of on 
 - `SamplePlayer.setLoopRampDuration()` now sets the time constant of the processor's glide between snapped loop lengths (`0` = stepped, default `0.125`). Remove the `rampTime` argument from `SamplePlayer.setLoopStart()`, `setLoopEnd()`, `setLoopDuration()` and `setLoopPoint()`.
 - `SamplePlayer.getAudioParam()` returns `null`. Loop points are set per voice and no longer have a shared `AudioParam`.
 - `SamplePlayer.scrollLoopPoints(start)` replaces the two-argument form. It preserves the current signed loop length and keeps both points inside the sample, including inverted ranges.
+- `samplerParams.loopRampDuration` now ranges 0–0.5 s (was 0.001–1) with a linear taper and defaults to 0.125 (was 0.5). It only affects loops inside the snapping range, gliding when the snapped length changes during a held note; longer loops and new notes jump to the target.
