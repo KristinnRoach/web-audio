@@ -16,6 +16,7 @@ class MockAudioWorkletProcessor {
 
 type TestProcessor = {
   playbackPosition: number;
+  MIN_RANGE_SAMPLES: number;
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -46,13 +47,13 @@ function makeParameters(overrides: Record<string, number> = {}): Parameters {
   );
 }
 
-async function startProcessor(zeroCrossingSeconds: number[] = [], pitchThresholdSeconds?: number) {
+async function startProcessor(zeroCrossingSeconds: number[] = [], snapPeriodsSeconds?: number[]) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
-  if (pitchThresholdSeconds !== undefined) {
+  if (snapPeriodsSeconds !== undefined) {
     processor.port.onmessage?.({
-      data: { type: 'setPitchPreservationThreshold', value: pitchThresholdSeconds },
+      data: { type: 'setLoopSnapPeriods', value: snapPeriodsSeconds },
     } as MessageEvent);
   }
 
@@ -113,7 +114,8 @@ describe('loop range clamping', () => {
       const start = TEST_SAMPLE_RATE / 2;
       const processor = await startProcessor(
         [(start + 20) / TEST_SAMPLE_RATE, 0.9],
-        loopLength > 92 ? 0.101 : undefined,
+        // The longest period sets the threshold; the loop's own length snaps to itself.
+        loopLength > 92 ? [loopLength / TEST_SAMPLE_RATE, 0.101] : undefined,
       );
       const parameters = makeParameters({
         startPoint: start / TEST_SAMPLE_RATE,
@@ -204,11 +206,12 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.9);
   });
 
-  // Equal trim points resolve by the loop rule: the C5 minimum.
-  it.each([[0.5, 0.5, TEST_SAMPLE_RATE / 523.25]])(
-    'resolves trim points %f..%f like loop points',
-    async (startPoint, endPoint, length) => {
+  // Equal trim points resolve to the minimum range.
+  it.each([[0.5, 0.5]])(
+    'resolves trim points %f..%f to the minimum range',
+    async (startPoint, endPoint) => {
       const processor = await startProcessor();
+      const length = processor.MIN_RANGE_SAMPLES;
       const parameters = makeParameters({ startPoint, endPoint });
 
       const positions: number[] = [];
@@ -241,23 +244,48 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.56 + 1);
   });
 
-  it.each([10, 0])('extends a %i-sample loop to the C5 period', async (loopLength) => {
+  // Without snap periods a loop shorter than MIN_RANGE_SAMPLES lifts to it.
+  it('lifts a 1-sample loop to the minimum range without snap periods', async () => {
     const start = TEST_SAMPLE_RATE / 2;
     const processor = await startProcessor();
+    const minLength = processor.MIN_RANGE_SAMPLES;
     const parameters = makeParameters({
       endPoint: 1,
       loopStart: start / TEST_SAMPLE_RATE,
-      loopEnd: (start + loopLength) / TEST_SAMPLE_RATE,
+      loopEnd: (start + 1) / TEST_SAMPLE_RATE,
     });
 
     const positions: number[] = [];
-    for (let frame = 0; frame < start + 92 * 4; frame++) {
+    for (let frame = 0; frame < start + minLength * 4; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
       positions.push(processor.playbackPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
     expect(wraps.length).toBeGreaterThanOrEqual(2);
-    expect(wraps[1] - wraps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 523.25, 0);
+    // Fractional minimum, so wraps land on neighbouring whole samples.
+    expect(Math.abs(wraps[1] - wraps[0] - minLength)).toBeLessThan(1);
+  });
+
+  // loopEnd dragged onto loopStart: the loop floors at 1 sample and snaps up to the
+  // shortest allowed period, instead of falling back to the full playback range.
+  it('snaps a zero-length loop to the shortest period', async () => {
+    const shortestPeriod = 46;
+    const processor = await startProcessor();
+    processor.port.onmessage?.({
+      data: { type: 'setLoopSnapPeriods', value: [shortestPeriod / TEST_SAMPLE_RATE, 0.01] },
+    } as MessageEvent);
+    const parameters = makeParameters({ loopStart: 0.5, loopEnd: 0.5 });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE / 2 + shortestPeriod * 4; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    expect(wraps[1] - wraps[0]).toBeCloseTo(shortestPeriod, 0);
+    expect(Math.max(...positions)).toBeLessThan(TEST_SAMPLE_RATE / 2 + shortestPeriod + 1);
   });
 });

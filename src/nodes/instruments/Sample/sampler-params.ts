@@ -10,8 +10,16 @@ export interface SamplerParamDescriptor {
   label: string;
   min: number;
   max: number;
+  /**
+   * Suggested initial control position. Not applied automatically: the player starts
+   * from its own internal state, which can differ. Call `apply(player, defaultValue)`
+   * to make the player match.
+   */
   defaultValue: number;
-  /** UI taper hint: 1 = linear, >1 = more resolution at the low end */
+  /**
+   * Control taper: `value = min + (max - min) * position ** curve`, position in [0, 1].
+   * 1 (default) = linear, >1 = finer control near min, <1 = finer control near max.
+   */
   curve?: number;
   /** Snap increment for UI controls */
   step?: number;
@@ -34,10 +42,19 @@ export function isValidSamplerParamValue(
   );
 }
 
-const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
-const hz = (v: number) => `${v.toFixed(0)} Hz`;
+const percent = (v: number) => `${(v * 100).toFixed(0)}%`;
+const hz = (v: number) => `${v.toFixed(0)}Hz`;
+const kHz = (v: number) => `${(v / 1000).toFixed(1)}kHz`;
+const hzOrKhz = (v: number) => (v >= 1000 ? kHz(v) : hz(v));
+
 /** Normalized position -> seconds readout */
-const seconds = (v: number, duration: number) => `${(v * duration).toFixed(2)} s`;
+const seconds = (v: number, duration: number) => `${(v * duration).toFixed(2)}s`;
+const milliseconds = (v: number, duration: number) => {
+  const ms = v * duration * 1000;
+  return `${ms.toFixed(ms < 10 ? 1 : 0)}ms`;
+};
+const secondsOrMilliseconds = (v: number, duration: number) =>
+  v * duration < 1 ? milliseconds(v, duration) : seconds(v, duration);
 
 function defineSamplerParams<K extends string>(
   definitions: Record<K, SamplerParamDescriptor>,
@@ -75,7 +92,7 @@ export const samplerParams = defineSamplerParams({
     max: 300,
     defaultValue: 120,
     step: 1,
-    format: (v) => `${v.toFixed(0)} BPM`,
+    format: (v) => `${v.toFixed(0)}BPM`,
     apply: (p, v) => p.setTempo(v),
   },
 
@@ -86,7 +103,7 @@ export const samplerParams = defineSamplerParams({
     max: maxSafeHz(),
     defaultValue: maxSafeHz(),
     curve: 5,
-    format: hz,
+    format: hzOrKhz,
     apply: (p, v) => p.setLpfCutoff(v),
   },
   highpassFilter: {
@@ -95,7 +112,7 @@ export const samplerParams = defineSamplerParams({
     max: maxSafeHz(),
     defaultValue: 40,
     curve: 5,
-    format: hz,
+    format: hzOrKhz,
     apply: (p, v) => p.setHpfCutoff(v),
   },
 
@@ -133,7 +150,7 @@ export const samplerParams = defineSamplerParams({
     max: 16000,
     defaultValue: 10000,
     curve: 5,
-    format: hz,
+    format: hzOrKhz,
     apply: (p, v) => p.setFeedbackLowpassCutoff(v),
   },
 
@@ -182,7 +199,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    format: pct,
+    format: percent,
     apply: (p, v) => p.sendToFx('reverb', v),
   },
   reverbSize: {
@@ -198,7 +215,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     curve: 2,
-    format: pct,
+    format: percent,
     apply: (p, v) => p.sendToFx('delay', v),
   },
   delayTime: {
@@ -207,7 +224,7 @@ export const samplerParams = defineSamplerParams({
     max: 1.5,
     defaultValue: 0.1,
     curve: 2,
-    format: (v) => `${v.toFixed(3)} s`,
+    format: (v) => `${v.toFixed(3)}s`,
     apply: (p, v) => p.outputBus.setDelayTime(v),
   },
   delayFeedback: {
@@ -216,7 +233,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0.25,
     curve: 1.5,
-    format: pct,
+    format: percent,
     apply: (p, v) => p.outputBus.setDelayFeedback(v),
   },
 
@@ -262,7 +279,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     step: 0.001,
-    format: seconds,
+    format: secondsOrMilliseconds,
     apply: (p, v) => p.setSampleStartPoint(v * p.sampleDuration),
   },
   trimEnd: {
@@ -271,7 +288,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 1,
     step: 0.001,
-    format: seconds,
+    format: secondsOrMilliseconds,
     apply: (p, v) => p.setSampleEndPoint(v * p.sampleDuration),
   },
   loopStart: {
@@ -280,10 +297,11 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     // Step is normalized, so absolute resolution is step * sampleDuration: 0.1ms for a
-    // 1s sample. Reaching MIN_LOOP_DURATION_SECONDS (1/523.25 = 1.91ms) needs
-    // step * sampleDuration <= 1.91ms, so samples longer than ~19s step past the minimum.
+    // 1s sample. Reaching the shortest snap period needs step * sampleDuration at or
+    // below it: C5 (1.91ms) allows samples up to ~19s, C6 (0.96ms) ~9.5s, C7 ~4.8s.
     step: 0.0001,
-    format: seconds,
+    curve: 3, // ! Testing, set actual value before merging
+    format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopStart(v * p.sampleDuration),
   },
   loopEnd: {
@@ -291,8 +309,9 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 1,
-    step: 0.0001, // See loopStart: ~19s sample length ceiling before the step exceeds the minimum loop duration.
-    format: seconds,
+    step: 0.0001, // See loopStart: sample length ceiling before the step exceeds the shortest snap period.
+    curve: 3, // ! Testing, set actual value before merging
+    format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
   },
   loopDuration: {
@@ -301,17 +320,14 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 1,
     curve: 4,
-    format: (v, duration) => {
-      const s = v * duration;
-      return s <= 1 ? `${(s * 1000).toFixed(0)}ms` : `${s.toFixed(2)} s`;
-    },
+    format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopDuration(v * p.sampleDuration),
   },
   loopRampDuration: {
     label: 'Loop Ramp',
-    min: 0.001,
-    max: 1,
-    defaultValue: 0.5,
+    min: 0,
+    max: 0.5,
+    defaultValue: 0.125, // Keep equal to the processor's initial loopRampDuration.
     step: 0.001,
     apply: (p, v) => p.setLoopRampDuration(v),
   },
@@ -320,9 +336,9 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0.3,
-    step: 0.001,
-    curve: 0.5,
-    format: (v) => `${(v * 100).toFixed(1)}%`,
+    step: 0.01,
+    curve: 1,
+    format: (v) => `${(v * 100).toFixed(0)}%`,
     apply: (p, v) => p.setLoopDurationDriftAmount(v),
   },
   keytrackLoop: {
@@ -330,7 +346,9 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    format: pct,
+    step: 0.01,
+    curve: 1,
+    format: percent,
     apply: (p, v) => p.setKeytrackLoopAmount(v),
   },
 });
