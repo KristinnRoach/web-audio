@@ -481,7 +481,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       lpEnd,
       rangeStart,
       rangeEnd,
-      1, // The minimum is applied to loopLength above
+      loopLength <= this.PITCH_PRESERVATION_THRESHOLD
+        ? Math.min(this.MIN_RANGE_SAMPLES, loopLength) // Preserve shorter scale periods.
+        : this.MIN_RANGE_SAMPLES,
     );
 
     let baseDuration = calcLoopEnd - calcLoopStart;
@@ -524,13 +526,17 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     baseDuration = calcLoopEnd - calcLoopStart;
 
     const isAudioRate = baseDuration <= this.PITCH_PRESERVATION_THRESHOLD;
+    const minZeroCrossingLength = Math.max(
+      this.PITCH_PRESERVATION_THRESHOLD,
+      this.MIN_RANGE_SAMPLES,
+    );
 
     // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration).
     // Snaps move both ends inward, so each is kept only if the loop stays above the
     // audio-rate threshold: with no crossing inside, both would land on the same one.
     if (!isAudioRate) {
       const snappedStart = this.#findNearestZeroCrossing(calcLoopStart, 'right');
-      if (calcLoopEnd - snappedStart > this.PITCH_PRESERVATION_THRESHOLD) {
+      if (calcLoopEnd - snappedStart > minZeroCrossingLength) {
         calcLoopStart = snappedStart;
       }
     }
@@ -584,7 +590,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // inside the buffer, so snapping there would erase the padding.
     if (!isAudioRate && calcLoopEnd <= playbackRange.endSamples) {
       const snappedEnd = this.#findNearestZeroCrossing(calcLoopEnd, 'left');
-      if (snappedEnd - calcLoopStart > this.PITCH_PRESERVATION_THRESHOLD) {
+      if (snappedEnd - calcLoopStart > minZeroCrossingLength) {
         calcLoopEnd = snappedEnd;
       }
     }
