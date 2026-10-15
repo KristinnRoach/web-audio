@@ -159,7 +159,9 @@ describe('loop range clamping', () => {
   // With no crossing inside it, both ends used to land on the same one: a 1-sample loop.
   it('keeps a long loop with no zero crossing inside it at its length', async () => {
     const processor = await startProcessor([0.3, 0.5, 0.7]);
-    const parameters = makeParameters({ endPoint: 1, loopStart: 0.45, loopEnd: 0.52 });
+    // Straddle the 0.5 crossing so either snap would leave 0.6x the threshold.
+    const half = (0.6 * processor.pitchPreservationThreshold) / TEST_SAMPLE_RATE;
+    const parameters = makeParameters({ endPoint: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
 
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.8; frame++) {
@@ -169,9 +171,8 @@ describe('loop range clamping', () => {
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
     expect(wraps.length).toBeGreaterThanOrEqual(2);
-    // Snapping the start or the end to 0.5 would leave 20 or 50 ms, under the ~61 ms
-    // threshold, so both ends stay unsnapped and the loop keeps its 70 ms.
-    expect(Math.abs(wraps[1] - wraps[0] - TEST_SAMPLE_RATE * 0.07)).toBeLessThan(2);
+    // Either snap would fall under the threshold, so both ends stay unsnapped.
+    expect(Math.abs(wraps[1] - wraps[0] - 2 * half * TEST_SAMPLE_RATE)).toBeLessThan(2);
   });
 
   // Zooming moves all points together every block. The playhead travels with an
@@ -215,7 +216,7 @@ describe('loop range clamping', () => {
       processor.port.postMessage.mock.calls
         .map(([msg]) => msg)
         .filter((msg) => msg.type === 'loop:range');
-    const min = processor.MIN_RANGE_SAMPLES / TEST_SAMPLE_RATE;
+    const min = processor.minRangeSamples / TEST_SAMPLE_RATE;
 
     // Zero-length loop lifts to the minimum range.
     render(processor, makeParameters({ endPoint: 1, loopStart: 0.5, loopEnd: 0.5 }), 1);

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
-// Both loop lengths stay under PITCH_PRESERVATION_THRESHOLD (floor(48000 / 16.35) = 2935)
+// Both loop lengths stay under the default pitchPreservationThreshold
 // so no zero-crossing snapping runs against the silent test buffer.
-const WIDE_LOOP_SAMPLES = 2000;
+const WIDE_LOOP_SAMPLES = 1000;
 const NARROW_LOOP_SAMPLES = 100;
 
 type WorkletPort = {

@@ -2,7 +2,7 @@ import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-pa
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { DurationPreserver } from './duration-preservation.js';
 
-const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 16.35; // One C0 period.
+const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
 
 /**
  * Resolves two raw points into an ordered range inside [lo, hi], at least
@@ -60,10 +60,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.AMPLITUDE_COMPENSATION_THRESHOLD = Math.floor(sampleRate / 65.406);
 
-    // Shortest allowed playback range, can be inverted:
-    // Math.abs(end - start) >= MIN_RANGE_SAMPLES
-    this.MIN_RANGE_SAMPLES = sampleRate / 523.25;
-
     this.port.onmessage = this.#handleMessage.bind(this);
 
     // Initialize all playback state
@@ -77,7 +73,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return this.audioData[0] ?? null;
   }
 
-  get PITCH_PRESERVATION_THRESHOLD() {
+  // Shortest allowed playback range, can be inverted:
+  // Math.abs(end - start) >= minRangeSamples
+  // C5's period, lowered to the shortest snap period so scales above C5 keep their pitch.
+  get minRangeSamples() {
+    return Math.min(sampleRate / 523.25, this.loopSnapPeriods?.[0] ?? Infinity);
+  }
+
+  get pitchPreservationThreshold() {
     return (
       this.loopSnapPeriods?.at(-1) ??
       Math.floor(sampleRate * DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS)
@@ -101,7 +104,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     switch (type) {
       case 'setLoopSnapPeriods':
-        this.loopSnapPeriods = value.map((seconds) => seconds * sampleRate); // convert seconds to samples and store
+        // Seconds to samples, ascending: [0] is the shortest, at(-1) the longest.
+        this.loopSnapPeriods = value.map((seconds) => seconds * sampleRate).sort((a, b) => a - b);
         break;
 
       case 'voice:reset':
@@ -265,7 +269,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // just emitted and the first sample of the next pass.
   #smoothLoopWrap(lastLoopSample, newFirstSample, loopDurationSamples, playbackRate) {
     const isHighRateAudioLoop =
-      loopDurationSamples <= this.PITCH_PRESERVATION_THRESHOLD && Math.abs(playbackRate) > 1;
+      loopDurationSamples <= this.pitchPreservationThreshold && Math.abs(playbackRate) > 1;
 
     if (isHighRateAudioLoop) return;
 
@@ -411,7 +415,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       inward ? snapEnd : hi,
       0,
       bufferLength,
-      this.MIN_RANGE_SAMPLES,
+      this.minRangeSamples,
     );
 
     return {
@@ -463,20 +467,19 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // An audio-rate loop's length is its pitch. Shift it inside effective trim
     // to preserve its period when possible; longer loops clamp below.
-    // With a scale set, a zero-length loop (end dragged onto start) floors at 1 sample
-    // and snapping lifts it to the shortest period. Without one it floors at MIN_RANGE_SAMPLES.
-    const minLength = this.loopSnapPeriods?.length ? 1 : this.MIN_RANGE_SAMPLES;
-    let targetLength = this.#snapLoopLength(Math.max(minLength, lpEnd - lpStart));
+    // A zero-length loop (end dragged onto start) floors at minRangeSamples,
+    // which snapping lifts to the shortest period when a scale is set.
+    let targetLength = this.#snapLoopLength(Math.max(this.minRangeSamples, lpEnd - lpStart));
     if (
       targetLength > playbackRange.durationSamples &&
-      playbackRange.durationSamples <= this.PITCH_PRESERVATION_THRESHOLD
+      playbackRange.durationSamples <= this.pitchPreservationThreshold
     ) {
       targetLength =
         this.loopSnapPeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
         targetLength;
     }
     const loopLength = this.#glideLoopLength(targetLength);
-    if (loopLength >= 1 && loopLength <= this.PITCH_PRESERVATION_THRESHOLD) {
+    if (loopLength >= 1 && loopLength <= this.pitchPreservationThreshold) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
       const fittedLength = Math.min(loopLength, playbackRange.durationSamples);
       lpStart = Math.min(Math.max(lpStart, rangeStart), rangeEnd - fittedLength);
@@ -490,9 +493,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       lpEnd,
       rangeStart,
       rangeEnd,
-      loopLength <= this.PITCH_PRESERVATION_THRESHOLD
-        ? Math.min(this.MIN_RANGE_SAMPLES, loopLength) // Preserve shorter scale periods.
-        : this.MIN_RANGE_SAMPLES,
+      this.minRangeSamples,
     );
 
     let baseDuration = calcLoopEnd - calcLoopStart;
@@ -517,7 +518,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // tempo-sync wins whenever it is enabled, even when quantization left the
     // duration unchanged (already on-grid, or too short to quantize).
     if (
-      baseDuration > this.PITCH_PRESERVATION_THRESHOLD &&
+      baseDuration > this.pitchPreservationThreshold &&
       this.keytrackLoopAmount > 0 &&
       !this.syncLoopToTempo
     ) {
@@ -534,11 +535,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // uses it to size its minimum loop length.
     baseDuration = calcLoopEnd - calcLoopStart;
 
-    const isAudioRate = baseDuration <= this.PITCH_PRESERVATION_THRESHOLD;
-    const minZeroCrossingLength = Math.max(
-      this.PITCH_PRESERVATION_THRESHOLD,
-      this.MIN_RANGE_SAMPLES,
-    );
+    const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
+    const minZeroCrossingLength = Math.max(this.pitchPreservationThreshold, this.minRangeSamples);
 
     // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration).
     // Snaps move both ends inward, so each is kept only if the loop stays above the
@@ -556,8 +554,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       if (!this.nextDriftGenerated || this.loopCount === 0) {
         // For short loops (audio-rate), update drift less frequently
         const updateInterval =
-          baseDuration <= this.PITCH_PRESERVATION_THRESHOLD
-            ? Math.max(1, Math.floor(this.PITCH_PRESERVATION_THRESHOLD / baseDuration))
+          baseDuration <= this.pitchPreservationThreshold
+            ? Math.max(1, Math.floor(this.pitchPreservationThreshold / baseDuration))
             : 1;
 
         const shouldUpdateDrift = this.driftUpdateCounter % updateInterval === 0;
@@ -823,7 +821,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.zeroCrossings,
       this.loopEnabled,
       loopRange.loopDurationSamples,
-      this.PITCH_PRESERVATION_THRESHOLD,
+      this.pitchPreservationThreshold,
     );
 
     // Calculate amplitude compensation for short loops
@@ -865,7 +863,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (
       previous &&
       this.loopEnabled &&
-      loopRange.loopDurationSamples <= this.PITCH_PRESERVATION_THRESHOLD &&
+      loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
       this.playbackPosition >= previous.loopStartSamples &&
       this.playbackPosition <= previous.loopEndSamples
     ) {

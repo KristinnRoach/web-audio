@@ -15,9 +15,9 @@ class MockAudioWorkletProcessor {
 }
 
 export type TestProcessor = {
-  readonly PITCH_PRESERVATION_THRESHOLD: number;
+  readonly pitchPreservationThreshold: number;
   playbackPosition: number;
-  MIN_RANGE_SAMPLES: number;
+  minRangeSamples: number;
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };

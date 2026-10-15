@@ -12,18 +12,17 @@ describe('trim and loop minimum lengths', () => {
 
   it('derives the crossover from periods and restores the default when cleared', async () => {
     const processor = await startProcessor();
-    const defaultThreshold = processor.PITCH_PRESERVATION_THRESHOLD;
-    expect(defaultThreshold).toBe(Math.floor(TEST_SAMPLE_RATE / 16.35));
+    const defaultThreshold = processor.pitchPreservationThreshold;
 
     processor.port.onmessage?.({
       data: { type: 'setLoopSnapPeriods', value: [0.004, 0.01] },
     } as MessageEvent);
-    expect(processor.PITCH_PRESERVATION_THRESHOLD).toBe(0.01 * TEST_SAMPLE_RATE);
+    expect(processor.pitchPreservationThreshold).toBe(0.01 * TEST_SAMPLE_RATE);
 
     processor.port.onmessage?.({
       data: { type: 'setLoopSnapPeriods', value: [] },
     } as MessageEvent);
-    expect(processor.PITCH_PRESERVATION_THRESHOLD).toBe(defaultThreshold);
+    expect(processor.pitchPreservationThreshold).toBe(defaultThreshold);
   });
 
   it.each([
@@ -43,7 +42,7 @@ describe('trim and loop minimum lengths', () => {
         .map(([message]) => message)
         .find((message) => message.type === 'loop:range');
       expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
-        processor.MIN_RANGE_SAMPLES - 1e-8,
+        processor.minRangeSamples - 1e-8,
       );
     },
   );
@@ -69,7 +68,7 @@ describe('trim and loop minimum lengths', () => {
       expect(loop.loopStart).toBeGreaterThanOrEqual(trim.startPoint);
       expect(loop.loopEnd).toBeLessThanOrEqual(trim.endPoint);
       expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
-        processor.MIN_RANGE_SAMPLES - 1e-8,
+        processor.minRangeSamples - 1e-8,
       );
     });
   });
@@ -96,7 +95,7 @@ describe('trim and loop minimum lengths', () => {
           .filter((message) => message.type === 'loop:range')
           .at(-1);
         expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
-          processor.MIN_RANGE_SAMPLES - 1e-8,
+          processor.minRangeSamples - 1e-8,
         );
       }
     } finally {
@@ -124,7 +123,7 @@ describe('trim and loop minimum lengths', () => {
       const trim = messages.find((message) => message.type === 'trim:range');
       const expectedLength = Math.max(
         (endPoint - 0.5) * TEST_SAMPLE_RATE,
-        processor.MIN_RANGE_SAMPLES,
+        processor.minRangeSamples,
       );
 
       expect(loop.loopStart).toBe(trim.startPoint);
@@ -141,7 +140,7 @@ describe('trim and loop minimum lengths', () => {
     'resolves trim points %f..%f to the minimum range',
     async (startPoint, endPoint) => {
       const processor = await startProcessor();
-      const length = processor.MIN_RANGE_SAMPLES;
+      const length = processor.minRangeSamples;
       const parameters = makeParameters({ startPoint, endPoint });
 
       const positions: number[] = [];
@@ -158,11 +157,11 @@ describe('trim and loop minimum lengths', () => {
     },
   );
 
-  // Without snap periods a loop shorter than MIN_RANGE_SAMPLES lifts to it.
+  // Without snap periods a loop shorter than minRangeSamples lifts to it.
   it('lifts a 1-sample loop to the minimum range without snap periods', async () => {
     const start = TEST_SAMPLE_RATE / 2;
     const processor = await startProcessor();
-    const minLength = processor.MIN_RANGE_SAMPLES;
+    const minLength = processor.minRangeSamples;
     const parameters = makeParameters({
       endPoint: 1,
       loopStart: start / TEST_SAMPLE_RATE,
