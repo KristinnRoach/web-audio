@@ -300,6 +300,9 @@ export class SamplePlayer implements ILibInstrumentNode {
       'voice:stopped',
       'voice:releasing',
       'sample:loaded',
+      // Resolved loop and trim in seconds, from whichever voice resolved them last.
+      'loop:range',
+      'trim:range',
     ]);
     return this;
   }

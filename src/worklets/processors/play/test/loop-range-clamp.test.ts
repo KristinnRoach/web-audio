@@ -319,6 +319,48 @@ describe('loop range clamping', () => {
     },
   );
 
+  // loop:range reports the resolved loop, not the raw points, and a change inside
+  // the throttle window is posted once the window has passed.
+  it('posts the resolved loop as loop:range', async () => {
+    const processor = await startProcessor();
+    const posts = () =>
+      processor.port.postMessage.mock.calls
+        .map(([msg]) => msg)
+        .filter((msg) => msg.type === 'loop:range');
+    const min = processor.MIN_RANGE_SAMPLES / TEST_SAMPLE_RATE;
+
+    // Zero-length loop lifts to the minimum range.
+    render(processor, makeParameters({ endPoint: 1, loopStart: 0.5, loopEnd: 0.5 }), 1);
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0].loopStart).toBeCloseTo(0.5, 4);
+    expect(posts()[0].loopEnd).toBeCloseTo(0.5 + min, 4);
+
+    const moved = makeParameters({ endPoint: 1, loopStart: 0.25, loopEnd: 0.5 });
+    render(processor, moved, 1);
+    expect(posts()).toHaveLength(1);
+
+    vi.stubGlobal('currentTime', 1);
+    render(processor, moved, 1);
+    vi.stubGlobal('currentTime', 0);
+    expect(posts()).toHaveLength(2);
+    expect(posts()[1].loopStart).toBeCloseTo(0.25, 4);
+    expect(posts()[1].loopEnd).toBeCloseTo(0.5, 4);
+  });
+
+  // trim:range reports the resolved trim: ordered, snapped inward to zero crossings.
+  it('posts the resolved trim as trim:range', async () => {
+    const processor = await startProcessor([0.3, 0.6]);
+    render(processor, makeParameters({ startPoint: 0.7, endPoint: 0.2 }), 1);
+
+    const posts = processor.port.postMessage.mock.calls
+      .map(([msg]) => msg)
+      .filter((msg) => msg.type === 'trim:range');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].startPoint).toBeCloseTo(0.3, 4);
+    expect(posts[0].endPoint).toBeCloseTo(0.6, 4);
+    expect(posts[0].inverted).toBe(true);
+  });
+
   // loopEnd dragged onto loopStart: the loop floors at 1 sample and snaps up to the
   // shortest allowed period, instead of falling back to the full playback range.
   it('snaps a zero-length loop to the shortest period', async () => {

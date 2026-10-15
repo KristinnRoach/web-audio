@@ -110,7 +110,15 @@ export class SampleVoicePool implements LibNode {
 
     this.#messages.forwardFrom(
       voice,
-      ['voice:initialized', 'voice:started', 'voice:stopped', 'voice:releasing', 'voice:loaded'],
+      [
+        'voice:initialized',
+        'voice:started',
+        'voice:stopped',
+        'voice:releasing',
+        'voice:loaded',
+        'loop:range',
+        'trim:range',
+      ],
       (msg) => {
         if (msg.type === 'voice:loaded') {
           this.#loaded.add(msg.senderId);

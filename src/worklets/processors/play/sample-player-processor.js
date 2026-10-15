@@ -665,6 +665,20 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @param {number} loopEnd - Loop end position in samples
    * @returns {number} - Makeup gain multiplier (1.0 = no change)
    */
+  /**
+   * Posts a resolved range (`loop:range`, `trim:range`) for display. Compared
+   * against the last posted message of that type, so a change skipped by the
+   * ~30 Hz throttle is sent on a later block.
+   */
+  #postRange(type, range) {
+    this.postedRanges ??= {};
+    const posted = this.postedRanges[type];
+    if (posted && Object.keys(range).every((key) => range[key] === posted.range[key])) return;
+    if (currentTime - (posted?.time ?? -1) < 1 / 30) return;
+    this.postedRanges[type] = { range, time: currentTime };
+    this.port.postMessage({ type, ...range });
+  }
+
   #analyzeLoopAmplitude(loopStart, loopEnd) {
     if (!this.enableAmplitudeCompensation || !this.buffer || !this.buffer[0]) {
       return 1.0;
@@ -846,6 +860,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
     }
     this.previousLoopRange = loopRange;
+
+    this.#postRange('loop:range', {
+      loopStart: loopRange.loopStartSamples / sampleRate,
+      loopEnd: loopRange.loopEndSamples / sampleRate,
+    });
+    this.#postRange('trim:range', {
+      startPoint: playbackRange.startSamples / sampleRate,
+      endPoint: playbackRange.endSamples / sampleRate,
+      inverted: playbackRange.inverted,
+    });
 
     // ===== AUDIO PROCESSING =====
 

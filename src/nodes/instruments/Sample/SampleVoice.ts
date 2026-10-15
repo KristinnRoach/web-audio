@@ -954,6 +954,8 @@ export class SampleVoice {
         // Forwarded upstream by the tail call, nothing to do here.
         case 'loop:enabled':
         case 'loop:syncToTempo':
+        case 'loop:range':
+        case 'trim:range':
         case 'voice:reset':
         case 'voice:playbackDirectionChange':
           break;
