@@ -29,13 +29,25 @@ export class WorkletNode<
     };
   }
 
-  setParam<K extends keyof TConfig['params']>(name: K, value: TConfig['params'][K]): this {
+  /**
+   * Glides to `value` with `setTargetAtTime` to avoid clicks.
+   * Pass `timeConstant = 0` for discrete params to set the value instantly.
+   */
+  setParam<K extends keyof TConfig['params']>(
+    name: K,
+    value: TConfig['params'][K],
+    timeConstant = 0.005,
+  ): this {
     const param = this.parameters.get(name as string);
     if (!param) {
       console.warn(`Parameter '${String(name)}' not found on worklet node`);
       return this;
     }
-    param.setValueAtTime(value, this.context.currentTime);
+    const now = this.context.currentTime;
+    // Assumes no other automation on this param. If getParam() callers schedule
+    // ramps, call cancelAndPinParamValue(param, now) from '@/nodes/params/audioparam-utils' first.
+    if (timeConstant > 0) param.setTargetAtTime(value, now, timeConstant);
+    else param.setValueAtTime(value, now);
     return this;
   }
 

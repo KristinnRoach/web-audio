@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 
 const TEST_SAMPLE_RATE = 48_000;
-// Both loop lengths stay under PITCH_PRESERVATION_THRESHOLD (floor(48000 / 16.35) = 2935)
+// Both loop lengths stay under the default pitchPreservationThreshold
 // so no zero-crossing snapping runs against the silent test buffer.
-const WIDE_LOOP_SAMPLES = 2000;
+const WIDE_LOOP_SAMPLES = 1000;
 const NARROW_LOOP_SAMPLES = 100;
 
 type WorkletPort = {
@@ -132,6 +132,11 @@ describe('loop wrap with an overshoot larger than the loop', () => {
     );
     render(processor, narrow, 1);
 
-    expect(processor.playbackPosition).toBeCloseTo(WIDE_LOOP_SAMPLES - 1);
+    // The playhead travels with the loop start, so it lands near the top of the
+    // narrow loop rather than exactly one sample below its end.
+    expect(processor.playbackPosition).toBeGreaterThanOrEqual(
+      WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES,
+    );
+    expect(processor.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES);
   });
 });

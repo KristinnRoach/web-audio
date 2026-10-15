@@ -54,20 +54,34 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
       tuningOffset: 0,
       lowestOctave: 0,
       highestOctave: 5,
-      normalize: { from: [0, 1], to: [0, 100] },
     });
-    // Longest period is the lowest root in octave 0, in seconds despite `normalize`.
+    // Root in octaves 0–5, in seconds, sorted shortest first (C5 ... C0).
     expect(sendToProcessor).toHaveBeenLastCalledWith({
-      type: 'setPitchPreservationThreshold',
-      value: NOTE_PERIODS[0], // C0
+      type: 'setLoopSnapPeriods',
+      value: [60, 48, 36, 24, 12, 0].map((i) => NOTE_PERIODS[i]),
     });
 
     player.setRootNote('D');
     expect(sendToProcessor).toHaveBeenCalledTimes(2);
     expect(sendToProcessor).toHaveBeenLastCalledWith({
-      type: 'setPitchPreservationThreshold',
-      value: NOTE_PERIODS[2], // D0
+      type: 'setLoopSnapPeriods',
+      value: [62, 50, 38, 26, 14, 2].map((i) => NOTE_PERIODS[i]), // D5 ... D0
     });
+
+    const valid = {
+      rootNote: 'C',
+      scale: [0],
+      tuningOffset: 0,
+      lowestOctave: 0,
+      highestOctave: 5,
+    } as const;
+    expect(() => player.setScale({ ...valid, scale: [12] })).toThrow(RangeError);
+    expect(() => player.setScale({ ...valid, scale: [0.5] })).toThrow(RangeError);
+    expect(() => player.setScale({ ...valid, highestOctave: 10, scale: [0] })).toThrow(RangeError);
+    expect(() => player.setScale({ ...valid, scale: [] })).toThrow(RangeError);
+    expect(() => player.setScale({ ...valid, lowestOctave: 0.5, scale: [0] })).toThrow(RangeError);
+    expect(() => player.setScale({ ...valid, lowestOctave: 6, scale: [0] })).toThrow(RangeError);
+    expect(() => player.setScale({ ...valid, tuningOffset: NaN, scale: [0] })).toThrow(RangeError);
   } finally {
     player.dispose();
     vi.unstubAllGlobals();

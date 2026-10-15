@@ -1,96 +1,30 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-
-const TEST_SAMPLE_RATE = 48_000;
-
-type WorkletPort = {
-  onmessage: ((event: MessageEvent) => void) | null;
-  postMessage: ReturnType<typeof vi.fn>;
-};
-
-class MockAudioWorkletProcessor {
-  readonly port: WorkletPort = {
-    onmessage: null,
-    postMessage: vi.fn(),
-  };
-}
-
-type TestProcessor = {
-  playbackPosition: number;
-  port: WorkletPort;
-  process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
-};
-
-type Parameters = Record<string, Float32Array>;
-
-/** Loop points default to the full 0..99999 s range, as the descriptors do. */
-function makeParameters(overrides: Record<string, number> = {}): Parameters {
-  const values: Record<string, number> = {
-    masterGain: 1,
-    envGain: 1,
-    velocity: 127,
-    pan: 0,
-    playbackRate: 1,
-    loopStart: 0,
-    loopEnd: 99_999,
-    startPoint: 0,
-    endPoint: 9999,
-    playbackPosition: 0,
-    loopDurationDriftAmount: 0,
-    maxLoopCount: 999_999,
-    tempo: 120,
-    ...overrides,
-  };
-
-  return Object.fromEntries(
-    Object.entries(values).map(([name, value]) => [name, new Float32Array([value])]),
-  );
-}
-
-async function startProcessor(zeroCrossingSeconds: number[] = [], pitchThresholdSeconds?: number) {
-  const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
-  const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
-
-  if (pitchThresholdSeconds !== undefined) {
-    processor.port.onmessage?.({
-      data: { type: 'setPitchPreservationThreshold', value: pitchThresholdSeconds },
-    } as MessageEvent);
-  }
-
-  processor.port.onmessage?.({
-    data: {
-      type: 'voice:setBuffer',
-      buffer: [new Float32Array(TEST_SAMPLE_RATE)],
-      durationSeconds: 1,
-    },
-  } as MessageEvent);
-  processor.port.onmessage?.({
-    data: { type: 'voice:setZeroCrossings', zeroCrossings: zeroCrossingSeconds },
-  } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
-
-  return processor;
-}
-
-function render(processor: TestProcessor, parameters: Parameters, frames: number) {
-  for (let frame = 0; frame < frames; frame++) {
-    processor.process([], [[new Float32Array(1)]], parameters);
-  }
-}
+import { describe, expect, it, vi } from 'vite-plus/test';
+import {
+  type TestProcessor,
+  TEST_SAMPLE_RATE,
+  makeParameters,
+  startProcessor,
+  render,
+  setupProcessorGlobals,
+} from './range-test-helpers';
 
 // The loop is a subrange of the playback range: loop points clamp into it instead
 // of being dropped for the whole range.
 describe('loop range clamping', () => {
-  beforeAll(() => {
-    vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
-    vi.stubGlobal('sampleRate', TEST_SAMPLE_RATE);
-    vi.stubGlobal('currentTime', 0);
-    vi.stubGlobal('currentFrame', 0);
-    vi.stubGlobal('registerProcessor', vi.fn());
-  });
+  setupProcessorGlobals();
 
-  afterAll(() => {
-    vi.unstubAllGlobals();
+  it.each([
+    [0.25, 0.75],
+    [0, 1],
+    [0, 99_999],
+  ])('keeps a long loop covering trim at %f..%f unsnapped', async (loopStart, loopEnd) => {
+    const processor = await startProcessor([0.3, 0.7], [0.004, 0.01]);
+    render(processor, makeParameters({ startPoint: 0.25, endPoint: 0.75, loopStart, loopEnd }), 1);
+    const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
+    const loop = messages.find((message) => message.type === 'loop:range');
+    const trim = messages.find((message) => message.type === 'trim:range');
+    expect(loop.loopStart).toBe(trim.startPoint);
+    expect(loop.loopEnd).toBe(trim.endPoint);
   });
 
   it('wraps to startPoint when loopStart sits before it', async () => {
@@ -113,7 +47,8 @@ describe('loop range clamping', () => {
       const start = TEST_SAMPLE_RATE / 2;
       const processor = await startProcessor(
         [(start + 20) / TEST_SAMPLE_RATE, 0.9],
-        loopLength > 92 ? 0.101 : undefined,
+        // The longest period sets the threshold; the loop's own length snaps to itself.
+        loopLength > 92 ? [loopLength / TEST_SAMPLE_RATE, 0.101] : undefined,
       );
       const parameters = makeParameters({
         startPoint: start / TEST_SAMPLE_RATE,
@@ -204,27 +139,6 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.9);
   });
 
-  // Equal trim points resolve by the loop rule: the C5 minimum.
-  it.each([[0.5, 0.5, TEST_SAMPLE_RATE / 523.25]])(
-    'resolves trim points %f..%f like loop points',
-    async (startPoint, endPoint, length) => {
-      const processor = await startProcessor();
-      const parameters = makeParameters({ startPoint, endPoint });
-
-      const positions: number[] = [];
-      for (let frame = 0; frame < length * 3; frame++) {
-        processor.process([], [[new Float32Array(1)]], parameters);
-        positions.push(processor.playbackPosition);
-      }
-
-      const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
-      expect(wraps.length).toBeGreaterThanOrEqual(2);
-      // Trim points are floored to whole samples, so allow a few samples of slack.
-      expect(Math.abs(wraps[1] - wraps[0] - length)).toBeLessThan(5);
-      expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
-    },
-  );
-
   // Directional snaps clamp to the outermost crossing; a trim between two
   // crossings must not widen to them.
   it('keeps a trim between two zero crossings unsnapped', async () => {
@@ -241,23 +155,116 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.56 + 1);
   });
 
-  it.each([10, 0])('extends a %i-sample loop to the C5 period', async (loopLength) => {
-    const start = TEST_SAMPLE_RATE / 2;
-    const processor = await startProcessor();
-    const parameters = makeParameters({
-      endPoint: 1,
-      loopStart: start / TEST_SAMPLE_RATE,
-      loopEnd: (start + loopLength) / TEST_SAMPLE_RATE,
-    });
+  // A loop above the audio-rate threshold snaps both ends inward to zero crossings.
+  // With no crossing inside it, both ends used to land on the same one: a 1-sample loop.
+  it('keeps a long loop with no zero crossing inside it at its length', async () => {
+    const processor = await startProcessor([0.3, 0.5, 0.7]);
+    // Straddle the 0.5 crossing so either snap would leave 0.6x the threshold.
+    const half = (0.6 * processor.pitchPreservationThreshold) / TEST_SAMPLE_RATE;
+    const parameters = makeParameters({ endPoint: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
 
     const positions: number[] = [];
-    for (let frame = 0; frame < start + 92 * 4; frame++) {
+    for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.8; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
       positions.push(processor.playbackPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
     expect(wraps.length).toBeGreaterThanOrEqual(2);
-    expect(wraps[1] - wraps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 523.25, 0);
+    // Either snap would fall under the threshold, so both ends stay unsnapped.
+    expect(Math.abs(wraps[1] - wraps[0] - 2 * half * TEST_SAMPLE_RATE)).toBeLessThan(2);
+  });
+
+  // Zooming moves all points together every block. The playhead travels with an
+  // audio-rate loop, so every cycle keeps the loop's length (its pitch) while it
+  // moves, instead of shortening or stretching by the distance moved per block.
+  it.each([-0.0005, 0.005, -0.005])(
+    'keeps a moving audio-rate loop at its length (%f s per block)',
+    async (perBlock) => {
+      const loopLength = 96;
+      const processor = (await startProcessor()) as TestProcessor & { loopCount: number };
+      const at = (d: number) =>
+        makeParameters({
+          startPoint: 0.2 + d,
+          endPoint: 0.9 + d,
+          loopStart: 0.4 + d,
+          loopEnd: 0.4 + d + loopLength / TEST_SAMPLE_RATE,
+        });
+
+      const block = 128;
+      const counts: number[] = [];
+      for (let k = 0; k < 340; k++) {
+        const parameters = at(Math.max(0, k - 300) * perBlock);
+        for (let i = 0; i < block; i++) {
+          processor.process([], [[new Float32Array(1)]], parameters);
+          counts.push(processor.loopCount);
+        }
+      }
+
+      const wraps = counts.flatMap((c, i) => (i > 300 * block && c > counts[i - 1] ? [i] : []));
+      const cycles = wraps.slice(1).map((w, i) => w - wraps[i]);
+      expect(cycles.length).toBeGreaterThan(40);
+      for (const cycle of cycles) expect(Math.abs(cycle - loopLength)).toBeLessThanOrEqual(1);
+    },
+  );
+
+  // loop:range reports the resolved loop, not the raw points, and a change inside
+  // the throttle window is posted once the window has passed.
+  it('posts the resolved loop as loop:range', async () => {
+    const processor = await startProcessor();
+    const posts = () =>
+      processor.port.postMessage.mock.calls
+        .map(([msg]) => msg)
+        .filter((msg) => msg.type === 'loop:range');
+    const min = processor.minRangeSamples / TEST_SAMPLE_RATE;
+
+    // Zero-length loop lifts to the minimum range.
+    render(processor, makeParameters({ endPoint: 1, loopStart: 0.5, loopEnd: 0.5 }), 1);
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0].loopStart).toBeCloseTo(0.5, 4);
+    expect(posts()[0].loopEnd).toBeCloseTo(0.5 + min, 4);
+
+    const moved = makeParameters({ endPoint: 1, loopStart: 0.25, loopEnd: 0.5 });
+    render(processor, moved, 1);
+    expect(posts()).toHaveLength(1);
+
+    vi.stubGlobal('currentTime', 1);
+    render(processor, moved, 1);
+    vi.stubGlobal('currentTime', 0);
+    expect(posts()).toHaveLength(2);
+    expect(posts()[1].loopStart).toBeCloseTo(0.25, 4);
+    expect(posts()[1].loopEnd).toBeCloseTo(0.5, 4);
+  });
+
+  // trim:range reports the resolved trim: ordered, snapped inward to zero crossings.
+  it('posts the resolved trim as trim:range', async () => {
+    const processor = await startProcessor([0.3, 0.6]);
+    render(processor, makeParameters({ startPoint: 0.7, endPoint: 0.2 }), 1);
+
+    const posts = processor.port.postMessage.mock.calls
+      .map(([msg]) => msg)
+      .filter((msg) => msg.type === 'trim:range');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].startPoint).toBeCloseTo(0.3, 4);
+    expect(posts[0].endPoint).toBeCloseTo(0.6, 4);
+    expect(posts[0].inverted).toBe(true);
+  });
+
+  // Turning the loop off mid-note plays on through the rest of the trim range, then ends.
+  it('plays to the range end after the loop is switched off', async () => {
+    const processor = await startProcessor();
+    const parameters = makeParameters({ endPoint: 0.75, loopStart: 0.25, loopEnd: 0.5 });
+    render(processor, parameters, TEST_SAMPLE_RATE * 0.6);
+
+    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: false } } as MessageEvent);
+    const positions: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.6; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    expect(Math.max(...positions)).toBeGreaterThan(TEST_SAMPLE_RATE * 0.74);
+    const ended = processor.port.postMessage.mock.calls.filter(([m]) => m.type === 'voice:ended');
+    expect(ended).toHaveLength(1);
   });
 });
