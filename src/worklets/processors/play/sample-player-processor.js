@@ -102,7 +102,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     switch (type) {
       case 'setLoopSnapPeriods':
         this.loopSnapPeriods = value.map((seconds) => seconds * sampleRate); // convert seconds to samples and store
-        // TODO: should MIN_RANGE be synced to shortest period?
         break;
 
       case 'voice:reset':
@@ -432,7 +431,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @param {number} playbackRate - Current playback rate
    * @returns {Object} - Effective loop start and end positions with drift applied
    */
-  // Experiment: snap per block, so a ramped loop length steps through the allowed periods.
+  // Select the nearest period target; glide is applied separately.
   #snapLoopLength(length) {
     const periods = this.loopSnapPeriods;
     if (!periods?.length || length < 1 || length > periods[periods.length - 1]) return length;
@@ -543,7 +542,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration).
     // Snaps move both ends inward, so each is kept only if the loop stays above the
-    // audio-rate threshold: with no crossing inside, both would land on the same one.
+    // audio-rate threshold and minimum: without an interior crossing, both could coincide.
     if (!isAudioRate) {
       const snappedStart = this.#findNearestZeroCrossing(calcLoopStart, 'right');
       if (calcLoopEnd - snappedStart > minZeroCrossingLength) {
