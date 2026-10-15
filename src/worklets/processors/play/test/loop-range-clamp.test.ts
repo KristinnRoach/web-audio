@@ -267,6 +267,25 @@ describe('loop range clamping', () => {
     expect(Math.abs(wraps[1] - wraps[0] - minLength)).toBeLessThan(1);
   });
 
+  // A loop above the audio-rate threshold snaps both ends inward to zero crossings.
+  // With no crossing inside it, both ends used to land on the same one: a 1-sample loop.
+  it('keeps a long loop with no zero crossing inside it at its length', async () => {
+    const processor = await startProcessor([0.3, 0.5, 0.7]);
+    const parameters = makeParameters({ endPoint: 1, loopStart: 0.45, loopEnd: 0.52 });
+
+    const positions: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.8; frame++) {
+      processor.process([], [[new Float32Array(1)]], parameters);
+      positions.push(processor.playbackPosition);
+    }
+
+    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
+    expect(wraps.length).toBeGreaterThanOrEqual(2);
+    // Snapping the start or the end to 0.5 would leave 20 or 50 ms, under the ~61 ms
+    // threshold, so both ends stay unsnapped and the loop keeps its 70 ms.
+    expect(Math.abs(wraps[1] - wraps[0] - TEST_SAMPLE_RATE * 0.07)).toBeLessThan(2);
+  });
+
   // loopEnd dragged onto loopStart: the loop floors at 1 sample and snaps up to the
   // shortest allowed period, instead of falling back to the full playback range.
   it('snaps a zero-length loop to the shortest period', async () => {
