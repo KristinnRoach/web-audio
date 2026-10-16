@@ -14,7 +14,7 @@ type DirectionProcessor = {
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: unknown): boolean;
 };
 
-async function startRamp(direction: 'forward' | 'reverse', loop = false) {
+async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPong = false) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as DirectionProcessor;
   processor.enableLoopSmoothing = false;
@@ -27,6 +27,7 @@ async function startRamp(direction: 'forward' | 'reverse', loop = false) {
     durationSeconds: RAMP.length / TEST_SAMPLE_RATE,
   });
   send({ type: 'setLoopEnabled', value: loop });
+  send({ type: 'setLoopPingPong', value: pingPong });
   send({ type: 'voice:setPlaybackDirection', playbackDirection: direction });
   send({ type: 'voice:start' });
   return { processor, send };
@@ -125,5 +126,85 @@ describe('playback direction', () => {
     const sorted = (values: number[]) => [...values].sort((a, b) => a - b);
     expect(sorted(forward.slice(-375))).toEqual(cycle);
     expect(sorted(reverse.slice(-375))).toEqual(cycle);
+  });
+});
+
+// Loop [375, 750) samples; multiples of 375 are exact in float32 seconds.
+describe('loop types', () => {
+  setupProcessorGlobals();
+
+  const LO = toSeconds(375);
+  const HI = toSeconds(750);
+  const trim = { startPoint: 0, endPoint: toSeconds(1000) };
+  const backward = makeParameters({ ...trim, loopStart: HI, loopEnd: LO });
+  const forwardLoop = makeParameters({ ...trim, loopStart: LO, loopEnd: HI });
+  const indexOfRun = (values: number[], run: number[]) =>
+    values.findIndex((_, i) => run.every((v, j) => values[i + j] === v));
+
+  it('backward: plays through the loop once, then cycles it backward', async () => {
+    const positions = trace((await startRamp('forward', true)).processor, backward, 2000);
+
+    // Forward from the trim start, turn at the loop end...
+    expect(positions.slice(0, 3)).toEqual([0, 1, 2]);
+    expect(indexOfRun(positions, [748, 749, 750, 749, 748])).toBe(748);
+    // ...then jump from the loop start back to the loop end, every 375 samples
+    const jump = indexOfRun(positions, [376, 375, 749, 748]);
+    expect(jump).toBeGreaterThan(748);
+    expect(positions.slice(jump + 2 + 375, jump + 2 + 377)).toEqual([749, 748]);
+  });
+
+  it('ping-pong: turns at both edges, cycle is twice the loop length', async () => {
+    const positions = trace((await startRamp('forward', true, true)).processor, forwardLoop, 3000);
+
+    // Each edge is read once per turn; the edges are 375 samples apart
+    const tops = positions.flatMap((p, i) => (p === 750 ? [i] : []));
+    const bottoms = positions.flatMap((p, i) => (p === 375 && i > 750 ? [i] : []));
+    expect(indexOfRun(positions, [749, 750, 749, 748])).toBe(749);
+    expect(indexOfRun(positions, [377, 376, 375, 376, 377])).toBe(tops[0] + 373);
+    expect(bottoms[0] - tops[0]).toBe(375);
+    expect(tops[1] - tops[0]).toBe(750);
+  });
+
+  it('ping-pong ignores loop point order', async () => {
+    const ordered = trace((await startRamp('forward', true, true)).processor, forwardLoop, 2000);
+    const inverted = trace((await startRamp('forward', true, true)).processor, backward, 2000);
+
+    expect(inverted).toEqual(ordered);
+  });
+
+  it('reverse voice with inverted loop points cycles forward', async () => {
+    const positions = trace((await startRamp('reverse', true)).processor, backward, 2500);
+
+    expect(positions[0]).toBe(999);
+    expect(indexOfRun(positions, [376, 375, 376, 377])).toBeGreaterThan(0);
+    const cycle = positions.slice(-375);
+    expect([...cycle].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 375 }, (_, i) => 375 + i),
+    );
+    expect(cycle[1] - cycle[0]).toBe(1);
+  });
+
+  it('out of loop passes: turns back to the approach direction and plays out the tail', async () => {
+    // Pass 1 ends at the turn, pass 2 at the first jump
+    const params = makeParameters({ ...trim, loopStart: HI, loopEnd: LO, maxLoopCount: 2 });
+    const { processor } = await startRamp('forward', true);
+    const positions = trace(processor, params, 3000);
+
+    expect(indexOfRun(positions, [376, 375, 749, 750, 751])).toBeGreaterThan(0);
+    expect(positions.at(-1)).toBe(999);
+    expect(processor.isPlaying).toBe(false);
+  });
+
+  it('a loop type change takes effect at the next loop edge', async () => {
+    const { processor } = await startRamp('forward', true);
+    trace(processor, backward, 900); // turned at 750, now cycling backward
+
+    const positions = trace(processor, forwardLoop, 1000);
+
+    // Keeps descending to the loop start, turns, then cycles forward
+    expect(positions[1] - positions[0]).toBe(-1);
+    const turn = indexOfRun(positions, [376, 375, 376]);
+    expect(turn).toBeGreaterThan(0);
+    expect(indexOfRun(positions.slice(turn), [748, 749, 375, 376])).toBeGreaterThan(0);
   });
 });

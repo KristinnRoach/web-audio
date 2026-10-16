@@ -94,9 +94,10 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeLessThan(end - 20 + 1);
   });
 
-  // Loop points arrive raw (web-audio#86), so a start past the end is just the
-  // other order of the same two points.
-  it('loops between inverted loop points', async () => {
+  // Loop points arrive raw (web-audio#86), so a start past the end selects the
+  // same region. Inverted points make it a backward loop: play through it once,
+  // then cycle it backward (SFZ loop_type=backward).
+  it('cycles inverted loop points backward over the same region', async () => {
     const processor = await startProcessor();
     const parameters = makeParameters({ endPoint: 1, loopStart: 0.75, loopEnd: 0.5 });
 
@@ -106,9 +107,15 @@ describe('loop range clamping', () => {
       positions.push(processor.playbackPosition);
     }
 
-    const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
-    expect(wraps.length).toBeGreaterThanOrEqual(2);
-    expect(wraps[1] - wraps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 4, -1);
+    // Jumps from the loop start back up to the loop end, one per backward pass
+    const jumps = positions.flatMap((p, i) => (i > 0 && p - positions[i - 1] > 1 ? [i] : []));
+    expect(jumps.length).toBeGreaterThanOrEqual(2);
+    expect(jumps[1] - jumps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 4, -1);
+    expect(positions.at(-1)! - positions.at(-2)!).toBeCloseTo(-1);
+    expect(Math.min(...positions.slice(jumps[0]))).toBeGreaterThanOrEqual(
+      TEST_SAMPLE_RATE * 0.5 - 1,
+    );
+    expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.75);
   });
 
   // Inverted trim points play the range backward; the global reverse flag inverts that again.
