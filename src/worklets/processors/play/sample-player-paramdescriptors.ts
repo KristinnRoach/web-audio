@@ -45,14 +45,14 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     defaultValue: 0,
     minValue: 0,
     maxValue: 99999, // Max sample length in seconds
-    automationRate: 'k-rate',
+    automationRate: 'a-rate',
   },
   loopEnd: {
     name: 'loopEnd',
     defaultValue: 99999, // Will be set to actual buffer duration when loaded
     minValue: 0,
     maxValue: 99999,
-    automationRate: 'k-rate',
+    automationRate: 'a-rate',
   },
   startPoint: {
     name: 'startPoint',

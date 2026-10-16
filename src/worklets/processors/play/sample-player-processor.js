@@ -500,9 +500,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return periods.reduce((best, p) => (Math.abs(p - length) < Math.abs(best - length) ? p : best));
   }
 
-  // One-pole glide in the log domain (even pitch glide), once per block.
+  // One-pole glide in the log domain (even pitch glide), once per audible sample.
   // Only inside the snapping range; outside it, or entering it, the length jumps.
   #glideLoopLength(target) {
+    this.loopGliding = false;
     const periods = this.loopSnapPeriods;
     if (!periods?.length || target < 1 || target > periods[periods.length - 1]) {
       this.loopGlideLogLength = null;
@@ -512,8 +513,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (this.loopGlideLogLength === null || !(this.loopRampDuration > 0)) {
       this.loopGlideLogLength = logTarget;
     } else {
-      const k = 1 - Math.exp(-128 / sampleRate / this.loopRampDuration);
+      const k = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
       this.loopGlideLogLength += (logTarget - this.loopGlideLogLength) * k;
+      this.loopGliding = Math.abs(logTarget - this.loopGlideLogLength) > 1e-12;
+      if (!this.loopGliding) this.loopGlideLogLength = logTarget;
     }
     // The log round trip can exceed the longest period by an ULP and bypass snapping.
     return Math.min(Math.exp(this.loopGlideLogLength), periods.at(-1));
@@ -610,7 +613,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Apply drift to loop end position
     if (driftAmount > 0 && this.loopEnabled) {
       // Generate new drift only at the start of each loop iteration
-      if (!this.nextDriftGenerated || this.loopCount === 0) {
+      if (!this.nextDriftGenerated) {
         // For short loops (audio-rate), update drift less frequently
         const updateInterval =
           baseDuration <= this.pitchPreservationThreshold
@@ -860,61 +863,23 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // playhead reads the same source position in either direction, so a
     // direction change needs no position correction.
     const approachDirection = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
-    // SFZ loop_type: inverted loop points cycle backward, ping-pong alternates.
-    const loopType = this.loopPingPong
-      ? 'pingPong'
-      : positionParams.loopStartSamples > positionParams.loopEndSamples
-        ? 'backward'
-        : 'forward';
-
-    // Loop-length math needs the rate playback actually advances at
-    const effectivePlaybackRate = parameters.playbackRate[0];
-
     const tempo = parameters.tempo[0];
-
-    const loopRange = this.#calculateLoopRange(
-      positionParams,
-      playbackRange,
-      parameters.loopDurationDriftAmount[0],
-      tempo,
-      effectivePlaybackRate,
-    );
-
-    // ponytail: the preserver's timeline only follows forward loops. Following
-    // turns needs its own turn state; skipped until duration preservation is
-    // wanted with backward or ping-pong loops.
-    const durationPreservationActive =
-      (!this.loopEnabled || (loopType === 'forward' && !this.loopTurned)) &&
-      this.durationPreserver.isActive(
-        this.zeroCrossings,
-        this.loopEnabled,
-        loopRange.loopDurationSamples,
-        this.pitchPreservationThreshold,
-      );
-
-    // Calculate amplitude compensation for short loops
-    const amplitudeGain = this.#analyzeLoopAmplitude(
-      loopRange.loopStartSamples,
-      loopRange.loopEndSamples,
-    );
+    const driftAmount = parameters.loopDurationDriftAmount[0];
+    let loopRange;
+    let previousStart;
+    let previousEnd;
+    let previousRate;
+    let amplitudeGain = 1;
 
     const velocityGain =
       this.#midiVelocityToGain(parameters.velocity[0]) * this.velocitySensitivity;
 
     // EXPERIMENTAL: Apply pan drift if enabled
     const basePan = parameters.pan[0];
-    const effectivePan = this.panDriftEnabled
-      ? Math.max(-1, Math.min(1, basePan + this.currentPanDrift))
-      : basePan;
-
     const numChannels = outputChannels.length; // Always process all output channels
 
     const isConstant = this.#getConstantFlags(parameters);
 
-    // Keytracked loop longer than the available audio: pad the tail with silence so
-    // the loop period stays constant. Fade the last few ms so a sample ending on a
-    // non-zero value doesn't click into the silence.
-    const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
     const TAIL_FADE_SAMPLES = 64;
 
     // ===== Init playback position =====
@@ -944,25 +909,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
     this.previousApproachDirection = approachDirection;
 
-    // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
-    // so a moving loop would shift its phase every block and shorten or stretch the
-    // cycles while it moves. Carry the playhead with the loop start instead.
-    const previous = this.previousLoopRange;
-    if (
-      previous &&
-      this.loopEnabled &&
-      loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
-      this.playbackPosition >= previous.loopStartSamples &&
-      this.playbackPosition <= previous.loopEndSamples
-    ) {
-      this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
-    }
-    this.previousLoopRange = loopRange;
-
-    this.#postRange('loop:range', {
-      loopStart: loopRange.loopStartSamples / sampleRate,
-      loopEnd: loopRange.loopEndSamples / sampleRate,
-    });
     this.#postRange('trim:range', {
       startPoint: playbackRange.startSamples / sampleRate,
       endPoint: playbackRange.endSamples / sampleRate,
@@ -976,6 +922,83 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
 
       const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
+
+      const loopStart = this.#getSafeParam(
+        parameters.loopStart,
+        sample,
+        parameters.loopStart.length === 1,
+      );
+      const loopEnd = this.#getSafeParam(
+        parameters.loopEnd,
+        sample,
+        parameters.loopEnd.length === 1,
+      );
+      positionParams.loopStartSamples = loopStart * sampleRate;
+      positionParams.loopEndSamples = loopEnd * sampleRate;
+      const loopType = this.loopPingPong
+        ? 'pingPong'
+        : loopStart > loopEnd
+          ? 'backward'
+          : 'forward';
+
+      // Reuse static ranges; glide and per-pass drift still advance when needed.
+      if (
+        !loopRange ||
+        loopStart !== previousStart ||
+        loopEnd !== previousEnd ||
+        baseRate !== previousRate ||
+        this.loopGliding ||
+        (driftAmount > 0 && this.loopEnabled && !this.nextDriftGenerated)
+      ) {
+        loopRange = this.#calculateLoopRange(
+          positionParams,
+          playbackRange,
+          driftAmount,
+          tempo,
+          baseRate,
+        );
+        previousStart = loopStart;
+        previousEnd = loopEnd;
+        previousRate = baseRate;
+      }
+
+      // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
+      // so a moving loop would shift its phase every sample and shorten or stretch the
+      // cycles while it moves. Carry the playhead with the loop start instead.
+      const previous = this.previousLoopRange;
+      if (
+        previous &&
+        this.loopEnabled &&
+        loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
+        this.previousLoopPosition >= previous.loopStartSamples &&
+        this.previousLoopPosition <= previous.loopEndSamples
+      ) {
+        this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
+      }
+      this.previousLoopRange = loopRange;
+
+      const effectivePan = this.panDriftEnabled
+        ? Math.max(-1, Math.min(1, basePan + this.currentPanDrift))
+        : basePan;
+
+      // shortcut: makeup gain is sampled once per block; measure gain modulation
+      // and CPU before adding per-sample RMS analysis of moving short loops.
+      if (sample === startOffset) {
+        amplitudeGain = this.#analyzeLoopAmplitude(
+          loopRange.loopStartSamples,
+          loopRange.loopEndSamples,
+        );
+      }
+      // The preserver still has no independent turn state for backward/ping-pong.
+      const durationPreservationActive =
+        (!this.loopEnabled || (loopType === 'forward' && !this.loopTurned)) &&
+        this.durationPreserver.isActive(
+          this.zeroCrossings,
+          this.loopEnabled,
+          loopRange.loopDurationSamples,
+          this.pitchPreservationThreshold,
+        );
+      const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping
       const maxLoopCount = parameters.maxLoopCount[0];
@@ -1115,6 +1138,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         );
       }
 
+      // Remember the rendered position, before a fractional step can overshoot
+      // the edge. The next sample must carry that overshoot with a moving loop.
+      this.previousLoopPosition = this.playbackPosition;
       this.playbackPosition = this.durationPreserver.advance(
         durationPreservationActive,
         this.playbackPosition,
@@ -1125,6 +1151,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         loopRange.loopEndSamples,
       );
     }
+
+    // Effective range at the last audible sample, still throttled per voice.
+    this.#postRange('loop:range', {
+      loopStart: loopRange.loopStartSamples / sampleRate,
+      loopEnd: loopRange.loopEndSamples / sampleRate,
+    });
 
     // Send position updates if requested
     if (this.usePlaybackPosition) {
