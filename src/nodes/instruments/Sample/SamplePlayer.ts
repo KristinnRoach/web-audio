@@ -123,7 +123,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #onContextStateChange = () => {
     if (this.context.state !== 'closed') return;
     console.warn(`[SamplePlayer ${this.nodeId}] AudioContext closed; player is silent.`);
-    this.sendUpstreamMessage('context:closed', {});
+    this.#sendUpstreamMessage('context:closed', {});
   };
 
   constructor(options: SamplePlayerOptions) {
@@ -195,7 +195,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#messages.onMessage(type, handler);
   }
 
-  public sendUpstreamMessage(type: string, data: any): this {
+  #sendUpstreamMessage(type: string, data: any): this {
     this.#messages.sendMessage(type, data);
     return this;
   }
@@ -290,7 +290,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
       });
       this.voicePool.applyToAllVoices((voice) => voice.setLoopRampDuration(this.#loopRampDuration));
-      this.sendUpstreamMessage('sample-player:initialized', {});
+      this.#sendUpstreamMessage('sample-player:initialized', {});
     });
 
     // Forward voice pool messages upstream
@@ -594,7 +594,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.voicePool.noteOff(transposedMidiNote, secondsFromNow);
     this.outBus.noteOff(transposedMidiNote);
-    this.sendUpstreamMessage('note:off', { transposedMidiNote });
+    this.#sendUpstreamMessage('note:off', { transposedMidiNote });
     return this;
   }
 
@@ -697,7 +697,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setSampleStartPoint(seconds: number): this {
     this.voicePool.applyToAllVoices((voice) => voice.setStartPoint(seconds));
 
-    this.sendUpstreamMessage('start-point:updated', {
+    this.#sendUpstreamMessage('start-point:updated', {
       startPoint: seconds,
     });
     return this;
@@ -706,7 +706,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setSampleEndPoint(seconds: number): this {
     this.voicePool.applyToAllVoices((voice) => voice.setEndPoint(seconds));
 
-    this.sendUpstreamMessage('end-point:updated', {
+    this.#sendUpstreamMessage('end-point:updated', {
       endPoint: seconds,
     });
     return this;
@@ -734,7 +734,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     voices.forEach((v) => v.setLoopEnabled(enabled));
     this.#loopEnabled = enabled;
 
-    this.sendUpstreamMessage('loop:enabled', { enabled });
+    this.#sendUpstreamMessage('loop:enabled', { enabled });
     return this;
   }
 
@@ -744,7 +744,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#loopLocked = locked;
     this.setLoopEnabled(locked);
 
-    this.sendUpstreamMessage('loop:locked', { locked });
+    this.#sendUpstreamMessage('loop:locked', { locked });
     return this;
   }
 
@@ -754,7 +754,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.#holdEnabled = enabled;
     if (!enabled) this.releaseAll(0.1);
-    this.sendUpstreamMessage('hold:enabled', { enabled });
+    this.#sendUpstreamMessage('hold:enabled', { enabled });
     return this;
   }
 
@@ -764,7 +764,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#holdLocked = locked;
     if (locked === false) this.releaseAll();
 
-    this.sendUpstreamMessage('hold:locked', { locked });
+    this.#sendUpstreamMessage('hold:locked', { locked });
     return this;
   }
 
@@ -794,7 +794,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.voicePool.noteOff(note);
         // One outBus release per held release: InstrumentBus counts note-ons.
         for (let i = 0; i < count; i++) this.outBus.noteOff(note);
-        this.sendUpstreamMessage('note:off', { transposedMidiNote: note });
+        this.#sendUpstreamMessage('note:off', { transposedMidiNote: note });
       }
       this.#sustainedNotes.clear();
     }
@@ -839,7 +839,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.voicePool.applyToAllVoices((voice) => voice.setTempo(bpm));
 
-    this.sendUpstreamMessage('tempo:updated', { bpm });
+    this.#sendUpstreamMessage('tempo:updated', { bpm });
     return this;
   }
 
@@ -882,7 +882,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.voicePool.applyToAllVoices((voice) => voice.setParam('loopEnd', seconds, timestamp));
     }
 
-    this.sendUpstreamMessage('loop-points:updated', {
+    this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -906,7 +906,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       voice.setParam('loopEnd', loopEnd, timestamp);
     });
 
-    this.sendUpstreamMessage('loop-points:updated', {
+    this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -1040,7 +1040,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, next));
 
-    this.sendUpstreamMessage('envelope:changed', { id, config: cloneEnvelopeConfig(next) });
+    this.#sendUpstreamMessage('envelope:changed', { id, config: cloneEnvelopeConfig(next) });
   }
 
   /** Restores one envelope, or all when `id` is omitted, to defaults sized to the current sample. */
@@ -1214,7 +1214,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   //     this.#midiController = midiController;
   //     midiController.connectInstrument(this, channel);
 
-  //     this.sendUpstreamMessage('midi:enabled', { channel });
+  //     this.#sendUpstreamMessage('midi:enabled', { channel });
   //   }
   //   return this;
   // }
@@ -1229,7 +1229,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   //     this.#midiController = null;
   //   }
 
-  //   this.sendUpstreamMessage('midi:disabled', { channel });
+  //   this.#sendUpstreamMessage('midi:disabled', { channel });
 
   //   return this;
   // }

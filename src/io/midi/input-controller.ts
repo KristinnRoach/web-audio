@@ -292,14 +292,6 @@ export class InputController {
     return this.#initialized;
   }
 
-  get midiSupported(): boolean {
-    return isMidiSupported();
-  }
-
-  get supportInfo() {
-    return getMidiSupportInfo();
-  }
-
   #attachToInputs(): void {
     WebMidi.inputs.forEach((input) => {
       if (!input) return;

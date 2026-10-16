@@ -151,7 +151,7 @@ describe('SamplePlayer envelope config', () => {
     vi.stubGlobal('AudioWorkletNode', class {});
     const { SamplePlayer } = await import('./SamplePlayer');
     const setEnvelopeConfig = vi.fn();
-    const sendUpstreamMessage = vi.fn();
+    const changed = vi.fn();
     const input: EnvelopeConfig = {
       ...envConfig,
       shape: {
@@ -160,25 +160,38 @@ describe('SamplePlayer envelope config', () => {
       },
     };
     const voices = [{ setEnvelopeConfig }, { setEnvelopeConfig }];
-    const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      envelopeConfigs: new Map([['amp', envConfig]]),
-      voicePool: {
-        allVoices: voices,
-        applyToAllVoices: (fn: (voice: (typeof voices)[number]) => void) => voices.forEach(fn),
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        disconnect() {}
       },
-      sendUpstreamMessage,
-    }) as SamplePlayer;
+    );
+    const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
+    player.voicePool = {
+      allVoices: voices,
+      applyToAllVoices: (fn: (voice: (typeof voices)[number]) => void) => voices.forEach(fn),
+      allNotesOff() {},
+      dispose() {},
+    } as unknown as SampleVoicePool;
+    player.onMessage('envelope:changed', changed);
 
-    player.updateEnvelope('amp', input);
-    (input.shape.points[0] as { value: number }).value = 99;
+    try {
+      player.updateEnvelope('amp', input);
+      (input.shape.points[0] as { value: number }).value = 99;
 
-    expect(setEnvelopeConfig).toHaveBeenCalledTimes(2);
-    expect(player.getEnvelope('amp').shape.points[0].value).toBe(0);
-    expect(sendUpstreamMessage).toHaveBeenCalledOnce();
-    expect(sendUpstreamMessage).toHaveBeenCalledWith('envelope:changed', {
-      id: 'amp',
-      config: expect.objectContaining({ enabled: false }),
-    });
+      expect(setEnvelopeConfig).toHaveBeenCalledTimes(2);
+      expect(player.getEnvelope('amp').shape.points[0].value).toBe(0);
+      expect(changed).toHaveBeenCalledOnce();
+      expect(changed).toHaveBeenCalledWith({
+        type: 'envelope:changed',
+        senderId: player.nodeId,
+        id: 'amp',
+        config: expect.objectContaining({ enabled: false }),
+      });
+    } finally {
+      player.dispose();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('rejects invalid snapshots before mutating voices', async () => {
@@ -190,7 +203,6 @@ describe('SamplePlayer envelope config', () => {
         allVoices: [],
         applyToAllVoices,
       },
-      sendUpstreamMessage: vi.fn(),
     }) as SamplePlayer;
 
     expect(() => player.updateEnvelope('amp', { ...envConfig, timeScale: 0 })).toThrowError(
