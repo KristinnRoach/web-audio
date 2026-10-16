@@ -807,6 +807,18 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
+  /**
+   * Ping-pong loops turn around at both loop edges instead of jumping back, so
+   * loop point order no longer matters. Without it, loop points set in reverse
+   * order (start after end) make a backward loop: the voice plays through the
+   * loop once, then cycles it backward. A short pitched loop played ping-pong
+   * sounds an octave lower, since one cycle covers the loop twice.
+   */
+  setLoopPingPong(enabled: boolean): this {
+    this.#voicePool.applyToAllVoices((voice) => voice.setLoopPingPong(enabled));
+    return this;
+  }
+
   setLoopDurationDriftAmount(amount: number): this {
     this.#voicePool.applyToAllVoices((voice) => voice.setLoopDurationDriftAmount(amount));
     return this;

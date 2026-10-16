@@ -1135,6 +1135,12 @@ export class SampleVoice {
     return this;
   }
 
+  /** Enables turns at both loop edges; disabling restores the mode set by loop point order. */
+  setLoopPingPong(enabled: boolean): this {
+    this.sendToProcessor({ type: 'setLoopPingPong', value: enabled });
+    return this;
+  }
+
   setLoopDurationDriftAmount(amount: number): this {
     this.setParam('loopDurationDriftAmount', amount, this.now);
     return this;

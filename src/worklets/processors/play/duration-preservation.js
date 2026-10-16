@@ -2,7 +2,7 @@ import {
   findNearestSlopeMatchedZeroCrossing,
   findNearestZeroCrossing,
 } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
-import { wrapLoopPosition } from './wrap-loop-position.js';
+import { wrapLoopPosition } from './loop-edges.js';
 
 /**
  * Owns the private timeline and correction state for zero-crossing duration preservation.
