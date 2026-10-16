@@ -40,4 +40,28 @@ describe('loop snapping and voice reuse', () => {
     render(processor, parameters, 1);
     expect(processor.playbackPosition).toBe(1);
   });
+
+  it('posts each note’s first range with its trigger id, even if already posted', async () => {
+    const processor = await startProcessor();
+    const ranges = () =>
+      processor.port.postMessage.mock.calls
+        .map(([message]) => message)
+        .filter((message) => message.type === 'loop:range');
+    const r1 = makeParameters({ loopStart: 0, loopEnd: 0.5 });
+    const start = (triggerId: number) =>
+      processor.port.onmessage?.({ data: { type: 'voice:start', triggerId } } as MessageEvent);
+
+    start(1);
+    render(processor, r1, 1);
+    start(2);
+    render(processor, makeParameters({ loopStart: 0.25, loopEnd: 0.75 }), 1);
+    start(3);
+    render(processor, r1, 1);
+
+    expect(ranges()).toMatchObject([
+      { loopStart: 0, loopEnd: 0.5, triggerId: 1 },
+      { loopStart: 0.25, loopEnd: 0.75, triggerId: 2 },
+      { loopStart: 0, loopEnd: 0.5, triggerId: 3 },
+    ]);
+  });
 });

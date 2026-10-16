@@ -378,7 +378,7 @@ export class SampleVoice {
       triggerId: this.#triggerId,
     });
     this.#sendUpstreamMessage('voice:started', {
-      voice: this,
+      voiceId: this.nodeId,
       midiNote: this.#midiNote,
     });
 
@@ -524,7 +524,6 @@ export class SampleVoice {
     this.sendToProcessor({ type: 'voice:release', timestamp });
     this.#sendUpstreamMessage('voice:releasing', {
       voiceId: this.nodeId,
-      voice: this,
       midiNote: this.#midiNote,
     });
 
@@ -567,7 +566,6 @@ export class SampleVoice {
     this.#transitionTo(VoiceState.AVAILABLE);
     this.#sendUpstreamMessage('voice:stopped', {
       voiceId: this.nodeId,
-      voice: this,
       midiNote,
     });
 
@@ -914,7 +912,6 @@ export class SampleVoice {
           this.#isInitialized = true;
 
           this.#sendUpstreamMessage('voice:initialized', {
-            voice: this,
             voiceId: this.nodeId,
           });
           break;
@@ -939,17 +936,24 @@ export class SampleVoice {
           type = 'voice:stopped';
           data = {
             voiceId: this.nodeId,
-            voice: this,
             midiNote,
           };
+          break;
+        }
+
+        case 'loop:range':
+        case 'trim:range': {
+          if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
+            return;
+          }
+          const { triggerId: _, ...range } = data;
+          data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           break;
         }
 
         // Forwarded upstream by the tail call, nothing to do here.
         case 'loop:enabled':
         case 'loop:syncToTempo':
-        case 'loop:range':
-        case 'trim:range':
         case 'voice:reset':
         case 'voice:playbackDirectionChange':
           break;

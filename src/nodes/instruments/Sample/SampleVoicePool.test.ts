@@ -19,9 +19,7 @@ vi.mock('./createSampleVoice', () => {
     }
 
     #emit(type: string, midiNote = this.midiNote) {
-      this.handlers
-        .get(type)
-        ?.forEach((handler) => handler({ type, senderId: 'test', voice: this, midiNote }));
+      this.handlers.get(type)?.forEach((handler) => handler({ type, senderId: 'test', midiNote }));
     }
 
     trigger({ midiNote }: { midiNote: number }): number | null {

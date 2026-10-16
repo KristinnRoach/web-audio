@@ -214,4 +214,40 @@ describe('SampleVoice state', () => {
     await voice.loadAudioData([fakeBuffer()]);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
+
+  it('includes voiceId in voice:started', async () => {
+    const voice = await loadedVoice();
+    const started = vi.fn();
+    voice.onMessage('voice:started', started);
+    trigger(voice, 60);
+
+    expect(started).toHaveBeenCalledWith(
+      expect.objectContaining({ voiceId: voice.nodeId, midiNote: 60 }),
+    );
+  });
+
+  it('forwards only the current note’s ranges, tagged with voice and note', async () => {
+    const voice = await loadedVoice();
+    const ranges = vi.fn();
+    voice.onMessage('loop:range', ranges);
+    const range = (triggerId: number) =>
+      audio.port.onmessage({ data: { type: 'loop:range', loopStart: 0, loopEnd: 1, triggerId } });
+
+    trigger(voice, 60);
+    range(0);
+    range(1);
+    endPlayback(1);
+    range(1);
+    trigger(voice, 64);
+    range(1);
+    range(2);
+
+    expect(ranges.mock.calls.map(([data]) => data.midiNote)).toEqual([60, 64]);
+    expect(ranges.mock.calls[0][0]).toMatchObject({
+      voiceId: voice.nodeId,
+      loopStart: 0,
+      loopEnd: 1,
+    });
+    expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
+  });
 });

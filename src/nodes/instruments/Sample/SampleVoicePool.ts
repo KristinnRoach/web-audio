@@ -94,11 +94,11 @@ export class SampleVoicePool implements LibNode {
     return this;
   }
 
-  #initializedVoices = new Set<SampleVoice>();
+  #initializedVoices = new Set<NodeID>();
 
   #setupMessageHandling(voice: SampleVoice) {
-    voice.onMessage('voice:initialized', (msg: Message) => {
-      this.#initializedVoices.add(msg.voice);
+    voice.onMessage('voice:initialized', () => {
+      this.#initializedVoices.add(voice.nodeId);
 
       if (this.#initializedVoices.size === this.#allVoices.length) {
         // All voices initialized message
