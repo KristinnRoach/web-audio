@@ -242,7 +242,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
     this.reversePlayback = false;
-    this.previousReverse = null;
+    this.previousApproachDirection = null;
     // True while cycling a loop against the approach direction (backward loops,
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
@@ -930,7 +930,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
 
     // A turn can happen after the preceding block advanced past a trim edge.
-    if (this.previousReverse !== null && this.previousReverse !== approachDirection < 0) {
+    if (
+      this.previousApproachDirection !== null &&
+      this.previousApproachDirection !== approachDirection
+    ) {
       if (this.playbackPosition >= playbackRange.endSamples) {
         this.playbackPosition = lastPosition;
         this.durationPreserver.reset(this.playbackPosition);
@@ -939,7 +942,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.durationPreserver.reset(this.playbackPosition);
       }
     }
-    this.previousReverse = approachDirection < 0;
+    this.previousApproachDirection = approachDirection;
 
     // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
     // so a moving loop would shift its phase every block and shorten or stretch the
