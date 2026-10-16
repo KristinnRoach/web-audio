@@ -153,6 +153,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.loopCount = 0;
         this.loopGlideLogLength = null; // new notes start on the target length
         this.previousLoopRange = null;
+        this.postedRanges = {}; // each note posts its first resolved range
 
         // will be set in process() using parameters
         this.playbackPosition = 0;
@@ -678,9 +679,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @returns {number} - Makeup gain multiplier (1.0 = no change)
    */
   /**
-   * Posts a resolved range (`loop:range`, `trim:range`) for display. Compared
-   * against the last posted message of that type, so a change skipped by the
-   * ~30 Hz throttle is sent on a later block.
+   * Posts a resolved range (`loop:range`, `trim:range`) for display, tagged
+   * with the current `triggerId`. Compared against the last posted message of
+   * that type for this note, so a change skipped by the ~30 Hz throttle is
+   * sent on a later block.
    */
   #postRange(type, range) {
     this.postedRanges ??= {};
@@ -688,7 +690,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (posted && Object.keys(range).every((key) => range[key] === posted.range[key])) return;
     if (currentTime - (posted?.time ?? -1) < 1 / 30) return;
     this.postedRanges[type] = { range, time: currentTime };
-    this.port.postMessage({ type, ...range });
+    this.port.postMessage({ type, ...range, triggerId: this.triggerId });
   }
 
   #analyzeLoopAmplitude(loopStart, loopEnd) {
