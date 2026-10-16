@@ -605,9 +605,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  // Common functionality for all instruments
-  panic = (releaseTime?: number) => this.releaseAll(releaseTime);
-
   /* === SCALE SETTINGS === */
 
   get transposedBySemitones() {
@@ -805,9 +802,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  sustainPedalOn = (): this => this.setSustainPedal(true);
-  sustainPedalOff = (): this => this.setSustainPedal(false);
-
   setPlaybackDirection(direction: 'forward' | 'reverse'): this {
     this.voicePool.applyToAllVoices((voice) => voice.setPlaybackDirection(direction));
     return this;
@@ -829,15 +823,15 @@ export class SamplePlayer implements ILibInstrumentNode {
   };
 
   setLoopStart = (seconds: number) => {
-    return this.setLoopPoint('start', seconds, this.loopEnd);
+    return this.#setLoopPoint('start', seconds, this.loopEnd);
   };
 
   setLoopEnd = (seconds: number) => {
-    return this.setLoopPoint('end', this.loopStart, seconds);
+    return this.#setLoopPoint('end', this.loopStart, seconds);
   };
 
   setLoopDuration = (seconds: number) =>
-    this.setLoopPoint('end', this.loopStart, this.loopStart + seconds);
+    this.#setLoopPoint('end', this.loopStart, this.loopStart + seconds);
 
   setTempo(bpm: number) {
     if (bpm < this.#MIN_TEMPO || bpm > this.#MAX_TEMPO) return;
@@ -868,7 +862,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#tempo;
   }
 
-  setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
+  #setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.
     // The processor resolves ordering, snapping and trim containment.
     const seconds = clamp(
@@ -1245,14 +1239,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   // }
 
   /* === PUBLIC GETTERS === */
-
-  get mainOut() {
-    return this.#masterOut;
-  }
-
-  get outputBus() {
-    return this.outBus;
-  }
 
   get sampleDuration(): number {
     return this.#bufferDuration;

@@ -203,23 +203,6 @@ export class InputController {
     return () => this.#sustainPedalHandlers.delete(handler);
   }
 
-  registerNoteTarget(target: NoteTarget, channel: number | 'all' = 'all'): () => void {
-    const noteOnUnsub = this.onNoteOn((event) => {
-      if (!this.#matchesChannel(channel, event.channel)) return;
-      target.play(event.note, event.velocity ?? 0);
-    });
-
-    const noteOffUnsub = this.onNoteOff((event) => {
-      if (!this.#matchesChannel(channel, event.channel)) return;
-      target.release(event.note);
-    });
-
-    return () => {
-      noteOnUnsub();
-      noteOffUnsub();
-    };
-  }
-
   /**
    * Register one or more control targets to respond to MIDI CC messages.
    *
