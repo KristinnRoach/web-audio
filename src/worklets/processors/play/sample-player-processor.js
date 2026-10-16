@@ -154,6 +154,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.isPlaying = true;
         this.triggerId = triggerId;
         this.loopCount = 0;
+        this.nextDriftGenerated = false; // roll fresh drift for this note
         this.loopTurned = false;
         this.loopGlideLogLength = null; // new notes start on the target length
         this.previousLoopRange = null;
