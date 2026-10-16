@@ -234,6 +234,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
     this.reversePlayback = false;
+    this.previousReverse = null;
     this.playbackPosition = 0;
     this.needsStartPosition = false;
 
@@ -853,12 +854,27 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // ===== Init playback position =====
 
+    // Last position on the unit-rate grid, even when minimum-length growth is fractional.
+    const lastPosition = playbackRange.startSamples + Math.ceil(playbackRange.durationSamples) - 1;
+
     // Both directions play the source samples [startSamples, endSamples).
     if (this.needsStartPosition) {
       this.needsStartPosition = false;
-      this.playbackPosition = reverse ? playbackRange.endSamples - 1 : playbackRange.startSamples;
+      this.playbackPosition = reverse ? lastPosition : playbackRange.startSamples;
       this.durationPreserver.reset(this.playbackPosition);
     }
+
+    // A turn can happen after the preceding block advanced past a trim edge.
+    if (this.previousReverse !== null && this.previousReverse !== reverse) {
+      if (this.playbackPosition >= playbackRange.endSamples) {
+        this.playbackPosition = lastPosition;
+        this.durationPreserver.reset(this.playbackPosition);
+      } else if (this.playbackPosition < playbackRange.startSamples) {
+        this.playbackPosition = playbackRange.startSamples;
+        this.durationPreserver.reset(this.playbackPosition);
+      }
+    }
+    this.previousReverse = reverse;
 
     // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
     // so a moving loop would shift its phase every block and shorten or stretch the

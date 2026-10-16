@@ -58,6 +58,35 @@ describe('playback direction', () => {
     expect(reverse).toEqual([...forward].reverse());
   });
 
+  it('reverses the same positions when a zero-length trim grows to a fractional length', async () => {
+    const params = makeParameters({ startPoint: 0, endPoint: 0 });
+    const forward = trace((await startRamp('forward')).processor, params, 500);
+    const reverse = trace((await startRamp('reverse')).processor, params, 500);
+
+    expect(forward).toHaveLength(92);
+    expect(reverse).toEqual([...forward].reverse());
+  });
+
+  it.each([1, 0.75])('turns safely at both trim boundaries at rate %s', async (playbackRate) => {
+    const params = makeParameters({ ...trim, playbackRate });
+    for (const direction of ['forward', 'reverse'] as const) {
+      const { processor, send } = await startRamp(direction);
+      const frames =
+        direction === 'forward' ? Math.ceil(100 / playbackRate) : Math.floor(99 / playbackRate) + 1;
+      trace(processor, params, frames);
+      send({
+        type: 'voice:setPlaybackDirection',
+        playbackDirection: direction === 'forward' ? 'reverse' : 'forward',
+      });
+      const after = trace(processor, params, 3);
+      expect(after).toEqual(
+        direction === 'forward'
+          ? [199, 199 - playbackRate, 199 - 2 * playbackRate]
+          : [100, 100 + playbackRate, 100 + 2 * playbackRate],
+      );
+    }
+  });
+
   it('reads fractional positions at the playhead in both directions', async () => {
     const params = makeParameters({ ...trim, playbackRate: 0.75 });
     const reverse = trace((await startRamp('reverse')).processor, params, 4);
