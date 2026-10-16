@@ -315,9 +315,6 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    // Step is normalized, so absolute resolution is step * sampleDuration: 0.1ms for a
-    // 1s sample. Reaching the shortest snap period needs step * sampleDuration at or
-    // below it: C5 (1.91ms) allows samples up to ~19s, C6 (0.96ms) ~9.5s, C7 ~4.8s.
     step: 0.0001,
     curve: 1,
     format: secondsOrMilliseconds,
@@ -328,7 +325,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 1,
-    step: 0.0001, // See loopStart: sample length ceiling before the step exceeds the shortest snap period.
+    step: 0.0001,
     curve: 1,
     format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopEnd(v * p.sampleDuration),
