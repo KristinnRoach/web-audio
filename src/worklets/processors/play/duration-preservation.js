@@ -129,7 +129,7 @@ export class DurationPreserver {
 
     if (canWrapLoop && playbackRate >= 0 && this.#timelinePosition >= loopEndSamples) {
       this.#timelinePosition = loopStartSamples;
-    } else if (canWrapLoop && playbackRate < 0 && this.#timelinePosition <= loopStartSamples) {
+    } else if (canWrapLoop && playbackRate < 0 && this.#timelinePosition < loopStartSamples) {
       this.#timelinePosition = loopEndSamples - 1;
     }
 

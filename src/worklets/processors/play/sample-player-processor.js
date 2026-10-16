@@ -155,8 +155,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopRange = null;
         this.postedRanges = {}; // each note posts its first resolved range
 
-        // will be set in process() using parameters
+        // Set from the trim range on the first audible block
         this.playbackPosition = 0;
+        this.needsStartPosition = true;
 
         // Frame this note should sound at. A timestamp that has already passed
         // by the time the message arrives starts the note now.
@@ -233,8 +234,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
     this.reversePlayback = false;
-    this.playingReverse = false; // effective direction last block
     this.playbackPosition = 0;
+    this.needsStartPosition = false;
 
     this.debugCounter = 0;
     this.loopCount = 0;
@@ -265,6 +266,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isReleasing = false;
     this.pendingStartFrame = 0;
     this.playbackPosition = 0;
+    this.needsStartPosition = false;
   }
 
   // Arm click compensation for a loop-wrap discontinuity between the sample
@@ -800,13 +802,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     const playbackRange = this.#calculatePlaybackRange(positionParams);
 
+    // The playhead reads the same source position in either direction, so a
+    // direction change needs no position correction.
     const reverse = this.reversePlayback !== playbackRange.inverted;
-    // Reverse interpolation reads ~1 sample behind forward at the same
-    // position; shift so the emitted value stays continuous across the flip.
-    if (reverse !== this.playingReverse && this.playbackPosition > 0) {
-      this.playbackPosition += reverse ? 1 : -1;
-    }
-    this.playingReverse = reverse;
 
     // Loop-length math needs the rate playback actually advances at
     const effectivePlaybackRate = parameters.playbackRate[0];
@@ -855,7 +853,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // ===== Init playback position =====
 
-    if (this.playbackPosition === 0) {
+    // Both directions play the source samples [startSamples, endSamples).
+    if (this.needsStartPosition) {
+      this.needsStartPosition = false;
       this.playbackPosition = reverse ? playbackRange.endSamples - 1 : playbackRange.startSamples;
       this.durationPreserver.reset(this.playbackPosition);
     }
@@ -923,8 +923,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           // Reset drift flag to generate new drift for next loop iteration
           this.nextDriftGenerated = false;
         }
-        // Reverse playback
-        else if (reverse && this.playbackPosition <= loopRange.loopStartSamples) {
+        // Reverse playback: wraps once it leaves [loopStart, loopEnd), like forward
+        else if (reverse && this.playbackPosition < loopRange.loopStartSamples) {
           // Mirror of the forward wrap: last emitted sample sits at the loop
           // start, the next pass begins at the loop end (0 in the silent tail).
           this.#smoothLoopWrap(
@@ -966,7 +966,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         reverse &&
         (durationPreservationActive
           ? this.durationPreserver.timelinePosition
-          : this.playbackPosition) <= playbackRange.startSamples;
+          : this.playbackPosition) < playbackRange.startSamples;
       const isWithinLoop =
         this.loopEnabled &&
         this.playbackPosition >= loopRange.loopStartSamples &&
@@ -995,15 +995,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const currentPosition = Math.floor(this.playbackPosition);
       const positionOffset = this.playbackPosition - currentPosition;
 
-      // Pre-calculate interpolation positions outside channel loop
-      let nextPosition, interpWeight;
-      if (reverse) {
-        nextPosition = Math.max(currentPosition - 1, playbackRange.startSamples);
-        interpWeight = 1 - positionOffset; // Reverse: weight toward previous sample
-      } else {
-        nextPosition = Math.min(currentPosition + 1, playbackRange.endSamples - 1);
-        interpWeight = positionOffset; // Forward: weight toward next sample
-      }
+      // Direction-independent: always between the sample at and after the playhead.
+      // endSamples can be fractional (minimum-length growth), so clamp to a whole index.
+      const nextPosition = Math.min(currentPosition + 1, Math.ceil(playbackRange.endSamples) - 1);
+      const interpWeight = positionOffset;
 
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
