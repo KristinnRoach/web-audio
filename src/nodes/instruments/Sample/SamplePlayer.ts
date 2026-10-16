@@ -112,7 +112,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #useZeroCrossings = true;
   #preprocessAudio = true;
-  randomizeVelocity = false;
 
   voicePool!: SampleVoicePool; // todo: fix use of '!'
   outBus!: InstrumentBus; // todo: fix use of '!'
@@ -380,14 +379,6 @@ export class SamplePlayer implements ILibInstrumentNode {
       const param = voice.getParam(paramName);
       if (param) lfo.connect(param);
     });
-  }
-
-  freezeActiveVoices(freeze: boolean): this {
-    console.info(
-      `SamplePlayer: freezeActiveVoices(${freeze}). Spectral freeze not implemented yet`,
-    );
-    // this.voicePool.applyToActiveVoices((voice) => voice.freeze(freeze));
-    return this;
   }
 
   /* === LOAD / RESET === */
@@ -837,8 +828,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   };
 
-  isNormalized = (value: number, range = [0, 1]) => value >= range[0] && value <= range[1];
-
   setLoopStart = (seconds: number) => {
     return this.setLoopPoint('start', seconds, this.loopEnd);
   };
@@ -849,8 +838,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   setLoopDuration = (seconds: number) =>
     this.setLoopPoint('end', this.loopStart, this.loopStart + seconds);
-
-  debugcounter = 0;
 
   setTempo(bpm: number) {
     if (bpm < this.#MIN_TEMPO || bpm > this.#MAX_TEMPO) return;
