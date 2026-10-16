@@ -1,6 +1,7 @@
 import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { DurationPreserver } from './duration-preservation.js';
+import { wrapLoopPosition } from './wrap-loop-position.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
 
@@ -286,6 +287,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.compensationDecay = 0.9; // Smooth over ~32 samples
       this.applyClickCompensation = true;
     }
+  }
+
+  // Authority sample at a source position, 0 at or past the audio end (the
+  // keytracked silent tail).
+  #sampleAt(position, audioEndSamples) {
+    if (position >= audioEndSamples) return 0;
+    return this.buffer[0][Math.floor(position)] || 0;
   }
 
   #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
@@ -803,9 +811,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     const playbackRange = this.#calculatePlaybackRange(positionParams);
 
-    // The playhead reads the same source position in either direction, so a
-    // direction change needs no position correction.
-    const reverse = this.reversePlayback !== playbackRange.inverted;
+    // 1 forward, -1 reverse. The playhead reads the same source position in
+    // either direction, so a direction change needs no position correction.
+    const direction = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
 
     // Loop-length math needs the rate playback actually advances at
     const effectivePlaybackRate = parameters.playbackRate[0];
@@ -860,12 +868,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Both directions play the source samples [startSamples, endSamples).
     if (this.needsStartPosition) {
       this.needsStartPosition = false;
-      this.playbackPosition = reverse ? lastPosition : playbackRange.startSamples;
+      this.playbackPosition = direction < 0 ? lastPosition : playbackRange.startSamples;
       this.durationPreserver.reset(this.playbackPosition);
     }
 
     // A turn can happen after the preceding block advanced past a trim edge.
-    if (this.previousReverse !== null && this.previousReverse !== reverse) {
+    if (this.previousReverse !== null && this.previousReverse !== direction < 0) {
       if (this.playbackPosition >= playbackRange.endSamples) {
         this.playbackPosition = lastPosition;
         this.durationPreserver.reset(this.playbackPosition);
@@ -874,7 +882,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.durationPreserver.reset(this.playbackPosition);
       }
     }
-    this.previousReverse = reverse;
+    this.previousReverse = direction < 0;
 
     // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
     // so a moving loop would shift its phase every block and shorten or stretch the
@@ -909,56 +917,32 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
 
-      const playbackStep = reverse ? -Math.abs(baseRate) : Math.abs(baseRate);
+      const playbackStep = direction * Math.abs(baseRate);
 
       // Handle looping
       const canWrapLoop = this.loopEnabled && this.loopCount < parameters.maxLoopCount[0];
-      if (canWrapLoop) {
-        if (!reverse && this.playbackPosition >= loopRange.loopEndSamples) {
-          // Get the actual samples we're transitioning between
-          // In the silent tail the buffer still holds audio we aren't outputting,
-          // so the sample we actually just emitted is 0.
-          this.#smoothLoopWrap(
-            silencePadTail ? 0 : this.buffer[0][Math.floor(this.playbackPosition - 1)] || 0,
-            this.buffer[0][Math.floor(loopRange.loopStartSamples)] || 0,
-            loopRange.loopDurationSamples,
-            baseRate,
-          );
+      const wrappedPosition = canWrapLoop
+        ? wrapLoopPosition(
+            this.playbackPosition,
+            direction,
+            loopRange.loopStartSamples,
+            loopRange.loopEndSamples,
+          )
+        : null;
+      if (wrappedPosition !== null) {
+        // Last emitted sample (one step back) against the first of the next pass.
+        // Assumes a unit step, so it is approximate at other rates.
+        this.#smoothLoopWrap(
+          this.#sampleAt(this.playbackPosition - direction, playbackRange.endSamples),
+          this.#sampleAt(wrappedPosition, playbackRange.endSamples),
+          loopRange.loopDurationSamples,
+          baseRate,
+        );
+        this.playbackPosition = wrappedPosition;
+        this.loopCount++;
 
-          // Carrying the overshoot keeps the loop period exact, but it assumes the
-          // overshoot is smaller than the loop. loopRange is recomputed per block, so
-          // loop-point automation or a keytracked pitch sweep can pull loopEnd back
-          // behind the playhead, leaving an overshoot of several loop lengths that
-          // would land outside the loop. Fall back to the plain snap there.
-          const overshoot = this.playbackPosition - loopRange.loopEndSamples;
-          this.playbackPosition =
-            loopRange.loopStartSamples +
-            (overshoot < loopRange.loopDurationSamples ? overshoot : 0);
-          this.loopCount++;
-
-          // Reset drift flag to generate new drift for next loop iteration
-          this.nextDriftGenerated = false;
-        }
-        // Reverse playback: wraps once it leaves [loopStart, loopEnd), like forward
-        else if (reverse && this.playbackPosition < loopRange.loopStartSamples) {
-          // Mirror of the forward wrap: last emitted sample sits at the loop
-          // start, the next pass begins at the loop end (0 in the silent tail).
-          this.#smoothLoopWrap(
-            this.buffer[0][Math.floor(loopRange.loopStartSamples)] || 0,
-            silencePadTail ? 0 : this.buffer[0][Math.floor(loopRange.loopEndSamples) - 1] || 0,
-            loopRange.loopDurationSamples,
-            baseRate,
-          );
-
-          // Mirror of the forward clamp above.
-          const underflow = loopRange.loopStartSamples - this.playbackPosition;
-          this.playbackPosition =
-            loopRange.loopEndSamples - (underflow < loopRange.loopDurationSamples ? underflow : 0);
-          this.loopCount++;
-
-          // Reset drift flag to generate new drift for next loop iteration
-          this.nextDriftGenerated = false;
-        }
+        // Reset drift flag to generate new drift for next loop iteration
+        this.nextDriftGenerated = false;
       }
 
       const durationCorrection = this.durationPreserver.prepareCorrection(
@@ -971,24 +955,22 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const durationResetTarget = durationCorrection?.resetTarget ?? null;
       if (durationCorrection) this.playbackPosition = durationCorrection.outgoingPosition;
 
-      // Check for end of playback range (forward & reversed)
-      // Don't stop if we're looping and within the playback range
-      const shouldStopForward =
-        !reverse &&
-        (durationPreservationActive
-          ? this.durationPreserver.timelinePosition
-          : this.playbackPosition) >= playbackRange.endSamples;
-      const shouldStopReverse =
-        reverse &&
-        (durationPreservationActive
-          ? this.durationPreserver.timelinePosition
-          : this.playbackPosition) < playbackRange.startSamples;
+      // End of playback: the playhead (or the preserver's unit-rate timeline)
+      // has left [startSamples, endSamples) in its direction of travel.
+      // Don't stop if we're looping and within the playback range.
+      const transportPosition = durationPreservationActive
+        ? this.durationPreserver.timelinePosition
+        : this.playbackPosition;
+      const leftPlaybackRange =
+        direction > 0
+          ? transportPosition >= playbackRange.endSamples
+          : transportPosition < playbackRange.startSamples;
       const isWithinLoop =
         this.loopEnabled &&
         this.playbackPosition >= loopRange.loopStartSamples &&
         this.playbackPosition <= loopRange.loopEndSamples;
 
-      if ((shouldStopForward || shouldStopReverse) && !(this.loopEnabled && isWithinLoop)) {
+      if (leftPlaybackRange && !isWithinLoop) {
         const endedTriggerId = this.triggerId;
         this.#stop();
         this.port.postMessage({
