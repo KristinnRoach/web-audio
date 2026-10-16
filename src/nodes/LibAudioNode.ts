@@ -92,7 +92,7 @@ export class LibAudioNode<
     return this.#messages.onMessage(type, handler);
   }
 
-  #sendUpstreamMessage(type: string, data: any): this {
+  protected sendUpstreamMessage(type: string, data: any): this {
     this.#messages.sendMessage(type, data);
     return this;
   }
