@@ -379,7 +379,6 @@ export class SampleVoice {
     });
     this.#sendUpstreamMessage('voice:started', {
       voiceId: this.nodeId,
-      voice: this,
       midiNote: this.#midiNote,
     });
 
@@ -525,7 +524,6 @@ export class SampleVoice {
     this.sendToProcessor({ type: 'voice:release', timestamp });
     this.#sendUpstreamMessage('voice:releasing', {
       voiceId: this.nodeId,
-      voice: this,
       midiNote: this.#midiNote,
     });
 
@@ -568,7 +566,6 @@ export class SampleVoice {
     this.#transitionTo(VoiceState.AVAILABLE);
     this.#sendUpstreamMessage('voice:stopped', {
       voiceId: this.nodeId,
-      voice: this,
       midiNote,
     });
 
@@ -915,7 +912,6 @@ export class SampleVoice {
           this.#isInitialized = true;
 
           this.#sendUpstreamMessage('voice:initialized', {
-            voice: this,
             voiceId: this.nodeId,
           });
           break;
@@ -940,7 +936,6 @@ export class SampleVoice {
           type = 'voice:stopped';
           data = {
             voiceId: this.nodeId,
-            voice: this,
             midiNote,
           };
           break;
