@@ -5,13 +5,7 @@ import { VoiceState } from '../VoiceState';
 
 import { Message, MessageHandler, createMessageBus, MessageBus } from '@/events';
 
-import {
-  assert,
-  interpolateLinearToGeometric,
-  mapToRange,
-  midiToPlaybackRate,
-  getKeytrackedFilterHz,
-} from '@/utils';
+import { assert, mapToRange, midiToPlaybackRate, getKeytrackedFilterHz } from '@/utils';
 import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
 import {
   cancelAndPinParamValue,
@@ -1138,24 +1132,7 @@ export class SampleVoice {
   }
 
   setLoopDurationDriftAmount(amount: number): this {
-    if (amount === 0) {
-      this.setParam('loopDurationDriftAmount', 0, this.now);
-      return this;
-    }
-
-    const NEAR_ZERO_FOR_GEOMETRIC = 0.0001; // outputRange.min must be > 0
-    const MAX_LOOP_DRIFT = 1; // todo: use audio param's maxValue
-
-    const interpolated = interpolateLinearToGeometric(amount, {
-      inputRange: { min: 0, max: 1 },
-      outputRange: {
-        min: NEAR_ZERO_FOR_GEOMETRIC,
-        max: MAX_LOOP_DRIFT,
-      },
-      blend: 1, // blend: 0.5 = 50% geometric, 50% linear
-      curve: 'linear',
-    });
-    this.setParam('loopDurationDriftAmount', interpolated, this.now);
+    this.setParam('loopDurationDriftAmount', amount, this.now);
     return this;
   }
 
