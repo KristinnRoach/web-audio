@@ -89,7 +89,7 @@ export class SampleVoicePool implements LibNode {
     return this.#messages.onMessage(type, handler);
   }
 
-  sendUpstreamMessage(type: string, data: any) {
+  #sendUpstreamMessage(type: string, data: any) {
     this.#messages.sendMessage(type, data);
     return this;
   }
@@ -102,7 +102,7 @@ export class SampleVoicePool implements LibNode {
 
       if (this.#initializedVoices.size === this.#allVoices.length) {
         // All voices initialized message
-        this.sendUpstreamMessage('voice-pool:initialized', {
+        this.#sendUpstreamMessage('voice-pool:initialized', {
           voiceCount: this.#allVoices.length,
         });
       }

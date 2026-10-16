@@ -377,7 +377,7 @@ export class SampleVoice {
       timestamp,
       triggerId: this.#triggerId,
     });
-    this.sendUpstreamMessage('voice:started', {
+    this.#sendUpstreamMessage('voice:started', {
       voice: this,
       midiNote: this.#midiNote,
     });
@@ -454,7 +454,7 @@ export class SampleVoice {
       Array.from(this.#envelopes, ([envType, env]) => [envType, env.shape.mode.type === 'loop']),
     );
 
-    this.sendUpstreamMessage('sample-envelopes:trigger', {
+    this.#sendUpstreamMessage('sample-envelopes:trigger', {
       voiceId: this.nodeId,
       midiNote: this.#midiNote,
       envDurations,
@@ -522,7 +522,7 @@ export class SampleVoice {
     });
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
-    this.sendUpstreamMessage('voice:releasing', {
+    this.#sendUpstreamMessage('voice:releasing', {
       voiceId: this.nodeId,
       voice: this,
       midiNote: this.#midiNote,
@@ -565,7 +565,7 @@ export class SampleVoice {
     if (this.#state === VoiceState.AVAILABLE) return this;
     const midiNote = this.#midiNote;
     this.#transitionTo(VoiceState.AVAILABLE);
-    this.sendUpstreamMessage('voice:stopped', {
+    this.#sendUpstreamMessage('voice:stopped', {
       voiceId: this.nodeId,
       voice: this,
       midiNote,
@@ -900,7 +900,7 @@ export class SampleVoice {
     return this;
   }
 
-  sendUpstreamMessage(type: string, data: any) {
+  #sendUpstreamMessage(type: string, data: any) {
     this.#messages.sendMessage(type, data);
     return this;
   }
@@ -913,7 +913,7 @@ export class SampleVoice {
         case 'initialized':
           this.#isInitialized = true;
 
-          this.sendUpstreamMessage('voice:initialized', {
+          this.#sendUpstreamMessage('voice:initialized', {
             voice: this,
             voiceId: this.nodeId,
           });
@@ -966,7 +966,7 @@ export class SampleVoice {
           break;
       }
 
-      this.sendUpstreamMessage(type, data);
+      this.#sendUpstreamMessage(type, data);
     };
   }
 
