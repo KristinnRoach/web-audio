@@ -730,8 +730,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     // if loop is locked (ON), turning it off is disabled but turning it on should work
     if (this.#loopLocked && !enabled) return this;
 
-    const voices = this.#voicePool.allVoices;
-    voices.forEach((v) => v.setLoopEnabled(enabled));
+    this.#voicePool?.allVoices.forEach((v) => v.setLoopEnabled(enabled));
     if (this.#loopEnabled === enabled) return this;
     this.#loopEnabled = enabled;
 

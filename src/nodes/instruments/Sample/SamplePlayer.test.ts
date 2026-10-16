@@ -44,6 +44,7 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
     }),
   });
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
+  expect(() => player.setLoopEnabled(false)).not.toThrow();
   const sendToProcessor = vi.fn();
   await initTestPlayer(player, {
     applyToAllVoices: (apply) =>
@@ -88,6 +89,7 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
     expect(() => player.setScale({ ...valid, tuningOffset: NaN, scale: [0] })).toThrow(RangeError);
   } finally {
     player.dispose();
+    expect(() => player.setLoopEnabled(false)).not.toThrow();
     vi.unstubAllGlobals();
   }
 });
