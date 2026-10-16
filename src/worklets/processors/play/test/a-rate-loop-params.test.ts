@@ -129,6 +129,21 @@ describe('a-rate loop points and duration glide', () => {
     ).toBe(1);
   });
 
+  it('rolls fresh drift on the first pass of every note', async () => {
+    const processor = await makeProcessor();
+    const params = makeParameters({ loopDurationDriftAmount: 0.01 });
+    processor.process([], [[new Float32Array(1)]], params);
+    processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
+    const state = processor as typeof processor & {
+      currentLoopDrift: number;
+      driftUpdateCounter: number;
+    };
+    state.currentLoopDrift = 12345; // stale drift from the previous note
+    processor.process([], [[new Float32Array(1)]], params);
+    expect(state.driftUpdateCounter).toBe(1);
+    expect(state.currentLoopDrift).not.toBe(12345);
+  });
+
   it.each([0, 0.01])('advances snapped glide by audible frames with ramp %f', async (ramp) => {
     const processor = await makeProcessor();
     processor.port.onmessage?.({
