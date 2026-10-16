@@ -2,6 +2,7 @@ import {
   findNearestSlopeMatchedZeroCrossing,
   findNearestZeroCrossing,
 } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
+import { wrapLoopPosition } from './wrap-loop-position.js';
 
 /**
  * Owns the private timeline and correction state for zero-crossing duration preservation.
@@ -125,13 +126,14 @@ export class DurationPreserver {
       return nextPosition;
     }
 
-    this.#timelinePosition += playbackRate < 0 ? -1 : 1;
+    const direction = playbackRate < 0 ? -1 : 1;
+    this.#timelinePosition += direction;
 
-    if (canWrapLoop && playbackRate >= 0 && this.#timelinePosition >= loopEndSamples) {
-      this.#timelinePosition = loopStartSamples;
-    } else if (canWrapLoop && playbackRate < 0 && this.#timelinePosition < loopStartSamples) {
-      this.#timelinePosition = loopEndSamples - 1;
-    }
+    // Same loop rule as the playhead, at unit rate
+    const wrappedTimeline = canWrapLoop
+      ? wrapLoopPosition(this.#timelinePosition, direction, loopStartSamples, loopEndSamples)
+      : null;
+    if (wrappedTimeline !== null) this.#timelinePosition = wrappedTimeline;
 
     return nextPosition;
   }
