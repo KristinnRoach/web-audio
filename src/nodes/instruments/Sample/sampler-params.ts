@@ -42,7 +42,16 @@ export function isValidSamplerParamValue(
   );
 }
 
+/** Control position in [0, 1] for a value: inverse of the `curve` taper. */
+export const samplerParamPosition = (d: SamplerParamDescriptor, v: number) =>
+  ((v - d.min) / (d.max - d.min)) ** (1 / (d.curve ?? 1));
+
 const percent = (v: number) => `${(v * 100).toFixed(0)}%`;
+/** Readout of the knob position, not the value: a curved knob reads 50% at its middle. */
+const positionPercent =
+  (key: string) =>
+  (v: number): string =>
+    percent(samplerParamPosition(samplerParams[key as keyof typeof samplerParams], v));
 const hz = (v: number) => `${v.toFixed(0)}Hz`;
 const kHz = (v: number) => `${(v / 1000).toFixed(1)}kHz`;
 const hzOrKhz = (v: number) => (v >= 1000 ? kHz(v) : hz(v));
@@ -68,6 +77,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0.75,
+    format: positionPercent('volume'),
     apply: (p, v) => p.setVolume(v),
   },
   dryWet: {
@@ -75,6 +85,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0.5,
+    format: positionPercent('dryWet'),
     apply: (p, v) => p.setDryWetMix({ dry: 1 - v, wet: v }),
   },
   glide: {
@@ -124,7 +135,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0,
     step: 0.001,
     curve: 2.5,
-    format: (v) => v.toFixed(3),
+    format: positionPercent('feedback'),
     apply: (p, v) => p.setFeedbackAmount(v),
   },
   feedbackPitch: {
@@ -142,6 +153,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0.75,
     curve: 1.5,
+    format: positionPercent('feedbackDecay'),
     apply: (p, v) => p.setFeedbackDecay(v),
   },
   feedbackLpf: {
@@ -161,6 +173,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     curve: 1.5,
+    format: positionPercent('distortion'),
     apply: (p, v) => p.outputBus.setDistortionMacro(v),
   },
   drive: {
@@ -168,6 +181,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
+    format: positionPercent('drive'),
     apply: (p, v) => p.outputBus.setDrive(v),
   },
   clipping: {
@@ -175,6 +189,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
+    format: positionPercent('clipping'),
     apply: (p, v) => p.outputBus.setClippingMacro(v),
   },
   amMod: {
@@ -182,6 +197,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
+    format: positionPercent('amMod'),
     apply: (p, v) => p.setModulationAmount('AM', v),
   },
   amModOctaveOffset: {
@@ -199,7 +215,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    format: percent,
+    format: positionPercent('reverbSend'),
     apply: (p, v) => p.sendToFx('reverb', v),
   },
   reverbSize: {
@@ -207,6 +223,7 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0.7,
+    format: positionPercent('reverbSize'),
     apply: (p, v) => p.setReverbAmount(v),
   },
   delaySend: {
@@ -215,7 +232,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     curve: 2,
-    format: percent,
+    format: positionPercent('delaySend'),
     apply: (p, v) => p.sendToFx('delay', v),
   },
   delayTime: {
@@ -233,7 +250,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0.25,
     curve: 1.5,
-    format: percent,
+    format: positionPercent('delayFeedback'),
     apply: (p, v) => p.outputBus.setDelayFeedback(v),
   },
 
@@ -252,6 +269,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     curve: 1.5,
+    format: positionPercent('gainLFODepth'),
     apply: (p, v) => p.gainLFO?.setDepth(v),
   },
   pitchLFORate: {
@@ -268,6 +286,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     curve: 1.5,
+    format: positionPercent('pitchLFODepth'),
     apply: (p, v) => p.pitchLFO?.setDepth(v / 10),
   },
 
@@ -329,16 +348,17 @@ export const samplerParams = defineSamplerParams({
     max: 0.5,
     defaultValue: 0.125, // Keep equal to the processor's initial loopRampDuration.
     step: 0.001,
+    format: positionPercent('loopRampDuration'),
     apply: (p, v) => p.setLoopRampDuration(v),
   },
   loopDurationDrift: {
     label: 'Loop Drift',
     min: 0,
     max: 1,
-    defaultValue: 0.3,
-    step: 0.01,
-    curve: 1,
-    format: (v) => `${(v * 100).toFixed(0)}%`,
+    defaultValue: 0.03,
+    step: 0.0001,
+    curve: 2,
+    format: positionPercent('loopDurationDrift'),
     apply: (p, v) => p.setLoopDurationDriftAmount(v),
   },
   keytrackLoop: {
@@ -348,7 +368,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0,
     step: 0.01,
     curve: 1,
-    format: percent,
+    format: positionPercent('keytrackLoop'),
     apply: (p, v) => p.setKeytrackLoopAmount(v),
   },
 });

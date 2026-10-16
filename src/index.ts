@@ -25,7 +25,7 @@ export {
 } from './context';
 
 // =*=*= Parameter descriptors =*=*= \\
-export { samplerParams } from './nodes/instruments/Sample/sampler-params';
+export { samplerParams, samplerParamPosition } from './nodes/instruments/Sample/sampler-params';
 export type {
   SamplerParamKey,
   SamplerParamDescriptor,
