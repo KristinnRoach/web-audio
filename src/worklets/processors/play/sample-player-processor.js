@@ -484,15 +484,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     };
   }
 
-  /**
-   * Calculate effective loop range in samples with optional drift
-   * @param {Object} params - Position parameters from #extractPositionParams
-   * @param {Object} playbackRange - Range from #calculatePlaybackRange
-   * @param {number} driftAmount - Loop duration drift amount (0-1)
-   * @param {number} tempo - Current tempo in BPM
-   * @param {number} playbackRate - Current playback rate
-   * @returns {Object} - Effective loop start and end positions with drift applied
-   */
   // Select the nearest period target; glide is applied separately.
   #snapLoopLength(length) {
     const periods = this.loopSnapPeriods;
@@ -522,6 +513,15 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return Math.min(Math.exp(this.loopGlideLogLength), periods.at(-1));
   }
 
+  /**
+   * Calculate effective loop range in samples with optional drift
+   * @param {Object} params - Position parameters from #extractPositionParams
+   * @param {Object} playbackRange - Range from #calculatePlaybackRange
+   * @param {number} driftAmount - Loop duration drift amount (0-1)
+   * @param {number} tempo - Current tempo in BPM
+   * @param {number} playbackRate - Current playback rate
+   * @returns {Object} - Effective loop start and end positions with drift applied
+   */
   #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
     const { startSamples: rangeStart, endSamples: rangeEnd } = playbackRange;
     let lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
@@ -732,12 +732,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 
   /**
-   * Analyze loop amplitude and calculate makeup gain for short loops
-   * @param {number} loopStart - Loop start position in samples
-   * @param {number} loopEnd - Loop end position in samples
-   * @returns {number} - Makeup gain multiplier (1.0 = no change)
-   */
-  /**
    * Posts a resolved range (`loop:range`, `trim:range`) for display, tagged
    * with the current `triggerId`. Compared against the last posted message of
    * that type for this note, so a change skipped by the ~30 Hz throttle is
@@ -752,6 +746,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type, ...range, triggerId: this.triggerId });
   }
 
+  /**
+   * Analyze loop amplitude and calculate makeup gain for short loops
+   * @param {number} loopStart - Loop start position in samples
+   * @param {number} loopEnd - Loop end position in samples
+   * @returns {number} - Makeup gain multiplier (1.0 = no change)
+   */
   #analyzeLoopAmplitude(loopStart, loopEnd) {
     if (!this.enableAmplitudeCompensation || !this.buffer || !this.buffer[0]) {
       return 1.0;
