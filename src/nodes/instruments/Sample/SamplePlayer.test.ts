@@ -1,3 +1,4 @@
+import { initTestPlayer } from './test/initTestPlayer';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
 import type { SampleVoicePool } from './SampleVoicePool';
@@ -27,6 +28,7 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
   vi.stubGlobal(
     'GainNode',
     class {
+      connect() {}
       disconnect() {}
     },
   );
@@ -37,15 +39,17 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
       offset: { setValueAtTime() {} },
       start() {},
       stop() {},
+      connect() {},
       disconnect() {},
     }),
   });
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
   const sendToProcessor = vi.fn();
-  player.voicePool = {
-    applyToAllVoices: (apply) => apply({ sendToProcessor } as never),
+  await initTestPlayer(player, {
+    applyToAllVoices: (apply) =>
+      apply({ sendToProcessor, getParam: () => null, setParam() {} } as never),
     dispose() {},
-  } as SampleVoicePool;
+  });
 
   try {
     player.setScale({
@@ -159,20 +163,21 @@ describe('SamplePlayer envelope config', () => {
         points: envConfig.shape.points.map((point) => ({ ...point })),
       },
     };
-    const voices = [{ setEnvelopeConfig }, { setEnvelopeConfig }];
+    const voices = [0, 1].map(() => ({ setEnvelopeConfig, getParam: () => null, setParam() {} }));
     vi.stubGlobal(
       'GainNode',
       class {
+        connect() {}
         disconnect() {}
       },
     );
     const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
-    player.voicePool = {
+    await initTestPlayer(player, {
       allVoices: voices,
       applyToAllVoices: (fn: (voice: (typeof voices)[number]) => void) => voices.forEach(fn),
       allNotesOff() {},
       dispose() {},
-    } as unknown as SampleVoicePool;
+    } as unknown as Partial<SampleVoicePool>);
     player.onMessage('envelope:changed', changed);
 
     try {
@@ -197,13 +202,16 @@ describe('SamplePlayer envelope config', () => {
   it('rejects invalid snapshots before mutating voices', async () => {
     const { SamplePlayer } = await import('./SamplePlayer');
     const applyToAllVoices = vi.fn();
-    const player = Object.assign(Object.create(SamplePlayer.prototype), {
-      envelopeConfigs: new Map([['amp', envConfig]]),
-      voicePool: {
-        allVoices: [],
-        applyToAllVoices,
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        connect() {}
+        disconnect() {}
       },
-    }) as SamplePlayer;
+    );
+    const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
+    await initTestPlayer(player, { applyToAllVoices });
+    applyToAllVoices.mockClear();
 
     expect(() => player.updateEnvelope('amp', { ...envConfig, timeScale: 0 })).toThrowError(
       'Invalid envelope settings',
@@ -221,6 +229,8 @@ describe('SamplePlayer envelope config', () => {
       }),
     ).toThrowError('Invalid envelope settings');
     expect(applyToAllVoices).not.toHaveBeenCalled();
+    player.dispose();
+    vi.unstubAllGlobals();
   });
 });
 
@@ -270,6 +280,7 @@ describe('SamplePlayer context watch', () => {
     vi.stubGlobal(
       'GainNode',
       class {
+        connect() {}
         disconnect() {}
       },
     );
