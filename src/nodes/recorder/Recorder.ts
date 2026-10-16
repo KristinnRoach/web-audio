@@ -87,11 +87,6 @@ export class Recorder implements LibNode {
     this.#messages = createMessageBus<Message>(this.nodeId);
   }
 
-  async init(): Promise<Recorder> {
-    console.warn('Recorder: init() method is deprecated and will be removed in a future version.');
-    return this;
-  }
-
   async #createAudioNodeStream(node: AudioNode): Promise<MediaStream> {
     this.#audioDestination = this.#context.createMediaStreamDestination();
     this.#connectedInputNode = node;
