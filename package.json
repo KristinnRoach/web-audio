@@ -40,7 +40,7 @@
     "watch": "concurrently \"vp test watch\" \"vp build --watch\" \"vp run watch:processors\"",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "vp test run",
-    "test:browser": "vp test run --config vitest.browser.config.ts",
+    "test:browser": "vpr build:worklets && vp test run --config vitest.browser.config.ts",
     "test:coverage": "vp test run --coverage",
     "test:watch": "vp test",
     "test:all": "vp check --fix && pnpm build && vp run test && vp run test:browser",
