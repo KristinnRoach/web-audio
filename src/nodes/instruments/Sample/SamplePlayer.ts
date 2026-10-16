@@ -114,7 +114,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #preprocessAudio = true;
 
   #voicePool!: SampleVoicePool; // todo: fix use of '!'
-  outBus!: InstrumentBus; // todo: fix use of '!'
+  #outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
   #sustainedNotes = new Map<MidiValue, number>();
@@ -148,7 +148,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#initPromise = (async () => {
       try {
         // Initialize child components first
-        this.outBus = await createInstrumentBus(this.context); // WIP
+        this.#outBus = await createInstrumentBus(this.context); // WIP
         this.#voicePool = await createSampleVoicePool(
           this.context,
           this.#polyphony,
@@ -184,8 +184,8 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   #connectAudioChain() {
-    this.#voicePool.connect(this.outBus.input);
-    this.outBus.connect(this.#masterOut);
+    this.#voicePool.connect(this.#outBus.input);
+    this.#outBus.connect(this.#masterOut);
     this.#masterOut.connect(this.context.destination);
   }
 
@@ -251,7 +251,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   get input() {
-    return this.outBus.input;
+    return this.#outBus.input;
   }
 
   get output() {
@@ -372,7 +372,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     // Connections
     this.#connectLFOToAllVoices(this.#pitchLFO, 'playbackRate');
-    this.#gainLFO.connect(this.outBus.input.gain);
+    this.#gainLFO.connect(this.#outBus.input.gain);
     // this.#connectLFOToAllVoices(this.#gainLFO, 'playbackPosition');
   }
 
@@ -572,7 +572,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#pitchLFO?.setMusicalNote(transposedMidiNote, { divisor: 4 });
     }
 
-    this.outBus.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
+    this.#outBus.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
 
     return this.#voicePool.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
   }
@@ -595,7 +595,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#sustainedNotes.delete(transposedMidiNote);
 
     this.#voicePool.noteOff(transposedMidiNote, secondsFromNow);
-    this.outBus.noteOff(transposedMidiNote);
+    this.#outBus.noteOff(transposedMidiNote);
     this.#sendUpstreamMessage('note:off', { transposedMidiNote });
     return this;
   }
@@ -603,7 +603,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   releaseAll(releaseTime?: number): this {
     this.#sustainedNotes.clear();
     this.#voicePool?.allNotesOff(releaseTime);
-    this.outBus?.releaseAll();
+    this.#outBus?.releaseAll();
     return this;
   }
 
@@ -793,7 +793,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       for (const [note, count] of this.#sustainedNotes) {
         this.#voicePool.noteOff(note);
         // One outBus release per held release: InstrumentBus counts note-ons.
-        for (let i = 0; i < count; i++) this.outBus.noteOff(note);
+        for (let i = 0; i < count; i++) this.#outBus.noteOff(note);
         this.#sendUpstreamMessage('note:off', { transposedMidiNote: note });
       }
       this.#sustainedNotes.clear();
@@ -1064,7 +1064,7 @@ export class SamplePlayer implements ILibInstrumentNode {
    * Pass to `monitorLevels` from `@kidlib/web-audio/debug`.
    */
   getGainStages({ includeVoices = true } = {}): GainStages {
-    const busStages = Object.entries(this.outBus.getGainStages()).map(([name, node]) => [
+    const busStages = Object.entries(this.#outBus.getGainStages()).map(([name, node]) => [
       `bus.${name}`,
       node,
     ]);
@@ -1077,12 +1077,32 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === FX === */
 
+  setDistortionMacro(amount: number): void {
+    this.#outBus.setDistortionMacro(amount);
+  }
+
+  setDrive(amount: number): void {
+    this.#outBus.setDrive(amount);
+  }
+
+  setClippingMacro(amount: number): void {
+    this.#outBus.setClippingMacro(amount);
+  }
+
+  setDelayTime(seconds: number): void {
+    this.#outBus.setDelayTime(seconds);
+  }
+
+  setDelayFeedback(amount: number): void {
+    this.#outBus.setDelayFeedback(amount);
+  }
+
   setDryWetMix = (mix: { dry: number; wet: number }) => {
-    this.outBus.setDryWetMix(mix);
+    this.#outBus.setDryWetMix(mix);
   };
 
   sendToFx = (effect: BusNodeName, amount: number) => {
-    this.outBus.setSendAmount(effect, amount);
+    this.#outBus.setSendAmount(effect, amount);
   };
 
   setLpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' | 'all' = 'pre') => {
@@ -1093,7 +1113,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       });
     }
     if (preOrPostFx === 'post' || preOrPostFx === 'all') {
-      this.outBus.setLpfCutoff(hz);
+      this.#outBus.setLpfCutoff(hz);
     }
   };
 
@@ -1104,23 +1124,23 @@ export class SamplePlayer implements ILibInstrumentNode {
         v.setHpfCutoff(hz);
       });
     } else if (preOrPostFx === 'post') {
-      this.outBus.setHpfCutoff(hz);
+      this.#outBus.setHpfCutoff(hz);
     }
   };
 
   setReverbAmount = (amount: number) => {
-    this.outBus.setReverbSize(amount);
+    this.#outBus.setReverbSize(amount);
   };
 
   setFeedbackDecay(value: number) {
-    this.outBus.setFeedbackDecay(value);
+    this.#outBus.setFeedbackDecay(value);
     this.#voicePool.applyToAllVoices((voice) => {
       voice.feedback?.setDecay(value);
     });
   }
 
   setFeedbackLowpassCutoff(freqHz: number) {
-    this.outBus.setFeedbackLowpassCutoff(freqHz);
+    this.#outBus.setFeedbackLowpassCutoff(freqHz);
 
     this.#voicePool.applyToAllVoices((voice) => {
       voice.feedback?.setLowpassCutoff(freqHz);
@@ -1132,7 +1152,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setFeedbackAmount = (amount: number) => {
     amount = clamp(amount, 0, 1);
     if (this.#feedbackMode === 'monophonic' || this.#feedbackMode === 'double-trouble') {
-      this.outBus.setFeedbackAmount(amount);
+      this.#outBus.setFeedbackAmount(amount);
     }
 
     if (this.#feedbackMode === 'polyphonic' || this.#feedbackMode === 'double-trouble') {
@@ -1152,12 +1172,12 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#voicePool.applyToAllVoices((voice) => {
         voice.feedback?.setAmountMacro(0);
       });
-      this.outBus.setFeedbackAmount(currAmount);
+      this.#outBus.setFeedbackAmount(currAmount);
     } else if (mode === 'polyphonic') {
-      const monoFx = this.outBus.getFeedback();
+      const monoFx = this.#outBus.getFeedback();
       const currAmount = monoFx.currentAmount;
 
-      this.outBus.setFeedbackAmount(0);
+      this.#outBus.setFeedbackAmount(0);
 
       this.#voicePool.applyToAllVoices((voice) => {
         voice.feedback?.setAmountMacro(currAmount);
@@ -1168,7 +1188,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   setFeedbackPitchScale(value: number) {
-    this.outBus.setFeedbackPitchScale(value);
+    this.#outBus.setFeedbackPitchScale(value);
 
     this.#voicePool.applyToAllVoices((voice) => {
       voice.feedback?.setDelayMultiplier(value);
@@ -1304,9 +1324,9 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.#voicePool = null as unknown as SampleVoicePool;
       }
 
-      if (this.outBus) {
-        this.outBus.dispose();
-        this.outBus = null as unknown as InstrumentBus;
+      if (this.#outBus) {
+        this.#outBus.dispose();
+        this.#outBus = null as unknown as InstrumentBus;
       }
 
       this.#gainLFO?.dispose();

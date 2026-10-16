@@ -174,7 +174,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0,
     curve: 1.5,
     format: positionPercent('distortion'),
-    apply: (p, v) => p.outBus.setDistortionMacro(v),
+    apply: (p, v) => p.setDistortionMacro(v),
   },
   drive: {
     label: 'Drive',
@@ -182,7 +182,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     format: positionPercent('drive'),
-    apply: (p, v) => p.outBus.setDrive(v),
+    apply: (p, v) => p.setDrive(v),
   },
   clipping: {
     label: 'Clipping',
@@ -190,7 +190,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     format: positionPercent('clipping'),
-    apply: (p, v) => p.outBus.setClippingMacro(v),
+    apply: (p, v) => p.setClippingMacro(v),
   },
   amMod: {
     label: 'AM',
@@ -242,7 +242,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0.1,
     curve: 2,
     format: (v) => `${v.toFixed(3)}s`,
-    apply: (p, v) => p.outBus.setDelayTime(v),
+    apply: (p, v) => p.setDelayTime(v),
   },
   delayFeedback: {
     label: 'Delay Feedback',
@@ -251,7 +251,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0.25,
     curve: 1.5,
     format: positionPercent('delayFeedback'),
-    apply: (p, v) => p.outBus.setDelayFeedback(v),
+    apply: (p, v) => p.setDelayFeedback(v),
   },
 
   // LFOs (rate knobs are normalized 0..1 -> Hz)

@@ -1,7 +1,6 @@
 import { LibNode, NodeType } from './LibNode';
 import { registerNode, unregisterNode, NodeID } from './node-store';
 import { MessageBus, MessageHandler, Message, createMessageBus } from '@/events';
-import { InstrumentBus } from './master/InstrumentBus';
 
 /** Adapter interface for web native and Audiolib's custom audio nodes */
 export interface ILibAudioNode<T extends AudioNode | AudioWorkletNode = AudioNode> extends LibNode {
@@ -40,8 +39,6 @@ export interface ILibInstrumentNode extends ILibAudioNode {
 
   // sustainPedalOn(): this;
   // sustainPedalOff(): this;
-
-  outBus?: InstrumentBus;
 }
 
 export interface LibAudioNodeOptions {
