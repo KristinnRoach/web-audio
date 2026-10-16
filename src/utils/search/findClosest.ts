@@ -1,3 +1,6 @@
+const numberValue = (value: unknown): number => value as number;
+const absoluteDistance = (a: number, b: number): number => Math.abs(a - b);
+
 /**
  * Generic binary search that finds the closest element using a custom comparison function
  * @param sortedArray - Array sorted according to the compareValue function
@@ -10,8 +13,8 @@ export function findClosestIdx<T>(
   sortedArray: T[],
   target: number,
   direction: 'left' | 'right' | 'any' = 'any',
-  getValue: (item: T) => number = (x) => x as unknown as number,
-  getDistance: (a: number, b: number) => number = (a, b) => Math.abs(a - b),
+  getValue: (item: T) => number = numberValue,
+  getDistance: (a: number, b: number) => number = absoluteDistance,
 ): number {
   if (sortedArray.length === 0) {
     throw new Error('Array cannot be empty');
@@ -69,8 +72,8 @@ export function findClosest<T>(
   sortedArray: T[],
   target: number,
   direction: 'left' | 'right' | 'any' = 'any',
-  getValue: (item: T) => number = (x) => x as unknown as number,
-  getDistance: (a: number, b: number) => number = (a, b) => Math.abs(a - b),
+  getValue: (item: T) => number = numberValue,
+  getDistance: (a: number, b: number) => number = absoluteDistance,
 ): T {
   const index = findClosestIdx(sortedArray, target, direction, getValue, getDistance);
   return sortedArray[index];

@@ -152,6 +152,32 @@ describe('a-rate loop points and duration glide', () => {
     );
   });
 
+  it('applies a new ramp duration during an active glide', async () => {
+    const processor = await makeProcessor();
+    processor.port.onmessage?.({
+      data: { type: 'setLoopRampDuration', value: 0.01 },
+    } as MessageEvent);
+    processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
+    const target = makeParameters({ loopEnd: 0.0075 });
+    processor.process([], [[new Float32Array(37)]], target);
+    processor.port.onmessage?.({
+      data: { type: 'setLoopRampDuration', value: 0.02 },
+    } as MessageEvent);
+    processor.process([], [[new Float32Array(19)]], target);
+    const state = processor as typeof processor & {
+      previousLoopRange: { loopDurationSamples: number };
+    };
+    const expected = Math.exp(
+      Math.log(0.008) +
+        (Math.log(0.002) - Math.log(0.008)) *
+          Math.exp(-37 / TEST_SAMPLE_RATE / 0.01 - 19 / TEST_SAMPLE_RATE / 0.02),
+    );
+    expect(state.previousLoopRange.loopDurationSamples / TEST_SAMPLE_RATE).toBeCloseTo(
+      expected,
+      10,
+    );
+  });
+
   it('contains every modulated range inside trim without rounding fractional periods', async () => {
     const processor = await startProcessor([], [100.5 / TEST_SAMPLE_RATE]);
     processor.port.onmessage?.({ data: { type: 'setLoopRampDuration', value: 0 } } as MessageEvent);

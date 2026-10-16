@@ -10,16 +10,19 @@ const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
  * `minLength` long (or as long as the bounds allow). Points arrive raw from the
  * main thread, so either may be set first and they may be equal.
  */
+// Reused result: callers destructure it immediately, and this runs per sample.
+const resolvedRange = [0, 0];
 function resolveRange(a, b, lo, hi, minLength) {
-  const clamp = (value) => Math.min(Math.max(value, lo), hi);
-  let start = clamp(Math.min(a, b));
-  let end = clamp(Math.max(a, b));
+  let start = Math.min(Math.max(Math.min(a, b), lo), hi);
+  let end = Math.min(Math.max(Math.max(a, b), lo), hi);
   if (end - start < minLength) {
     // Grow the end, then pull the start back if the end hit the upper bound
     end = Math.min(start + minLength, hi);
     start = Math.max(lo, end - minLength);
   }
-  return [start, end];
+  resolvedRange[0] = start;
+  resolvedRange[1] = end;
+  return resolvedRange;
 }
 
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
@@ -59,6 +62,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Glide time constant between snapped loop lengths, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
     this.loopRampDuration = 0.125;
+    this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
     this.loopGlideLogLength = null;
 
     this.AMPLITUDE_COMPENSATION_THRESHOLD = Math.floor(sampleRate / 65.406);
@@ -220,6 +224,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'setLoopRampDuration':
         this.loopRampDuration = value;
+        this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / value);
         break;
 
       case 'setKeytrackLoopAmount':
@@ -489,7 +494,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #snapLoopLength(length) {
     const periods = this.loopSnapPeriods;
     if (!periods?.length || length < 1 || length > periods[periods.length - 1]) return length;
-    return periods.reduce((best, p) => (Math.abs(p - length) < Math.abs(best - length) ? p : best));
+    let best = periods[0];
+    let distance = Math.abs(best - length);
+    for (let i = 1; i < periods.length; i++) {
+      const candidateDistance = Math.abs(periods[i] - length);
+      if (candidateDistance < distance) {
+        best = periods[i];
+        distance = candidateDistance;
+      }
+    }
+    return best;
   }
 
   // One-pole glide in the log domain (even pitch glide), once per audible sample.
@@ -505,8 +519,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (this.loopGlideLogLength === null || !(this.loopRampDuration > 0)) {
       this.loopGlideLogLength = logTarget;
     } else {
-      const k = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
-      this.loopGlideLogLength += (logTarget - this.loopGlideLogLength) * k;
+      this.loopGlideLogLength += (logTarget - this.loopGlideLogLength) * this.loopGlideCoefficient;
       this.loopGliding = Math.abs(logTarget - this.loopGlideLogLength) > 1e-12;
       if (!this.loopGliding) this.loopGlideLogLength = logTarget;
     }
@@ -521,7 +534,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @param {number} driftAmount - Loop duration drift amount (0-1)
    * @param {number} tempo - Current tempo in BPM
    * @param {number} playbackRate - Current playback rate
-   * @returns {Object} - Effective loop start and end positions with drift applied
+   * @returns {Object} - Effective loop start and end positions with drift applied.
+   *   A reused object, valid until the call after next; copy it to keep it longer.
    */
   #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
     const { startSamples: rangeStart, endSamples: rangeEnd } = playbackRange;
@@ -665,13 +679,17 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       }
     }
 
-    const loopDuration = calcLoopEnd - calcLoopStart;
-
-    return {
-      loopStartSamples: calcLoopStart,
-      loopEndSamples: calcLoopEnd,
-      loopDurationSamples: loopDuration,
-    };
+    // Two reused slots instead of a new object per sample: process() compares
+    // against previousLoopRange, so write into whichever slot that isn't.
+    this.loopRangeSlots ??= [{}, {}];
+    const range =
+      this.loopRangeSlots[0] === this.previousLoopRange
+        ? this.loopRangeSlots[1]
+        : this.loopRangeSlots[0];
+    range.loopStartSamples = calcLoopStart;
+    range.loopEndSamples = calcLoopEnd;
+    range.loopDurationSamples = calcLoopEnd - calcLoopStart;
+    return range;
   }
 
   #getSafeParam(paramArray, index, isConstant) {
@@ -942,14 +960,21 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           ? 'backward'
           : 'forward';
 
-      // Reuse static ranges; glide and per-pass drift still advance when needed.
+      // Recalculate the range only when something moved. Short loops follow
+      // their points per sample: their length is pitch. Long loops follow them
+      // once per block, as k-rate did; per-sample zero-crossing snapping for
+      // 16 voices overran the audio thread. The 2x margin keeps loops near the
+      // audio-rate boundary (Float32 noise can lift them over it) per sample.
+      const pointsChanged =
+        loopStart !== previousStart || loopEnd !== previousEnd || baseRate !== previousRate;
+      const followsPointsPerSample =
+        loopRange?.loopDurationSamples < 2 * this.pitchPreservationThreshold;
+      const driftPending = driftAmount > 0 && this.loopEnabled && !this.nextDriftGenerated;
       if (
         !loopRange ||
-        loopStart !== previousStart ||
-        loopEnd !== previousEnd ||
-        baseRate !== previousRate ||
+        (pointsChanged && followsPointsPerSample) ||
         this.loopGliding ||
-        (driftAmount > 0 && this.loopEnabled && !this.nextDriftGenerated)
+        driftPending
       ) {
         loopRange = this.#calculateLoopRange(
           positionParams,
@@ -969,6 +994,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const previous = this.previousLoopRange;
       if (
         previous &&
+        loopRange.loopStartSamples !== previous.loopStartSamples &&
         this.loopEnabled &&
         loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
         this.previousLoopPosition >= previous.loopStartSamples &&
