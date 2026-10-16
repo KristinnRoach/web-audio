@@ -238,11 +238,13 @@ describe('SampleVoice state', () => {
     range(1);
     endPlayback(1);
     range(1);
+    trigger(voice, 64);
+    range(1);
+    range(2);
 
-    expect(ranges).toHaveBeenCalledOnce();
+    expect(ranges.mock.calls.map(([data]) => data.midiNote)).toEqual([60, 64]);
     expect(ranges.mock.calls[0][0]).toMatchObject({
       voiceId: voice.nodeId,
-      midiNote: 60,
       loopStart: 0,
       loopEnd: 1,
     });
