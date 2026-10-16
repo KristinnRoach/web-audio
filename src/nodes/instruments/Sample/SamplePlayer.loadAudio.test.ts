@@ -1,3 +1,4 @@
+import { initTestPlayer } from './test/initTestPlayer';
 import { afterEach, expect, it, vi } from 'vite-plus/test';
 import type { SampleVoicePool } from './SampleVoicePool';
 
@@ -27,6 +28,7 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
   vi.stubGlobal(
     'GainNode',
     class {
+      connect() {}
       disconnect() {}
     },
   );
@@ -52,7 +54,9 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   let loaded = () => {};
   const publish = vi.fn(() => loaded());
-  player.voicePool = {
+  const setLoopEnabled = vi.fn();
+  await initTestPlayer(player, {
+    allVoices: [{ setLoopEnabled }],
     onMessage: (_type: string, callback: () => void) => {
       loaded = callback;
       return () => {};
@@ -60,14 +64,28 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     setAudioData: publish,
     applyToAllVoices: vi.fn(),
     dispose: vi.fn(),
-  } as unknown as SampleVoicePool;
+  } as unknown as Partial<SampleVoicePool>);
   vi.spyOn(player, 'releaseAll').mockReturnValue(player);
   vi.spyOn(player, 'setScale').mockReturnValue(player);
 
   try {
+    const loopChanged = vi.fn();
+    player.onMessage('loop:enabled', loopChanged);
+    player.setLoopEnabled(true);
+    setLoopEnabled.mockClear();
+    loopChanged.mockClear();
     await expect(player.loadAudio([firstBuffer, later])).resolves.toEqual([firstBuffer]);
     expect(publish).toHaveBeenCalledWith([firstBuffer], []);
     expect(player.samples).toEqual([firstBuffer]);
+    player.setLoopEnabled(true);
+    expect(setLoopEnabled).toHaveBeenCalledWith(true);
+    expect(loopChanged).not.toHaveBeenCalled();
+    player.setLoopLocked(true);
+    setLoopEnabled.mockClear();
+    player.setLoopEnabled(false);
+    expect(setLoopEnabled).not.toHaveBeenCalled();
+    expect(player.loopEnabled).toBe(true);
+    expect(loopChanged).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith('Failed to resample sample 1; skipping', failure);
 
     publish.mockClear();

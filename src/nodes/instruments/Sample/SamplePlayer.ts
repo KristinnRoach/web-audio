@@ -113,7 +113,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #useZeroCrossings = true;
   #preprocessAudio = true;
 
-  voicePool!: SampleVoicePool; // todo: fix use of '!'
+  #voicePool!: SampleVoicePool; // todo: fix use of '!'
   outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
@@ -123,7 +123,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #onContextStateChange = () => {
     if (this.context.state !== 'closed') return;
     console.warn(`[SamplePlayer ${this.nodeId}] AudioContext closed; player is silent.`);
-    this.sendUpstreamMessage('context:closed', {});
+    this.#sendUpstreamMessage('context:closed', {});
   };
 
   constructor(options: SamplePlayerOptions) {
@@ -149,7 +149,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       try {
         // Initialize child components first
         this.outBus = await createInstrumentBus(this.context); // WIP
-        this.voicePool = await createSampleVoicePool(
+        this.#voicePool = await createSampleVoicePool(
           this.context,
           this.#polyphony,
           this.#voiceSignalChain,
@@ -184,7 +184,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   #connectAudioChain() {
-    this.voicePool.connect(this.outBus.input);
+    this.#voicePool.connect(this.outBus.input);
     this.outBus.connect(this.#masterOut);
     this.#masterOut.connect(this.context.destination);
   }
@@ -195,7 +195,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#messages.onMessage(type, handler);
   }
 
-  public sendUpstreamMessage(type: string, data: any): this {
+  #sendUpstreamMessage(type: string, data: any): this {
     this.#messages.sendMessage(type, data);
     return this;
   }
@@ -269,7 +269,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   /* === MESSAGES === */
 
   #setupMessageHandling(): this {
-    this.voicePool.onMessage('sample:loaded', () => {
+    this.#voicePool.onMessage('sample:loaded', () => {
       this.#isLoaded = true;
 
       // Rescale every shape to the new buffer and push it down. Voices come up on
@@ -283,18 +283,20 @@ export class SamplePlayer implements ILibInstrumentNode {
       });
     });
 
-    this.voicePool.onMessage('voice-pool:initialized', () => {
+    this.#voicePool.onMessage('voice-pool:initialized', () => {
       // Fresh voices start on defaults, so hand them the owned state before they play.
       SAMPLE_ENVELOPE_IDS.forEach((id) => {
         const config = this.getEnvelope(id);
-        this.voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
+        this.#voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
       });
-      this.voicePool.applyToAllVoices((voice) => voice.setLoopRampDuration(this.#loopRampDuration));
-      this.sendUpstreamMessage('sample-player:initialized', {});
+      this.#voicePool.applyToAllVoices((voice) =>
+        voice.setLoopRampDuration(this.#loopRampDuration),
+      );
+      this.#sendUpstreamMessage('sample-player:initialized', {});
     });
 
     // Forward voice pool messages upstream
-    this.#messages.forwardFrom(this.voicePool, [
+    this.#messages.forwardFrom(this.#voicePool, [
       'voice-pool:initialized',
       'voice:started',
       'voice:stopped',
@@ -312,7 +314,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
     const timestamp = this.context.currentTime;
-    this.voicePool.applyToAllVoices((voice) => {
+    this.#voicePool.applyToAllVoices((voice) => {
       voice.setParam('loopStart', this.#loopStart, timestamp);
       voice.setParam('loopEnd', this.#loopEnd, timestamp);
     });
@@ -322,17 +324,17 @@ export class SamplePlayer implements ILibInstrumentNode {
   /* === LFOs === */
 
   setModulationAmount = (modType: 'AM' | 'FM', amount: number) =>
-    this.voicePool.applyToAllVoices((v) => v.setModulationAmount(modType, amount));
+    this.#voicePool.applyToAllVoices((v) => v.setModulationAmount(modType, amount));
 
   setAMModOctaveOffset = (offset: number) =>
-    this.voicePool.applyToAllVoices((v) => v.setAMModOctaveOffset(offset));
+    this.#voicePool.applyToAllVoices((v) => v.setAMModOctaveOffset(offset));
 
   setModulationWaveform(
     modType: 'AM' | 'FM' = 'AM',
     waveform: CustomLibWaveform | OscillatorType | PeriodicWave = 'triangle',
     customWaveOptions: WaveformOptions = {},
   ) {
-    this.voicePool.applyToAllVoices((v) =>
+    this.#voicePool.applyToAllVoices((v) =>
       v.setModulationWaveform(modType, waveform, customWaveOptions),
     );
   }
@@ -375,7 +377,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   #connectLFOToAllVoices(lfo: LFO, paramName: string) {
-    this.voicePool.applyToAllVoices((voice) => {
+    this.#voicePool.applyToAllVoices((voice) => {
       const param = voice.getParam(paramName);
       if (param) lfo.connect(param);
     });
@@ -483,12 +485,12 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#bufferDuration = audioData[0].duration;
 
       const loadedPromise = new Promise<void>((resolve) => {
-        unsubscribe = this.voicePool.onMessage('sample:loaded', () => {
+        unsubscribe = this.#voicePool.onMessage('sample:loaded', () => {
           resolve();
         });
       });
 
-      this.voicePool.setAudioData(audioData, newZeroCrossings);
+      this.#voicePool.setAudioData(audioData, newZeroCrossings);
 
       const defaultScaleOptions = {
         rootNote: 'C' as keyof typeof ROOT_NOTES,
@@ -572,7 +574,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.outBus.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
 
-    return this.voicePool.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
+    return this.#voicePool.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
   }
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
@@ -592,21 +594,18 @@ export class SamplePlayer implements ILibInstrumentNode {
     // Remove from sustained notes if it was there
     this.#sustainedNotes.delete(transposedMidiNote);
 
-    this.voicePool.noteOff(transposedMidiNote, secondsFromNow);
+    this.#voicePool.noteOff(transposedMidiNote, secondsFromNow);
     this.outBus.noteOff(transposedMidiNote);
-    this.sendUpstreamMessage('note:off', { transposedMidiNote });
+    this.#sendUpstreamMessage('note:off', { transposedMidiNote });
     return this;
   }
 
   releaseAll(releaseTime?: number): this {
     this.#sustainedNotes.clear();
-    this.voicePool?.allNotesOff(releaseTime);
+    this.#voicePool?.allNotesOff(releaseTime);
     this.outBus?.releaseAll();
     return this;
   }
-
-  // Common functionality for all instruments
-  panic = (releaseTime?: number) => this.releaseAll(releaseTime);
 
   /* === SCALE SETTINGS === */
 
@@ -639,7 +638,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       (a, b) => a - b,
     );
 
-    this.voicePool?.applyToAllVoices((voice) => {
+    this.#voicePool?.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setLoopSnapPeriods', value: this.#loopSnapPeriods });
     });
 
@@ -698,18 +697,18 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   setSampleStartPoint(seconds: number): this {
-    this.voicePool.applyToAllVoices((voice) => voice.setStartPoint(seconds));
+    this.#voicePool.applyToAllVoices((voice) => voice.setStartPoint(seconds));
 
-    this.sendUpstreamMessage('start-point:updated', {
+    this.#sendUpstreamMessage('start-point:updated', {
       startPoint: seconds,
     });
     return this;
   }
 
   setSampleEndPoint(seconds: number): this {
-    this.voicePool.applyToAllVoices((voice) => voice.setEndPoint(seconds));
+    this.#voicePool.applyToAllVoices((voice) => voice.setEndPoint(seconds));
 
-    this.sendUpstreamMessage('end-point:updated', {
+    this.#sendUpstreamMessage('end-point:updated', {
       endPoint: seconds,
     });
     return this;
@@ -718,7 +717,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   // Glide time constant between snapped loop lengths, applied in the processor. 0 = stepped.
   setLoopRampDuration(seconds: number): this {
     this.#loopRampDuration = seconds;
-    this.voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
+    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
     return this;
   }
 
@@ -728,16 +727,14 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   setLoopEnabled(enabled: boolean): this {
-    if (this.#loopEnabled === enabled) return this;
-
     // if loop is locked (ON), turning it off is disabled but turning it on should work
     if (this.#loopLocked && !enabled) return this;
 
-    const voices = this.voicePool.allVoices;
-    voices.forEach((v) => v.setLoopEnabled(enabled));
+    this.#voicePool?.allVoices.forEach((v) => v.setLoopEnabled(enabled));
+    if (this.#loopEnabled === enabled) return this;
     this.#loopEnabled = enabled;
 
-    this.sendUpstreamMessage('loop:enabled', { enabled });
+    this.#sendUpstreamMessage('loop:enabled', { enabled });
     return this;
   }
 
@@ -747,7 +744,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#loopLocked = locked;
     this.setLoopEnabled(locked);
 
-    this.sendUpstreamMessage('loop:locked', { locked });
+    this.#sendUpstreamMessage('loop:locked', { locked });
     return this;
   }
 
@@ -757,7 +754,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     this.#holdEnabled = enabled;
     if (!enabled) this.releaseAll(0.1);
-    this.sendUpstreamMessage('hold:enabled', { enabled });
+    this.#sendUpstreamMessage('hold:enabled', { enabled });
     return this;
   }
 
@@ -767,7 +764,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#holdLocked = locked;
     if (locked === false) this.releaseAll();
 
-    this.sendUpstreamMessage('hold:locked', { locked });
+    this.#sendUpstreamMessage('hold:locked', { locked });
     return this;
   }
 
@@ -794,10 +791,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     if (!pressed) {
       for (const [note, count] of this.#sustainedNotes) {
-        this.voicePool.noteOff(note);
+        this.#voicePool.noteOff(note);
         // One outBus release per held release: InstrumentBus counts note-ons.
         for (let i = 0; i < count; i++) this.outBus.noteOff(note);
-        this.sendUpstreamMessage('note:off', { transposedMidiNote: note });
+        this.#sendUpstreamMessage('note:off', { transposedMidiNote: note });
       }
       this.#sustainedNotes.clear();
     }
@@ -805,52 +802,49 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  sustainPedalOn = (): this => this.setSustainPedal(true);
-  sustainPedalOff = (): this => this.setSustainPedal(false);
-
   setPlaybackDirection(direction: 'forward' | 'reverse'): this {
-    this.voicePool.applyToAllVoices((voice) => voice.setPlaybackDirection(direction));
+    this.#voicePool.applyToAllVoices((voice) => voice.setPlaybackDirection(direction));
     return this;
   }
 
   setLoopDurationDriftAmount(amount: number): this {
-    this.voicePool.applyToAllVoices((voice) => voice.setLoopDurationDriftAmount(amount));
+    this.#voicePool.applyToAllVoices((voice) => voice.setLoopDurationDriftAmount(amount));
     return this;
   }
 
   setPanDriftEnabled = (enabled: boolean) => {
-    this.voicePool.applyToAllVoices((voice) => voice.setPanDriftEnabled(enabled));
+    this.#voicePool.applyToAllVoices((voice) => voice.setPanDriftEnabled(enabled));
     return this;
   };
 
   setTimestretchEnabled = (enabled: boolean) => {
-    this.voicePool.applyToAllVoices((voice) => voice.setTimestretchEnabled(enabled));
+    this.#voicePool.applyToAllVoices((voice) => voice.setTimestretchEnabled(enabled));
     return this;
   };
 
   setLoopStart = (seconds: number) => {
-    return this.setLoopPoint('start', seconds, this.loopEnd);
+    return this.#setLoopPoint('start', seconds, this.loopEnd);
   };
 
   setLoopEnd = (seconds: number) => {
-    return this.setLoopPoint('end', this.loopStart, seconds);
+    return this.#setLoopPoint('end', this.loopStart, seconds);
   };
 
   setLoopDuration = (seconds: number) =>
-    this.setLoopPoint('end', this.loopStart, this.loopStart + seconds);
+    this.#setLoopPoint('end', this.loopStart, this.loopStart + seconds);
 
   setTempo(bpm: number) {
     if (bpm < this.#MIN_TEMPO || bpm > this.#MAX_TEMPO) return;
     this.#tempo = bpm;
 
-    this.voicePool.applyToAllVoices((voice) => voice.setTempo(bpm));
+    this.#voicePool.applyToAllVoices((voice) => voice.setTempo(bpm));
 
-    this.sendUpstreamMessage('tempo:updated', { bpm });
+    this.#sendUpstreamMessage('tempo:updated', { bpm });
     return this;
   }
 
   syncLoopToTempo(enabled: boolean) {
-    this.voicePool.applyToAllVoices((voice) => voice.syncLoopToTempo(enabled));
+    this.#voicePool.applyToAllVoices((voice) => voice.syncLoopToTempo(enabled));
     return this;
   }
 
@@ -858,7 +852,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setKeytrackLoopAmount(amount: number) {
     const clamped = Math.max(0, Math.min(1, amount));
     this.#keytrackLoopAmount = clamped;
-    this.voicePool.applyToAllVoices((voice) => voice.setKeytrackLoopAmount(clamped));
+    this.#voicePool.applyToAllVoices((voice) => voice.setKeytrackLoopAmount(clamped));
     return this;
   }
 
@@ -868,7 +862,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#tempo;
   }
 
-  setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
+  #setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.
     // The processor resolves ordering, snapping and trim containment.
     const seconds = clamp(
@@ -881,14 +875,14 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (loopPoint === 'start') {
       if (seconds === this.loopStart) return this;
       this.#loopStart = seconds;
-      this.voicePool.applyToAllVoices((voice) => voice.setParam('loopStart', seconds, timestamp));
+      this.#voicePool.applyToAllVoices((voice) => voice.setParam('loopStart', seconds, timestamp));
     } else {
       if (seconds === this.loopEnd) return this;
       this.#loopEnd = seconds;
-      this.voicePool.applyToAllVoices((voice) => voice.setParam('loopEnd', seconds, timestamp));
+      this.#voicePool.applyToAllVoices((voice) => voice.setParam('loopEnd', seconds, timestamp));
     }
 
-    this.sendUpstreamMessage('loop-points:updated', {
+    this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -907,12 +901,12 @@ export class SamplePlayer implements ILibInstrumentNode {
     const loopEnd = loopStart + loopDuration;
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
-    this.voicePool.applyToAllVoices((voice) => {
+    this.#voicePool.applyToAllVoices((voice) => {
       voice.setParam('loopStart', loopStart, timestamp);
       voice.setParam('loopEnd', loopEnd, timestamp);
     });
 
-    this.sendUpstreamMessage('loop-points:updated', {
+    this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -968,11 +962,11 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   // TODO: Consider moving source of truth from SampleVoice to SamplePlayer, or convert to MacroParams, symmetrical with the loop start/end points
   getStartPoint(): number {
-    return this.voicePool?.allVoices[0]?.startPoint ?? 0;
+    return this.#voicePool?.allVoices[0]?.startPoint ?? 0;
   }
 
   getEndPoint(): number {
-    return this.voicePool?.allVoices[0]?.endPoint ?? this.sampleDuration;
+    return this.#voicePool?.allVoices[0]?.endPoint ?? this.sampleDuration;
   }
 
   getLoopRampDuration(): number {
@@ -1013,7 +1007,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   /* === PITCH === */
 
   setPitchEnabled(enabled: boolean): this {
-    this.voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
+    this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
     return this;
   }
 
@@ -1044,9 +1038,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     const next = cloneEnvelopeConfig(merged);
     this.envelopeConfigs.set(id, next);
 
-    this.voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, next));
+    this.#voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, next));
 
-    this.sendUpstreamMessage('envelope:changed', { id, config: cloneEnvelopeConfig(next) });
+    this.#sendUpstreamMessage('envelope:changed', { id, config: cloneEnvelopeConfig(next) });
   }
 
   /** Restores one envelope, or all when `id` is omitted, to defaults sized to the current sample. */
@@ -1061,7 +1055,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /** Envelope ids on the current voices; empty until the pool is initialized. */
   get envelopeIds(): SampleEnvelopeId[] {
-    return [...(this.voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
+    return [...(this.#voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
   }
 
   /**
@@ -1075,7 +1069,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       node,
     ]);
     return {
-      ...(includeVoices ? this.voicePool.getGainStages() : {}),
+      ...(includeVoices ? this.#voicePool.getGainStages() : {}),
       ...Object.fromEntries(busStages),
       masterOut: this.#masterOut,
     };
@@ -1094,7 +1088,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setLpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' | 'all' = 'pre') => {
     this.#lpfCutoff = hz;
     if (preOrPostFx === 'pre' || preOrPostFx === 'all') {
-      this.voicePool.applyToAllVoices((v) => {
+      this.#voicePool.applyToAllVoices((v) => {
         v.setLpfCutoff(hz);
       });
     }
@@ -1106,7 +1100,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setHpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' = 'post') => {
     this.#hpfCutoff = hz;
     if (preOrPostFx === 'pre') {
-      this.voicePool.applyToAllVoices((v) => {
+      this.#voicePool.applyToAllVoices((v) => {
         v.setHpfCutoff(hz);
       });
     } else if (preOrPostFx === 'post') {
@@ -1120,7 +1114,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   setFeedbackDecay(value: number) {
     this.outBus.setFeedbackDecay(value);
-    this.voicePool.applyToAllVoices((voice) => {
+    this.#voicePool.applyToAllVoices((voice) => {
       voice.feedback?.setDecay(value);
     });
   }
@@ -1128,7 +1122,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setFeedbackLowpassCutoff(freqHz: number) {
     this.outBus.setFeedbackLowpassCutoff(freqHz);
 
-    this.voicePool.applyToAllVoices((voice) => {
+    this.#voicePool.applyToAllVoices((voice) => {
       voice.feedback?.setLowpassCutoff(freqHz);
     });
   }
@@ -1142,7 +1136,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
 
     if (this.#feedbackMode === 'polyphonic' || this.#feedbackMode === 'double-trouble') {
-      this.voicePool.applyToAllVoices((voice) => {
+      this.#voicePool.applyToAllVoices((voice) => {
         voice.feedback?.setAmountMacro(amount);
       });
     }
@@ -1154,8 +1148,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#feedbackMode = mode;
 
     if (mode === 'monophonic') {
-      let currAmount = this.voicePool.allVoices[0].feedback?.currentAmount ?? 0;
-      this.voicePool.applyToAllVoices((voice) => {
+      let currAmount = this.#voicePool.allVoices[0].feedback?.currentAmount ?? 0;
+      this.#voicePool.applyToAllVoices((voice) => {
         voice.feedback?.setAmountMacro(0);
       });
       this.outBus.setFeedbackAmount(currAmount);
@@ -1165,7 +1159,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       this.outBus.setFeedbackAmount(0);
 
-      this.voicePool.applyToAllVoices((voice) => {
+      this.#voicePool.applyToAllVoices((voice) => {
         voice.feedback?.setAmountMacro(currAmount);
       });
     } else {
@@ -1176,7 +1170,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   setFeedbackPitchScale(value: number) {
     this.outBus.setFeedbackPitchScale(value);
 
-    this.voicePool.applyToAllVoices((voice) => {
+    this.#voicePool.applyToAllVoices((voice) => {
       voice.feedback?.setDelayMultiplier(value);
     });
   }
@@ -1220,7 +1214,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   //     this.#midiController = midiController;
   //     midiController.connectInstrument(this, channel);
 
-  //     this.sendUpstreamMessage('midi:enabled', { channel });
+  //     this.#sendUpstreamMessage('midi:enabled', { channel });
   //   }
   //   return this;
   // }
@@ -1235,7 +1229,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   //     this.#midiController = null;
   //   }
 
-  //   this.sendUpstreamMessage('midi:disabled', { channel });
+  //   this.#sendUpstreamMessage('midi:disabled', { channel });
 
   //   return this;
   // }
@@ -1245,14 +1239,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   // }
 
   /* === PUBLIC GETTERS === */
-
-  get mainOut() {
-    return this.#masterOut;
-  }
-
-  get outputBus() {
-    return this.outBus;
-  }
 
   get sampleDuration(): number {
     return this.#bufferDuration;
@@ -1313,9 +1299,9 @@ export class SamplePlayer implements ILibInstrumentNode {
       // Clear sustained notes
       this.#sustainedNotes.clear();
 
-      if (this.voicePool) {
-        this.voicePool.dispose();
-        this.voicePool = null as unknown as SampleVoicePool;
+      if (this.#voicePool) {
+        this.#voicePool.dispose();
+        this.#voicePool = null as unknown as SampleVoicePool;
       }
 
       if (this.outBus) {
