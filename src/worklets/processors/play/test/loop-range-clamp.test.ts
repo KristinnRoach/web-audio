@@ -243,6 +243,32 @@ describe('loop range clamping', () => {
     expect(posts()[1].loopEnd).toBeCloseTo(0.5, 4);
   });
 
+  it.each([
+    ['forward', true, 0.25, 0.5, false],
+    ['backward', true, 0.5, 0.25, false],
+    ['pingPong', true, 0.25, 0.5, true],
+    ['forward', false, 0.25, 0.5, false],
+    ['backward', false, 0.5, 0.25, false],
+    ['pingPong', false, 0.25, 0.5, true],
+  ])(
+    'reports loopMode %s on loop:range with looping %s',
+    async (loopMode, loopEnabled, loopStart, loopEnd, pingPong) => {
+      const processor = await startProcessor();
+      processor.port.onmessage?.({
+        data: { type: 'setLoopEnabled', value: loopEnabled },
+      } as MessageEvent);
+      processor.port.onmessage?.({
+        data: { type: 'setLoopPingPong', value: pingPong },
+      } as MessageEvent);
+      render(processor, makeParameters({ endPoint: 1, loopStart, loopEnd }), 1);
+
+      const loop = processor.port.postMessage.mock.calls
+        .map(([msg]) => msg)
+        .find((msg) => msg.type === 'loop:range');
+      expect(loop.loopMode).toBe(loopMode);
+    },
+  );
+
   // trim:range reports the resolved trim: ordered, snapped inward to zero crossings.
   it('posts the resolved trim as trim:range', async () => {
     const processor = await startProcessor([0.3, 0.6]);

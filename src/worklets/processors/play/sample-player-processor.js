@@ -309,13 +309,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   /**
    * Moves the playhead past the loop edge it has reached, if any: jumps to the
    * other edge, or turns around. Turning is what makes a loop backward (turn
-   * once on arrival, then jump) or ping-pong (turn at every edge). A loop type
+   * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopType, loopRange, audioEndSamples, playbackRate) {
+  #passLoopEdge(approachDirection, loopMode, loopRange, audioEndSamples, playbackRate) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { loopStartSamples: loopStart, loopEndSamples: loopEnd } = loopRange;
-    const turns = loopType === 'pingPong' || this.loopTurned !== (loopType === 'backward');
+    const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
     const nextPosition = turns
       ? reflectLoopPosition(this.playbackPosition, direction, loopStart, loopEnd)
       : wrapLoopPosition(this.playbackPosition, direction, loopStart, loopEnd);
@@ -937,6 +937,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // ===== AUDIO PROCESSING =====
 
+    let loopMode = 'forward';
     for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
       // Use getSafeParam for a-rate params
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
@@ -955,11 +956,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       );
       positionParams.loopStartSamples = loopStart * sampleRate;
       positionParams.loopEndSamples = loopEnd * sampleRate;
-      const loopType = this.loopPingPong
-        ? 'pingPong'
-        : loopStart > loopEnd
-          ? 'backward'
-          : 'forward';
+      loopMode = this.loopPingPong ? 'pingPong' : loopStart > loopEnd ? 'backward' : 'forward';
 
       // Recalculate the range only when something moved. Short loops follow
       // their points per sample: their length is pitch. Long loops follow them
@@ -1019,7 +1016,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       }
       // The preserver still has no independent turn state for backward/ping-pong.
       const durationPreservationActive =
-        (!this.loopEnabled || (loopType === 'forward' && !this.loopTurned)) &&
+        (!this.loopEnabled || (loopMode === 'forward' && !this.loopTurned)) &&
         this.durationPreserver.isActive(
           this.zeroCrossings,
           this.loopEnabled,
@@ -1034,7 +1031,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       if (canWrapLoop) {
         this.#passLoopEdge(
           approachDirection,
-          loopType,
+          loopMode,
           loopRange,
           playbackRange.endSamples,
           baseRate,
@@ -1184,6 +1181,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.#postRange('loop:range', {
       loopStart: loopRange.loopStartSamples / sampleRate,
       loopEnd: loopRange.loopEndSamples / sampleRate,
+      loopMode,
     });
 
     // Send position updates if requested
