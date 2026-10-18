@@ -484,7 +484,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       }
 
       // Clear and release only if all preprocessing succeeds.
-      this.releaseAll(0);
+      this.releaseAll();
       this.transposeSemitones = 0;
       this.#isLoaded = false;
       this.#audioData = audioData;
@@ -606,9 +606,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  releaseAll(releaseTime?: number): this {
+  releaseAll(secondsFromNow = 0, releaseTime?: number): this {
     this.#sustainedNotes.clear();
-    this.#voicePool?.allNotesOff(releaseTime);
+    this.#voicePool?.allNotesOff(secondsFromNow, releaseTime);
     this.#outBus?.releaseAll();
     return this;
   }
@@ -766,7 +766,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (this.#holdLocked && !enabled) return this;
 
     this.#holdEnabled = enabled;
-    if (!enabled) this.releaseAll(0.1);
+    if (!enabled) this.releaseAll();
     this.#sendUpstreamMessage('hold:enabled', { enabled });
     return this;
   }
