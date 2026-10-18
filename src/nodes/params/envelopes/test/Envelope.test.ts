@@ -939,3 +939,25 @@ it('scales in octaves or semitones from a positive base with exponential ramps',
 
   expect(() => env.trigger(4, { base: 0, scaling: 'octaves' })).toThrow(RangeError);
 });
+
+it('ramps linearly where an exponential segment would cross zero', () => {
+  const param = createFakeParam();
+  const clock = { currentTime: 0 };
+  const shape: EnvelopeShape = {
+    points: [
+      { time: 0, value: -1, curve: 'exponential' },
+      { time: 1, value: 1, curve: 'exponential' },
+      { time: 2, value: -0.5 },
+    ],
+    mode: { type: 'sustain' },
+    sustainPoint: 1,
+    releasePoint: 1,
+  };
+  const env = new Envelope(clock, param, shape);
+  env.trigger(0);
+  expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 1, time: 1 });
+
+  clock.currentTime = 1.5;
+  env.release();
+  expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: -0.5, time: 2.5 });
+});

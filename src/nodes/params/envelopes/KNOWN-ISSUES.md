@@ -27,10 +27,13 @@ Code observations below are not claims that every case has been reproduced audib
 
 - **Release-tail cleanup.** `Envelope.release` clears `#triggered`, so a subsequent
   `stop()` does not cancel the tail. Revisit alongside sampler disable, reuse and disposal.
-- **Release-value agreement.** `Envelope.#valueAt` interpolates the original shape,
-  while `envelope-scheduling.ts` maps and floors exponential endpoints. Zero endpoints,
-  negative values and nonzero base offsets need consistent evaluation and scheduling.
-  Also check that cancelling a future ramp preserves the trajectory before note-off.
+- **Release-value agreement.** `Envelope.#valueAt` interpolates exponential segments on
+  shape values, then applies `base + amount * value`; Web Audio interpolates on param
+  values. With `linear` scaling and a nonzero `base`, a release mid-segment can hand off a
+  value the param never reached. Octave/semitone scaling folds `base` into the values and
+  is exact. Floored zero endpoints also differ slightly; zero crossings already agree,
+  since both sides ramp them linearly (`rampCurve`). Also check that cancelling a future
+  ramp preserves the trajectory before note-off.
 - **Future commands.** Releasing or stopping a loop removes its refill callback
   immediately, even if the requested time is beyond the queued horizon. `stop(time)`
   also pins today's parameter value rather than a value evaluated at that future time.
