@@ -505,9 +505,8 @@ export class SampleVoice {
     this.#state = state;
   }
 
-  release({ releaseTime = this.releaseTime, secondsFromNow = 0 }): this {
-    // An immediate release must also stop a voice already in its release tail.
-    if (releaseTime <= 0) return this.stop(this.now + secondsFromNow);
+  /** Schedules envelope release; lifecycle messages report the scheduling-time state. */
+  release({ secondsFromNow = 0 } = {}): this {
     if (this.#state !== VoiceState.PLAYING) return this;
 
     const envGain = this.getParam('envGain');
@@ -523,15 +522,15 @@ export class SampleVoice {
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
 
-    const effectiveReleaseTime = this.releaseTime;
+    const releaseDuration = this.releaseTime;
 
     this.#sendUpstreamMessage('voice:releasing', {
       voiceId: this.nodeId,
       midiNote: this.#midiNote,
-      releaseDuration: effectiveReleaseTime,
+      releaseDuration,
     });
 
-    // Stop after the release duration.
+    // Stop after the scheduled release and amplitude tail.
     if (this.#releaseTimeout) clearTimeout(this.#releaseTimeout);
     this.#releaseTimeout = setTimeout(
       () => {
@@ -543,7 +542,7 @@ export class SampleVoice {
           this.#releaseTimeout = null;
         }
       },
-      (secondsFromNow + effectiveReleaseTime) * 1000 + 50,
+      (secondsFromNow + releaseDuration) * 1000 + 50,
     ); // 50ms buffer
 
     return this;
@@ -1028,6 +1027,7 @@ export class SampleVoice {
     return this.getParam('endPoint')!.value;
   }
 
+  /** Amplitude release duration determines cleanup even when that envelope is disabled. */
   get releaseTime() {
     return this.#envelopes.get('amp')!.releaseDuration();
   }

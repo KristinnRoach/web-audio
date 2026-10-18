@@ -103,15 +103,15 @@ describe('SampleVoice state', () => {
       voice.onMessage(type, () => events.push(type));
     });
 
-    voice.release({ releaseTime: 0.1 });
+    voice.release();
     expect(voice.state).toBe(VoiceState.AVAILABLE);
 
     expect(trigger(voice)).toBe(60);
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(60);
 
-    voice.release({ releaseTime: 0.1 });
-    voice.release({ releaseTime: 0.1 });
+    voice.release();
+    voice.release();
     expect(voice.state).toBe(VoiceState.RELEASING);
 
     vi.runAllTimers();
@@ -138,7 +138,7 @@ describe('SampleVoice state', () => {
     voice.onMessage('voice:releasing', (msg: any) => (releaseDuration = msg.releaseDuration));
 
     trigger(voice);
-    voice.release({ releaseTime: 0.1 });
+    voice.release();
 
     expect(voice.envelopes.get('pitch')!.releaseDuration()).toBeGreaterThan(voice.releaseTime);
     expect(releaseDuration).toBe(voice.releaseTime);
@@ -173,11 +173,11 @@ describe('SampleVoice state', () => {
     expect(voice.midiNote).toBeNull();
   });
 
-  it('treats a zero release as one idempotent stop', async () => {
+  it('stops a releasing voice idempotently', async () => {
     const voice = await loadedVoice();
     trigger(voice);
-    voice.release({ releaseTime: 0.1 });
-    voice.release({ releaseTime: 0 });
+    voice.release();
+    voice.stop();
     voice.stop();
     vi.runAllTimers();
 

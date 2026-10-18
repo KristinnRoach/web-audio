@@ -606,9 +606,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  releaseAll(releaseTime?: number): this {
+  releaseAll(): this {
     this.#sustainedNotes.clear();
-    this.#voicePool?.allNotesOff(releaseTime);
+    this.#voicePool?.allNotesOff();
     this.#outBus?.releaseAll();
     return this;
   }

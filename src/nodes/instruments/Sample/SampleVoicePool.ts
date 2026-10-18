@@ -200,21 +200,21 @@ export class SampleVoicePool implements LibNode {
     return midiNote;
   }
 
-  noteOff(midiNote: MidiValue, secondsFromNow: number = 0, releaseTime?: number) {
+  noteOff(midiNote: MidiValue, secondsFromNow: number = 0) {
     const voices = this.#allVoices.filter(
       (voice) => voice.state === VoiceState.PLAYING && voice.midiNote === midiNote,
     );
     if (!voices.length) return;
 
-    voices.forEach((voice) => voice.release({ secondsFromNow, releaseTime }));
+    voices.forEach((voice) => voice.release({ secondsFromNow }));
 
     return this;
   }
 
-  allNotesOff(releaseTime?: number) {
+  allNotesOff() {
     this.#allVoices.forEach((voice) => {
-      if (voice.state === VoiceState.PLAYING || voice.state === VoiceState.RELEASING) {
-        voice.release({ releaseTime });
+      if (voice.state === VoiceState.PLAYING) {
+        voice.release();
       }
     });
 
