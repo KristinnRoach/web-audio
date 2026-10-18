@@ -639,6 +639,11 @@ export class SampleVoice {
       freq.cancelScheduledValues(atTime);
     }
 
+    if (this.#filterEnvOwnsLpf()) {
+      this.#setFilterEnvBase(playbackRate, atTime, options.glideTime);
+      return;
+    }
+
     const safeHz = this.#keytrackedLpfHz(playbackRate);
 
     const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
@@ -687,6 +692,34 @@ export class SampleVoice {
   }
 
   // === ENVELOPES ===
+
+  /**
+   * A filter envelope on a sounding note owns the LPF param through its release tail.
+   * Writing the param directly would leave the envelope releasing from its old cutoff.
+   */
+  #filterEnvOwnsLpf() {
+    return (
+      this.#isEnabled('filter') &&
+      (this.#state === VoiceState.PLAYING || this.#state === VoiceState.RELEASING)
+    );
+  }
+
+  /**
+   * Moves the cutoff the running filter envelope sweeps from. Ignored during release;
+   * the new cutoff reaches the next note through `#lpfHz`.
+   */
+  #setFilterEnvBase(playbackRate: number, atTime: number, glide?: number) {
+    const envelope = this.#envelopes.get('filter');
+    const param = this.getParam('lpf');
+    if (!envelope || !param || this.#state !== VoiceState.PLAYING) return;
+    const { base, amount } = resolveSampleEnvelopeTrigger(
+      'filter',
+      this.#keytrackedLpfHz(playbackRate),
+      param,
+      this.#envelopeConfigs.get('filter')!.amount,
+    );
+    envelope.setBase(base!, { amount, time: atTime, glide });
+  }
 
   /** A disabled filter envelope leaves the cutoff wherever it stopped, so restore it. */
   #resetFilterEnvTarget = (envType: SampleEnvelopeId) => {
@@ -1115,6 +1148,11 @@ export class SampleVoice {
 
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
+    if (this.#filterEnvOwnsLpf()) {
+      const currentRate = this.getParam('playbackRate')?.value ?? 1;
+      this.#setFilterEnvBase(currentRate, atTime, options.glideTime);
+      return this;
+    }
     if (this.#lpf) {
       const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);

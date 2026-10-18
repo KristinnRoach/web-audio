@@ -3,6 +3,7 @@ export {
   type EnvelopeClock,
   type EnvelopeScaling,
   type EnvelopeTriggerOptions,
+  type SetBaseOptions,
 } from './Envelope';
 export type { AutomatableParam } from './envelope-scheduling';
 export {

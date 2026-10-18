@@ -126,6 +126,10 @@ pitchEnv.trigger(t, { base: 1, amount: 12, scaling: 'semitones' }); // up an oct
 - `env.setSustainValue(value, time?, glide = 0.02)` moves the sustain level while the note is
   held. It only works in `sustain` mode after the sustain point is reached, and otherwise
   does nothing.
+- `env.setBase(base, { amount?, time?, glide? })` moves the param under a live run, as a
+  knob would. A held sustain glides to the new level and releases from it; a loop
+  retriggers with it at the next cycle boundary. Anywhere else it does nothing. Use it
+  instead of writing the param directly, which the run would overwrite or release over.
 
 The sampler also applies edits to running notes: existing loops retrigger at their next
 boundary, enabling loop on a non-looping run picks up from its last reached point, and

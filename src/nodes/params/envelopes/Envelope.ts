@@ -45,6 +45,56 @@ export type EnvelopeTriggerOptions = ScheduleOptions & {
   shape?: EnvelopeShape;
 };
 
+/** The trigger options that place a shape on the param, kept per run so `setBase` can re-place it. */
+type RunInputs = Pick<
+  EnvelopeTriggerOptions,
+  'base' | 'amount' | 'scaling' | 'toParamValue' | 'curve'
+>;
+
+/**
+ * A run's shape in param units, plus the linear `base`/`amount` scheduling still applies
+ * on top. Non-linear scaling is folded into the values, so scheduling, release and sustain
+ * edits stay linear in base/amount and need no scaling of their own. Throws on invalid
+ * inputs before the caller has changed anything.
+ */
+function resolveRun(source: EnvelopeShape, inputs: RunInputs) {
+  let { base = 0, amount = 1, toParamValue, curve } = inputs;
+  if (inputs.scaling && inputs.scaling !== 'linear') {
+    if (!(base > 0)) {
+      throw new RangeError(`Envelope ${inputs.scaling} scaling needs a positive base`);
+    }
+    const octaves = inputs.scaling === 'semitones' ? amount / 12 : amount;
+    const scaleBase = base;
+    const map = toParamValue;
+    toParamValue = (value) => scaleBase * 2 ** (octaves * (map ? map(value) : value));
+    base = 0;
+    amount = 1;
+    curve ??= 'exponential';
+  }
+
+  let shape = source;
+  if (toParamValue || curve) {
+    shape = {
+      ...source,
+      points: source.points.map((point) => ({
+        ...point,
+        value: toParamValue ? toParamValue(point.value) : point.value,
+        curve: point.curve === 'step' ? 'step' : (curve ?? point.curve),
+      })),
+    };
+    assertValidEnvelopeShape(shape);
+  }
+  return { shape, base, amount, toParamValue };
+}
+
+export type SetBaseOptions = {
+  /** Replaces the run's `amount` too, for depths derived from the base. */
+  amount?: number;
+  time?: number;
+  /** Seconds to glide to the new level while held at sustain. */
+  glide?: number;
+};
+
 const LOOKAHEAD_SECONDS = 1;
 const REFILL_INTERVAL_MS = 50;
 const activeLoops = new Set<() => void>();
@@ -79,13 +129,16 @@ function snapshot(shape: EnvelopeShape): EnvelopeShape {
  *
  * The envelope owns the param's automation from `trigger` until `stop`: a trigger cancels
  * everything scheduled from its start time on, and automation written by anyone else in
- * that window can be overwritten. Drive other changes through `base` and `amount`, or
+ * that window can be overwritten. Move the param under a live run with `setBase`, or
  * `stop` the envelope first.
  */
 export class Envelope {
   #shape: EnvelopeShape;
-  /** The latest run's own copy; `setSustainValue` edits it in place. */
+  /** The latest run's own copy in param units; `setSustainValue` edits it in place. */
   #envShape: EnvelopeShape | undefined;
+  /** The same run before mapping, and the inputs that mapped it, for `setBase`. */
+  #runSource: EnvelopeShape | undefined;
+  #runInputs: RunInputs = {};
   #removeLoop: (() => void) | undefined;
   #triggered = false;
   #base = 0;
@@ -161,42 +214,22 @@ export class Envelope {
   /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
   trigger(time = this.clock.currentTime, options: EnvelopeTriggerOptions = {}) {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
-    let runEnvelope = snapshot(options.shape ?? this.#shape);
+    const source = snapshot(options.shape ?? this.#shape);
+    const { base: runBase, amount: runAmount, scaling, toParamValue, curve } = options;
+    const runInputs = { base: runBase, amount: runAmount, scaling, toParamValue, curve };
+    const run = resolveRun(source, runInputs);
+    const runEnvelope = run.shape;
     const timeScale = options.timeScale ?? 1;
-    let { base: runBase = 0, amount: runAmount = 1, toParamValue, curve } = options;
-    if (options.scaling && options.scaling !== 'linear') {
-      if (!(runBase > 0)) {
-        throw new RangeError(`Envelope ${options.scaling} scaling needs a positive base`);
-      }
-      // Folded into the value mapping, so scheduling, release and sustain edits stay
-      // linear in base/amount and need no scaling of their own.
-      const octaves = options.scaling === 'semitones' ? runAmount / 12 : runAmount;
-      const scaleBase = runBase;
-      const map = toParamValue;
-      toParamValue = (value) => scaleBase * 2 ** (octaves * (map ? map(value) : value));
-      runBase = 0;
-      runAmount = 1;
-      curve ??= 'exponential';
-    }
-    if (toParamValue || curve) {
-      runEnvelope = {
-        ...runEnvelope,
-        points: runEnvelope.points.map((point) => ({
-          ...point,
-          value: toParamValue ? toParamValue(point.value) : point.value,
-          curve: point.curve === 'step' ? 'step' : (curve ?? point.curve),
-        })),
-      };
-      assertValidEnvelopeShape(runEnvelope);
-    }
     const fullDuration = getDuration(runEnvelope.points, { timeScale });
     time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;
+    this.#runSource = source;
+    this.#runInputs = runInputs;
     this.#stopLoop();
     this.#triggered = true;
-    this.#base = runBase;
-    this.#amount = runAmount;
-    this.#toParamValue = toParamValue;
+    this.#base = run.base;
+    this.#amount = run.amount;
+    this.#toParamValue = run.toParamValue;
     this.#timeScale = timeScale;
     this.#triggerTime = time;
     this.#startTime = time;
@@ -396,7 +429,7 @@ export class Envelope {
   setSustainValue(value: number, time = this.clock.currentTime, glide = 0.02) {
     // Current behaviour, not contract:
     //
-    // The one envelope input that is still editable once the run is on the timeline: a
+    // The sustain level stays editable once the run is on the timeline because a
     // sustained run schedules points 0..sustain and stops, so the hold is not an event
     // but the absence of events, and nothing after it has to be rescheduled.
     //
@@ -412,29 +445,77 @@ export class Envelope {
     // queued: the edit reaches the note only through the caller's stored shape, on the
     // next trigger.
     //
-    // The cancel is what makes a fast drag safe: a second ramp ending before the first one
-    // would otherwise re-target the old value on the way past.
-    //
     // ponytail: releasing mid-glide pins the shape's value, which is the glide's target
     // rather than where it has actually got to, so a note-off inside the glide window can
     // step by up to the edit distance. Inaudible while `glide` stays short. Track the
     // pending glide in `valueAt` if a long one is ever wanted.
-    if (!this.#envShape) return;
-    const { points, mode, sustainPoint } = this.#envShape;
-    value = this.#toParamValue ? this.#toParamValue(value) : value;
-    if (!this.#triggered || mode.type !== 'sustain') return;
-    if (points[sustainPoint].value === value) return;
-
-    const sustainTime =
-      this.#triggerTime +
-      getDuration(points, { toIndex: sustainPoint, timeScale: this.#timeScale });
-
-    if (time < sustainTime) return;
+    if (!this.#envShape || !this.#runSource || !this.#isHoldingSustain(time)) return;
+    const { sustainPoint } = this.#envShape;
+    const mapped = this.#toParamValue ? this.#toParamValue(value) : value;
+    if (this.#envShape.points[sustainPoint].value === mapped) return;
 
     // Read the outgoing shape before mutating it, the same ordering release() follows.
     const holdValue = this.#valueAt(time);
-    (points[sustainPoint] as { value: number }).value = value;
+    // The source keeps the unmapped value, so a later `setBase` re-maps the edited level.
+    (this.#runSource.points[sustainPoint] as { value: number }).value = value;
+    (this.#envShape.points[sustainPoint] as { value: number }).value = mapped;
+    this.#glideToSustain(holdValue, time, glide);
+  }
 
+  /**
+   * Moves the live run's `base`, and optionally its `amount`, as a knob under a running
+   * envelope would. The run's scaling, mapping and curve stay as triggered.
+   *
+   * - Held at sustain: glides there over `glide`, and the release tail follows the new base.
+   * - Looping: retriggers with the new inputs at the next cycle boundary.
+   * - Anywhere else, including before sustain is reached and during release: ignored, so
+   *   the param keeps the trajectory release hands off from. The edit reaches the next
+   *   trigger only through the caller's own inputs.
+   */
+  setBase(
+    base: number,
+    { amount, time = this.clock.currentTime, glide = 0.02 }: SetBaseOptions = {},
+  ) {
+    if (!this.#triggered || !this.#runSource || !this.#envShape) return;
+    const inputs = { ...this.#runInputs, base, amount: amount ?? this.#runInputs.amount };
+
+    if (this.#envShape.mode.type === 'loop') {
+      const at = this.nextCycleTime(time);
+      if (at === null) return;
+      this.trigger(at, { ...inputs, shape: this.#runSource, timeScale: this.#timeScale });
+      return;
+    }
+    if (!this.#isHoldingSustain(time)) return;
+
+    const run = resolveRun(this.#runSource, inputs);
+    const holdValue = this.#valueAt(time);
+    this.#envShape = run.shape;
+    this.#runInputs = inputs;
+    this.#base = run.base;
+    this.#amount = run.amount;
+    this.#toParamValue = run.toParamValue;
+    this.#glideToSustain(holdValue, time, glide);
+  }
+
+  /** Whether a live sustained run has reached its sustain point by `time` and holds there. */
+  #isHoldingSustain(time: number) {
+    if (!this.#triggered || !this.#envShape || this.#envShape.mode.type !== 'sustain') {
+      return false;
+    }
+    const { points, sustainPoint } = this.#envShape;
+    const sustainTime =
+      this.#triggerTime +
+      getDuration(points, { toIndex: sustainPoint, timeScale: this.#timeScale });
+    return time >= sustainTime;
+  }
+
+  /**
+   * Leaves `holdValue` at `time` for the run's sustain level. The cancel is what makes a
+   * fast drag safe: a second ramp ending before the first would otherwise re-target the
+   * old value on the way past.
+   */
+  #glideToSustain(holdValue: number, time: number, glide: number) {
+    const { points, sustainPoint } = this.#envShape!;
     cancelAndPinParamValue(this.param, time, holdValue);
     schedulePoint(
       this.param,
