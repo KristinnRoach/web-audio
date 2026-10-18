@@ -35,15 +35,13 @@ it('defaults amount to one and accepts older configs without it', () => {
 });
 
 it('scales amplitude, pitch offset and logarithmic filter sweep without changing the shape', () => {
-  const param = { maxValue: 20000 } as AudioParam;
   for (const amount of [0, 0.5, 1, -1]) {
-    const amp = resolveSampleEnvelopeTrigger('amp', 0.8, param, amount);
+    const amp = resolveSampleEnvelopeTrigger('amp', 0.8, amount);
     expect(amp.amount).toBe(0.8 * amount);
-    const pitch = resolveSampleEnvelopeTrigger('pitch', 2, param, amount);
+    const pitch = resolveSampleEnvelopeTrigger('pitch', 2, amount);
     expect(pitch).toEqual({ base: 2, amount: 12 * amount, scaling: 'semitones' });
-    const filter = resolveSampleEnvelopeTrigger('filter', 200, param, amount);
-    expect(filter.base).toBe(200);
-    expect(200 * 2 ** (0.25 * filter.amount!)).toBeCloseTo(200 * 100 ** (0.25 * amount));
+    const filter = resolveSampleEnvelopeTrigger('filter', 0, amount);
+    expect(filter).toEqual({ amount: 12000 * amount, curve: 'linear' });
   }
   expect(config.shape.points[1].value).toBe(0.25);
 });

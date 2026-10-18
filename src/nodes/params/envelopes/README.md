@@ -119,6 +119,22 @@ pitchEnv.trigger(t, { base: 1, amount: 12, scaling: 'semitones' }); // up an oct
 
 `base` must be positive. Same as linear, a negative `amount` sweeps downward.
 
+### Modulating a param someone else controls
+
+The envelope owns the param it is bound to, so a knob writing that same param fights it,
+and a release hands off from the envelope's value, not the knob's. Bind the envelope to a
+separate input instead. Web Audio sums signals connected to an `AudioParam` with its own
+value, and a `BiquadFilterNode` multiplies `frequency` by `2^(detune / 1200)`, so a
+filter envelope in cents leaves `frequency` free for the cutoff knob:
+
+```ts
+const filterEnv = new Envelope(ctx, filter.detune, shape);
+filterEnv.trigger(t, { amount: 1200 * 4, curve: 'linear' }); // up to 4 octaves above the cutoff
+filter.frequency.setTargetAtTime(knobHz, ctx.currentTime, 0.01); // safe at any stage
+```
+
+Linear ramps in cents are exponential in Hz, so the sweep already sounds even.
+
 ### Changing things
 
 - `env.shape = newShape` replaces the stored shape. It applies from the next trigger, and a
@@ -126,10 +142,6 @@ pitchEnv.trigger(t, { base: 1, amount: 12, scaling: 'semitones' }); // up an oct
 - `env.setSustainValue(value, time?, glide = 0.02)` moves the sustain level while the note is
   held. It only works in `sustain` mode after the sustain point is reached, and otherwise
   does nothing.
-- `env.setBase(base, { amount?, time?, glide? })` moves the param under a live run, as a
-  knob would. A held sustain glides to the new level and releases from it; a loop
-  retriggers with it at the next cycle boundary. Anywhere else it does nothing. Use it
-  instead of writing the param directly, which the run would overwrite or release over.
 
 The sampler also applies edits to running notes: existing loops retrigger at their next
 boundary, enabling loop on a non-looping run picks up from its last reached point, and

@@ -426,18 +426,11 @@ export class SampleVoice {
     fromPoint = 0,
   ) {
     if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) return;
-    const param = this.getParam(getSampleEnvelopeParamName(envType));
-    if (!param) return;
 
-    const baseValue = getSampleEnvelopeBaseValue(envType, {
-      velocity,
-      playbackRate,
-      filterCutoff: this.#keytrackedLpfHz(playbackRate),
-    });
+    const baseValue = getSampleEnvelopeBaseValue(envType, { velocity, playbackRate });
     const target = resolveSampleEnvelopeTrigger(
       envType,
       baseValue,
-      param,
       this.#envelopeConfigs.get(envType)!.amount,
     );
     const timeScale = this.#timeScale(envType, playbackRate);
@@ -610,16 +603,6 @@ export class SampleVoice {
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
-  /**
-   * The LPF cutoff with keytracking applied. This is the cutoff the filter
-   * envelope sweeps from, so keytracking and the envelope compose instead of
-   * the envelope resetting the cutoff back to the untracked base.
-   */
-  #keytrackedLpfHz(playbackRate: number = this.getParam('playbackRate')?.value ?? 1): number {
-    const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
-    return clampHz(keytrackedHz, this.context.sampleRate);
-  }
-
   /**  Set LPF cutoff relative to playback rate */
   #updateLPFCutoffForPlaybackRate(
     playbackRate: number,
@@ -639,12 +622,8 @@ export class SampleVoice {
       freq.cancelScheduledValues(atTime);
     }
 
-    if (this.#filterEnvOwnsLpf()) {
-      this.#setFilterEnvBase(playbackRate, atTime, options.glideTime);
-      return;
-    }
-
-    const safeHz = this.#keytrackedLpfHz(playbackRate);
+    const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
+    const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
     const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
@@ -693,42 +672,12 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  /**
-   * A filter envelope on a sounding note owns the LPF param through its release tail.
-   * Writing the param directly would leave the envelope releasing from its old cutoff.
-   */
-  #filterEnvOwnsLpf() {
-    return (
-      this.#isEnabled('filter') &&
-      (this.#state === VoiceState.PLAYING || this.#state === VoiceState.RELEASING)
-    );
-  }
-
-  /**
-   * Moves the cutoff the running filter envelope sweeps from. Ignored during release;
-   * the new cutoff reaches the next note through `#lpfHz`.
-   */
-  #setFilterEnvBase(playbackRate: number, atTime: number, glide?: number) {
-    const envelope = this.#envelopes.get('filter');
-    const param = this.getParam('lpf');
-    if (!envelope || !param || this.#state !== VoiceState.PLAYING) return;
-    const { base, amount } = resolveSampleEnvelopeTrigger(
-      'filter',
-      this.#keytrackedLpfHz(playbackRate),
-      param,
-      this.#envelopeConfigs.get('filter')!.amount,
-    );
-    envelope.setBase(base!, { amount, time: atTime, glide });
-  }
-
-  /** A disabled filter envelope leaves the cutoff wherever it stopped, so restore it. */
+  /** A disabled filter envelope leaves its detune wherever it stopped, so clear it. */
   #resetFilterEnvTarget = (envType: SampleEnvelopeId) => {
-    if (envType === 'filter' && this.#chainIncludes('lpf')) {
-      const lpf = this.getParam('lpf');
-      lpf?.cancelScheduledValues(this.now);
-      // Reset to the keytracked cutoff after the envelope is disabled
-      lpf?.setValueAtTime(this.#keytrackedLpfHz(), this.now + 0.01);
-    }
+    if (envType !== 'filter') return;
+    const detune = this.getParam('lpfDetune');
+    detune?.cancelScheduledValues(this.now);
+    detune?.setTargetAtTime(0, this.now, DEFAULT.CUTOFF_SMOOTHING_SEC);
   };
 
   /**
@@ -1148,11 +1097,6 @@ export class SampleVoice {
 
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
-    if (this.#filterEnvOwnsLpf()) {
-      const currentRate = this.getParam('playbackRate')?.value ?? 1;
-      this.#setFilterEnvBase(currentRate, atTime, options.glideTime);
-      return this;
-    }
     if (this.#lpf) {
       const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);
@@ -1237,6 +1181,8 @@ export class SampleVoice {
         return this.#hpf?.Q ?? null;
       case 'lpfQ':
         return this.#lpf?.Q ?? null;
+      case 'lpfDetune':
+        return this.#lpf?.detune ?? null;
       default:
         return null;
     }

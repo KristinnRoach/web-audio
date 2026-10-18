@@ -2,14 +2,11 @@ import {
   envelopePresets,
   hasVariation,
   setDuration,
-  type AutomatableParam,
   type Envelope,
   type EnvelopeShape,
   type EnvelopeTriggerOptions,
 } from '@/nodes/params/envelopes';
 import type { EnvelopeConfig } from './envelope-config';
-
-type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
 
 /**
  * Sampler defaults, parameter mapping and live-edit decisions.
@@ -28,6 +25,14 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
  * ponytail: fixed range; make it configurable once there is a place to persist it.
  */
 const PITCH_ENVELOPE_SEMITONES = 12;
+
+/**
+ * Filter shape value 1 detunes the cutoff up by this many octaves, about the audible range,
+ * so amount 1 can open any cutoff fully. The spec only gives the detuned frequency a
+ * nominal range of [0, Nyquist]; going past it relies on browsers clamping.
+ * ponytail: fixed depth; make it configurable alongside the pitch range.
+ */
+const FILTER_ENVELOPE_OCTAVES = 10;
 
 /** Flat at 0, so the pitch env is an identity until someone edits it. */
 function flatPitchShape(durationSeconds: number): EnvelopeShape {
@@ -84,7 +89,7 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
     case 'pitch':
       return 'playbackRate';
     case 'filter':
-      return 'lpf';
+      return 'lpfDetune';
   }
 }
 
@@ -94,7 +99,7 @@ export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: Envelo
 
 export function getSampleEnvelopeBaseValue(
   id: SampleEnvelopeId,
-  values: { velocity?: number; playbackRate: number; filterCutoff: number },
+  values: { velocity?: number; playbackRate: number },
 ): number {
   switch (id) {
     case 'amp':
@@ -102,25 +107,23 @@ export function getSampleEnvelopeBaseValue(
     case 'pitch':
       return values.playbackRate;
     case 'filter':
-      return values.filterCutoff;
+      // Detune in cents rests at 0; the cutoff itself stays on `lpf.frequency`.
+      return 0;
   }
 }
 
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
   baseValue: number,
-  param: RangedAutomatableParam,
   amount = 1,
-): Pick<EnvelopeTriggerOptions, 'base' | 'amount' | 'scaling'> {
+): Pick<EnvelopeTriggerOptions, 'base' | 'amount' | 'scaling' | 'curve'> {
   if (id === 'amp') return { amount: baseValue * amount };
   if (id === 'pitch') {
     return { base: baseValue, amount: PITCH_ENVELOPE_SEMITONES * amount, scaling: 'semitones' };
   }
 
-  // Shape value 1 sweeps from the cutoff up to the param's ceiling.
-  const low = Math.max(baseValue, 1e-3);
-  const octaves = Math.log2(Math.max(param.maxValue, low) / low);
-  return { base: low, amount: octaves * amount, scaling: 'octaves' };
+  // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
+  return { amount: FILTER_ENVELOPE_OCTAVES * 1200 * amount, curve: 'linear' };
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */
