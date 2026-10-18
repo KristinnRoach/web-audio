@@ -90,15 +90,15 @@ A looping envelope keeps scheduling ahead on a timer until you call `release()` 
 
 ### Trigger options
 
-| Option      | Default      | Meaning                                                                      |
-| ----------- | ------------ | ---------------------------------------------------------------------------- |
-| `base`      | `0`          | Param value when the shape reads 0.                                          |
-| `amount`    | `1`          | How far the param moves per unit of shape. Negative values invert the shape. |
-| `timeScale` | `1`          | Playback speed. `2` plays twice as fast.                                     |
-| `shape`     | stored shape | Plays a different shape for this run only.                                   |
-| `fromPoint` | `0`          | Loops only: start the first pass at this point index.                        |
-| `mapValue`  | identity     | Maps point and live sustain values before base/amount scaling.               |
-| `curve`     | shape curves | Overrides ramp curves for the run, preserving steps.                         |
+| Option         | Default      | Meaning                                                                      |
+| -------------- | ------------ | ---------------------------------------------------------------------------- |
+| `base`         | `0`          | Param value when the shape reads 0.                                          |
+| `amount`       | `1`          | How far the param moves per unit of shape. Negative values invert the shape. |
+| `timeScale`    | `1`          | Playback speed. `2` plays twice as fast.                                     |
+| `shape`        | stored shape | Plays a different shape for this run only.                                   |
+| `fromPoint`    | `0`          | Loops only: start the first pass at this point index.                        |
+| `toParamValue` | identity     | Maps point and live sustain values before base/amount scaling.               |
+| `curve`        | shape curves | Overrides ramp curves for the run, preserving steps.                         |
 
 The param follows `base + amount * pointValue`, so one shape can drive a gain (0 to 1), a
 cutoff (200 to 8000 Hz) or anything else:

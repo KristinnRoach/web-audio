@@ -113,12 +113,12 @@ export function resolveSampleEnvelopeTrigger(
   baseValue: number,
   param: RangedAutomatableParam,
   amount = 1,
-): Pick<EnvelopeTriggerOptions, 'amount' | 'mapValue' | 'curve'> {
+): Pick<EnvelopeTriggerOptions, 'amount' | 'toParamValue' | 'curve'> {
   if (id === 'amp') return { amount: baseValue * amount };
   if (id === 'pitch') {
     return {
       amount: baseValue,
-      mapValue: (value) => pitchRatio(value * amount),
+      toParamValue: (value) => pitchRatio(value * amount),
       curve: 'exponential',
     };
   }
@@ -128,7 +128,7 @@ export function resolveSampleEnvelopeTrigger(
   const logLow = Math.log(low);
   const logRange = Math.log(high) - logLow;
   return {
-    mapValue: (value) => Math.exp(logLow + logRange * value * amount),
+    toParamValue: (value) => Math.exp(logLow + logRange * value * amount),
     curve: 'exponential',
   };
 }

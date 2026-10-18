@@ -29,7 +29,7 @@ export type EnvelopeClock = { readonly currentTime: number };
 export type EnvelopeTriggerOptions = ScheduleOptions & {
   fromPoint?: number;
   /** Maps shape values before base/amount scaling; also used for live sustain edits. */
-  mapValue?: (value: number) => number;
+  toParamValue?: (value: number) => number;
   /** Overrides ramp curves for this run, preserving step segments. */
   curve?: EnvelopeCurve;
   /** Plays this shape for this run only; the stored `shape` is left as it is. */
@@ -81,7 +81,7 @@ export class Envelope {
   #triggered = false;
   #base = 0;
   #amount = 1;
-  #mapValue: ((value: number) => number) | undefined;
+  #toParamValue: ((value: number) => number) | undefined;
   #timeScale = 1;
   #triggerTime = 0;
   #startTime = 0;
@@ -154,12 +154,12 @@ export class Envelope {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
     let runEnvelope = snapshot(options.shape ?? this.#shape);
     const timeScale = options.timeScale ?? 1;
-    if (options.mapValue || options.curve) {
+    if (options.toParamValue || options.curve) {
       runEnvelope = {
         ...runEnvelope,
         points: runEnvelope.points.map((point) => ({
           ...point,
-          value: options.mapValue ? options.mapValue(point.value) : point.value,
+          value: options.toParamValue ? options.toParamValue(point.value) : point.value,
           curve: point.curve === 'step' ? 'step' : (options.curve ?? point.curve),
         })),
       };
@@ -172,7 +172,7 @@ export class Envelope {
     this.#triggered = true;
     this.#base = options.base ?? 0;
     this.#amount = options.amount ?? 1;
-    this.#mapValue = options.mapValue;
+    this.#toParamValue = options.toParamValue;
     this.#timeScale = timeScale;
     this.#triggerTime = time;
     this.#startTime = time;
@@ -397,7 +397,7 @@ export class Envelope {
     // pending glide in `valueAt` if a long one is ever wanted.
     if (!this.#envShape) return;
     const { points, mode, sustainPoint } = this.#envShape;
-    value = this.#mapValue ? this.#mapValue(value) : value;
+    value = this.#toParamValue ? this.#toParamValue(value) : value;
     if (!this.#triggered || mode.type !== 'sustain') return;
     if (points[sustainPoint].value === value) return;
 

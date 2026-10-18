@@ -896,7 +896,7 @@ it('uses the trigger mapping for playback, sustain edits and release while keepi
     releasePoint: 2,
   };
   const env = new Envelope(clock, param, shape);
-  env.trigger(0, { mapValue: (value) => 200 * 100 ** value, curve: 'exponential' });
+  env.trigger(0, { toParamValue: (value) => 200 * 100 ** value, curve: 'exponential' });
   expect(param.ramps()).toEqual([
     { type: 'set', value: 200, time: 0 },
     { type: 'set', value: 20000, time: 1 },
