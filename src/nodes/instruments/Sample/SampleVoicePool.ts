@@ -118,6 +118,7 @@ export class SampleVoicePool implements LibNode {
         'voice:loaded',
         'loop:range',
         'trim:range',
+        'voice:position',
       ],
       (msg) => {
         if (msg.type === 'voice:loaded') {
