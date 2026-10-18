@@ -119,6 +119,17 @@ describe('SampleVoice state', () => {
     expect(events).toEqual(['voice:started', 'voice:releasing', 'voice:stopped']);
   });
 
+  it('reports the effective release duration on voice:releasing', async () => {
+    const voice = await loadedVoice();
+    let releaseDuration: number | undefined;
+    voice.onMessage('voice:releasing', (msg: any) => (releaseDuration = msg.releaseDuration));
+
+    trigger(voice);
+    voice.release({ releaseTime: 0.1 });
+
+    expect(releaseDuration).toBeGreaterThan(0);
+  });
+
   it('stops rather than retriggering an active voice', async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
