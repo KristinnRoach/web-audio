@@ -77,7 +77,7 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
   },
   loopDurationDriftAmount: {
     name: 'loopDurationDriftAmount',
-    defaultValue: 0,
+    defaultValue: 0.07,
     minValue: 0,
     maxValue: 1, // 0 = no drift, 1 = max drift (up to 100% of loop duration)
     automationRate: 'k-rate',
