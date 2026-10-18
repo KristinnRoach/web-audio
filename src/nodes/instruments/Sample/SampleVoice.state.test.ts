@@ -250,4 +250,22 @@ describe('SampleVoice state', () => {
     });
     expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
   });
+
+  it('forwards only the current note’s position, tagged with voice and note', async () => {
+    const voice = await loadedVoice();
+    const positions = vi.fn();
+    voice.onMessage('voice:position', positions);
+    const position = (triggerId: number, value: number) =>
+      audio.port.onmessage({ data: { type: 'voice:position', position: value, triggerId } });
+
+    trigger(voice, 60);
+    position(0, 0.1);
+    position(1, 0.2);
+    endPlayback(1);
+    position(1, 0.3);
+
+    expect(positions.mock.calls.map(([data]) => data)).toEqual([
+      expect.objectContaining({ voiceId: voice.nodeId, midiNote: 60, position: 0.2 }),
+    ]);
+  });
 });

@@ -101,6 +101,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #tempo = 120;
   #glideTime: number = samplerParams.glide.defaultValue;
   #loopRampDuration: number = samplerParams.loopRampDuration.defaultValue;
+  #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
@@ -292,6 +293,9 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#voicePool.applyToAllVoices((voice) =>
         voice.setLoopRampDuration(this.#loopRampDuration),
       );
+      this.#voicePool.applyToAllVoices((voice) =>
+        voice.enablePositionTracking(this.#positionTracking),
+      );
       this.#sendUpstreamMessage('sample-player:initialized', {});
     });
 
@@ -305,6 +309,8 @@ export class SamplePlayer implements ILibInstrumentNode {
       // Resolved loop and trim in seconds, from whichever voice resolved them last.
       'loop:range',
       'trim:range',
+      // Playhead per voice (0..1 of the sample), only while position tracking is on.
+      'voice:position',
     ]);
     return this;
   }
@@ -711,6 +717,13 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#sendUpstreamMessage('end-point:updated', {
       endPoint: seconds,
     });
+    return this;
+  }
+
+  /** Posts `voice:position` (0..1 of the sample, ~60 Hz) per sounding voice. Off by default. */
+  enablePositionTracking(enabled: boolean): this {
+    this.#positionTracking = enabled;
+    this.#voicePool?.applyToAllVoices((voice) => voice.enablePositionTracking(enabled));
     return this;
   }
 

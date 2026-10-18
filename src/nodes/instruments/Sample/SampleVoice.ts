@@ -942,12 +942,19 @@ export class SampleVoice {
         }
 
         case 'loop:range':
-        case 'trim:range': {
+        case 'trim:range':
+        case 'voice:position': {
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
+          if (type === 'voice:position') {
+            this.getParam('playbackPosition')?.setValueAtTime(
+              data.position,
+              this.context.currentTime,
+            );
+          }
           break;
         }
 
@@ -956,13 +963,6 @@ export class SampleVoice {
         case 'loop:syncToTempo':
         case 'voice:reset':
         case 'voice:playbackDirectionChange':
-          break;
-
-        case 'voice:position':
-          this.getParam('playbackPosition')?.setValueAtTime(
-            data.position,
-            this.context.currentTime,
-          );
           break;
 
         default:
