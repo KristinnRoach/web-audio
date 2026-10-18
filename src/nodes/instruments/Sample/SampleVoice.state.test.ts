@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { SampleVoice } from './SampleVoice';
 import { VoiceState } from '../VoiceState';
+import { createDefaultSampleEnvelopeConfig } from './sample-envelope-policy';
 
 const SAMPLE_RATE = 48000;
 
@@ -119,15 +120,33 @@ describe('SampleVoice state', () => {
     expect(events).toEqual(['voice:started', 'voice:releasing', 'voice:stopped']);
   });
 
-  it('reports the effective release duration on voice:releasing', async () => {
+  it('reports and stops after the amplitude release even when pitch releases longer', async () => {
     const voice = await loadedVoice();
+    const pitchConfig = createDefaultSampleEnvelopeConfig('pitch', 1);
+    voice.setEnvelopeConfig('pitch', {
+      ...pitchConfig,
+      enabled: true,
+      shape: {
+        ...pitchConfig.shape,
+        points: [
+          { time: 0, value: 0 },
+          { time: 5, value: 1 },
+        ],
+      },
+    });
     let releaseDuration: number | undefined;
     voice.onMessage('voice:releasing', (msg: any) => (releaseDuration = msg.releaseDuration));
 
     trigger(voice);
     voice.release({ releaseTime: 0.1 });
 
-    expect(releaseDuration).toBeGreaterThan(0);
+    expect(voice.envelopes.get('pitch')!.releaseDuration()).toBeGreaterThan(voice.releaseTime);
+    expect(releaseDuration).toBe(voice.releaseTime);
+    const stopAfterMs = voice.releaseTime * 1000 + 50;
+    vi.advanceTimersByTime(stopAfterMs - 1);
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    vi.advanceTimersByTime(1);
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
   it('stops rather than retriggering an active voice', async () => {

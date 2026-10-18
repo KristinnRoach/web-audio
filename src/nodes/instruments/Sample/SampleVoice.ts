@@ -523,15 +523,7 @@ export class SampleVoice {
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
 
-    // Get longest release time of enabled envelopes
-    const enabledEnvelopes = Array.from(this.#envelopes).filter(([envType]) =>
-      this.#isEnabled(envType),
-    );
-
-    const effectiveReleaseTime =
-      enabledEnvelopes.length > 0
-        ? Math.max(...enabledEnvelopes.map(([, env]) => env.releaseDuration()))
-        : releaseTime; // Fallback passed in release time
+    const effectiveReleaseTime = this.releaseTime;
 
     this.#sendUpstreamMessage('voice:releasing', {
       voiceId: this.nodeId,
