@@ -435,7 +435,13 @@ export class SampleVoice {
       playbackRate,
       filterCutoff: this.#keytrackedLpfHz(playbackRate),
     });
-    const target = resolveSampleEnvelopeTrigger(envType, env.shape, baseValue, param);
+    const target = resolveSampleEnvelopeTrigger(
+      envType,
+      env.shape,
+      baseValue,
+      param,
+      this.#envelopeConfigs.get(envType)!.amount,
+    );
     const timeScale = this.#timeScale(envType, playbackRate);
 
     env.trigger(timestamp, { ...target, timeScale, fromPoint });

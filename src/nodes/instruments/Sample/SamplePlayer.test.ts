@@ -184,16 +184,24 @@ describe('SamplePlayer envelope config', () => {
 
     try {
       player.updateEnvelope('amp', input);
+      setEnvelopeConfig.mockClear();
+      changed.mockClear();
+      player.updateEnvelope('amp', { amount: 0.5 });
       (input.shape.points[0] as { value: number }).value = 99;
 
       expect(setEnvelopeConfig).toHaveBeenCalledTimes(2);
       expect(player.getEnvelope('amp').shape.points[0].value).toBe(0);
+      expect(player.getEnvelope('amp').amount).toBe(0.5);
+      expect(setEnvelopeConfig).toHaveBeenCalledWith(
+        'amp',
+        expect.objectContaining({ amount: 0.5 }),
+      );
       expect(changed).toHaveBeenCalledOnce();
       expect(changed).toHaveBeenCalledWith({
         type: 'envelope:changed',
         senderId: player.nodeId,
         id: 'amp',
-        config: expect.objectContaining({ enabled: false }),
+        config: expect.objectContaining({ enabled: false, amount: 0.5 }),
       });
     } finally {
       player.dispose();

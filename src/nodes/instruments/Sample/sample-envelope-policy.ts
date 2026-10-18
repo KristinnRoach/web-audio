@@ -54,6 +54,7 @@ export function createDefaultSampleEnvelopeConfig(
   switch (id) {
     case 'amp':
       return {
+        amount: 1,
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
@@ -61,6 +62,7 @@ export function createDefaultSampleEnvelopeConfig(
       };
     case 'pitch':
       return {
+        amount: 1,
         enabled: false,
         timeScale: 1,
         playbackRateSync: false,
@@ -68,6 +70,7 @@ export function createDefaultSampleEnvelopeConfig(
       };
     case 'filter':
       return {
+        amount: 1,
         enabled: false,
         timeScale: 1,
         playbackRateSync: false,
@@ -110,15 +113,24 @@ export function resolveSampleEnvelopeTrigger(
   envelopeShape: EnvelopeShape,
   baseValue: number,
   param: RangedAutomatableParam,
+  amount = 1,
 ): Pick<EnvelopeTriggerOptions, 'amount' | 'shape'> {
-  if (id === 'amp') return { amount: baseValue };
+  if (id === 'amp') {
+    return {
+      amount: baseValue,
+      shape: {
+        ...envelopeShape,
+        points: envelopeShape.points.map((point) => ({ ...point, value: point.value * amount })),
+      },
+    };
+  }
 
   if (id === 'pitch') {
     // Ratios scale the note's rate through `amount`, so live sustain edits can pass a
     // ratio too. Exponential in rate is linear in pitch; steps stay steps.
     const points = envelopeShape.points.map((point) => ({
       ...point,
-      value: pitchRatio(point.value),
+      value: pitchRatio(point.value * amount),
       curve: point.curve === 'step' ? ('step' as const) : ('exponential' as const),
     }));
     return { amount: baseValue, shape: { ...envelopeShape, points } };
@@ -130,7 +142,7 @@ export function resolveSampleEnvelopeTrigger(
   const logRange = Math.log(high) - logLow;
   const points = envelopeShape.points.map((point) => ({
     ...point,
-    value: Math.exp(logLow + logRange * point.value),
+    value: Math.exp(logLow + logRange * point.value * amount),
     curve: 'exponential' as const,
   }));
 
@@ -143,7 +155,7 @@ export function getLiveSampleEnvelopeSustainValue(
 ): number | undefined {
   const { mode, points, sustainPoint } = config.shape;
   if (id === 'filter' || mode.type !== 'sustain') return undefined;
-  const { value } = points[sustainPoint];
+  const value = points[sustainPoint].value * (config.amount ?? 1);
   return id === 'pitch' ? pitchRatio(value) : value;
 }
 

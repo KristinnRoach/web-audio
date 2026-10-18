@@ -3,6 +3,8 @@ import { assertValidEnvelopeShape, type EnvelopeShape } from '../../params/envel
 /** Serializable config shared by editors and envelope players. */
 export type EnvelopeConfig = {
   readonly enabled: boolean;
+  /** Depth multiplier, default 1: gain for amp, semitone offset for pitch, log sweep for filter. */
+  readonly amount?: number;
   /** Timing multiplier; values above 1 play the envelope faster. */
   readonly timeScale: number;
   /** Scales timing by the note's playback rate, so higher notes run the envelope faster. */
@@ -26,6 +28,7 @@ export function cloneEnvelopeConfig(config: EnvelopeConfig): EnvelopeConfig {
 export function assertValidEnvelopeConfig(config: EnvelopeConfig): void {
   if (
     typeof config?.enabled !== 'boolean' ||
+    (config.amount !== undefined && !Number.isFinite(config.amount)) ||
     !Number.isFinite(config?.timeScale) ||
     config.timeScale <= 0 ||
     (config.playbackRateSync !== undefined && typeof config.playbackRateSync !== 'boolean')
