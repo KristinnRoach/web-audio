@@ -211,10 +211,10 @@ export class SampleVoicePool implements LibNode {
     return this;
   }
 
-  allNotesOff(secondsFromNow: number = 0, releaseTime?: number) {
+  allNotesOff(releaseTime?: number) {
     this.#allVoices.forEach((voice) => {
       if (voice.state === VoiceState.PLAYING || voice.state === VoiceState.RELEASING) {
-        voice.release({ secondsFromNow, releaseTime });
+        voice.release({ releaseTime });
       }
     });
 

@@ -35,7 +35,7 @@ export interface ILibInstrumentNode extends ILibAudioNode {
   // Core instrument capabilities
   play(midiNote: MidiValue, velocity?: number): MidiValue | null;
   release(note: MidiValue): this;
-  releaseAll(secondsFromNow?: number, releaseTime?: number): this;
+  releaseAll(releaseTime?: number): this;
 }
 
 export interface LibAudioNodeOptions {

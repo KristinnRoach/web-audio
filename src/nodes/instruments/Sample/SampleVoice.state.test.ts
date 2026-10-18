@@ -149,6 +149,21 @@ describe('SampleVoice state', () => {
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
+  it('waits for the scheduled release and amplitude tail before stopping', async () => {
+    const voice = await loadedVoice();
+    trigger(voice);
+
+    voice.release({ secondsFromNow: 2 });
+
+    const stopAfterMs = (2 + voice.releaseTime) * 1000 + 50;
+    vi.advanceTimersByTime(stopAfterMs - 1);
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    expect(sentTypes()).not.toContain('voice:stop');
+
+    vi.advanceTimersByTime(1);
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+  });
+
   it('stops rather than retriggering an active voice', async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);

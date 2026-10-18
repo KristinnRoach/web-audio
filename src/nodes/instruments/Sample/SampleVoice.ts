@@ -543,7 +543,7 @@ export class SampleVoice {
           this.#releaseTimeout = null;
         }
       },
-      effectiveReleaseTime * 1000 + 50,
+      (secondsFromNow + effectiveReleaseTime) * 1000 + 50,
     ); // 50ms buffer
 
     return this;
