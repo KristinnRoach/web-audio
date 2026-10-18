@@ -427,7 +427,7 @@ export class SampleVoice {
   ) {
     if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) return;
 
-    const baseValue = getSampleEnvelopeBaseValue(envType, { velocity, playbackRate });
+    const baseValue = getSampleEnvelopeBaseValue(envType, { velocity });
     const target = resolveSampleEnvelopeTrigger(
       envType,
       baseValue,
@@ -672,10 +672,10 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  /** A disabled filter envelope leaves its detune wherever it stopped, so clear it. */
-  #resetFilterEnvTarget = (envType: SampleEnvelopeId) => {
-    if (envType !== 'filter') return;
-    const detune = this.getParam('lpfDetune');
+  /** A disabled pitch or filter envelope leaves its detune wherever it stopped, so clear it. */
+  #resetEnvDetune = (envType: SampleEnvelopeId) => {
+    if (envType === 'amp') return;
+    const detune = this.getParam(getSampleEnvelopeParamName(envType));
     detune?.cancelScheduledValues(this.now);
     detune?.setTargetAtTime(0, this.now, DEFAULT.CUTOFF_SMOOTHING_SEC);
   };
@@ -699,7 +699,7 @@ export class SampleVoice {
     if (wasEnabled && !config.enabled) {
       apply();
       envelope.stop();
-      this.#resetFilterEnvTarget(envType);
+      this.#resetEnvDetune(envType);
       return;
     }
 

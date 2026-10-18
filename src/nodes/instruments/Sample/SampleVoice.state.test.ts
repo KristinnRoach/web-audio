@@ -10,7 +10,7 @@ const SAMPLE_RATE = 48000;
  * its import graph subclass AudioWorkletNode at load time.
  */
 const audio = vi.hoisted(() => {
-  const PARAM_NAMES = ['envGain', 'playbackRate', 'velocity', 'loopStart', 'loopEnd'];
+  const PARAM_NAMES = ['envGain', 'playbackRate', 'detune', 'velocity', 'loopStart', 'loopEnd'];
 
   const noop = () => {};
   const fakeParam = () =>

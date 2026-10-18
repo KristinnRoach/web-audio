@@ -87,7 +87,7 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
     case 'amp':
       return 'envGain';
     case 'pitch':
-      return 'playbackRate';
+      return 'detune';
     case 'filter':
       return 'lpfDetune';
   }
@@ -99,15 +99,14 @@ export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: Envelo
 
 export function getSampleEnvelopeBaseValue(
   id: SampleEnvelopeId,
-  values: { velocity?: number; playbackRate: number },
+  values: { velocity?: number },
 ): number {
   switch (id) {
     case 'amp':
       return values.velocity === undefined ? 1 : values.velocity / 127;
     case 'pitch':
-      return values.playbackRate;
     case 'filter':
-      // Detune in cents rests at 0; the cutoff itself stays on `lpf.frequency`.
+      // Detune in cents rests at 0; the note's rate and the cutoff stay on their own params.
       return 0;
   }
 }
@@ -118,11 +117,8 @@ export function resolveSampleEnvelopeTrigger(
   amount = 1,
 ): Pick<EnvelopeTriggerOptions, 'base' | 'amount' | 'scaling' | 'curve'> {
   if (id === 'amp') return { amount: baseValue * amount };
-  if (id === 'pitch') {
-    return { base: baseValue, amount: PITCH_ENVELOPE_SEMITONES * amount, scaling: 'semitones' };
-  }
-
   // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
+  if (id === 'pitch') return { amount: PITCH_ENVELOPE_SEMITONES * 100 * amount, curve: 'linear' };
   return { amount: FILTER_ENVELOPE_OCTAVES * 1200 * amount, curve: 'linear' };
 }
 

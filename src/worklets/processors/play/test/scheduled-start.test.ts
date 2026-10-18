@@ -35,6 +35,7 @@ function makeParameters(driftAmount = 0): Parameters {
     velocity: new Float32Array([127]),
     pan: new Float32Array([0]),
     playbackRate: new Float32Array([1]),
+    detune: new Float32Array([0]),
     loopStart: new Float32Array([0]),
     loopEnd: new Float32Array([0.5]),
     startPoint: new Float32Array([0]),

@@ -38,8 +38,8 @@ it('scales amplitude, pitch offset and logarithmic filter sweep without changing
   for (const amount of [0, 0.5, 1, -1]) {
     const amp = resolveSampleEnvelopeTrigger('amp', 0.8, amount);
     expect(amp.amount).toBe(0.8 * amount);
-    const pitch = resolveSampleEnvelopeTrigger('pitch', 2, amount);
-    expect(pitch).toEqual({ base: 2, amount: 12 * amount, scaling: 'semitones' });
+    const pitch = resolveSampleEnvelopeTrigger('pitch', 0, amount);
+    expect(pitch).toEqual({ amount: 1200 * amount, curve: 'linear' });
     const filter = resolveSampleEnvelopeTrigger('filter', 0, amount);
     expect(filter).toEqual({ amount: 12000 * amount, curve: 'linear' });
   }

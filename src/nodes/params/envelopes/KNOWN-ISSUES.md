@@ -22,11 +22,10 @@ Code observations below are not claims that every case has been reproduced audib
   changes remain next-trigger edits. Preserve the trigger snapshot for the release tail.
   Rescheduling the rest of the attack from the current position was tried for
   mid-attack edits and still stepped audibly.
-- **Pitch envelope ownership.** `SampleVoice.setPlaybackRate`, glide and pitch
-  enable/disable write `playbackRate` directly while a pitch envelope may own it, so a
-  release can hand off from a stale rate. Fix it the way the filter envelope drives
-  `lpf.detune`: add a `detune` param (cents) to the sample worklet, applied as
-  `rate * 2^(detune / 1200)`, and bind the pitch envelope to it.
+- **Pitch envelope and disabled pitch.** The pitch envelope drives the sample worklet's
+  `detune` (cents), so glide and keytracking keep `playbackRate`. `disablePitch` resets
+  `playbackRate` to 1 but leaves `detune` alone, so a pitch envelope still bends a voice
+  whose pitch is disabled.
 - **Boundary cancel.** A loop retrigger cancels from the boundary, and
   `cancelScheduledValues(t)` removes events at `t` too, which includes the closing ramp
   of the cycle in progress. Per the Web Audio spec that ramp would be dropped mid-flight.

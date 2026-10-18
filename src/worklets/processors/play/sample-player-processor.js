@@ -701,10 +701,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.constantFlags ??= {
       envGain: true,
       playbackRate: true,
+      detune: true,
     };
 
     this.constantFlags.envGain = parameters.envGain.length === 1;
     this.constantFlags.playbackRate = parameters.playbackRate.length === 1;
+    this.constantFlags.detune = parameters.detune.length === 1;
 
     return this.constantFlags;
   }
@@ -941,8 +943,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
       // Use getSafeParam for a-rate params
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
-
       const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
+      const detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
+      const rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
 
       const loopStart = this.#getSafeParam(
         parameters.loopStart,
@@ -964,7 +967,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // 16 voices overran the audio thread. The 2x margin keeps loops near the
       // audio-rate boundary (Float32 noise can lift them over it) per sample.
       const pointsChanged =
-        loopStart !== previousStart || loopEnd !== previousEnd || baseRate !== previousRate;
+        loopStart !== previousStart || loopEnd !== previousEnd || rate !== previousRate;
       const followsPointsPerSample =
         loopRange?.loopDurationSamples < 2 * this.pitchPreservationThreshold;
       const driftPending = driftAmount > 0 && this.loopEnabled && !this.nextDriftGenerated;
@@ -979,11 +982,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           playbackRange,
           driftAmount,
           tempo,
-          baseRate,
+          rate,
         );
         previousStart = loopStart;
         previousEnd = loopEnd;
-        previousRate = baseRate;
+        previousRate = rate;
       }
 
       // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
@@ -1029,19 +1032,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const maxLoopCount = parameters.maxLoopCount[0];
       const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
       if (canWrapLoop) {
-        this.#passLoopEdge(
-          approachDirection,
-          loopMode,
-          loopRange,
-          playbackRange.endSamples,
-          baseRate,
-        );
+        this.#passLoopEdge(approachDirection, loopMode, loopRange, playbackRange.endSamples, rate);
       }
       // Out of loop passes (the edge just passed may have been the last), or
       // loop off: play out in the approach direction
       if (!this.loopEnabled || this.loopCount >= maxLoopCount) this.loopTurned = false;
       const direction = this.loopTurned ? -approachDirection : approachDirection;
-      const playbackStep = direction * Math.abs(baseRate);
+      const playbackStep = direction * Math.abs(rate);
 
       const durationCorrection = this.durationPreserver.prepareCorrection(
         durationPreservationActive,

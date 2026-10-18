@@ -39,6 +39,14 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 24,
     automationRate: 'a-rate',
   },
+  // Cents on top of playbackRate: rate * 2^(detune / 1200)
+  detune: {
+    name: 'detune',
+    defaultValue: 0,
+    minValue: -4800,
+    maxValue: 4800,
+    automationRate: 'a-rate',
+  },
   // NOTE: Time based params use seconds
   loopStart: {
     name: 'loopStart',

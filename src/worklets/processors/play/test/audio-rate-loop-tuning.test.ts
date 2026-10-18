@@ -42,6 +42,7 @@ function makeParameters(
     velocity: new Float32Array([127]),
     pan: new Float32Array([0]),
     playbackRate: new Float32Array([playbackRate]),
+    detune: new Float32Array([0]),
     loopStart: new Float32Array([0]),
     loopEnd: new Float32Array([loopLengthSamples / TEST_SAMPLE_RATE]),
     startPoint: new Float32Array([0]),
