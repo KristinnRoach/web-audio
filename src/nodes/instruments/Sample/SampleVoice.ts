@@ -21,7 +21,7 @@ import { samplerParams } from './sampler-params';
 import {
   applySampleEnvelopeShapeEdit,
   createDefaultSampleEnvelopeConfig,
-  getSampleEnvelopeBaseValue,
+  getSampleEnvelopeRestValue,
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
   resolveSampleEnvelopeTrigger,
@@ -430,16 +430,14 @@ export class SampleVoice {
     fromPoint = 0,
   ) {
     if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) {
-      this.#resetEnvTarget(envType, timestamp);
+      this.#resetEnvTarget(envType, timestamp, velocity);
       return;
     }
 
-    const baseValue = getSampleEnvelopeBaseValue(envType, { velocity });
-    const target = resolveSampleEnvelopeTrigger(
-      envType,
-      baseValue,
-      this.#envelopeConfigs.get(envType)!.amount,
-    );
+    const target = resolveSampleEnvelopeTrigger(envType, {
+      velocity,
+      amount: this.#envelopeConfigs.get(envType)!.amount,
+    });
     const timeScale = this.#timeScale(envType, playbackRate);
 
     env.trigger(timestamp, { ...target, timeScale, fromPoint });
@@ -524,7 +522,7 @@ export class SampleVoice {
       if (this.#isEnabled(envType)) env.release(timestamp);
     });
 
-    // A disabled amp env is a gate, close it. // Could be done with a default safety fade out in the processor?
+    // A disabled amp env is a gate, so close it. ponytail: voice-side fade until #65 moves de-click fades into the processor.
     if (!this.#isEnabled('amp')) envGain.setTargetAtTime(0, timestamp, AMP_GATE_SMOOTHING_SEC);
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
@@ -682,22 +680,16 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  /**
-   * Where a param rests while its envelope is off:
-   * amp gates at the note's velocity, pitch and filter detune return to 0.
-   */
-  #resetEnvTarget = (envType: SampleEnvelopeId, time = this.now) => {
+  /** Moves a param to where it rests while its envelope is off. */
+  #resetEnvTarget = (
+    envType: SampleEnvelopeId,
+    time = this.now,
+    velocity = this.#lastTrigger?.velocity,
+  ) => {
     const param = this.getParam(getSampleEnvelopeParamName(envType));
-    const isAmp = envType === 'amp';
-    const rest = isAmp
-      ? getSampleEnvelopeBaseValue('amp', { velocity: this.#lastTrigger?.velocity })
-      : 0;
+    const smoothing = envType === 'amp' ? AMP_GATE_SMOOTHING_SEC : DEFAULT.CUTOFF_SMOOTHING_SEC;
     param?.cancelScheduledValues(time);
-    param?.setTargetAtTime(
-      rest,
-      time,
-      isAmp ? AMP_GATE_SMOOTHING_SEC : DEFAULT.CUTOFF_SMOOTHING_SEC,
-    );
+    param?.setTargetAtTime(getSampleEnvelopeRestValue(envType, velocity), time, smoothing);
   };
 
   /**
@@ -1036,7 +1028,7 @@ export class SampleVoice {
 
   /** Amp release duration, or the gate fade while the amp envelope is off; drives voice cleanup. */
   get releaseTime() {
-    // ~5 time constants is under 1% of the gate level. // (Consider moving the gate smoothing to the processor)
+    // ~5 time constants is under 1% of the gate level.
     if (!this.#isEnabled('amp')) return AMP_GATE_SMOOTHING_SEC * 5;
     return this.#envelopes.get('amp')!.releaseDuration();
   }

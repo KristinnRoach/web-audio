@@ -90,16 +90,14 @@ A looping envelope keeps scheduling ahead on a timer until you call `release()` 
 
 ### Trigger options
 
-| Option         | Default      | Meaning                                                                      |
-| -------------- | ------------ | ---------------------------------------------------------------------------- |
-| `base`         | `0`          | Param value when the shape reads 0.                                          |
-| `amount`       | `1`          | How far the param moves per unit of shape. Negative values invert the shape. |
-| `timeScale`    | `1`          | Playback speed. `2` plays twice as fast.                                     |
-| `shape`        | stored shape | Plays a different shape for this run only.                                   |
-| `fromPoint`    | `0`          | Loops only: start the first pass at this point index.                        |
-| `scaling`      | `'linear'`   | `'octaves'` or `'semitones'` make `amount` multiply `base` (see below).      |
-| `toParamValue` | identity     | Maps point and live sustain values before base/amount scaling.               |
-| `curve`        | shape curves | Overrides ramp curves for the run, preserving steps.                         |
+| Option      | Default      | Meaning                                                                      |
+| ----------- | ------------ | ---------------------------------------------------------------------------- |
+| `base`      | `0`          | Param value when the shape reads 0.                                          |
+| `amount`    | `1`          | How far the param moves per unit of shape. Negative values invert the shape. |
+| `timeScale` | `1`          | Playback speed. `2` plays twice as fast.                                     |
+| `shape`     | stored shape | Plays a different shape for this run only.                                   |
+| `fromPoint` | `0`          | Loops only: start the first pass at this point index.                        |
+| `curve`     | shape curves | Overrides ramp curves for the run, preserving steps.                         |
 
 The param follows `base + amount * pointValue`, so one shape can drive a gain (0 to 1), a
 cutoff (200 to 8000 Hz) or anything else:
@@ -107,17 +105,6 @@ cutoff (200 to 8000 Hz) or anything else:
 ```ts
 filterEnv.trigger(ctx.currentTime, { base: 200, amount: 7800 });
 ```
-
-Pitch and cutoff are heard on a log scale, so a linear sweep spends most of its travel in
-the top octaves. `scaling: 'octaves'` or `'semitones'` gives `base * 2^(amount * pointValue)`
-with `amount` in that unit, and ramps exponentially:
-
-```ts
-filterEnv.trigger(t, { base: 200, amount: 5, scaling: 'octaves' }); // 200 Hz to 6400 Hz
-pitchEnv.trigger(t, { base: 1, amount: 12, scaling: 'semitones' }); // up an octave
-```
-
-`base` must be positive. Same as linear, a negative `amount` sweeps downward.
 
 ### Modulating a param someone else controls
 
@@ -145,7 +132,7 @@ Linear ramps in cents are exponential in Hz, so the sweep already sounds even.
 
 The sampler also applies edits to running notes: existing loops retrigger at their next
 boundary, enabling loop on a non-looping run picks up from its last reached point, and
-held sustain levels can glide using the active run's value mapping.
+held sustain levels can glide.
 These live-edit behaviors are retained but provisional; their limitations are tracked
 in [live edits](KNOWN-ISSUES.md#live-edits).
 

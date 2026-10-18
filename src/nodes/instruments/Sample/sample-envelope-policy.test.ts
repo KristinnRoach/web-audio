@@ -34,13 +34,13 @@ it('defaults amount to one and accepts older configs without it', () => {
   }
 });
 
-it('scales amplitude, pitch offset and logarithmic filter sweep without changing the shape', () => {
+it('scales amplitude by velocity and pitch and filter detune in cents, without changing the shape', () => {
   for (const amount of [0, 0.5, 1, -1]) {
-    const amp = resolveSampleEnvelopeTrigger('amp', 0.8, amount);
-    expect(amp.amount).toBe(0.8 * amount);
-    const pitch = resolveSampleEnvelopeTrigger('pitch', 0, amount);
+    const amp = resolveSampleEnvelopeTrigger('amp', { velocity: 127 * 0.8, amount });
+    expect(amp.amount).toBeCloseTo(0.8 * amount);
+    const pitch = resolveSampleEnvelopeTrigger('pitch', { velocity: 64, amount });
     expect(pitch).toEqual({ amount: 1200 * amount, curve: 'linear' });
-    const filter = resolveSampleEnvelopeTrigger('filter', 0, amount);
+    const filter = resolveSampleEnvelopeTrigger('filter', { amount });
     expect(filter).toEqual({ amount: 12000 * amount, curve: 'linear' });
   }
   expect(config.shape.points[1].value).toBe(0.25);

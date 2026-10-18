@@ -881,44 +881,13 @@ describe('re-triggering one player', () => {
   });
 });
 
-it('uses the trigger mapping for playback, sustain edits and release while keeping the stored shape', () => {
+it('overrides ramp curves for one run, keeping steps and the stored shape', () => {
   const param = createFakeParam();
   const clock = { currentTime: 0 };
   const shape: EnvelopeShape = {
     points: [
       { time: 0, value: 0, curve: 'step' },
-      { time: 1, value: 1 },
-      { time: 2, value: 0.5 },
-      { time: 3, value: 0 },
-    ],
-    mode: { type: 'sustain' },
-    sustainPoint: 2,
-    releasePoint: 2,
-  };
-  const env = new Envelope(clock, param, shape);
-  env.trigger(0, { toParamValue: (value) => 200 * 100 ** value, curve: 'exponential' });
-  expect(param.ramps()).toEqual([
-    { type: 'set', value: 200, time: 0 },
-    { type: 'set', value: 20000, time: 1 },
-    { type: 'exponential', value: 2000, time: 2 },
-  ]);
-  clock.currentTime = 2;
-  env.setSustainValue(0.25);
-  expect(param.lastValue()).toBeCloseTo(200 * 100 ** 0.25);
-  clock.currentTime = 2.1;
-  env.release();
-  expect(param.ramps().at(-2)!.value).toBeCloseTo(200 * 100 ** 0.25);
-  expect(param.ramps().at(-1)).toEqual({ type: 'exponential', value: 200, time: 3.1 });
-  expect(env.shape).toEqual(shape);
-});
-
-it('scales in octaves or semitones from a positive base with exponential ramps', () => {
-  const param = createFakeParam();
-  const clock = { currentTime: 0 };
-  const shape: EnvelopeShape = {
-    points: [
-      { time: 0, value: 0, curve: 'step' },
-      { time: 1, value: 1 },
+      { time: 1, value: 1, curve: 'exponential' },
       { time: 2, value: 0.5 },
     ],
     mode: { type: 'once' },
@@ -926,18 +895,13 @@ it('scales in octaves or semitones from a positive base with exponential ramps',
     releasePoint: 0,
   };
   const env = new Envelope(clock, param, shape);
-  env.trigger(0, { base: 200, amount: 2, scaling: 'octaves' });
+  env.trigger(0, { base: 100, amount: 1200, curve: 'linear' });
   expect(param.ramps()).toEqual([
-    { type: 'set', value: 200, time: 0 },
-    { type: 'set', value: 800, time: 1 },
-    { type: 'exponential', value: 400, time: 2 },
+    { type: 'set', value: 100, time: 0 },
+    { type: 'set', value: 1300, time: 1 },
+    { type: 'linear', value: 700, time: 2 },
   ]);
-
-  env.trigger(3, { base: 1, amount: -12, scaling: 'semitones' });
-  expect(param.ramps().at(-2)!.value).toBeCloseTo(0.5);
-  expect(param.ramps().at(-1)!.value).toBeCloseTo(2 ** -0.5);
-
-  expect(() => env.trigger(4, { base: 0, scaling: 'octaves' })).toThrow(RangeError);
+  expect(env.shape).toEqual(shape);
 });
 
 it('ramps linearly where an exponential segment would cross zero', () => {
