@@ -752,16 +752,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 
   /**
-   * Posts a resolved range (`loop:range`, `trim:range`) for display, tagged
+   * Posts display state (`loop:range`, `trim:range`, `voice:position`), tagged
    * with the current `triggerId`. Compared against the last posted message of
-   * that type for this note, so a change skipped by the ~30 Hz throttle is
-   * sent on a later block.
+   * that type for this note, so a change skipped by the throttle (`interval`
+   * seconds, ~30 Hz by default) is sent on a later block.
    */
-  #postRange(type, range) {
+  #postRange(type, range, interval = 1 / 30) {
     this.postedRanges ??= {};
     const posted = this.postedRanges[type];
     if (posted && Object.keys(range).every((key) => range[key] === posted.range[key])) return;
-    if (currentTime - (posted?.time ?? -1) < 1 / 30) return;
+    if (currentTime - (posted?.time ?? -1) < interval) return;
     this.postedRanges[type] = { range, time: currentTime };
     this.port.postMessage({ type, ...range, triggerId: this.triggerId });
   }
@@ -1184,13 +1184,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       loopMode,
     });
 
-    // Send position updates if requested
+    // Playhead for display, ~60 Hz to match screen refresh.
     if (this.usePlaybackPosition) {
-      const normalizedPosition = this.#samplesToNormalized(this.playbackPosition);
-      this.port.postMessage({
-        type: 'voice:position',
-        position: normalizedPosition,
-      });
+      this.#postRange(
+        'voice:position',
+        { position: this.#samplesToNormalized(this.playbackPosition) },
+        1 / 60,
+      );
     }
 
     return true;

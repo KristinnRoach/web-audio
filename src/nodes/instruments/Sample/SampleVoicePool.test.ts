@@ -31,8 +31,7 @@ vi.mock('./createSampleVoice', () => {
       return midiNote;
     }
 
-    release({ releaseTime = 1 }: { releaseTime?: number } = {}) {
-      if (releaseTime <= 0) return this.stop();
+    release() {
       if (this.state !== VoiceState.PLAYING) return this;
       this.state = VoiceState.RELEASING;
       this.#emit('voice:releasing');
@@ -103,8 +102,8 @@ describe('SampleVoicePool', () => {
     expect(first.state).toBe(VoiceState.RELEASING);
     expect(second.state).toBe(VoiceState.PLAYING);
 
-    pool.noteOff(0, 0.1, 0.4);
-    expect(releaseSecond).toHaveBeenCalledWith({ secondsFromNow: 0.1, releaseTime: 0.4 });
+    pool.noteOff(0, 0.1);
+    expect(releaseSecond).toHaveBeenCalledWith({ secondsFromNow: 0.1 });
     expect(pool.playingVoicesCount).toBe(0);
     expect(pool.releasingVoicesCount).toBe(2);
 

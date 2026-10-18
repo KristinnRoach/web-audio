@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { SampleVoice } from './SampleVoice';
 import { VoiceState } from '../VoiceState';
+import { createDefaultSampleEnvelopeConfig } from './sample-envelope-policy';
 
 const SAMPLE_RATE = 48000;
 
@@ -102,21 +103,65 @@ describe('SampleVoice state', () => {
       voice.onMessage(type, () => events.push(type));
     });
 
-    voice.release({ releaseTime: 0.1 });
+    voice.release();
     expect(voice.state).toBe(VoiceState.AVAILABLE);
 
     expect(trigger(voice)).toBe(60);
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(60);
 
-    voice.release({ releaseTime: 0.1 });
-    voice.release({ releaseTime: 0.1 });
+    voice.release();
+    voice.release();
     expect(voice.state).toBe(VoiceState.RELEASING);
 
     vi.runAllTimers();
     expect(voice.state).toBe(VoiceState.AVAILABLE);
     expect(voice.midiNote).toBeNull();
     expect(events).toEqual(['voice:started', 'voice:releasing', 'voice:stopped']);
+  });
+
+  it('reports and stops after the amplitude release even when pitch releases longer', async () => {
+    const voice = await loadedVoice();
+    const pitchConfig = createDefaultSampleEnvelopeConfig('pitch', 1);
+    voice.setEnvelopeConfig('pitch', {
+      ...pitchConfig,
+      enabled: true,
+      shape: {
+        ...pitchConfig.shape,
+        points: [
+          { time: 0, value: 0 },
+          { time: 5, value: 1 },
+        ],
+      },
+    });
+    let releaseDuration: number | undefined;
+    voice.onMessage('voice:releasing', (msg: any) => (releaseDuration = msg.releaseDuration));
+
+    trigger(voice);
+    voice.release();
+
+    expect(voice.envelopes.get('pitch')!.releaseDuration()).toBeGreaterThan(voice.releaseTime);
+    expect(releaseDuration).toBe(voice.releaseTime);
+    const stopAfterMs = voice.releaseTime * 1000 + 50;
+    vi.advanceTimersByTime(stopAfterMs - 1);
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    vi.advanceTimersByTime(1);
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+  });
+
+  it('waits for the scheduled release and amplitude tail before stopping', async () => {
+    const voice = await loadedVoice();
+    trigger(voice);
+
+    voice.release({ secondsFromNow: 2 });
+
+    const stopAfterMs = (2 + voice.releaseTime) * 1000 + 50;
+    vi.advanceTimersByTime(stopAfterMs - 1);
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    expect(sentTypes()).not.toContain('voice:stop');
+
+    vi.advanceTimersByTime(1);
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
   it('stops rather than retriggering an active voice', async () => {
@@ -128,11 +173,11 @@ describe('SampleVoice state', () => {
     expect(voice.midiNote).toBeNull();
   });
 
-  it('treats a zero release as one idempotent stop', async () => {
+  it('stops a releasing voice idempotently', async () => {
     const voice = await loadedVoice();
     trigger(voice);
-    voice.release({ releaseTime: 0.1 });
-    voice.release({ releaseTime: 0 });
+    voice.release();
+    voice.stop();
     voice.stop();
     vi.runAllTimers();
 
@@ -249,5 +294,23 @@ describe('SampleVoice state', () => {
       loopEnd: 1,
     });
     expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
+  });
+
+  it('forwards only the current note’s position, tagged with voice and note', async () => {
+    const voice = await loadedVoice();
+    const positions = vi.fn();
+    voice.onMessage('voice:position', positions);
+    const position = (triggerId: number, value: number) =>
+      audio.port.onmessage({ data: { type: 'voice:position', position: value, triggerId } });
+
+    trigger(voice, 60);
+    position(0, 0.1);
+    position(1, 0.2);
+    endPlayback(1);
+    position(1, 0.3);
+
+    expect(positions.mock.calls.map(([data]) => data)).toEqual([
+      expect.objectContaining({ voiceId: voice.nodeId, midiNote: 60, position: 0.2 }),
+    ]);
   });
 });

@@ -505,9 +505,8 @@ export class SampleVoice {
     this.#state = state;
   }
 
-  release({ releaseTime = this.releaseTime, secondsFromNow = 0 }): this {
-    // An immediate release must also stop a voice already in its release tail.
-    if (releaseTime <= 0) return this.stop(this.now + secondsFromNow);
+  /** Schedules envelope release; lifecycle messages report the scheduling-time state. */
+  release({ secondsFromNow = 0 } = {}): this {
     if (this.#state !== VoiceState.PLAYING) return this;
 
     const envGain = this.getParam('envGain');
@@ -522,22 +521,16 @@ export class SampleVoice {
     });
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
+
+    const releaseDuration = this.releaseTime;
+
     this.#sendUpstreamMessage('voice:releasing', {
       voiceId: this.nodeId,
       midiNote: this.#midiNote,
+      releaseDuration,
     });
 
-    // Get longest release time of enabled envelopes
-    const enabledEnvelopes = Array.from(this.#envelopes).filter(([envType]) =>
-      this.#isEnabled(envType),
-    );
-
-    const effectiveReleaseTime =
-      enabledEnvelopes.length > 0
-        ? Math.max(...enabledEnvelopes.map(([, env]) => env.releaseDuration()))
-        : releaseTime; // Fallback passed in release time
-
-    // Stop after the release duration.
+    // Stop after the scheduled release and amplitude tail.
     if (this.#releaseTimeout) clearTimeout(this.#releaseTimeout);
     this.#releaseTimeout = setTimeout(
       () => {
@@ -549,7 +542,7 @@ export class SampleVoice {
           this.#releaseTimeout = null;
         }
       },
-      effectiveReleaseTime * 1000 + 50,
+      (secondsFromNow + releaseDuration) * 1000 + 50,
     ); // 50ms buffer
 
     return this;
@@ -942,12 +935,19 @@ export class SampleVoice {
         }
 
         case 'loop:range':
-        case 'trim:range': {
+        case 'trim:range':
+        case 'voice:position': {
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
+          if (type === 'voice:position') {
+            this.getParam('playbackPosition')?.setValueAtTime(
+              data.position,
+              this.context.currentTime,
+            );
+          }
           break;
         }
 
@@ -956,13 +956,6 @@ export class SampleVoice {
         case 'loop:syncToTempo':
         case 'voice:reset':
         case 'voice:playbackDirectionChange':
-          break;
-
-        case 'voice:position':
-          this.getParam('playbackPosition')?.setValueAtTime(
-            data.position,
-            this.context.currentTime,
-          );
           break;
 
         default:
@@ -1034,6 +1027,7 @@ export class SampleVoice {
     return this.getParam('endPoint')!.value;
   }
 
+  /** Amplitude release duration determines cleanup even when that envelope is disabled. */
   get releaseTime() {
     return this.#envelopes.get('amp')!.releaseDuration();
   }
