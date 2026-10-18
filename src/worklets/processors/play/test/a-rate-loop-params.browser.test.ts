@@ -11,8 +11,12 @@ it('applies a loop-end step within a real render quantum', async () => {
       velocity: 127,
       loopStart: 0,
       loopEnd: 192 / 48_000,
-      // Drift is random; this test checks exact wrap positions.
+      // Pin everything that moves wrap positions or gain, so a default change
+      // can't break this test. Drift is random.
       loopDurationDriftAmount: 0,
+      playbackRate: 1,
+      startPoint: 0,
+      masterGain: 1,
     },
   });
   await new Promise<void>((resolve) => {
@@ -32,6 +36,11 @@ it('applies a loop-end step within a real render quantum', async () => {
     node.port.onmessage = ({ data }) => {
       if (data.type === 'loop:enabled') resolve();
     };
+    // Processor state that resets only by message; voice:setBuffer doesn't touch it.
+    node.port.postMessage({ type: 'setKeytrackLoopAmount', value: 0 });
+    node.port.postMessage({ type: 'syncLoopToTempo', value: false });
+    node.port.postMessage({ type: 'setLoopPingPong', value: false });
+    node.port.postMessage({ type: 'setPreserveDuration', value: false });
     node.port.postMessage({ type: 'voice:start' });
     node.port.postMessage({ type: 'setLoopEnabled', value: true });
   });
