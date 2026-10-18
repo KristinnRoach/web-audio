@@ -33,6 +33,10 @@ export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 
+/** Time constant for the gate fade when the amp envelope is off:
+ * fast enough to read as a gate, slow enough not to click. */
+const AMP_GATE_SMOOTHING_SEC = 0.002;
+
 export class SampleVoice {
   // TODO: implements ILibAudioNode
   readonly nodeId: NodeID;
@@ -425,7 +429,10 @@ export class SampleVoice {
     velocity?: number,
     fromPoint = 0,
   ) {
-    if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) return;
+    if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) {
+      this.#resetEnvTarget(envType, timestamp);
+      return;
+    }
 
     const baseValue = getSampleEnvelopeBaseValue(envType, { velocity });
     const target = resolveSampleEnvelopeTrigger(
@@ -516,6 +523,9 @@ export class SampleVoice {
     this.#envelopes.forEach((env, envType) => {
       if (this.#isEnabled(envType)) env.release(timestamp);
     });
+
+    // A disabled amp env is a gate, close it. // Could be done with a default safety fade out in the processor?
+    if (!this.#isEnabled('amp')) envGain.setTargetAtTime(0, timestamp, AMP_GATE_SMOOTHING_SEC);
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
 
@@ -672,12 +682,22 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  /** A disabled pitch or filter envelope leaves its detune wherever it stopped, so clear it. */
-  #resetEnvDetune = (envType: SampleEnvelopeId) => {
-    if (envType === 'amp') return;
-    const detune = this.getParam(getSampleEnvelopeParamName(envType));
-    detune?.cancelScheduledValues(this.now);
-    detune?.setTargetAtTime(0, this.now, DEFAULT.CUTOFF_SMOOTHING_SEC);
+  /**
+   * Where a param rests while its envelope is off:
+   * amp gates at the note's velocity, pitch and filter detune return to 0.
+   */
+  #resetEnvTarget = (envType: SampleEnvelopeId, time = this.now) => {
+    const param = this.getParam(getSampleEnvelopeParamName(envType));
+    const isAmp = envType === 'amp';
+    const rest = isAmp
+      ? getSampleEnvelopeBaseValue('amp', { velocity: this.#lastTrigger?.velocity })
+      : 0;
+    param?.cancelScheduledValues(time);
+    param?.setTargetAtTime(
+      rest,
+      time,
+      isAmp ? AMP_GATE_SMOOTHING_SEC : DEFAULT.CUTOFF_SMOOTHING_SEC,
+    );
   };
 
   /**
@@ -699,7 +719,7 @@ export class SampleVoice {
     if (wasEnabled && !config.enabled) {
       apply();
       envelope.stop();
-      this.#resetEnvDetune(envType);
+      this.#resetEnvTarget(envType);
       return;
     }
 
@@ -1014,8 +1034,10 @@ export class SampleVoice {
     return this.getParam('endPoint')!.value;
   }
 
-  /** Amplitude release duration determines cleanup even when that envelope is disabled. */
+  /** Amp release duration, or the gate fade while the amp envelope is off; drives voice cleanup. */
   get releaseTime() {
+    // ~5 time constants is under 1% of the gate level. // (Consider moving the gate smoothing to the processor)
+    if (!this.#isEnabled('amp')) return AMP_GATE_SMOOTHING_SEC * 5;
     return this.#envelopes.get('amp')!.releaseDuration();
   }
 
