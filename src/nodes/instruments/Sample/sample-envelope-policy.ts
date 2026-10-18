@@ -110,53 +110,27 @@ export function getSampleEnvelopeBaseValue(
 
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  envelopeShape: EnvelopeShape,
   baseValue: number,
   param: RangedAutomatableParam,
   amount = 1,
-): Pick<EnvelopeTriggerOptions, 'amount' | 'shape'> {
-  if (id === 'amp') {
+): Pick<EnvelopeTriggerOptions, 'amount' | 'mapValue' | 'curve'> {
+  if (id === 'amp') return { amount: baseValue * amount };
+  if (id === 'pitch') {
     return {
       amount: baseValue,
-      shape: {
-        ...envelopeShape,
-        points: envelopeShape.points.map((point) => ({ ...point, value: point.value * amount })),
-      },
+      mapValue: (value) => pitchRatio(value * amount),
+      curve: 'exponential',
     };
-  }
-
-  if (id === 'pitch') {
-    // Ratios scale the note's rate through `amount`, so live sustain edits can pass a
-    // ratio too. Exponential in rate is linear in pitch; steps stay steps.
-    const points = envelopeShape.points.map((point) => ({
-      ...point,
-      value: pitchRatio(point.value * amount),
-      curve: point.curve === 'step' ? ('step' as const) : ('exponential' as const),
-    }));
-    return { amount: baseValue, shape: { ...envelopeShape, points } };
   }
 
   const low = Math.max(baseValue, 1e-3);
   const high = Math.max(param.maxValue, low);
   const logLow = Math.log(low);
   const logRange = Math.log(high) - logLow;
-  const points = envelopeShape.points.map((point) => ({
-    ...point,
-    value: Math.exp(logLow + logRange * point.value * amount),
-    curve: 'exponential' as const,
-  }));
-
-  return { shape: { ...envelopeShape, points } };
-}
-
-export function getLiveSampleEnvelopeSustainValue(
-  id: SampleEnvelopeId,
-  config: EnvelopeConfig,
-): number | undefined {
-  const { mode, points, sustainPoint } = config.shape;
-  if (id === 'filter' || mode.type !== 'sustain') return undefined;
-  const value = points[sustainPoint].value * (config.amount ?? 1);
-  return id === 'pitch' ? pitchRatio(value) : value;
+  return {
+    mapValue: (value) => Math.exp(logLow + logRange * value * amount),
+    curve: 'exponential',
+  };
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */

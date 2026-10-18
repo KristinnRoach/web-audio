@@ -24,7 +24,6 @@ import {
   getSampleEnvelopeBaseValue,
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
-  getLiveSampleEnvelopeSustainValue,
   resolveSampleEnvelopeTrigger,
   shouldTriggerSampleEnvelope,
   type SampleEnvelopeId,
@@ -437,7 +436,6 @@ export class SampleVoice {
     });
     const target = resolveSampleEnvelopeTrigger(
       envType,
-      env.shape,
       baseValue,
       param,
       this.#envelopeConfigs.get(envType)!.amount,
@@ -711,8 +709,9 @@ export class SampleVoice {
     const apply = () => {
       this.#envelopeConfigs.set(envType, config);
       envelope.shape = config.shape;
-      const sustainValue = getLiveSampleEnvelopeSustainValue(envType, config);
-      if (sustainValue !== undefined) envelope.setSustainValue(sustainValue);
+      if (config.shape.mode.type === 'sustain') {
+        envelope.setSustainValue(config.shape.points[config.shape.sustainPoint].value);
+      }
     };
 
     if (wasEnabled && !config.enabled) {

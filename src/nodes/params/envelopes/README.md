@@ -97,6 +97,8 @@ A looping envelope keeps scheduling ahead on a timer until you call `release()` 
 | `timeScale` | `1`          | Playback speed. `2` plays twice as fast.                                     |
 | `shape`     | stored shape | Plays a different shape for this run only.                                   |
 | `fromPoint` | `0`          | Loops only: start the first pass at this point index.                        |
+| `mapValue`  | identity     | Maps point and live sustain values before base/amount scaling.               |
+| `curve`     | shape curves | Overrides ramp curves for the run, preserving steps.                         |
 
 The param follows `base + amount * pointValue`, so one shape can drive a gain (0 to 1), a
 cutoff (200 to 8000 Hz) or anything else:
@@ -115,7 +117,7 @@ filterEnv.trigger(ctx.currentTime, { base: 200, amount: 7800 });
 
 The sampler also applies edits to running notes: existing loops retrigger at their next
 boundary, enabling loop on a non-looping run picks up from its last reached point, and
-held amplitude/pitch sustain levels can glide. Filter sustain edits wait for a trigger.
+held sustain levels can glide using the active run's value mapping.
 These live-edit behaviors are retained but provisional; their limitations are tracked
 in [live edits](KNOWN-ISSUES.md#live-edits).
 

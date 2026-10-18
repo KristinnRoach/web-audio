@@ -14,6 +14,7 @@ import {
   getDuration,
   interpolateAtTime,
   type EnvelopeShape,
+  type EnvelopeCurve,
 } from './envelope-shape';
 
 /** The clock surface used to place envelope automation on a timeline. */
@@ -27,6 +28,10 @@ export type EnvelopeClock = { readonly currentTime: number };
  */
 export type EnvelopeTriggerOptions = ScheduleOptions & {
   fromPoint?: number;
+  /** Maps shape values before base/amount scaling; also used for live sustain edits. */
+  mapValue?: (value: number) => number;
+  /** Overrides ramp curves for this run, preserving step segments. */
+  curve?: EnvelopeCurve;
   /** Plays this shape for this run only; the stored `shape` is left as it is. */
   shape?: EnvelopeShape;
 };
@@ -76,6 +81,7 @@ export class Envelope {
   #triggered = false;
   #base = 0;
   #amount = 1;
+  #mapValue: ((value: number) => number) | undefined;
   #timeScale = 1;
   #triggerTime = 0;
   #startTime = 0;
@@ -146,8 +152,19 @@ export class Envelope {
   /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
   trigger(time = this.clock.currentTime, options: EnvelopeTriggerOptions = {}) {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
-    const runEnvelope = snapshot(options.shape ?? this.#shape);
+    let runEnvelope = snapshot(options.shape ?? this.#shape);
     const timeScale = options.timeScale ?? 1;
+    if (options.mapValue || options.curve) {
+      runEnvelope = {
+        ...runEnvelope,
+        points: runEnvelope.points.map((point) => ({
+          ...point,
+          value: options.mapValue ? options.mapValue(point.value) : point.value,
+          curve: point.curve === 'step' ? 'step' : (options.curve ?? point.curve),
+        })),
+      };
+      assertValidEnvelopeShape(runEnvelope);
+    }
     const fullDuration = getDuration(runEnvelope.points, { timeScale });
     time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;
@@ -155,6 +172,7 @@ export class Envelope {
     this.#triggered = true;
     this.#base = options.base ?? 0;
     this.#amount = options.amount ?? 1;
+    this.#mapValue = options.mapValue;
     this.#timeScale = timeScale;
     this.#triggerTime = time;
     this.#startTime = time;
@@ -379,6 +397,7 @@ export class Envelope {
     // pending glide in `valueAt` if a long one is ever wanted.
     if (!this.#envShape) return;
     const { points, mode, sustainPoint } = this.#envShape;
+    value = this.#mapValue ? this.#mapValue(value) : value;
     if (!this.#triggered || mode.type !== 'sustain') return;
     if (points[sustainPoint].value === value) return;
 

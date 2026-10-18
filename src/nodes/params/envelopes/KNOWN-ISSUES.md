@@ -22,9 +22,6 @@ Code observations below are not claims that every case has been reproduced audib
   changes remain next-trigger edits. Preserve the trigger snapshot for the release tail.
   Rescheduling the rest of the attack from the current position was tried for
   mid-attack edits and still stepped audibly.
-- **Filter sustain mapping.** `getLiveSampleEnvelopeSustainValue` deliberately skips
-  filter envelopes. A future implementation needs the active note's normalized-to-Hz
-  mapping; recomputing it from current filter settings may use a different range.
 
 ## Scheduling and lifecycle
 

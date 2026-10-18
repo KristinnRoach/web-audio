@@ -880,3 +880,34 @@ describe('re-triggering one player', () => {
     player.stop();
   });
 });
+
+it('uses the trigger mapping for playback, sustain edits and release while keeping the stored shape', () => {
+  const param = createFakeParam();
+  const clock = { currentTime: 0 };
+  const shape: EnvelopeShape = {
+    points: [
+      { time: 0, value: 0, curve: 'step' },
+      { time: 1, value: 1 },
+      { time: 2, value: 0.5 },
+      { time: 3, value: 0 },
+    ],
+    mode: { type: 'sustain' },
+    sustainPoint: 2,
+    releasePoint: 2,
+  };
+  const env = new Envelope(clock, param, shape);
+  env.trigger(0, { mapValue: (value) => 200 * 100 ** value, curve: 'exponential' });
+  expect(param.ramps()).toEqual([
+    { type: 'set', value: 200, time: 0 },
+    { type: 'set', value: 20000, time: 1 },
+    { type: 'exponential', value: 2000, time: 2 },
+  ]);
+  clock.currentTime = 2;
+  env.setSustainValue(0.25);
+  expect(param.lastValue()).toBeCloseTo(200 * 100 ** 0.25);
+  clock.currentTime = 2.1;
+  env.release();
+  expect(param.ramps().at(-2)!.value).toBeCloseTo(200 * 100 ** 0.25);
+  expect(param.ramps().at(-1)).toEqual({ type: 'exponential', value: 200, time: 3.1 });
+  expect(env.shape).toEqual(shape);
+});
