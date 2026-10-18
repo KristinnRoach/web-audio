@@ -911,3 +911,31 @@ it('uses the trigger mapping for playback, sustain edits and release while keepi
   expect(param.ramps().at(-1)).toEqual({ type: 'exponential', value: 200, time: 3.1 });
   expect(env.shape).toEqual(shape);
 });
+
+it('scales in octaves or semitones from a positive base with exponential ramps', () => {
+  const param = createFakeParam();
+  const clock = { currentTime: 0 };
+  const shape: EnvelopeShape = {
+    points: [
+      { time: 0, value: 0, curve: 'step' },
+      { time: 1, value: 1 },
+      { time: 2, value: 0.5 },
+    ],
+    mode: { type: 'once' },
+    sustainPoint: 0,
+    releasePoint: 0,
+  };
+  const env = new Envelope(clock, param, shape);
+  env.trigger(0, { base: 200, amount: 2, scaling: 'octaves' });
+  expect(param.ramps()).toEqual([
+    { type: 'set', value: 200, time: 0 },
+    { type: 'set', value: 800, time: 1 },
+    { type: 'exponential', value: 400, time: 2 },
+  ]);
+
+  env.trigger(3, { base: 1, amount: -12, scaling: 'semitones' });
+  expect(param.ramps().at(-2)!.value).toBeCloseTo(0.5);
+  expect(param.ramps().at(-1)!.value).toBeCloseTo(2 ** -0.5);
+
+  expect(() => env.trigger(4, { base: 0, scaling: 'octaves' })).toThrow(RangeError);
+});

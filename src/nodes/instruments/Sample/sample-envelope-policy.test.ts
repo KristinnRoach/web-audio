@@ -40,10 +40,10 @@ it('scales amplitude, pitch offset and logarithmic filter sweep without changing
     const amp = resolveSampleEnvelopeTrigger('amp', 0.8, param, amount);
     expect(amp.amount).toBe(0.8 * amount);
     const pitch = resolveSampleEnvelopeTrigger('pitch', 2, param, amount);
-    expect(pitch.amount).toBe(2);
-    expect(pitch.toParamValue!(0.25)).toBeCloseTo(2 ** (0.25 * amount));
+    expect(pitch).toEqual({ base: 2, amount: 12 * amount, scaling: 'semitones' });
     const filter = resolveSampleEnvelopeTrigger('filter', 200, param, amount);
-    expect(filter.toParamValue!(0.25)).toBeCloseTo(200 * 100 ** (0.25 * amount));
+    expect(filter.base).toBe(200);
+    expect(200 * 2 ** (0.25 * filter.amount!)).toBeCloseTo(200 * 100 ** (0.25 * amount));
   }
   expect(config.shape.points[1].value).toBe(0.25);
 });

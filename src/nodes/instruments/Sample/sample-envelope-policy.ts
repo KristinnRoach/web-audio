@@ -29,8 +29,6 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
  */
 const PITCH_ENVELOPE_SEMITONES = 12;
 
-const pitchRatio = (value: number) => 2 ** ((value * PITCH_ENVELOPE_SEMITONES) / 12);
-
 /** Flat at 0, so the pitch env is an identity until someone edits it. */
 function flatPitchShape(durationSeconds: number): EnvelopeShape {
   return {
@@ -113,24 +111,16 @@ export function resolveSampleEnvelopeTrigger(
   baseValue: number,
   param: RangedAutomatableParam,
   amount = 1,
-): Pick<EnvelopeTriggerOptions, 'amount' | 'toParamValue' | 'curve'> {
+): Pick<EnvelopeTriggerOptions, 'base' | 'amount' | 'scaling'> {
   if (id === 'amp') return { amount: baseValue * amount };
   if (id === 'pitch') {
-    return {
-      amount: baseValue,
-      toParamValue: (value) => pitchRatio(value * amount),
-      curve: 'exponential',
-    };
+    return { base: baseValue, amount: PITCH_ENVELOPE_SEMITONES * amount, scaling: 'semitones' };
   }
 
+  // Shape value 1 sweeps from the cutoff up to the param's ceiling.
   const low = Math.max(baseValue, 1e-3);
-  const high = Math.max(param.maxValue, low);
-  const logLow = Math.log(low);
-  const logRange = Math.log(high) - logLow;
-  return {
-    toParamValue: (value) => Math.exp(logLow + logRange * value * amount),
-    curve: 'exponential',
-  };
+  const octaves = Math.log2(Math.max(param.maxValue, low) / low);
+  return { base: low, amount: octaves * amount, scaling: 'octaves' };
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */

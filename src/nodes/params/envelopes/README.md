@@ -97,6 +97,7 @@ A looping envelope keeps scheduling ahead on a timer until you call `release()` 
 | `timeScale`    | `1`          | Playback speed. `2` plays twice as fast.                                     |
 | `shape`        | stored shape | Plays a different shape for this run only.                                   |
 | `fromPoint`    | `0`          | Loops only: start the first pass at this point index.                        |
+| `scaling`      | `'linear'`   | `'octaves'` or `'semitones'` make `amount` multiply `base` (see below).      |
 | `toParamValue` | identity     | Maps point and live sustain values before base/amount scaling.               |
 | `curve`        | shape curves | Overrides ramp curves for the run, preserving steps.                         |
 
@@ -106,6 +107,17 @@ cutoff (200 to 8000 Hz) or anything else:
 ```ts
 filterEnv.trigger(ctx.currentTime, { base: 200, amount: 7800 });
 ```
+
+Pitch and cutoff are heard on a log scale, so a linear sweep spends most of its travel in
+the top octaves. `scaling: 'octaves'` or `'semitones'` gives `base * 2^(amount * pointValue)`
+with `amount` in that unit, and ramps exponentially:
+
+```ts
+filterEnv.trigger(t, { base: 200, amount: 5, scaling: 'octaves' }); // 200 Hz to 6400 Hz
+pitchEnv.trigger(t, { base: 1, amount: 12, scaling: 'semitones' }); // up an octave
+```
+
+`base` must be positive. Same as linear, a negative `amount` sweeps downward.
 
 ### Changing things
 

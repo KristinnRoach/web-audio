@@ -21,6 +21,13 @@ import {
 export type EnvelopeClock = { readonly currentTime: number };
 
 /**
+ * How `amount` moves the param from `base`. `linear` adds: `base + amount * value`.
+ * `octaves` and `semitones` multiply: `base * 2^(amount * value)`, with `amount` in that
+ * unit. Use them for anything heard on a log scale: pitch, playback rate, filter cutoff.
+ */
+export type EnvelopeScaling = 'linear' | 'octaves' | 'semitones';
+
+/**
  * `fromPoint` opens the first pass mid-shape at that point index instead of point 0,
  * for a loop switched on while the envelope is parked on its sustain point: the shape
  * carries on from where it is into its first full cycle rather than snapping back.
@@ -28,6 +35,8 @@ export type EnvelopeClock = { readonly currentTime: number };
  */
 export type EnvelopeTriggerOptions = ScheduleOptions & {
   fromPoint?: number;
+  /** Defaults to `linear`. Non-linear scaling needs a positive `base` and ramps exponentially. */
+  scaling?: EnvelopeScaling;
   /** Maps shape values before base/amount scaling; also used for live sustain edits. */
   toParamValue?: (value: number) => number;
   /** Overrides ramp curves for this run, preserving step segments. */
@@ -154,13 +163,28 @@ export class Envelope {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
     let runEnvelope = snapshot(options.shape ?? this.#shape);
     const timeScale = options.timeScale ?? 1;
-    if (options.toParamValue || options.curve) {
+    let { base: runBase = 0, amount: runAmount = 1, toParamValue, curve } = options;
+    if (options.scaling && options.scaling !== 'linear') {
+      if (!(runBase > 0)) {
+        throw new RangeError(`Envelope ${options.scaling} scaling needs a positive base`);
+      }
+      // Folded into the value mapping, so scheduling, release and sustain edits stay
+      // linear in base/amount and need no scaling of their own.
+      const octaves = options.scaling === 'semitones' ? runAmount / 12 : runAmount;
+      const scaleBase = runBase;
+      const map = toParamValue;
+      toParamValue = (value) => scaleBase * 2 ** (octaves * (map ? map(value) : value));
+      runBase = 0;
+      runAmount = 1;
+      curve ??= 'exponential';
+    }
+    if (toParamValue || curve) {
       runEnvelope = {
         ...runEnvelope,
         points: runEnvelope.points.map((point) => ({
           ...point,
-          value: options.toParamValue ? options.toParamValue(point.value) : point.value,
-          curve: point.curve === 'step' ? 'step' : (options.curve ?? point.curve),
+          value: toParamValue ? toParamValue(point.value) : point.value,
+          curve: point.curve === 'step' ? 'step' : (curve ?? point.curve),
         })),
       };
       assertValidEnvelopeShape(runEnvelope);
@@ -170,9 +194,9 @@ export class Envelope {
     this.#envShape = runEnvelope;
     this.#stopLoop();
     this.#triggered = true;
-    this.#base = options.base ?? 0;
-    this.#amount = options.amount ?? 1;
-    this.#toParamValue = options.toParamValue;
+    this.#base = runBase;
+    this.#amount = runAmount;
+    this.#toParamValue = toParamValue;
     this.#timeScale = timeScale;
     this.#triggerTime = time;
     this.#startTime = time;

@@ -1,4 +1,9 @@
-export { Envelope, type EnvelopeClock, type EnvelopeTriggerOptions } from './Envelope';
+export {
+  Envelope,
+  type EnvelopeClock,
+  type EnvelopeScaling,
+  type EnvelopeTriggerOptions,
+} from './Envelope';
 export type { AutomatableParam } from './envelope-scheduling';
 export {
   assertValidEnvelopeShape,
