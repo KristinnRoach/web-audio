@@ -2,6 +2,7 @@ import { expect, it } from 'vite-plus/test';
 import type { EnvelopeConfig } from './envelope-config';
 import {
   createDefaultSampleEnvelopeConfig,
+  getSampleEnvelopeRestValue,
   resolveSampleEnvelopeTrigger,
   SAMPLE_ENVELOPE_IDS,
 } from './sample-envelope-policy';
@@ -34,16 +35,20 @@ it('defaults amount to one and accepts older configs without it', () => {
   }
 });
 
-it('scales amplitude, pitch offset and logarithmic filter sweep without changing the shape', () => {
-  const param = { maxValue: 20000 } as AudioParam;
+it('scales amplitude by amount and pitch and filter detune in cents, without changing the shape', () => {
   for (const amount of [0, 0.5, 1, -1]) {
-    const amp = resolveSampleEnvelopeTrigger('amp', 0.8, param, amount);
-    expect(amp.amount).toBe(0.8 * amount);
-    const pitch = resolveSampleEnvelopeTrigger('pitch', 2, param, amount);
-    expect(pitch).toEqual({ base: 2, amount: 12 * amount, scaling: 'semitones' });
-    const filter = resolveSampleEnvelopeTrigger('filter', 200, param, amount);
-    expect(filter.base).toBe(200);
-    expect(200 * 2 ** (0.25 * filter.amount!)).toBeCloseTo(200 * 100 ** (0.25 * amount));
+    const amp = resolveSampleEnvelopeTrigger('amp', { amount });
+    expect(amp.amount).toBe(amount);
+    const pitch = resolveSampleEnvelopeTrigger('pitch', { amount });
+    expect(pitch).toEqual({ amount: 1200 * amount, curve: 'linear' });
+    const filter = resolveSampleEnvelopeTrigger('filter', { amount });
+    expect(filter).toEqual({ amount: 12000 * amount, curve: 'linear' });
   }
   expect(config.shape.points[1].value).toBe(0.25);
+});
+
+it('leaves velocity scaling to the processor while envelopes are disabled', () => {
+  expect(getSampleEnvelopeRestValue('amp')).toBe(1);
+  expect(getSampleEnvelopeRestValue('pitch')).toBe(0);
+  expect(getSampleEnvelopeRestValue('filter')).toBe(0);
 });

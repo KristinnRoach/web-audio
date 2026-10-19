@@ -2,14 +2,11 @@ import {
   envelopePresets,
   hasVariation,
   setDuration,
-  type AutomatableParam,
   type Envelope,
   type EnvelopeShape,
   type EnvelopeTriggerOptions,
 } from '@/nodes/params/envelopes';
 import type { EnvelopeConfig } from './envelope-config';
-
-type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
 
 /**
  * Sampler defaults, parameter mapping and live-edit decisions.
@@ -28,6 +25,14 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
  * ponytail: fixed range; make it configurable once there is a place to persist it.
  */
 const PITCH_ENVELOPE_SEMITONES = 12;
+
+/**
+ * Filter shape value 1 detunes the cutoff up by this many octaves, about the audible range,
+ * so amount 1 can open any cutoff fully. The spec only gives the detuned frequency a
+ * nominal range of [0, Nyquist]; going past it relies on browsers clamping.
+ * ponytail: fixed depth; make it configurable alongside the pitch range.
+ */
+const FILTER_ENVELOPE_OCTAVES = 10;
 
 /** Flat at 0, so the pitch env is an identity until someone edits it. */
 function flatPitchShape(durationSeconds: number): EnvelopeShape {
@@ -82,9 +87,9 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
     case 'amp':
       return 'envGain';
     case 'pitch':
-      return 'playbackRate';
+      return 'detune';
     case 'filter':
-      return 'lpf';
+      return 'lpfDetune';
   }
 }
 
@@ -92,35 +97,20 @@ export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: Envelo
   return config.enabled && (id !== 'pitch' || hasVariation(config.shape.points));
 }
 
-export function getSampleEnvelopeBaseValue(
-  id: SampleEnvelopeId,
-  values: { velocity?: number; playbackRate: number; filterCutoff: number },
-): number {
-  switch (id) {
-    case 'amp':
-      return values.velocity === undefined ? 1 : values.velocity / 127;
-    case 'pitch':
-      return values.playbackRate;
-    case 'filter':
-      return values.filterCutoff;
-  }
+/** Amp rests at unity; velocity is applied once by the processor. Detune rests at zero. */
+export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
+  return id === 'amp' ? 1 : 0;
 }
 
+/** The trigger options that place a sampler envelope's shape on its param. */
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  baseValue: number,
-  param: RangedAutomatableParam,
-  amount = 1,
-): Pick<EnvelopeTriggerOptions, 'base' | 'amount' | 'scaling'> {
-  if (id === 'amp') return { amount: baseValue * amount };
-  if (id === 'pitch') {
-    return { base: baseValue, amount: PITCH_ENVELOPE_SEMITONES * amount, scaling: 'semitones' };
-  }
-
-  // Shape value 1 sweeps from the cutoff up to the param's ceiling.
-  const low = Math.max(baseValue, 1e-3);
-  const octaves = Math.log2(Math.max(param.maxValue, low) / low);
-  return { base: low, amount: octaves * amount, scaling: 'octaves' };
+  { amount = 1 }: { amount?: number } = {},
+): Pick<EnvelopeTriggerOptions, 'amount' | 'curve'> {
+  if (id === 'amp') return { amount };
+  // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
+  if (id === 'pitch') return { amount: PITCH_ENVELOPE_SEMITONES * 100 * amount, curve: 'linear' };
+  return { amount: FILTER_ENVELOPE_OCTAVES * 1200 * amount, curve: 'linear' };
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */

@@ -22,13 +22,10 @@ Code observations below are not claims that every case has been reproduced audib
   changes remain next-trigger edits. Preserve the trigger snapshot for the release tail.
   Rescheduling the rest of the attack from the current position was tried for
   mid-attack edits and still stepped audibly.
-- **Base edits outside the hold.** `Envelope.setBase` ignores calls before sustain is
-  reached, in one-shots and during release, so a cutoff knob turned then has no effect
-  on that note (the sampler keeps it for the next one). Same constraint as mid-attack
-  sustain edits; needs a contract for moving the param under a running ramp.
-- **Pitch envelope ownership.** `SampleVoice.setPlaybackRate`, glide and pitch
-  enable/disable write `playbackRate` directly while a pitch envelope may own it, the
-  same desync the LPF had before it went through `setBase`.
+- **Pitch envelope and disabled pitch.** The pitch envelope drives the sample worklet's
+  `detune` (cents), so glide and keytracking keep `playbackRate`. `disablePitch` resets
+  `playbackRate` to 1 but leaves `detune` alone, so a pitch envelope still bends a voice
+  whose pitch is disabled.
 - **Boundary cancel.** A loop retrigger cancels from the boundary, and
   `cancelScheduledValues(t)` removes events at `t` too, which includes the closing ramp
   of the cycle in progress. Per the Web Audio spec that ramp would be dropped mid-flight.
@@ -38,13 +35,15 @@ Code observations below are not claims that every case has been reproduced audib
 
 - **Release-tail cleanup.** `Envelope.release` clears `#triggered`, so a subsequent
   `stop()` does not cancel the tail. Revisit alongside sampler disable, reuse and disposal.
-- **Release-value agreement.** `Envelope.#valueAt` interpolates exponential segments on
-  shape values, then applies `base + amount * value`; Web Audio interpolates on param
-  values. With `linear` scaling and a nonzero `base`, a release mid-segment can hand off a
-  value the param never reached. Octave/semitone scaling folds `base` into the values and
-  is exact. Floored zero endpoints also differ slightly; zero crossings already agree,
-  since both sides ramp them linearly (`rampCurve`). Also check that cancelling a future
-  ramp preserves the trajectory before note-off.
+- **Release-value agreement.** Release, sustain edits and stop pin `#valueAt`, which
+  re-derives the value from the shape (`interpolateAtTime`). The param plays what the
+  scheduler wrote: zero endpoints floored by `floorOffZero`, exponential ramps on param
+  values rather than shape values. They disagree for an exponential segment leaving 0 or a
+  nonzero `base`: releasing halfway through a 0 to 1 exponential attack pins 0.5 while the
+  param is near 0.01, a click. Planned fix: wrap the param in a `TrackedParam` that records
+  scheduled events and evaluates them with the spec's automation formulas, as Tone.js
+  `Param` does, and read every hold from it. Zero crossings already agree (`rampCurve`).
+  Also check that cancelling a future ramp preserves the trajectory before note-off.
 - **Future commands.** Releasing or stopping a loop removes its refill callback
   immediately, even if the requested time is beyond the queued horizon. `stop(time)`
   also pins today's parameter value rather than a value evaluated at that future time.

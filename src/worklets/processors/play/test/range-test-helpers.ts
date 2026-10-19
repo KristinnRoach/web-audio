@@ -32,6 +32,7 @@ export function makeParameters(overrides: Record<string, number> = {}): Paramete
     velocity: 127,
     pan: 0,
     playbackRate: 1,
+    detune: 0,
     loopStart: 0,
     loopEnd: 99_999,
     startPoint: 0,

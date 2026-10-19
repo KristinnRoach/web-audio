@@ -20,6 +20,7 @@ function makeParameters(overrides: Record<string, number>): Parameters {
     velocity: 127,
     pan: 0,
     playbackRate: 1,
+    detune: 0,
     loopStart: 0,
     loopEnd: 99_999,
     startPoint: 0,
@@ -57,12 +58,14 @@ describe('loop period', () => {
   afterAll(() => vi.unstubAllGlobals());
 
   it.each([
-    [0, 0.3, 1],
-    [0, 0.3, 1.5],
-    [0.137, 0.611, 1],
-    [0.137, 0.611, 0.83],
-    [0.371, 0.833, 1.27],
-  ])('wraps every (%s..%s)/%s seconds', async (loopStart, loopEnd, rate) => {
+    [0, 0.3, 1, 0, 1],
+    [0, 0.3, 1.5, 0, 1.5],
+    [0.137, 0.611, 1, 0, 1],
+    [0.137, 0.611, 0.83, 0, 0.83],
+    [0.371, 0.833, 1.27, 0, 1.27],
+    [0, 0.3, 0.75, 1200, 1.5],
+    [0, 0.3, 1.5, -1200, 0.75],
+  ])('wraps %s..%s at %s + %s cents', async (loopStart, loopEnd, rate, detune, effective) => {
     const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
     const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
@@ -78,6 +81,7 @@ describe('loop period', () => {
       loopStart,
       loopEnd,
       playbackRate: rate,
+      detune,
     });
 
     // One frame per call, so a wrap is timed to the sample rather than the quantum.
@@ -92,7 +96,7 @@ describe('loop period', () => {
       previous = processor.playbackPosition;
     }
 
-    const period = (loopEnd - loopStart) / rate;
+    const period = (loopEnd - loopStart) / effective;
     expect(wraps.length).toBeGreaterThan(4);
 
     // Absolute, not pairwise: a period that is a hair short drifts without any

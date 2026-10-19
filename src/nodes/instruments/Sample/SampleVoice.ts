@@ -21,7 +21,7 @@ import { samplerParams } from './sampler-params';
 import {
   applySampleEnvelopeShapeEdit,
   createDefaultSampleEnvelopeConfig,
-  getSampleEnvelopeBaseValue,
+  getSampleEnvelopeRestValue,
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
   resolveSampleEnvelopeTrigger,
@@ -32,6 +32,10 @@ import {
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
+
+/** Time constant for the gate fade when the amp envelope is off:
+ * fast enough to read as a gate, slow enough not to click. */
+const AMP_GATE_SMOOTHING_SEC = 0.002;
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
@@ -382,7 +386,7 @@ export class SampleVoice {
     });
 
     // Trigger amp, filter and pitch envelopes if enabled
-    this.triggerEnvelopes(timestamp, playbackRate, velocity);
+    this.triggerEnvelopes(timestamp, playbackRate);
 
     // Trigger effects
     this.#feedback?.trigger(midiNote, {
@@ -405,7 +409,7 @@ export class SampleVoice {
   }
 
   /** Trigger inputs of the current note, kept so a config edit can restart from them. */
-  #lastTrigger: { playbackRate: number; velocity?: number } | null = null;
+  #lastTrigger: { playbackRate: number } | null = null;
 
   /** The envelope's stored scale composed with the playback-rate follow, where it applies. */
   #timeScale(envType: SampleEnvelopeId, playbackRate: number) {
@@ -422,33 +426,25 @@ export class SampleVoice {
     env: Envelope,
     timestamp: number,
     playbackRate: number,
-    velocity?: number,
     fromPoint = 0,
   ) {
-    if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) return;
-    const param = this.getParam(getSampleEnvelopeParamName(envType));
-    if (!param) return;
+    if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) {
+      this.#resetEnvTarget(envType, timestamp, envType === 'amp');
+      return;
+    }
 
-    const baseValue = getSampleEnvelopeBaseValue(envType, {
-      velocity,
-      playbackRate,
-      filterCutoff: this.#keytrackedLpfHz(playbackRate),
+    const target = resolveSampleEnvelopeTrigger(envType, {
+      amount: this.#envelopeConfigs.get(envType)!.amount,
     });
-    const target = resolveSampleEnvelopeTrigger(
-      envType,
-      baseValue,
-      param,
-      this.#envelopeConfigs.get(envType)!.amount,
-    );
     const timeScale = this.#timeScale(envType, playbackRate);
 
     env.trigger(timestamp, { ...target, timeScale, fromPoint });
   }
 
-  triggerEnvelopes(timestamp: number, playbackRate: number, velocity?: number) {
-    this.#lastTrigger = { playbackRate, velocity };
+  triggerEnvelopes(timestamp: number, playbackRate: number) {
+    this.#lastTrigger = { playbackRate };
     this.#envelopes.forEach((env, envType) => {
-      this.#triggerEnvelope(envType, env, timestamp, playbackRate, velocity);
+      this.#triggerEnvelope(envType, env, timestamp, playbackRate);
     });
 
     const envDurations = Object.fromEntries(
@@ -523,6 +519,9 @@ export class SampleVoice {
     this.#envelopes.forEach((env, envType) => {
       if (this.#isEnabled(envType)) env.release(timestamp);
     });
+
+    // A disabled amp env is a gate, so close it. ponytail: voice-side fade until #65 moves de-click fades into the processor.
+    if (!this.#isEnabled('amp')) envGain.setTargetAtTime(0, timestamp, AMP_GATE_SMOOTHING_SEC);
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
 
@@ -610,16 +609,6 @@ export class SampleVoice {
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
   }
 
-  /**
-   * The LPF cutoff with keytracking applied. This is the cutoff the filter
-   * envelope sweeps from, so keytracking and the envelope compose instead of
-   * the envelope resetting the cutoff back to the untracked base.
-   */
-  #keytrackedLpfHz(playbackRate: number = this.getParam('playbackRate')?.value ?? 1): number {
-    const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
-    return clampHz(keytrackedHz, this.context.sampleRate);
-  }
-
   /**  Set LPF cutoff relative to playback rate */
   #updateLPFCutoffForPlaybackRate(
     playbackRate: number,
@@ -639,12 +628,8 @@ export class SampleVoice {
       freq.cancelScheduledValues(atTime);
     }
 
-    if (this.#filterEnvOwnsLpf()) {
-      this.#setFilterEnvBase(playbackRate, atTime, options.glideTime);
-      return;
-    }
-
-    const safeHz = this.#keytrackedLpfHz(playbackRate);
+    const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
+    const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
 
     const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
     freq.setTargetAtTime(safeHz, atTime, timeConstant);
@@ -693,42 +678,14 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  /**
-   * A filter envelope on a sounding note owns the LPF param through its release tail.
-   * Writing the param directly would leave the envelope releasing from its old cutoff.
-   */
-  #filterEnvOwnsLpf() {
-    return (
-      this.#isEnabled('filter') &&
-      (this.#state === VoiceState.PLAYING || this.#state === VoiceState.RELEASING)
-    );
-  }
-
-  /**
-   * Moves the cutoff the running filter envelope sweeps from. Ignored during release;
-   * the new cutoff reaches the next note through `#lpfHz`.
-   */
-  #setFilterEnvBase(playbackRate: number, atTime: number, glide?: number) {
-    const envelope = this.#envelopes.get('filter');
-    const param = this.getParam('lpf');
-    if (!envelope || !param || this.#state !== VoiceState.PLAYING) return;
-    const { base, amount } = resolveSampleEnvelopeTrigger(
-      'filter',
-      this.#keytrackedLpfHz(playbackRate),
-      param,
-      this.#envelopeConfigs.get('filter')!.amount,
-    );
-    envelope.setBase(base!, { amount, time: atTime, glide });
-  }
-
-  /** A disabled filter envelope leaves the cutoff wherever it stopped, so restore it. */
-  #resetFilterEnvTarget = (envType: SampleEnvelopeId) => {
-    if (envType === 'filter' && this.#chainIncludes('lpf')) {
-      const lpf = this.getParam('lpf');
-      lpf?.cancelScheduledValues(this.now);
-      // Reset to the keytracked cutoff after the envelope is disabled
-      lpf?.setValueAtTime(this.#keytrackedLpfHz(), this.now + 0.01);
-    }
+  /** Moves a param to where it rests while its envelope is off. */
+  #resetEnvTarget = (envType: SampleEnvelopeId, time = this.now, smooth = true) => {
+    const param = this.getParam(getSampleEnvelopeParamName(envType));
+    const smoothing = envType === 'amp' ? AMP_GATE_SMOOTHING_SEC : DEFAULT.CUTOFF_SMOOTHING_SEC;
+    param?.cancelScheduledValues(time);
+    const value = getSampleEnvelopeRestValue(envType);
+    if (smooth) param?.setTargetAtTime(value, time, smoothing);
+    else param?.setValueAtTime(value, time);
   };
 
   /**
@@ -749,8 +706,10 @@ export class SampleVoice {
 
     if (wasEnabled && !config.enabled) {
       apply();
+      // Keep an already scheduled amp release; switching it off must not reopen the gate.
+      if (envType === 'amp' && this.#state === VoiceState.RELEASING) return;
       envelope.stop();
-      this.#resetFilterEnvTarget(envType);
+      this.#resetEnvTarget(envType);
       return;
     }
 
@@ -762,8 +721,8 @@ export class SampleVoice {
   /** Restarts an envelope from the current note's trigger inputs, for a live edit. */
   #retriggerAt(envType: SampleEnvelopeId, envelope: Envelope, at: number, fromPoint = 0) {
     if (!this.#lastTrigger) return;
-    const { playbackRate, velocity } = this.#lastTrigger;
-    this.#triggerEnvelope(envType, envelope, at, playbackRate, velocity, fromPoint);
+    const { playbackRate } = this.#lastTrigger;
+    this.#triggerEnvelope(envType, envelope, at, playbackRate, fromPoint);
   }
 
   get envelopes() {
@@ -1065,8 +1024,10 @@ export class SampleVoice {
     return this.getParam('endPoint')!.value;
   }
 
-  /** Amplitude release duration determines cleanup even when that envelope is disabled. */
+  /** Amp release duration, or the gate fade while the amp envelope is off; drives voice cleanup. */
   get releaseTime() {
+    // ~5 time constants is under 1% of the gate level.
+    if (!this.#isEnabled('amp')) return AMP_GATE_SMOOTHING_SEC * 5;
     return this.#envelopes.get('amp')!.releaseDuration();
   }
 
@@ -1148,11 +1109,6 @@ export class SampleVoice {
 
     const safeHz = clampHz(hz, this.context.sampleRate);
     this.#lpfHz = safeHz;
-    if (this.#filterEnvOwnsLpf()) {
-      const currentRate = this.getParam('playbackRate')?.value ?? 1;
-      this.#setFilterEnvBase(currentRate, atTime, options.glideTime);
-      return this;
-    }
     if (this.#lpf) {
       const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);
@@ -1237,6 +1193,8 @@ export class SampleVoice {
         return this.#hpf?.Q ?? null;
       case 'lpfQ':
         return this.#lpf?.Q ?? null;
+      case 'lpfDetune':
+        return this.#lpf?.detune ?? null;
       default:
         return null;
     }
