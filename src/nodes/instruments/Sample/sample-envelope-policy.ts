@@ -1,15 +1,11 @@
 import {
   envelopePresets,
-  hasVariation,
   setDuration,
-  type AutomatableParam,
   type Envelope,
   type EnvelopeShape,
   type EnvelopeTriggerOptions,
 } from '@/nodes/params/envelopes';
 import type { EnvelopeConfig } from './envelope-config';
-
-type RangedAutomatableParam = AutomatableParam & { readonly maxValue: number };
 
 /**
  * Sampler defaults, parameter mapping and live-edit decisions.
@@ -29,7 +25,13 @@ export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEn
  */
 const PITCH_ENVELOPE_SEMITONES = 12;
 
-const pitchRatio = (value: number) => 2 ** ((value * PITCH_ENVELOPE_SEMITONES) / 12);
+/**
+ * Filter shape value 1 detunes the cutoff up by this many octaves, about the audible range,
+ * so amount 1 can open any cutoff fully. The spec only gives the detuned frequency a
+ * nominal range of [0, Nyquist]; going past it relies on browsers clamping.
+ * ponytail: fixed depth; make it configurable alongside the pitch range.
+ */
+const FILTER_ENVELOPE_OCTAVES = 10;
 
 /** Flat at 0, so the pitch env is an identity until someone edits it. */
 function flatPitchShape(durationSeconds: number): EnvelopeShape {
@@ -84,79 +86,26 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
     case 'amp':
       return 'envGain';
     case 'pitch':
-      return 'playbackRate';
+      return 'detune';
     case 'filter':
-      return 'lpf';
+      return 'lpfDetune';
   }
 }
 
-export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: EnvelopeConfig) {
-  return config.enabled && (id !== 'pitch' || hasVariation(config.shape.points));
+/** Amp rests at unity; velocity is applied once by the processor. Detune rests at zero. */
+export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
+  return id === 'amp' ? 1 : 0;
 }
 
-export function getSampleEnvelopeBaseValue(
-  id: SampleEnvelopeId,
-  values: { velocity?: number; playbackRate: number; filterCutoff: number },
-): number {
-  switch (id) {
-    case 'amp':
-      return values.velocity === undefined ? 1 : values.velocity / 127;
-    case 'pitch':
-      return values.playbackRate;
-    case 'filter':
-      return values.filterCutoff;
-  }
-}
-
+/** The trigger options that place a sampler envelope's shape on its param. */
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  envelopeShape: EnvelopeShape,
-  baseValue: number,
-  param: RangedAutomatableParam,
-  amount = 1,
-): Pick<EnvelopeTriggerOptions, 'amount' | 'shape'> {
-  if (id === 'amp') {
-    return {
-      amount: baseValue,
-      shape: {
-        ...envelopeShape,
-        points: envelopeShape.points.map((point) => ({ ...point, value: point.value * amount })),
-      },
-    };
-  }
-
-  if (id === 'pitch') {
-    // Ratios scale the note's rate through `amount`, so live sustain edits can pass a
-    // ratio too. Exponential in rate is linear in pitch; steps stay steps.
-    const points = envelopeShape.points.map((point) => ({
-      ...point,
-      value: pitchRatio(point.value * amount),
-      curve: point.curve === 'step' ? ('step' as const) : ('exponential' as const),
-    }));
-    return { amount: baseValue, shape: { ...envelopeShape, points } };
-  }
-
-  const low = Math.max(baseValue, 1e-3);
-  const high = Math.max(param.maxValue, low);
-  const logLow = Math.log(low);
-  const logRange = Math.log(high) - logLow;
-  const points = envelopeShape.points.map((point) => ({
-    ...point,
-    value: Math.exp(logLow + logRange * point.value * amount),
-    curve: 'exponential' as const,
-  }));
-
-  return { shape: { ...envelopeShape, points } };
-}
-
-export function getLiveSampleEnvelopeSustainValue(
-  id: SampleEnvelopeId,
-  config: EnvelopeConfig,
-): number | undefined {
-  const { mode, points, sustainPoint } = config.shape;
-  if (id === 'filter' || mode.type !== 'sustain') return undefined;
-  const value = points[sustainPoint].value * (config.amount ?? 1);
-  return id === 'pitch' ? pitchRatio(value) : value;
+  { amount = 1 }: { amount?: number } = {},
+): Pick<EnvelopeTriggerOptions, 'amount' | 'curve'> {
+  if (id === 'amp') return { amount };
+  // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
+  if (id === 'pitch') return { amount: PITCH_ENVELOPE_SEMITONES * 100 * amount, curve: 'linear' };
+  return { amount: FILTER_ENVELOPE_OCTAVES * 1200 * amount, curve: 'linear' };
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */

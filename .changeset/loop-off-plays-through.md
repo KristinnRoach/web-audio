@@ -2,4 +2,4 @@
 '@kidlib/web-audio': patch
 ---
 
-Turning the loop off no longer releases playing voices. A voice plays on through the rest of its trim range unless released.
+Turning the loop off no longer releases playing voices. They play on through the trim range.

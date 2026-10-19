@@ -880,3 +880,48 @@ describe('re-triggering one player', () => {
     player.stop();
   });
 });
+
+it('overrides ramp curves for one run, keeping steps and the stored shape', () => {
+  const param = createFakeParam();
+  const clock = { currentTime: 0 };
+  const shape: EnvelopeShape = {
+    points: [
+      { time: 0, value: 0, curve: 'step' },
+      { time: 1, value: 1, curve: 'exponential' },
+      { time: 2, value: 0.5 },
+    ],
+    mode: { type: 'once' },
+    sustainPoint: 0,
+    releasePoint: 0,
+  };
+  const env = new Envelope(clock, param, shape);
+  env.trigger(0, { base: 100, amount: 1200, curve: 'linear' });
+  expect(param.ramps()).toEqual([
+    { type: 'set', value: 100, time: 0 },
+    { type: 'set', value: 1300, time: 1 },
+    { type: 'linear', value: 700, time: 2 },
+  ]);
+  expect(env.shape).toEqual(shape);
+});
+
+it('ramps linearly where an exponential segment would cross zero', () => {
+  const param = createFakeParam();
+  const clock = { currentTime: 0 };
+  const shape: EnvelopeShape = {
+    points: [
+      { time: 0, value: -1, curve: 'exponential' },
+      { time: 1, value: 1, curve: 'exponential' },
+      { time: 2, value: -0.5 },
+    ],
+    mode: { type: 'sustain' },
+    sustainPoint: 1,
+    releasePoint: 1,
+  };
+  const env = new Envelope(clock, param, shape);
+  env.trigger(0);
+  expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 1, time: 1 });
+
+  clock.currentTime = 1.5;
+  env.release();
+  expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: -0.5, time: 2.5 });
+});

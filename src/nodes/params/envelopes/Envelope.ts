@@ -14,6 +14,7 @@ import {
   getDuration,
   interpolateAtTime,
   type EnvelopeShape,
+  type EnvelopeCurve,
 } from './envelope-shape';
 
 /** The clock surface used to place envelope automation on a timeline. */
@@ -27,6 +28,8 @@ export type EnvelopeClock = { readonly currentTime: number };
  */
 export type EnvelopeTriggerOptions = ScheduleOptions & {
   fromPoint?: number;
+  /** Overrides ramp curves for this run, preserving step segments. */
+  curve?: EnvelopeCurve;
   /** Plays this shape for this run only; the stored `shape` is left as it is. */
   shape?: EnvelopeShape;
 };
@@ -65,8 +68,9 @@ function snapshot(shape: EnvelopeShape): EnvelopeShape {
  *
  * The envelope owns the param's automation from `trigger` until `stop`: a trigger cancels
  * everything scheduled from its start time on, and automation written by anyone else in
- * that window can be overwritten. Drive other changes through `base` and `amount`, or
- * `stop` the envelope first.
+ * that window can be overwritten. To keep a param adjustable while an envelope moves it,
+ * bind the envelope to a separate input the param sums or scales by, such as a filter's
+ * `detune`, and leave the param itself to its other writer. Otherwise `stop` it first.
  */
 export class Envelope {
   #shape: EnvelopeShape;
@@ -146,8 +150,18 @@ export class Envelope {
   /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
   trigger(time = this.clock.currentTime, options: EnvelopeTriggerOptions = {}) {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
-    const runEnvelope = snapshot(options.shape ?? this.#shape);
+    let runEnvelope = snapshot(options.shape ?? this.#shape);
     const timeScale = options.timeScale ?? 1;
+    const { curve } = options;
+    if (curve) {
+      runEnvelope = {
+        ...runEnvelope,
+        points: runEnvelope.points.map((point) => ({
+          ...point,
+          curve: point.curve === 'step' ? 'step' : curve,
+        })),
+      };
+    }
     const fullDuration = getDuration(runEnvelope.points, { timeScale });
     time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;

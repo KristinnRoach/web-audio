@@ -97,6 +97,7 @@ A looping envelope keeps scheduling ahead on a timer until you call `release()` 
 | `timeScale` | `1`          | Playback speed. `2` plays twice as fast.                                     |
 | `shape`     | stored shape | Plays a different shape for this run only.                                   |
 | `fromPoint` | `0`          | Loops only: start the first pass at this point index.                        |
+| `curve`     | shape curves | Overrides ramp curves for the run, preserving steps.                         |
 
 The param follows `base + amount * pointValue`, so one shape can drive a gain (0 to 1), a
 cutoff (200 to 8000 Hz) or anything else:
@@ -104,6 +105,22 @@ cutoff (200 to 8000 Hz) or anything else:
 ```ts
 filterEnv.trigger(ctx.currentTime, { base: 200, amount: 7800 });
 ```
+
+### Modulating a param someone else controls
+
+The envelope owns the param it is bound to, so a knob writing that same param fights it,
+and a release hands off from the envelope's value, not the knob's. Bind the envelope to a
+separate input instead. Web Audio sums signals connected to an `AudioParam` with its own
+value, and a `BiquadFilterNode` multiplies `frequency` by `2^(detune / 1200)`, so a
+filter envelope in cents leaves `frequency` free for the cutoff knob:
+
+```ts
+const filterEnv = new Envelope(ctx, filter.detune, shape);
+filterEnv.trigger(t, { amount: 1200 * 4, curve: 'linear' }); // up to 4 octaves above the cutoff
+filter.frequency.setTargetAtTime(knobHz, ctx.currentTime, 0.01); // safe at any stage
+```
+
+Linear ramps in cents are exponential in Hz, so the sweep already sounds even.
 
 ### Changing things
 
@@ -115,7 +132,7 @@ filterEnv.trigger(ctx.currentTime, { base: 200, amount: 7800 });
 
 The sampler also applies edits to running notes: existing loops retrigger at their next
 boundary, enabling loop on a non-looping run picks up from its last reached point, and
-held amplitude/pitch sustain levels can glide. Filter sustain edits wait for a trigger.
+held sustain levels can glide.
 These live-edit behaviors are retained but provisional; their limitations are tracked
 in [live edits](KNOWN-ISSUES.md#live-edits).
 
@@ -148,7 +165,6 @@ envelopePresets.filter(0.5); // quick sweep up, then back down, plays once
 These are available inside the source module, not exported from the package root.
 
 - `setDuration(points, seconds)` returns new points stretched to a total length.
-- `hasVariation(points)` returns `false` if every point has the same value (within 0.001).
 
 ```ts
 const longer = { ...shape, points: setDuration(shape.points, 4) };

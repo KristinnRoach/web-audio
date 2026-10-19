@@ -48,6 +48,19 @@ export function schedulePoint(
 }
 
 /**
+ * The curve a segment can actually ramp with. Web Audio holds an exponential ramp between
+ * values of opposite sign at its start value and then jumps, so a segment crossing zero,
+ * which a bipolar shape or a negative `amount` can produce, ramps linearly instead.
+ */
+export function rampCurve(curve: EnvelopeCurve, from: number, to: number): EnvelopeCurve {
+  return curve === 'exponential' && haveOppositeSigns(from, to) ? 'linear' : curve;
+}
+
+function haveOppositeSigns(a: number, b: number) {
+  return a * b < 0;
+}
+
+/**
  * An exponential ramp cannot touch zero: a zero target throws, and a zero start silently
  * holds for the whole segment and then jumps, which is a click with no error attached.
  * Both ends of an exponential segment are floored to keep it off zero.
@@ -101,17 +114,20 @@ export function scheduleRange(
   timeScale: number,
 ) {
   const points = envelope.points;
-  param.setValueAtTime(valueOf(points, from, from, to, base, amount), startTime);
+  let previous = valueOf(points, from, from, to, base, amount);
+  param.setValueAtTime(previous, startTime);
   let last = startTime;
 
   for (let index = from + 1; index <= to; index++) {
     last = startTime + getDuration(points, { fromIndex: from, toIndex: index, timeScale });
+    const value = valueOf(points, index, from, to, base, amount);
     schedulePoint(
       param,
-      valueOf(points, index, from, to, base, amount),
+      value,
       last,
-      points[index - 1].curve ?? 'linear',
+      rampCurve(points[index - 1].curve ?? 'linear', previous, value),
     );
+    previous = value;
   }
 
   return last;
@@ -159,12 +175,17 @@ export function releaseEnvelope(
 
   cancelAndPinParamValue(param, releaseTime, pinned);
 
-  for (let index = from + 1; index < points.length; index++) {
+  const last = points.length - 1;
+  // Without a holdValue the pinned value is unknown here; the release point stands in for it.
+  let previous = pinned ?? valueOf(points, from, from, last, base, amount);
+  for (let index = from + 1; index <= last; index++) {
+    const value = valueOf(points, index, from, last, base, amount);
     schedulePoint(
       param,
-      valueOf(points, index, from, points.length - 1, base, amount),
+      value,
       releaseTime + getDuration(points, { fromIndex: from, toIndex: index, timeScale }),
-      points[index - 1].curve ?? 'linear',
+      rampCurve(points[index - 1].curve ?? 'linear', previous, value),
     );
+    previous = value;
   }
 }

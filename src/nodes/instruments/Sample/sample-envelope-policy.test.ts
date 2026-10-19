@@ -2,7 +2,7 @@ import { expect, it } from 'vite-plus/test';
 import type { EnvelopeConfig } from './envelope-config';
 import {
   createDefaultSampleEnvelopeConfig,
-  getLiveSampleEnvelopeSustainValue,
+  getSampleEnvelopeRestValue,
   resolveSampleEnvelopeTrigger,
   SAMPLE_ENVELOPE_IDS,
 } from './sample-envelope-policy';
@@ -23,12 +23,6 @@ const config: EnvelopeConfig = {
   },
 };
 
-it('only forwards sustain values that share the active player value domain', () => {
-  expect(getLiveSampleEnvelopeSustainValue('amp', config)).toBe(0.25);
-  expect(getLiveSampleEnvelopeSustainValue('pitch', config)).toBe(2 ** 0.25);
-  expect(getLiveSampleEnvelopeSustainValue('filter', config)).toBeUndefined();
-});
-
 it('defaults amount to one and accepts older configs without it', () => {
   for (const id of SAMPLE_ENVELOPE_IDS) {
     expect(createDefaultSampleEnvelopeConfig(id, 1).amount).toBe(1);
@@ -41,21 +35,20 @@ it('defaults amount to one and accepts older configs without it', () => {
   }
 });
 
-it('scales amplitude, pitch offset and logarithmic filter sweep without changing the shape', () => {
-  const param = { maxValue: 20000 } as AudioParam;
+it('scales amplitude by amount and pitch and filter detune in cents, without changing the shape', () => {
   for (const amount of [0, 0.5, 1, -1]) {
-    const amp = resolveSampleEnvelopeTrigger('amp', config.shape, 0.8, param, amount);
-    expect(amp.amount).toBe(0.8);
-    expect(amp.shape!.points[1].value).toBe(0.25 * amount);
-    const pitch = resolveSampleEnvelopeTrigger('pitch', config.shape, 2, param, amount);
-    expect(pitch.amount).toBe(2);
-    expect(pitch.shape!.points[1].value).toBeCloseTo(2 ** (0.25 * amount));
-    const filter = resolveSampleEnvelopeTrigger('filter', config.shape, 200, param, amount);
-    expect(filter.shape!.points[1].value).toBeCloseTo(200 * 100 ** (0.25 * amount));
-    expect(getLiveSampleEnvelopeSustainValue('amp', { ...config, amount })).toBe(0.25 * amount);
-    expect(getLiveSampleEnvelopeSustainValue('pitch', { ...config, amount })).toBeCloseTo(
-      2 ** (0.25 * amount),
-    );
+    const amp = resolveSampleEnvelopeTrigger('amp', { amount });
+    expect(amp.amount).toBe(amount);
+    const pitch = resolveSampleEnvelopeTrigger('pitch', { amount });
+    expect(pitch).toEqual({ amount: 1200 * amount, curve: 'linear' });
+    const filter = resolveSampleEnvelopeTrigger('filter', { amount });
+    expect(filter).toEqual({ amount: 12000 * amount, curve: 'linear' });
   }
   expect(config.shape.points[1].value).toBe(0.25);
+});
+
+it('leaves velocity scaling to the processor while envelopes are disabled', () => {
+  expect(getSampleEnvelopeRestValue('amp')).toBe(1);
+  expect(getSampleEnvelopeRestValue('pitch')).toBe(0);
+  expect(getSampleEnvelopeRestValue('filter')).toBe(0);
 });

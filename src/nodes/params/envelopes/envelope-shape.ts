@@ -122,6 +122,7 @@ export function getDuration(
   return (points[toIndex].time - points[fromIndex].time) / timeScale;
 }
 
+/** @returns `false` if every point has the same value (within 0.001).*/
 export function hasVariation(points: readonly EnvelopePoint[]): boolean {
   const first = points[0]?.value ?? 0;
   return points.some((point) => Math.abs(point.value - first) > 0.001);

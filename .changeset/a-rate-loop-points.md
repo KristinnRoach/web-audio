@@ -1,5 +1,5 @@
 ---
-'@kidlib/web-audio': minor
+'@kidlib/web-audio': patch
 ---
 
-Short (pitched) loops follow loop point changes and scale-snap glides per sample instead of once per render block. Long loops still follow them once per block.
+Short pitched loops follow loop point changes and scale-snap glides per sample instead of once per render block.
