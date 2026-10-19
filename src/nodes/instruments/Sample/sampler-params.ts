@@ -6,6 +6,8 @@ import { maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import type { SamplePlayer } from './SamplePlayer';
 
+const PITCH_LFO_MAX_CENTS = 200; // cents = semitones * 100
+
 export interface SamplerParamDescriptor {
   label: string;
   min: number;
@@ -52,7 +54,7 @@ const positionPercent =
   (key: string) =>
   (v: number): string =>
     percent(samplerParamPosition(samplerParams[key as keyof typeof samplerParams], v));
-const hz = (v: number) => `${v.toFixed(0)}Hz`;
+const hz = (v: number) => (v >= 1 ? `${v.toFixed(1)}Hz` : `${v.toFixed(2)}Hz`);
 const kHz = (v: number) => `${(v / 1000).toFixed(1)}kHz`;
 const hzOrKhz = (v: number) => (v >= 1000 ? kHz(v) : hz(v));
 
@@ -259,8 +261,9 @@ export const samplerParams = defineSamplerParams({
     label: 'Amp LFO Rate',
     min: 0,
     max: 1,
-    defaultValue: 0.1,
+    defaultValue: 0.05,
     curve: 5,
+    format: (v) => hzOrKhz(v * 100 + 0.1),
     apply: (p, v) => p.gainLFO?.setFrequency(v * 100 + 0.1),
   },
   gainLFODepth: {
@@ -278,6 +281,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0.01,
     curve: 5,
+    format: (v) => hzOrKhz(v * 100 + 0.1),
     apply: (p, v) => p.pitchLFO?.setFrequency(v * 100 + 0.1),
   },
   pitchLFODepth: {
@@ -285,9 +289,9 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    curve: 1.5,
-    format: positionPercent('pitchLFODepth'),
-    apply: (p, v) => p.pitchLFO?.setDepth(v / 10),
+    curve: 2,
+    format: (v) => `${(v * PITCH_LFO_MAX_CENTS).toFixed(0)} cents`,
+    apply: (p, v) => p.pitchLFO?.setDepth(v * PITCH_LFO_MAX_CENTS),
   },
 
   // Trim / loop. Normalized 0..1 as a fraction of the loaded sample's duration:

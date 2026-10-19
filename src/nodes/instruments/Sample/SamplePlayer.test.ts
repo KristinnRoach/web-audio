@@ -94,6 +94,45 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
   }
 });
 
+it('connects pitch LFO to every voice detune and maps normalized depth to cents', async () => {
+  vi.stubGlobal('window', {});
+  vi.stubGlobal('AudioContext', class {});
+  vi.stubGlobal('AudioWorkletNode', class {});
+  vi.stubGlobal(
+    'GainNode',
+    class {
+      connect() {}
+      disconnect() {}
+    },
+  );
+  const { SamplePlayer } = await import('./SamplePlayer');
+  const context = Object.assign(new EventTarget(), { currentTime: 0 });
+  const player = new SamplePlayer({ context: context as unknown as AudioContext });
+  const detunes = [{}, {}];
+
+  try {
+    await initTestPlayer(player, {
+      applyToAllVoices: (apply) =>
+        detunes.forEach((detune) =>
+          apply({
+            getParam: (name: string) => (name === 'detune' ? detune : null),
+            setParam() {},
+          } as never),
+        ),
+    });
+    expect(player.pitchLFO!.connect).toHaveBeenCalledTimes(2);
+    detunes.forEach((detune) => expect(player.pitchLFO!.connect).toHaveBeenCalledWith(detune));
+
+    player.applyParams({ pitchLFODepth: 1 });
+    expect(player.pitchLFO!.setDepth).toHaveBeenLastCalledWith(200);
+    player.applyParams({ pitchLFODepth: 0 });
+    expect(player.pitchLFO!.setDepth).toHaveBeenLastCalledWith(0);
+  } finally {
+    player.dispose();
+    vi.unstubAllGlobals();
+  }
+});
+
 describe('SamplePlayer.applyParams', () => {
   it('applies only valid parameter values', async () => {
     vi.stubGlobal('window', {});

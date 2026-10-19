@@ -365,24 +365,21 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   #setupLFOs() {
-    this.#gainLFO = new LFO(this.context);
-    this.#gainLFO.setWaveform('sine');
+    const gainLFO = new LFO(this.context);
+    gainLFO.setWaveform('sine');
 
-    this.#pitchLFO = new LFO(this.context);
-    const wobbleWave = this.#pitchLFO.getPitchWobbleWaveform();
-    this.#pitchLFO.setWaveform(wobbleWave);
+    const pitchLFO = new LFO(this.context);
+    pitchLFO.setWaveform('sine');
+    // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform().
 
-    // Connections
-    this.#connectLFOToAllVoices(this.#pitchLFO, 'playbackRate');
-    this.#gainLFO.connect(this.#outBus.input.gain);
-    // this.#connectLFOToAllVoices(this.#gainLFO, 'playbackPosition');
-  }
-
-  #connectLFOToAllVoices(lfo: LFO, paramName: string) {
+    gainLFO.connect(this.#outBus.input.gain);
     this.#voicePool.applyToAllVoices((voice) => {
-      const param = voice.getParam(paramName);
-      if (param) lfo.connect(param);
+      const param = voice.getParam('detune');
+      if (param) pitchLFO.connect(param);
     });
+
+    this.#gainLFO = gainLFO;
+    this.#pitchLFO = pitchLFO;
   }
 
   /* === LOAD / RESET === */
@@ -1305,6 +1302,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#gainLFO;
   }
 
+  /** Modulates voice `detune`; `setDepth()` takes cents. */
   get pitchLFO() {
     return this.#pitchLFO;
   }

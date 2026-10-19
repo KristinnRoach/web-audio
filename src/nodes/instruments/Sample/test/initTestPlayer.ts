@@ -7,7 +7,8 @@ vi.mock('@/nodes/modulators/LFO/LFO', () => ({
   LFO: class {
     setWaveform() {}
     getPitchWobbleWaveform() {}
-    connect() {}
+    connect = vi.fn();
+    setDepth = vi.fn();
     dispose() {}
   },
 }));
