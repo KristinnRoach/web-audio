@@ -373,7 +373,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#pitchLFO.setWaveform(wobbleWave);
 
     // Connections
-    this.#connectLFOToAllVoices(this.#pitchLFO, 'playbackRate');
+    this.#connectLFOToAllVoices(this.#pitchLFO, 'detune');
     this.#gainLFO.connect(this.#outBus.input.gain);
     // this.#connectLFOToAllVoices(this.#gainLFO, 'playbackPosition');
   }
@@ -1305,6 +1305,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#gainLFO;
   }
 
+  /** Modulates voice `detune`; `setDepth()` takes cents. */
   get pitchLFO() {
     return this.#pitchLFO;
   }
