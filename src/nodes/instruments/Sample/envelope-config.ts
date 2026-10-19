@@ -1,4 +1,4 @@
-import { assertValidEnvelopeShape, type EnvelopeShape } from '../../params/envelopes';
+import { assertValidEnvelopeShape, type EnvelopeShape } from '../../modulators/envelope';
 
 /** Serializable config shared by editors and envelope players. */
 export type EnvelopeConfig = {

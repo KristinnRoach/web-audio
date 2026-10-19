@@ -75,7 +75,7 @@ Code observations below are not claims that every case has been reproduced audib
   It becomes null as soon as release is requested, including future release, and does
   not describe the release tail. It is not a completion signal. No envelope-specific
   browser test currently verifies position against rendered automation. When adding
-  one (model on `../LFOs/LFO.browser.test.ts`, run with `vp run test:browser`), assert
+  one (model on `../LFO/LFO.browser.test.ts`, run with `vp run test:browser`), assert
   first that `base + amount * interpolateAtTime(points, points[0].time + position())`
   matches `param.value` on a real `AudioContext`; every consumer inherits any
   disagreement. Then check that position tracks the real clock and wraps at loop ends.

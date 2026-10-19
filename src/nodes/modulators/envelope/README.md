@@ -9,7 +9,7 @@ editable configs; `SampleVoice` applies them using
 defaults, parameter mapping and live-edit decisions.
 
 ```ts
-import { Envelope } from '@/nodes/params/envelopes';
+import { Envelope } from '@/nodes/modulators/envelope';
 
 const ctx = new AudioContext();
 const gain = ctx.createGain();
@@ -154,7 +154,7 @@ position; these accessors are not completion notifications.
 Each preset takes a total duration in seconds (default `1`) and returns a shape.
 
 ```ts
-import { envelopePresets } from '@/nodes/params/envelopes';
+import { envelopePresets } from '@/nodes/modulators/envelope';
 
 envelopePresets.amplitude(2); // attack, decay, sustain, release
 envelopePresets.filter(0.5); // quick sweep up, then back down, plays once

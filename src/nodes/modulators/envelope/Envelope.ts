@@ -1,4 +1,4 @@
-import { cancelAndPinParamValue } from '../audioparam-utils';
+import { cancelAndPinParamValue } from '@/nodes/params/audioparam-utils';
 
 import {
   releaseEnvelope,

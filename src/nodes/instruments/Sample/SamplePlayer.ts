@@ -24,11 +24,11 @@ import {
   type SamplerParamDescriptor,
 } from './sampler-params';
 
-import { LFO } from '@/nodes/params/LFOs/LFO';
+import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
 import { SampleVoicePool } from './SampleVoicePool';
-import { setDuration } from '@/nodes/params/envelopes';
+import { setDuration } from '@/nodes/modulators/envelope';
 import {
   assertValidEnvelopeConfig,
   cloneEnvelopeConfig,

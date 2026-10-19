@@ -13,9 +13,9 @@ import {
   durationToTimeConstant,
   maxSafeHz,
 } from '@/nodes/params/audioparam-utils';
-import { Envelope } from '@/nodes/params/envelopes';
+import { Envelope } from '@/nodes/modulators/envelope';
 import type { EnvelopeConfig } from './envelope-config';
-import { LFO } from '@/nodes/params/LFOs/LFO';
+import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
 import {

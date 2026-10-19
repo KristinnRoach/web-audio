@@ -4,7 +4,7 @@ import {
   type Envelope,
   type EnvelopeShape,
   type EnvelopeTriggerOptions,
-} from '@/nodes/params/envelopes';
+} from '@/nodes/modulators/envelope';
 import type { EnvelopeConfig } from './envelope-config';
 
 /**

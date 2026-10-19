@@ -3,7 +3,7 @@ import type { SamplePlayer } from '../SamplePlayer';
 import type { SampleVoicePool } from '../SampleVoicePool';
 import type { InstrumentBus } from '../../../master/InstrumentBus';
 
-vi.mock('@/nodes/params/LFOs/LFO', () => ({
+vi.mock('@/nodes/modulators/LFO/LFO', () => ({
   LFO: class {
     setWaveform() {}
     getPitchWobbleWaveform() {}
