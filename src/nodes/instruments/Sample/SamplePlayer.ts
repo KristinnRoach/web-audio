@@ -370,7 +370,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     const pitchLFO = new LFO(this.context);
     pitchLFO.setWaveform('sine');
-    // other good wave options: 'colored-noise', LFO.getPitchWobbleWaveform(), ..
+    // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform().
 
     gainLFO.connect(this.#outBus.input.gain);
     this.#voicePool.applyToAllVoices((voice) => {
