@@ -6,8 +6,7 @@ import { maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import type { SamplePlayer } from './SamplePlayer';
 
-// Matches the old +0.1 playbackRate excursion at base rate 1 (~165 cents).
-const PITCH_LFO_MAX_CENTS = 1200 * Math.log2(1.1);
+const PITCH_LFO_MAX_CENTS = 200; // cents = semitones * 100
 
 export interface SamplerParamDescriptor {
   label: string;
@@ -290,8 +289,8 @@ export const samplerParams = defineSamplerParams({
     min: 0,
     max: 1,
     defaultValue: 0,
-    curve: 1.5,
-    format: positionPercent('pitchLFODepth'),
+    curve: 2,
+    format: (v) => `${(v * PITCH_LFO_MAX_CENTS).toFixed(0)} cents`,
     apply: (p, v) => p.pitchLFO?.setDepth(v * PITCH_LFO_MAX_CENTS),
   },
 
