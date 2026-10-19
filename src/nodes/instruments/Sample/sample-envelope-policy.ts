@@ -27,7 +27,7 @@ const PITCH_ENVELOPE_SEMITONES = 12;
 
 /**
  * Filter shape value 1 detunes the cutoff up by this many octaves, about the audible range,
- * so amount 1 can open any cutoff fully. The spec only gives the detuned frequency a
+ * so depth 1 can open any cutoff fully. The spec only gives the detuned frequency a
  * nominal range of [0, Nyquist]; going past it relies on browsers clamping.
  * ponytail: fixed depth; make it configurable alongside the pitch range.
  */
@@ -56,7 +56,7 @@ export function createDefaultSampleEnvelopeConfig(
   switch (id) {
     case 'amp':
       return {
-        amount: 1,
+        depth: 1,
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
@@ -64,7 +64,7 @@ export function createDefaultSampleEnvelopeConfig(
       };
     case 'pitch':
       return {
-        amount: 1,
+        depth: 1,
         enabled: false,
         timeScale: 1,
         playbackRateSync: false,
@@ -72,7 +72,7 @@ export function createDefaultSampleEnvelopeConfig(
       };
     case 'filter':
       return {
-        amount: 1,
+        depth: 1,
         enabled: false,
         timeScale: 1,
         playbackRateSync: false,
@@ -100,12 +100,12 @@ export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
 /** The trigger options that place a sampler envelope's shape on its param. */
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  { amount = 1 }: { amount?: number } = {},
-): Pick<EnvelopeTriggerOptions, 'amount' | 'curve'> {
-  if (id === 'amp') return { amount };
+  { depth = 1 }: { depth?: number } = {},
+): Pick<EnvelopeTriggerOptions, 'depth' | 'curve'> {
+  if (id === 'amp') return { depth };
   // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
-  if (id === 'pitch') return { amount: PITCH_ENVELOPE_SEMITONES * 100 * amount, curve: 'linear' };
-  return { amount: FILTER_ENVELOPE_OCTAVES * 1200 * amount, curve: 'linear' };
+  if (id === 'pitch') return { depth: PITCH_ENVELOPE_SEMITONES * 100 * depth, curve: 'linear' };
+  return { depth: FILTER_ENVELOPE_OCTAVES * 1200 * depth, curve: 'linear' };
 }
 
 /** Applies an envelope edit at the next loop boundary, when one exists. */

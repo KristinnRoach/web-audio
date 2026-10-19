@@ -46,13 +46,6 @@ import {
   type SampleEnvelopeId,
 } from './sample-envelope-policy';
 
-/**
- * Filter envelope depth, normalized against the filter's usable range.
- *
- * 0.13 is roughly the 3 kHz this was fixed at before, at a 48 kHz sample rate.
- */
-// const DEFAULT_FILTER_ENV_AMOUNT = 0.13; // TODO: @POST_ENV_API_READY
-
 export type SamplePlayerOptions = {
   context: AudioContext;
   polyphony?: number;
@@ -329,8 +322,11 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === LFOs === */
 
-  setModulationAmount = (modType: 'AM' | 'FM', amount: number) =>
-    this.#voicePool.applyToAllVoices((v) => v.setModulationAmount(modType, amount));
+  setModulationDepth = (modType: 'AM' | 'FM', depth: number) =>
+    this.#voicePool.applyToAllVoices((v) => v.setModulationDepth(modType, depth));
+
+  /** @deprecated Use setModulationDepth. */
+  setModulationAmount = this.setModulationDepth;
 
   setAMModOctaveOffset = (offset: number) =>
     this.#voicePool.applyToAllVoices((v) => v.setAMModOctaveOffset(offset));

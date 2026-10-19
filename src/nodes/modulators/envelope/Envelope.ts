@@ -79,7 +79,7 @@ export class Envelope {
   #removeLoop: (() => void) | undefined;
   #triggered = false;
   #base = 0;
-  #amount = 1;
+  #depth = 1;
   #timeScale = 1;
   #triggerTime = 0;
   #startTime = 0;
@@ -143,7 +143,7 @@ export class Envelope {
     if (points.length === 0) return this.#base;
 
     return (
-      this.#base + this.#amount * interpolateAtTime(points, points[0].time + this.#positionAt(time))
+      this.#base + this.#depth * interpolateAtTime(points, points[0].time + this.#positionAt(time))
     );
   }
 
@@ -162,13 +162,17 @@ export class Envelope {
         })),
       };
     }
+    const depth = options.depth ?? 1;
+    if (!Number.isFinite(depth)) throw new TypeError('Modulation depth must be finite');
+    const base = options.base ?? 0;
+    if (!Number.isFinite(base)) throw new TypeError('Envelope base must be finite');
     const fullDuration = getDuration(runEnvelope.points, { timeScale });
     time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;
     this.#stopLoop();
     this.#triggered = true;
-    this.#base = options.base ?? 0;
-    this.#amount = options.amount ?? 1;
+    this.#base = base;
+    this.#depth = depth;
     this.#timeScale = timeScale;
     this.#triggerTime = time;
     this.#startTime = time;
@@ -176,8 +180,6 @@ export class Envelope {
     // Local aliases for the run's fixed inputs: read once here, and the refill closure
     // below reads the same values rather than whatever a later trigger has set.
     const { param } = this;
-    const base = this.#base;
-    const amount = this.#amount;
 
     // Clear only. Every scheduling path below opens with its own setValueAtTime at
     // this same instant, so pinning here would write the param's stale value and be
@@ -190,7 +192,7 @@ export class Envelope {
     const loopDuration = runEnvelope.mode.type === 'loop' ? fullDuration : 0;
 
     if (loopDuration <= 0) {
-      scheduleEnvelope(param, runEnvelope, time, { base, amount, timeScale });
+      scheduleEnvelope(param, runEnvelope, time, { base, depth, timeScale });
       return;
     }
 
@@ -214,7 +216,7 @@ export class Envelope {
       points.length - 1,
       time,
       base,
-      amount,
+      depth,
       timeScale,
     );
 
@@ -240,7 +242,7 @@ export class Envelope {
           points.length - 1,
           start,
           base,
-          amount,
+          depth,
           timeScale,
         );
         cycle++;
@@ -266,7 +268,7 @@ export class Envelope {
       this.param,
       this.#envShape,
       time,
-      { base: this.#base, amount: this.#amount, timeScale: this.#timeScale },
+      { base: this.#base, depth: this.#depth, timeScale: this.#timeScale },
       holdValue,
     );
   }
@@ -409,7 +411,7 @@ export class Envelope {
     cancelAndPinParamValue(this.param, time, holdValue);
     schedulePoint(
       this.param,
-      valueOf(points, sustainPoint, 0, sustainPoint, this.#base, this.#amount),
+      valueOf(points, sustainPoint, 0, sustainPoint, this.#base, this.#depth),
       time + glide,
       'linear',
     );

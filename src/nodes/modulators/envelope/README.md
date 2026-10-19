@@ -93,17 +93,17 @@ A looping envelope keeps scheduling ahead on a timer until you call `release()` 
 | Option      | Default      | Meaning                                                                      |
 | ----------- | ------------ | ---------------------------------------------------------------------------- |
 | `base`      | `0`          | Param value when the shape reads 0.                                          |
-| `amount`    | `1`          | How far the param moves per unit of shape. Negative values invert the shape. |
+| `depth`     | `1`          | How far the param moves per unit of shape. Negative values invert the shape. |
 | `timeScale` | `1`          | Playback speed. `2` plays twice as fast.                                     |
 | `shape`     | stored shape | Plays a different shape for this run only.                                   |
 | `fromPoint` | `0`          | Loops only: start the first pass at this point index.                        |
 | `curve`     | shape curves | Overrides ramp curves for the run, preserving steps.                         |
 
-The param follows `base + amount * pointValue`, so one shape can drive a gain (0 to 1), a
+The param follows `base + depth * pointValue`, so one shape can drive a gain (0 to 1), a
 cutoff (200 to 8000 Hz) or anything else:
 
 ```ts
-filterEnv.trigger(ctx.currentTime, { base: 200, amount: 7800 });
+filterEnv.trigger(ctx.currentTime, { base: 200, depth: 7800 });
 ```
 
 ### Modulating a param someone else controls
@@ -116,7 +116,7 @@ filter envelope in cents leaves `frequency` free for the cutoff knob:
 
 ```ts
 const filterEnv = new Envelope(ctx, filter.detune, shape);
-filterEnv.trigger(t, { amount: 1200 * 4, curve: 'linear' }); // up to 4 octaves above the cutoff
+filterEnv.trigger(t, { depth: 1200 * 4, curve: 'linear' }); // up to 4 octaves above the cutoff
 filter.frequency.setTargetAtTime(knobHz, ctx.currentTime, 0.01); // safe at any stage
 ```
 
@@ -169,3 +169,14 @@ These are available inside the source module, not exported from the package root
 ```ts
 const longer = { ...shape, points: setDuration(shape.points, 4) };
 ```
+
+`depth` and `base` use the destination parameter's units (gain, Hz, cents, etc.);
+shape values are unitless. Negative depth inverts the shape around `base`.
+Depth and base must be finite.
+
+Sampler envelope configs instead expose a unitless depth multiplier: 1 maps to
+1 gain unit, 1200 cents for pitch, or 12000 cents for filter detune.
+
+LFO depth also uses destination units, but its signal adds to the AudioParam's
+existing value; Envelope writes the parameter's automation directly. Sampler AM
+controls retain their existing normalized 0–1 range and mapping.
