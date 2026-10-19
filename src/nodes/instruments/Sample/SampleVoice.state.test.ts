@@ -164,6 +164,32 @@ describe('SampleVoice state', () => {
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
+  it.each([0, 2])(
+    'preserves the amp release when disabled after note-off scheduled %s seconds ahead',
+    async (secondsFromNow) => {
+      const voice = await loadedVoice();
+      trigger(voice);
+      const releaseDuration = voice.releaseTime;
+      voice.release({ secondsFromNow });
+      const gain = voice.getParam('envGain')!;
+      const cancel = vi.spyOn(gain, 'cancelScheduledValues');
+      const target = vi.spyOn(gain, 'setTargetAtTime');
+
+      voice.setEnvelopeConfig('amp', {
+        ...createDefaultSampleEnvelopeConfig('amp', 1),
+        enabled: false,
+      });
+
+      expect(cancel).not.toHaveBeenCalled();
+      expect(target).not.toHaveBeenCalled();
+      const stopAfterMs = (secondsFromNow + releaseDuration) * 1000 + 50;
+      vi.advanceTimersByTime(stopAfterMs - 1);
+      expect(voice.state).toBe(VoiceState.RELEASING);
+      vi.advanceTimersByTime(1);
+      expect(voice.state).toBe(VoiceState.AVAILABLE);
+    },
+  );
+
   it('stops rather than retriggering an active voice', async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);

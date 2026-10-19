@@ -710,6 +710,8 @@ export class SampleVoice {
 
     if (wasEnabled && !config.enabled) {
       apply();
+      // Keep an already scheduled amp release; switching it off must not reopen the gate.
+      if (envType === 'amp' && this.#state === VoiceState.RELEASING) return;
       envelope.stop();
       this.#resetEnvTarget(envType);
       return;

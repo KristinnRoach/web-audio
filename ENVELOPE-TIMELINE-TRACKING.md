@@ -1,28 +1,28 @@
 # Envelope timeline tracking
 
-Pending core work, as of `70733a7`. Entry point: [HANDOFF.md](HANDOFF.md). Copy the blocks in yourself.
+Proposed core changes for manual review against `70733a7`; none of the timeline-tracking code below is implemented on this branch. Entry point: [HANDOFF.md](HANDOFF.md). Review and apply the blocks individually.
 
-1. **Root fix:** `Envelope` pins release/sustain/stop holds at a value it works out from the shape, which doesn't match what the param is actually playing. That's the source of the release-during-attack click. Fix: record what was scheduled and read it back (`TrackedParam`).
+1. **Proposed timeline fix:** release and sustain edits read a value derived from the shape, which can disagree with the scheduled automation. Stop reads the current param value, even for a future stop. Record scheduled events and evaluate them for holds (`TrackedParam`).
 2. **Optional:** amp `amount` as depth around the gate instead of a level multiplier.
 
 ## Done: disabled amp env plays as a gate (`20776fe`)
 
-A disabled amp envelope used to leave `envGain` at its default `0` (silent), or frozen mid-level if it was switched off during a note. Now `#resetEnvTarget` holds it at velocity / 127, `release()` fades it out with a 2 ms time constant, and `releaseTime` returns the 10 ms gate fade. Changeset: `.changeset/amp-env-gate.md`. Moving the gate fade into the processor is #65.
+A disabled amp envelope used to leave `envGain` at its default `0` (silent), or frozen mid-level if it was switched off during a note. Now `#resetEnvTarget` holds it at velocity / 127, `release()` fades it out with a 2 ms time constant, and `releaseTime` returns the 10 ms gate fade. Changeset: `.changeset/amp-env-gate.md`. Disabling the amp envelope after note-off preserves the scheduled release and its cleanup timer. Moving the gate fade into the processor is #65.
 
 ---
 
 ## 1. Read holds from the scheduled timeline
 
-Fixes the click when a voice is released during an exponential attack that starts at 0. Independent of section 2. Verified in a scratch worktree on `5f391f5`: `vp test` passed, `vp check` was clean, and both tests below fail on the old code. Every block still matches the code as of `70733a7`, which removed `toParamValue` and `scaling`; not re-run since.
+Targets the click when a voice is released during an exponential attack that starts at 0. Independent of section 2. Earlier scratch validation was on `5f391f5`; these proposed blocks have not been applied or re-tested against the current branch. The review checks below are still required.
 
 ### Root cause
 
 Two places answer "what is the param's value at time t", and they disagree:
 
-- **The scheduler** writes the real timeline, changing values on the way: a zero endpoint is floored to `1e-4·amount` (`floorOffZero`), `rampCurve` swaps exponential segments for linear ones, and the `curve` override applies.
-- **`Envelope.#valueAt`** rebuilds the value from the shape with `interpolateAtTime`, which knows about none of that. For an exponential segment leaving 0, it falls back to **linear** (`left.value > 0` fails).
+- **The scheduler** writes the real timeline, changing values on the way: zero endpoints are floored to a fraction of the absolute amount (`floorOffZero`), and `rampCurve` substitutes linear ramps when endpoint signs differ.
+- **`Envelope.#valueAt`** rebuilds the value from the shape with `interpolateAtTime`, which does not reproduce the scheduler's endpoint flooring or parameter-space interpolation. It does see the run's `curve` override. For an exponential segment leaving 0, it falls back to **linear** (`left.value > 0` fails).
 
-Release, sustain edits and stop then use `cancelAndPinParamValue` to pin `#valueAt`'s answer onto a param that is following the other one. Example: a 0→1 exponential attack over 10 ms, released at 5 ms. The param is at `1e-4^0.5 = 0.01`, `#valueAt` says `0.5`, and the gain steps by ~0.49 in one sample.
+Release and sustain edits use `cancelAndPinParamValue` to pin `#valueAt`'s answer; stop currently pins `param.value` instead. Neither path consistently evaluates the scheduled value at the requested time. Example: a 0→1 exponential attack over 10 ms, released at 5 ms. The param is at `1e-4^0.5 = 0.01`, `#valueAt` says `0.5`, and the gain steps by ~0.49 in one sample.
 
 ### Fix
 
@@ -30,9 +30,9 @@ Don't re-derive the value. Record what was scheduled and evaluate that, using th
 
 `TrackedParam` sits behind the existing `AutomatableParam` seam, so the scheduling code is unchanged. `Envelope` wraps whatever param it's given, and every write (trigger, loop refills, release, sustain glide) goes through the wrapper.
 
-Side effects, all improvements:
+Expected improvements, subject to validation:
 
-- A release during the sustain-edit glide now hands off from where the glide has actually got to. That's the `ponytail:` caveat in `setSustainValue`, now resolved.
+- A release during the sustain-edit glide now hands off from where the glide has actually got to. That's the `ponytail:` caveat in `setSustainValue`, which this proposal aims to resolve.
 - `stop(time)` pins the value at `time`, not today's `param.value`.
 
 ### 1a. New file — `src/nodes/params/envelopes/tracked-param.ts`
@@ -72,26 +72,26 @@ export class TrackedParam implements AutomatableParam {
   }
 
   setValueAtTime(value: number, time: number) {
-    this.#add({ type: 'set', value, time });
     this.param.setValueAtTime(value, time);
+    this.#add({ type: 'set', value, time });
     return this;
   }
 
   linearRampToValueAtTime(value: number, time: number) {
-    this.#add({ type: 'linear', value, time });
     this.param.linearRampToValueAtTime(value, time);
+    this.#add({ type: 'linear', value, time });
     return this;
   }
 
   exponentialRampToValueAtTime(value: number, time: number) {
-    this.#add({ type: 'exponential', value, time });
     this.param.exponentialRampToValueAtTime(value, time);
+    this.#add({ type: 'exponential', value, time });
     return this;
   }
 
   cancelScheduledValues(time: number) {
-    this.#events = this.#events.filter((event) => event.time < time);
     this.param.cancelScheduledValues(time);
+    this.#events = this.#events.filter((event) => event.time < time);
     return this;
   }
 
@@ -115,7 +115,7 @@ export class TrackedParam implements AutomatableParam {
   }
 
   #add(event: ParamEvent) {
-    // After any event at the same time: the spec applies same-time events in call order.
+    // Preserve insertion order here; verify same-time replacement rules against a real AudioParam.
     const index = this.#events.findIndex((other) => other.time > event.time);
     if (index === -1) this.#events.push(event);
     else this.#events.splice(index, 0, event);
@@ -127,7 +127,7 @@ export class TrackedParam implements AutomatableParam {
 }
 ```
 
-The pruning in `#add` keeps the list short for long loops. It's only correct for `valueAt(t >= now)`, and every caller already clamps to now.
+The pruning in `#add` keeps the list short for long loops. Reads are only intended for `time >= clock.currentTime`; the stop and sustain changes below clamp their times accordingly. This is a prototype, not yet a complete AudioParam event mirror: same-time event replacement, rejected writes, and future-ramp cancellation need explicit checks before adoption.
 
 ### 1b. `src/nodes/params/envelopes/Envelope.ts`
 
@@ -233,7 +233,13 @@ With:
 const holdValue = this.param.valueAt(time);
 ```
 
-**`setSustainValue`.** Three edits. First, replace:
+**`setSustainValue`.** First, clamp time at the start of the method:
+
+```ts
+time = Math.max(this.clock.currentTime, time);
+```
+
+Then replace:
 
 ```ts
 // The point is mutated in place because `valueAt` and `releaseEnvelope` read the same
@@ -247,7 +253,7 @@ With:
 // object; without that they would schedule from the old value and jump.
 ```
 
-Second, delete the resolved caveat:
+Delete this caveat only after the glide regression below passes:
 
 ```ts
 //
@@ -257,7 +263,7 @@ Second, delete the resolved caveat:
 // pending glide in `valueAt` if a long one is ever wanted.
 ```
 
-Third, replace:
+Finally, replace:
 
 ```ts
 // Read the outgoing shape before mutating it, the same ordering release() follows.
@@ -280,6 +286,7 @@ cancelAndPinParamValue(this.param, time);
 With:
 
 ```ts
+time = Math.max(this.clock.currentTime, time);
 cancelAndPinParamValue(this.param, time, this.param.valueAt(time));
 ```
 
@@ -336,7 +343,7 @@ test('release during an exponential attack from zero pins the scheduled value', 
 
 ### 1d. `src/nodes/params/envelopes/KNOWN-ISSUES.md`
 
-Replace the resolved item:
+After implementation and validation, replace the resolved item:
 
 ```md
 - **Release-value agreement.** Release, sustain edits and stop pin `#valueAt`, which
@@ -374,7 +381,7 @@ pins the value the scheduled timeline has at that time.
 
 ### Follow-up, not included: how the attack sounds
 
-The click is fixed by 1, but an exponential ramp that starts at the floor still sits near silent for most of the attack and then jumps up, so the attack sounds late. Tone's `Envelope.triggerAttack` doesn't use `exponentialRampTo` for an `"exponential"` attack. It calls `targetRampTo`, which is `setTargetAtTime` (an RC charge curve, like an analog ADSR) with time constant `Math.log(rampTime + 1) / Math.log(200)`, then a linear ramp from 90% onwards so it lands exactly on the target. Release does the same with `targetRampTo(0, release, time)`. Copying that here means teaching `schedulePoint` a setTarget path for rising exponential segments and adding the setTarget formula (`v1 + (v0 - v1) * exp(-(t - t0) / τ)`) to `TrackedParam.valueAt`. That's a change to the sound, so it gets its own decision.
+Section 1 aims to fix the handoff click. Separately, an exponential ramp that starts at the floor still sits near silent for most of the attack and then jumps up, so the attack sounds late. Tone's `Envelope.triggerAttack` doesn't use `exponentialRampTo` for an `"exponential"` attack. It calls `targetRampTo`, which is `setTargetAtTime` (an RC charge curve, like an analog ADSR) with time constant `Math.log(rampTime + 1) / Math.log(200)`, then a linear ramp from 90% onwards so it lands exactly on the target. Release does the same with `targetRampTo(0, release, time)`. Copying that here means teaching `schedulePoint` a setTarget path for rising exponential segments and adding the setTarget formula (`v1 + (v0 - v1) * exp(-(t - t0) / τ)`) to `TrackedParam.valueAt`. That's a change to the sound, so it gets its own decision.
 
 ---
 
@@ -400,7 +407,7 @@ and add `'base'` to its return type's `Pick`.
 
 `envGain = v·(1 − amount) + v·amount·value`, which is `v` at amount 0 and `v·value` at amount 1.
 
-**Trade-off.** With `0 < amount < 1`, the release ends at `v·(1 − amount)`, not 0. The voice then hard-stops at `releaseTime`, so the click gets bigger as amount gets smaller. Fixing that properly needs the processor-side fade from issue #65. If that's not acceptable yet, skip this: amount stays a level multiplier, and amount 0 stays silent by design.
+**Trade-off.** With `0 < amount < 1`, the release ends at `v·(1 − amount)`, not 0. The voice then hard-stops after the release duration plus the cleanup buffer, so the click gets bigger as amount gets smaller. Fixing that properly needs the processor-side fade from issue #65. If that's not acceptable yet, skip this: amount stays a level multiplier, and amount 0 stays silent by design.
 
 `amount < 0` gives `base > v`, which the worklet param's `maxValue: 1` clamps. Clamp `amount` to `[0, 1]` for amp if inverted amp envelopes aren't wanted.
 
@@ -423,9 +430,16 @@ expect(amp.amount).toBeCloseTo(0.8 * amount);
 
 ## Known gaps
 
-- `TrackedParam` only sees writes made through `Envelope`. The amp gate and `#resetEnvTarget` write `envGain`/detune directly. That's fine today because every trigger cancels everything first, but anything that wants to read those values back has to go through the wrapper.
-- No `SampleVoice` test for the gate (disabled amp: `envGain` reaches velocity, then 0 after release).
+- `TrackedParam` only sees writes made through its wrapper. The amp gate and `#resetEnvTarget` write `envGain`/detune directly; reads after those writes must not trust stale tracked events. Decide how to clear or re-seed the mirror when ownership changes.
+- The amp-disable regression covers preserving an existing or future release. Normal gate opening/fading and enabling the amp envelope mid-note still need coverage.
 - If the amp env is enabled mid-note, the gate holds until the next note. It doesn't pick up the envelope partway through.
+
+## Review checks before applying section 1
+
+- Run the proposed regression tests and existing suite, then compare holds against a real AudioParam in a browser.
+- Check same-time event replacement and rejection of invalid writes: the mirror must match what the native param accepted.
+- Check future release/stop and loop-boundary retriggers. Reading the right hold value alone does not preserve a ramp removed by cancellation.
+- Keep release-tail cleanup and pending loop handover in [KNOWN-ISSUES.md](src/nodes/params/envelopes/KNOWN-ISSUES.md); the wrapper alone does not fix them.
 
 ## Sources
 
