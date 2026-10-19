@@ -89,9 +89,9 @@ test('keeps an exponential segment off zero at both ends', () => {
     releasePoint: 2,
   };
 
-  scheduleEnvelope(param, envelope, 10, { amount: 20000 });
+  scheduleEnvelope(param, envelope, 10, { depth: 20000 });
 
-  // A fraction of the amount, so it lands at the same depth whatever the range.
+  // A fraction of the depth, so it lands at the same depth whatever the range.
   expect(param.ramps()).toContainEqual({
     type: 'set',
     value: 1e-4 * 20000,
@@ -103,7 +103,7 @@ test('keeps an exponential segment off zero at both ends', () => {
     time: 10.005,
   });
 
-  releaseEnvelope(param, envelope, 20, { amount: 20000 });
+  releaseEnvelope(param, envelope, 20, { depth: 20000 });
 
   expect(param.ramps()).toContainEqual({
     type: 'exponential',
@@ -140,9 +140,9 @@ test('leaves values alone when no exponential segment touches them', () => {
   });
 });
 
-// param = base + amount * value, so the same shape drives a gain, a cutoff sweeping
+// param = base + depth * value, so the same shape drives a gain, a cutoff sweeping
 // up from a resting frequency, or a rate falling below one.
-test("places the shape on the parameter's range with base and amount", () => {
+test("places the shape on the parameter's range with base and depth", () => {
   const envelope: EnvelopeShape = {
     points: [
       { time: 0, value: 0 },
@@ -154,17 +154,17 @@ test("places the shape on the parameter's range with base and amount", () => {
     releasePoint: 2,
   };
 
-  const scheduled = (options?: { base?: number; amount?: number }) => {
+  const scheduled = (options?: { base?: number; depth?: number }) => {
     const param = createFakeParam();
     scheduleEnvelope(param, envelope, 0, options);
     return param.ramps().map((event) => event.value);
   };
 
   expect(scheduled()).toEqual([0, 1, 0.5]);
-  expect(scheduled({ amount: 0.5 })).toEqual([0, 0.5, 0.25]);
-  expect(scheduled({ base: 500, amount: 8000 })).toEqual([500, 8500, 4500]);
-  // A negative amount inverts the shape around the base.
-  expect(scheduled({ base: 1, amount: -0.5 })).toEqual([1, 0.5, 0.75]);
+  expect(scheduled({ depth: 0.5 })).toEqual([0, 0.5, 0.25]);
+  expect(scheduled({ base: 500, depth: 8000 })).toEqual([500, 8500, 4500]);
+  // A negative depth inverts the shape around the base.
+  expect(scheduled({ base: 1, depth: -0.5 })).toEqual([1, 0.5, 0.75]);
 });
 
 test('keeps an inverted exponential envelope on its own side of zero', () => {
@@ -182,7 +182,7 @@ test('keeps an inverted exponential envelope on its own side of zero', () => {
       releasePoint: 1,
     },
     0,
-    { amount: -1 },
+    { depth: -1 },
   );
 
   // Point 0 lands on zero, so it is floored away from it without crossing over.
@@ -243,7 +243,7 @@ test('player release stops its loop and schedules the scaled release stage', () 
   };
   const env = new Envelope(clock, param, envelope);
 
-  env.trigger(0, { amount: 0.5 });
+  env.trigger(0, { depth: 0.5 });
   env.release(0.25);
 
   expect(param.ramps()).toContainEqual({
@@ -895,7 +895,7 @@ it('overrides ramp curves for one run, keeping steps and the stored shape', () =
     releasePoint: 0,
   };
   const env = new Envelope(clock, param, shape);
-  env.trigger(0, { base: 100, amount: 1200, curve: 'linear' });
+  env.trigger(0, { base: 100, depth: 1200, curve: 'linear' });
   expect(param.ramps()).toEqual([
     { type: 'set', value: 100, time: 0 },
     { type: 'set', value: 1300, time: 1 },
@@ -924,4 +924,27 @@ it('ramps linearly where an exponential segment would cross zero', () => {
   clock.currentTime = 1.5;
   env.release();
   expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: -0.5, time: 2.5 });
+});
+
+test('signed depth schedules identically and invalid depth leaves an active run intact', () => {
+  const shape: EnvelopeShape = {
+    points: [
+      { time: 0, value: 0 },
+      { time: 1, value: 1 },
+    ],
+    mode: { type: 'once' },
+    sustainPoint: 0,
+    releasePoint: 0,
+  };
+  const oldParam = createFakeParam();
+  const param = createFakeParam();
+  scheduleEnvelope(oldParam, shape, 0, { depth: -1200 });
+  const env = new Envelope({ currentTime: 0 }, param, shape);
+  env.trigger(0, { depth: -1200 });
+  expect(param.ramps()).toEqual(oldParam.ramps());
+  const before = param.ramps();
+  for (const options of [{ depth: NaN }, { depth: Infinity }, { base: NaN }]) {
+    expect(() => env.trigger(0, options)).toThrow(TypeError);
+    expect(param.ramps()).toEqual(before);
+  }
 });

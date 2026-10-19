@@ -47,9 +47,8 @@ Code observations below are not claims that every case has been reproduced audib
 - **Future commands.** Releasing or stopping a loop removes its refill callback
   immediately, even if the requested time is beyond the queued horizon. `stop(time)`
   also pins today's parameter value rather than a value evaluated at that future time.
-- **Validation.** Shape and time scale are validated before trigger mutation, but
-  timestamps, base, amount, pickup indices and sustain-glide inputs are not consistently
-  checked. Invalid inputs should eventually leave the existing run untouched.
+- **Validation.** Shape, time scale, base and depth are validated before trigger mutation, but
+  timestamps, pickup indices and sustain-glide inputs are not consistently checked. Invalid inputs should eventually leave the existing run untouched.
 - **Reported loop drift.** The cause remains unconfirmed. The existing 3,001-cycle
   grid check measured roughly 1e-12 seconds of error for a 7 ms loop, and drift heard
   after a few cycles is too fast for float error anyway. Two candidates:
@@ -75,8 +74,8 @@ Code observations below are not claims that every case has been reproduced audib
   It becomes null as soon as release is requested, including future release, and does
   not describe the release tail. It is not a completion signal. No envelope-specific
   browser test currently verifies position against rendered automation. When adding
-  one (model on `../LFOs/LFO.browser.test.ts`, run with `vp run test:browser`), assert
-  first that `base + amount * interpolateAtTime(points, points[0].time + position())`
+  one (model on `../LFO/LFO.browser.test.ts`, run with `vp run test:browser`), assert
+  first that `base + depth * interpolateAtTime(points, points[0].time + position())`
   matches `param.value` on a real `AudioContext`; every consumer inherits any
   disagreement. Then check that position tracks the real clock and wraps at loop ends.
 - Keep `nextCycleTime()` until a replacement handles future starts and pickup anchors;

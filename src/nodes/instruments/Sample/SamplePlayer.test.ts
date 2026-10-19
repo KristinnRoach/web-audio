@@ -186,23 +186,29 @@ describe('SamplePlayer envelope config', () => {
       player.updateEnvelope('amp', input);
       setEnvelopeConfig.mockClear();
       changed.mockClear();
-      player.updateEnvelope('amp', { amount: 0.5 });
+      player.updateEnvelope('amp', { depth: 0.5 });
       (input.shape.points[0] as { value: number }).value = 99;
 
       expect(setEnvelopeConfig).toHaveBeenCalledTimes(2);
       expect(player.getEnvelope('amp').shape.points[0].value).toBe(0);
-      expect(player.getEnvelope('amp').amount).toBe(0.5);
+      expect(player.getEnvelope('amp').depth).toBe(0.5);
       expect(setEnvelopeConfig).toHaveBeenCalledWith(
         'amp',
-        expect.objectContaining({ amount: 0.5 }),
+        expect.objectContaining({ depth: 0.5 }),
       );
       expect(changed).toHaveBeenCalledOnce();
       expect(changed).toHaveBeenCalledWith({
         type: 'envelope:changed',
         senderId: player.nodeId,
         id: 'amp',
-        config: expect.objectContaining({ enabled: false, amount: 0.5 }),
+        config: expect.objectContaining({ enabled: false, depth: 0.5 }),
       });
+      player.updateEnvelope('amp', { depth: -0.25 });
+      expect(player.getEnvelope('amp')).toMatchObject({ depth: -0.25 });
+      player.updateEnvelope('amp', { depth: 0.75 });
+      expect(player.getEnvelope('amp')).toMatchObject({ depth: 0.75 });
+      expect(player.getEnvelope('amp')).not.toHaveProperty('amount');
+      expect(player.getEnvelope('amp').depth).toBe(0.75);
     } finally {
       player.dispose();
       vi.unstubAllGlobals();

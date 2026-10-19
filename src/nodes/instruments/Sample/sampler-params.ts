@@ -198,7 +198,7 @@ export const samplerParams = defineSamplerParams({
     max: 1,
     defaultValue: 0,
     format: positionPercent('amMod'),
-    apply: (p, v) => p.setModulationAmount('AM', v),
+    apply: (p, v) => p.setModulationDepth('AM', v),
   },
   amModOctaveOffset: {
     label: 'AM Octave',

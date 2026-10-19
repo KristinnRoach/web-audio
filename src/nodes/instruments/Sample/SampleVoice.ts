@@ -13,9 +13,9 @@ import {
   durationToTimeConstant,
   maxSafeHz,
 } from '@/nodes/params/audioparam-utils';
-import { Envelope } from '@/nodes/params/envelopes';
+import { Envelope } from '@/nodes/modulators/envelope';
 import type { EnvelopeConfig } from './envelope-config';
-import { LFO } from '@/nodes/params/LFOs/LFO';
+import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
 import {
@@ -433,7 +433,7 @@ export class SampleVoice {
     }
 
     const target = resolveSampleEnvelopeTrigger(envType, {
-      amount: this.#envelopeConfigs.get(envType)!.amount,
+      depth: this.#envelopeConfigs.get(envType)!.depth,
     });
     const timeScale = this.#timeScale(envType, playbackRate);
 
@@ -644,16 +644,21 @@ export class SampleVoice {
     return this;
   }
 
-  setModulationAmount(modType: 'AM' | 'FM', amount: number) {
+  /** @deprecated Use setModulationDepth. */
+  setModulationAmount(modType: 'AM' | 'FM', depth: number) {
+    return this.setModulationDepth(modType, depth);
+  }
+
+  setModulationDepth(modType: 'AM' | 'FM', depth: number) {
     if (modType === 'AM' && !this.#chainIncludes('am')) return this;
 
-    const safeAmount = mapToRange(amount, 0, 1, 0, 0.95, {
+    const safeDepth = mapToRange(depth, 0, 1, 0, 0.95, {
       warn: true,
-      name: 'sampleVoice.setModulationAmount',
+      name: 'sampleVoice.setModulationDepth',
     });
 
     if (modType === 'AM') {
-      this.#am_lfo?.setDepth(safeAmount);
+      this.#am_lfo?.setDepth(safeDepth);
     } else if (modType === 'FM') {
       console.warn('SampleVoice: FM modulation not implemented yet');
     }

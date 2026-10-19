@@ -4,7 +4,7 @@ import {
   WaveformOptions,
   isCustomLibWaveform,
 } from '@/utils/audiodata/generate/generateWaveform';
-import { maxSafeHz } from '../audioparam-utils';
+import { maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 export class LFO {
   #context: AudioContext;
@@ -73,8 +73,10 @@ export class LFO {
     this.#oscillator.frequency.setValueAtTime(hz, timestamp);
   }
 
-  setDepth(amount: number, timestamp = this.now) {
-    this.#gain.gain.setValueAtTime(amount, timestamp);
+  /** Signed depth in the connected parameter's units; negative values invert the waveform. */
+  setDepth(depth: number, timestamp = this.now) {
+    if (!Number.isFinite(depth)) throw new TypeError('Modulation depth must be finite');
+    this.#gain.gain.setValueAtTime(depth, timestamp);
   }
 
   setWaveform(
