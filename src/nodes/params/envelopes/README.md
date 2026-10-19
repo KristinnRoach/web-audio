@@ -165,7 +165,6 @@ envelopePresets.filter(0.5); // quick sweep up, then back down, plays once
 These are available inside the source module, not exported from the package root.
 
 - `setDuration(points, seconds)` returns new points stretched to a total length.
-- `hasVariation(points)` returns `false` if every point has the same value (within 0.001).
 
 ```ts
 const longer = { ...shape, points: setDuration(shape.points, 4) };

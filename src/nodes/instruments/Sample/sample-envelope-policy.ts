@@ -1,6 +1,5 @@
 import {
   envelopePresets,
-  hasVariation,
   setDuration,
   type Envelope,
   type EnvelopeShape,
@@ -91,10 +90,6 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
     case 'filter':
       return 'lpfDetune';
   }
-}
-
-export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: EnvelopeConfig) {
-  return config.enabled && (id !== 'pitch' || hasVariation(config.shape.points));
 }
 
 /** Amp rests at unity; velocity is applied once by the processor. Detune rests at zero. */

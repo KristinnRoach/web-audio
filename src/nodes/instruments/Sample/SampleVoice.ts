@@ -25,7 +25,6 @@ import {
   getSampleEnvelopeIds,
   getSampleEnvelopeParamName,
   resolveSampleEnvelopeTrigger,
-  shouldTriggerSampleEnvelope,
   type SampleEnvelopeId,
 } from './sample-envelope-policy';
 
@@ -417,7 +416,7 @@ export class SampleVoice {
     return config.timeScale * (config.playbackRateSync ? playbackRate : 1);
   }
 
-  #isEnabled(envType: SampleEnvelopeId) {
+  #isEnvEnabled(envType: SampleEnvelopeId) {
     return this.#envelopeConfigs.get(envType)?.enabled ?? false;
   }
 
@@ -428,7 +427,7 @@ export class SampleVoice {
     playbackRate: number,
     fromPoint = 0,
   ) {
-    if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) {
+    if (!this.#isEnvEnabled(envType)) {
       this.#resetEnvTarget(envType, timestamp, envType === 'amp');
       return;
     }
@@ -517,11 +516,11 @@ export class SampleVoice {
 
     // Release all enabled envelopes
     this.#envelopes.forEach((env, envType) => {
-      if (this.#isEnabled(envType)) env.release(timestamp);
+      if (this.#isEnvEnabled(envType)) env.release(timestamp);
     });
 
     // A disabled amp env is a gate, so close it. ponytail: voice-side fade until #65 moves de-click fades into the processor.
-    if (!this.#isEnabled('amp')) envGain.setTargetAtTime(0, timestamp, AMP_GATE_SMOOTHING_SEC);
+    if (!this.#isEnvEnabled('amp')) envGain.setTargetAtTime(0, timestamp, AMP_GATE_SMOOTHING_SEC);
 
     this.sendToProcessor({ type: 'voice:release', timestamp });
 
@@ -695,7 +694,7 @@ export class SampleVoice {
   setEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
     const envelope = this.#envelopes.get(envType);
     if (!envelope) return;
-    const wasEnabled = this.#isEnabled(envType);
+    const wasEnabled = this.#isEnvEnabled(envType);
     const apply = () => {
       this.#envelopeConfigs.set(envType, config);
       envelope.shape = config.shape;
@@ -1027,7 +1026,7 @@ export class SampleVoice {
   /** Amp release duration, or the gate fade while the amp envelope is off; drives voice cleanup. */
   get releaseTime() {
     // ~5 time constants is under 1% of the gate level.
-    if (!this.#isEnabled('amp')) return AMP_GATE_SMOOTHING_SEC * 5;
+    if (!this.#isEnvEnabled('amp')) return AMP_GATE_SMOOTHING_SEC * 5;
     return this.#envelopes.get('amp')!.releaseDuration();
   }
 
