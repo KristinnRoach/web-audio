@@ -1,13 +1,13 @@
 # Envelope timeline tracking
 
-Proposed core changes for manual review against `70733a7`; none of the timeline-tracking code below is implemented on this branch. Entry point: [HANDOFF.md](HANDOFF.md). Review and apply the blocks individually.
+Proposed core changes for manual review against the current `filter-env-detune` branch; none of the timeline-tracking code below is implemented on this branch. Entry point: [HANDOFF.md](HANDOFF.md). Review and apply the blocks individually.
 
 1. **Proposed timeline fix:** release and sustain edits read a value derived from the shape, which can disagree with the scheduled automation. Stop reads the current param value, even for a future stop. Record scheduled events and evaluate them for holds (`TrackedParam`).
 2. **Optional:** amp `amount` as depth around the gate instead of a level multiplier.
 
 ## Done: disabled amp env plays as a gate (`20776fe`)
 
-A disabled amp envelope used to leave `envGain` at its default `0` (silent), or frozen mid-level if it was switched off during a note. Now `#resetEnvTarget` holds it at velocity / 127, `release()` fades it out with a 2 ms time constant, and `releaseTime` returns the 10 ms gate fade. Changeset: `.changeset/amp-env-gate.md`. Disabling the amp envelope after note-off preserves the scheduled release and its cleanup timer. Moving the gate fade into the processor is #65.
+A disabled amp envelope used to leave `envGain` at its default `0` (silent), or frozen mid-level if it was switched off during a note. Now `#resetEnvTarget` holds it at unity (the processor applies velocity once), `release()` fades it out with a 2 ms time constant, and `releaseTime` returns the 10 ms gate fade. Changeset: `.changeset/amp-env-gate.md`. Disabling the amp envelope after note-off preserves the scheduled release and its cleanup timer. Moving the gate fade into the processor is #65.
 
 ---
 
@@ -69,6 +69,7 @@ export class TrackedParam implements AutomatableParam {
 
   set value(value: number) {
     this.param.value = value;
+    this.#add({ type: 'set', value, time: this.clock.currentTime });
   }
 
   setValueAtTime(value: number, time: number) {
@@ -390,40 +391,39 @@ Section 1 aims to fix the handoff click. Separately, an exponential ramp that st
 In `resolveSampleEnvelopeTrigger`, replace:
 
 ```ts
-if (id === 'amp') return { amount: velocityGain(velocity) * amount };
+if (id === 'amp') return { amount };
 ```
 
 With:
 
 ```ts
-// Depth around a gate: 0 holds at velocity, 1 is the full envelope.
+// Depth around a gate: 0 holds at unity, 1 is the full envelope.
 if (id === 'amp') {
-  const gain = velocityGain(velocity);
-  return { base: gain * (1 - amount), amount: gain * amount };
+  return { base: 1 - amount, amount };
 }
 ```
 
 and add `'base'` to its return type's `Pick`.
 
-`envGain = v·(1 − amount) + v·amount·value`, which is `v` at amount 0 and `v·value` at amount 1.
+`envGain = (1 − amount) + amount·value`. The processor applies velocity once to this result. Amount 0 is a unity gate; amount 1 is the full envelope.
 
-**Trade-off.** With `0 < amount < 1`, the release ends at `v·(1 − amount)`, not 0. The voice then hard-stops after the release duration plus the cleanup buffer, so the click gets bigger as amount gets smaller. Fixing that properly needs the processor-side fade from issue #65. If that's not acceptable yet, skip this: amount stays a level multiplier, and amount 0 stays silent by design.
+**Trade-off.** With `0 < amount < 1`, the release ends at `1 − amount`, not 0. The voice then hard-stops after the release duration plus the cleanup buffer, so the click gets bigger as amount gets smaller. Fixing that properly needs the processor-side fade from issue #65. If that's not acceptable yet, skip this: amount stays a level multiplier, and amount 0 stays silent by design.
 
-`amount < 0` gives `base > v`, which the worklet param's `maxValue: 1` clamps. Clamp `amount` to `[0, 1]` for amp if inverted amp envelopes aren't wanted.
+`amount < 0` gives `base > 1`, which the worklet param's `maxValue: 1` clamps. Clamp `amount` to `[0, 1]` for amp if inverted amp envelopes aren't wanted.
 
 ### Test — `sample-envelope-policy.test.ts`
 
-In `'scales amplitude by velocity and pitch and filter detune in cents, without changing the shape'`, replace:
+In `'scales amplitude by amount and pitch and filter detune in cents, without changing the shape'`, replace:
 
 ```ts
-expect(amp.amount).toBeCloseTo(0.8 * amount);
+expect(amp.amount).toBe(amount);
 ```
 
 With:
 
 ```ts
-expect(amp.base).toBeCloseTo(0.8 * (1 - amount));
-expect(amp.amount).toBeCloseTo(0.8 * amount);
+expect(amp.base).toBeCloseTo(1 - amount);
+expect(amp.amount).toBe(amount);
 ```
 
 ---
@@ -431,7 +431,7 @@ expect(amp.amount).toBeCloseTo(0.8 * amount);
 ## Known gaps
 
 - `TrackedParam` only sees writes made through its wrapper. The amp gate and `#resetEnvTarget` write `envGain`/detune directly; reads after those writes must not trust stale tracked events. Decide how to clear or re-seed the mirror when ownership changes.
-- The amp-disable regression covers preserving an existing or future release. Normal gate opening/fading and enabling the amp envelope mid-note still need coverage.
+- The amp-disable regression covers preserving an existing or future release. Gate fade rendering and enabling the amp envelope mid-note still need coverage.
 - If the amp env is enabled mid-note, the gate holds until the next note. It doesn't pick up the envelope partway through.
 
 ## Review checks before applying section 1

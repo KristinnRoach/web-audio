@@ -386,7 +386,7 @@ export class SampleVoice {
     });
 
     // Trigger amp, filter and pitch envelopes if enabled
-    this.triggerEnvelopes(timestamp, playbackRate, velocity);
+    this.triggerEnvelopes(timestamp, playbackRate);
 
     // Trigger effects
     this.#feedback?.trigger(midiNote, {
@@ -409,7 +409,7 @@ export class SampleVoice {
   }
 
   /** Trigger inputs of the current note, kept so a config edit can restart from them. */
-  #lastTrigger: { playbackRate: number; velocity?: number } | null = null;
+  #lastTrigger: { playbackRate: number } | null = null;
 
   /** The envelope's stored scale composed with the playback-rate follow, where it applies. */
   #timeScale(envType: SampleEnvelopeId, playbackRate: number) {
@@ -426,16 +426,14 @@ export class SampleVoice {
     env: Envelope,
     timestamp: number,
     playbackRate: number,
-    velocity?: number,
     fromPoint = 0,
   ) {
     if (!shouldTriggerSampleEnvelope(envType, this.#envelopeConfigs.get(envType)!)) {
-      this.#resetEnvTarget(envType, timestamp, velocity);
+      this.#resetEnvTarget(envType, timestamp, envType === 'amp');
       return;
     }
 
     const target = resolveSampleEnvelopeTrigger(envType, {
-      velocity,
       amount: this.#envelopeConfigs.get(envType)!.amount,
     });
     const timeScale = this.#timeScale(envType, playbackRate);
@@ -443,10 +441,10 @@ export class SampleVoice {
     env.trigger(timestamp, { ...target, timeScale, fromPoint });
   }
 
-  triggerEnvelopes(timestamp: number, playbackRate: number, velocity?: number) {
-    this.#lastTrigger = { playbackRate, velocity };
+  triggerEnvelopes(timestamp: number, playbackRate: number) {
+    this.#lastTrigger = { playbackRate };
     this.#envelopes.forEach((env, envType) => {
-      this.#triggerEnvelope(envType, env, timestamp, playbackRate, velocity);
+      this.#triggerEnvelope(envType, env, timestamp, playbackRate);
     });
 
     const envDurations = Object.fromEntries(
@@ -681,15 +679,13 @@ export class SampleVoice {
   // === ENVELOPES ===
 
   /** Moves a param to where it rests while its envelope is off. */
-  #resetEnvTarget = (
-    envType: SampleEnvelopeId,
-    time = this.now,
-    velocity = this.#lastTrigger?.velocity,
-  ) => {
+  #resetEnvTarget = (envType: SampleEnvelopeId, time = this.now, smooth = true) => {
     const param = this.getParam(getSampleEnvelopeParamName(envType));
     const smoothing = envType === 'amp' ? AMP_GATE_SMOOTHING_SEC : DEFAULT.CUTOFF_SMOOTHING_SEC;
     param?.cancelScheduledValues(time);
-    param?.setTargetAtTime(getSampleEnvelopeRestValue(envType, velocity), time, smoothing);
+    const value = getSampleEnvelopeRestValue(envType);
+    if (smooth) param?.setTargetAtTime(value, time, smoothing);
+    else param?.setValueAtTime(value, time);
   };
 
   /**
@@ -725,8 +721,8 @@ export class SampleVoice {
   /** Restarts an envelope from the current note's trigger inputs, for a live edit. */
   #retriggerAt(envType: SampleEnvelopeId, envelope: Envelope, at: number, fromPoint = 0) {
     if (!this.#lastTrigger) return;
-    const { playbackRate, velocity } = this.#lastTrigger;
-    this.#triggerEnvelope(envType, envelope, at, playbackRate, velocity, fromPoint);
+    const { playbackRate } = this.#lastTrigger;
+    this.#triggerEnvelope(envType, envelope, at, playbackRate, fromPoint);
   }
 
   get envelopes() {

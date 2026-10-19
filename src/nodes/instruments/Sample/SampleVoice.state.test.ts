@@ -51,7 +51,19 @@ const audio = vi.hoisted(() => {
     disconnect() {}
   }
 
-  Object.assign(globalThis, { AudioWorkletNode: FakeAudioWorkletNode, GainNode: FakeGainNode });
+  class FakeBiquadFilterNode {
+    frequency = fakeParam();
+    detune = fakeParam();
+    Q = fakeParam();
+    connect() {}
+    disconnect() {}
+  }
+
+  Object.assign(globalThis, {
+    AudioWorkletNode: FakeAudioWorkletNode,
+    GainNode: FakeGainNode,
+    BiquadFilterNode: FakeBiquadFilterNode,
+  });
   return latest;
 });
 
@@ -63,15 +75,15 @@ const fakeBuffer = () =>
     getChannelData: () => new Float32Array(8),
   }) as unknown as AudioBuffer;
 
-/** A voice with no internal chain - filters, AM and feedback are not state. */
-function newVoice() {
+/** Keep effects out of state tests unless the filter is needed. */
+function newVoice(withFilter = false) {
   audio.posted = [];
   const context = { currentTime: 0, sampleRate: SAMPLE_RATE } as unknown as AudioContext;
-  return new SampleVoice(context, { internalSignalChain: [] });
+  return new SampleVoice(context, { internalSignalChain: withFilter ? ['lpf'] : [] });
 }
 
-async function loadedVoice() {
-  const voice = newVoice();
+async function loadedVoice(withFilter = false) {
+  const voice = newVoice(withFilter);
   await voice.init();
   await voice.loadAudioData([fakeBuffer()]);
   audio.posted = [];
@@ -187,6 +199,57 @@ describe('SampleVoice state', () => {
       expect(voice.state).toBe(VoiceState.RELEASING);
       vi.advanceTimersByTime(1);
       expect(voice.state).toBe(VoiceState.AVAILABLE);
+    },
+  );
+
+  it.each([true, false])('keeps velocity out of amp gain when enabled=%s', async (enabled) => {
+    const voice = await loadedVoice();
+    voice.setEnvelopeConfig('amp', { ...createDefaultSampleEnvelopeConfig('amp', 1), enabled });
+    const gain = voice.getParam('envGain')!;
+    const peak = vi.spyOn(gain, 'exponentialRampToValueAtTime');
+    const gate = vi.spyOn(gain, 'setTargetAtTime');
+    const velocity = vi.spyOn(voice.getParam('velocity')!, 'setValueAtTime');
+
+    voice.trigger({ midiNote: 60, velocity: 64 });
+
+    expect(velocity).toHaveBeenCalledWith(64, expect.any(Number));
+    if (enabled) expect(peak).toHaveBeenCalledWith(1, expect.any(Number));
+    else expect(gate).toHaveBeenCalledWith(1, 0, expect.any(Number));
+  });
+
+  it.each(['pitch', 'filter'] as const)(
+    'resets inactive %s detune immediately at note start but smooths live disable',
+    async (id) => {
+      const voice = await loadedVoice(id === 'filter');
+      const config = createDefaultSampleEnvelopeConfig(id, 1);
+      voice.setEnvelopeConfig(id, {
+        ...config,
+        enabled: true,
+        shape: {
+          ...config.shape,
+          sustainPoint: 0,
+          releasePoint: 0,
+          points: [
+            { time: 0, value: 1 },
+            { time: 1, value: 0 },
+          ],
+        },
+      });
+      trigger(voice);
+      const detune = voice.getParam(id === 'pitch' ? 'detune' : 'lpfDetune')!;
+      const set = vi.spyOn(detune, 'setValueAtTime');
+      const target = vi.spyOn(detune, 'setTargetAtTime');
+      voice.setEnvelopeConfig(id, { ...config, enabled: false });
+      expect(target).toHaveBeenCalledWith(0, 0, expect.any(Number));
+      voice.stop();
+      detune.value = 1200;
+      set.mockClear();
+      target.mockClear();
+
+      voice.trigger({ midiNote: 60, velocity: 100, secondsFromNow: 2 });
+
+      expect(set).toHaveBeenCalledWith(0, 2);
+      expect(target).not.toHaveBeenCalled();
     },
   );
 

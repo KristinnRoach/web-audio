@@ -97,26 +97,17 @@ export function shouldTriggerSampleEnvelope(id: SampleEnvelopeId, config: Envelo
   return config.enabled && (id !== 'pitch' || hasVariation(config.shape.points));
 }
 
-/** A note without a velocity plays at full level. */
-function velocityGain(velocity?: number) {
-  return velocity === undefined ? 1 : velocity / 127;
-}
-
-/**
- * Where an envelope's param rests while that envelope is off: amp gates at the note's
- * velocity, and pitch and filter detune return to 0, leaving the note's rate and the
- * cutoff on their own params.
- */
-export function getSampleEnvelopeRestValue(id: SampleEnvelopeId, velocity?: number): number {
-  return id === 'amp' ? velocityGain(velocity) : 0;
+/** Amp rests at unity; velocity is applied once by the processor. Detune rests at zero. */
+export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
+  return id === 'amp' ? 1 : 0;
 }
 
 /** The trigger options that place a sampler envelope's shape on its param. */
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  { velocity, amount = 1 }: { velocity?: number; amount?: number } = {},
+  { amount = 1 }: { amount?: number } = {},
 ): Pick<EnvelopeTriggerOptions, 'amount' | 'curve'> {
-  if (id === 'amp') return { amount: velocityGain(velocity) * amount };
+  if (id === 'amp') return { amount };
   // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
   if (id === 'pitch') return { amount: PITCH_ENVELOPE_SEMITONES * 100 * amount, curve: 'linear' };
   return { amount: FILTER_ENVELOPE_OCTAVES * 1200 * amount, curve: 'linear' };
