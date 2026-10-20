@@ -82,9 +82,9 @@ new Envelope(clock, param, shape);
 | `release(time?)`           | Plays the release stage.                                     |
 | `stop(time?)`              | Ends the run and holds the param where it is.                |
 
-`time` is an `AudioContext` time and defaults to now. `trigger` and `release` clamp past
-times to now; `stop` currently uses the supplied time directly. Stop does not currently
-cancel an already-released tail; see [lifecycle follow-ups](KNOWN-ISSUES.md#scheduling-and-lifecycle).
+`time` is an `AudioContext` time and defaults to now. `trigger`, `release`, and `stop` clamp
+past times to now. Stop also cancels an already-released tail, holding its scheduled value
+at the stop time.
 
 A looping envelope keeps scheduling ahead on a timer until you call `release()` or `stop()`.
 

@@ -75,7 +75,7 @@ export class Envelope {
   /** The latest run's own copy; `setSustainValue` edits it in place. */
   #envShape: EnvelopeShape | undefined;
   #removeLoop: (() => void) | undefined;
-  #triggered = false;
+  #state: 'idle' | 'triggered' | 'released' = 'idle';
   #base = 0;
   #depth = 1;
   #timeScale = 1;
@@ -160,7 +160,7 @@ export class Envelope {
     time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;
     this.#stopLoop();
-    this.#triggered = true;
+    this.#state = 'triggered';
     this.#base = base;
     this.#depth = depth;
     this.#timeScale = timeScale;
@@ -242,9 +242,9 @@ export class Envelope {
 
   /** Plays the release stage from `time`, clamped to now like `trigger`. */
   release(time = this.clock.currentTime) {
-    if (!this.#triggered || !this.#envShape) return;
+    if (this.#state !== 'triggered' || !this.#envShape) return;
     time = Math.max(this.clock.currentTime, time);
-    this.#triggered = false;
+    this.#state = 'released';
     this.#stopLoop();
 
     // Hand off from the value the param will actually have at `time`, then play the tail.
@@ -309,13 +309,13 @@ export class Envelope {
     if (!Number.isFinite(time)) {
       throw new RangeError('Envelope position time must be a finite number');
     }
-    return this.#triggered ? this.#positionAt(time) : null;
+    return this.#state === 'triggered' ? this.#positionAt(time) : null;
   }
 
   /** Index of the last point reached by a live, non-looping run. */
   currentPoint(time = this.clock.currentTime) {
     if (
-      !this.#triggered ||
+      this.#state !== 'triggered' ||
       !this.#envShape ||
       this.#envShape.mode.type === 'loop' ||
       this.#envShape.points.length === 0
@@ -333,7 +333,8 @@ export class Envelope {
 
   /** Absolute time of the next cycle boundary for a live loop. */
   nextCycleTime(time = this.clock.currentTime) {
-    if (!this.#triggered || !this.#envShape || this.#envShape.mode.type !== 'loop') return null;
+    if (this.#state !== 'triggered' || !this.#envShape || this.#envShape.mode.type !== 'loop')
+      return null;
     const cycle = this.duration();
     if (cycle <= 0) return null;
 
@@ -374,7 +375,7 @@ export class Envelope {
     // timeline, so an edit or release mid-glide starts from where the glide has got to.
     if (!this.#envShape) return;
     const { points, mode, sustainPoint } = this.#envShape;
-    if (!this.#triggered || mode.type !== 'sustain') return;
+    if (this.#state !== 'triggered' || mode.type !== 'sustain') return;
     if (points[sustainPoint].value === value) return;
 
     const sustainTime =
@@ -396,8 +397,8 @@ export class Envelope {
 
   /** Ends the run at `time`, clamped to now, and holds the param there. The player stays reusable. */
   stop(time = this.clock.currentTime) {
-    if (!this.#triggered) return;
-    this.#triggered = false;
+    if (this.#state === 'idle') return;
+    this.#state = 'idle';
     this.#stopLoop();
     this.param.holdAt(Math.max(this.clock.currentTime, time));
   }
