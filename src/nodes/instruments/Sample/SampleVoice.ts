@@ -19,7 +19,6 @@ import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
 import {
-  applySampleEnvelopeShapeEdit,
   createDefaultSampleEnvelopeConfig,
   getSampleEnvelopeRestValue,
   getSampleEnvelopeIds,
@@ -410,12 +409,6 @@ export class SampleVoice {
   /** Trigger inputs of the current note, kept so a config edit can restart from them. */
   #lastTrigger: { playbackRate: number } | null = null;
 
-  /** The envelope's stored scale composed with the playback-rate follow, where it applies. */
-  #timeScale(envType: SampleEnvelopeId, playbackRate: number) {
-    const config = this.#envelopeConfigs.get(envType)!;
-    return config.timeScale * (config.playbackRateSync ? playbackRate : 1);
-  }
-
   #isEnvEnabled(envType: SampleEnvelopeId) {
     return this.#envelopeConfigs.get(envType)?.enabled ?? false;
   }
@@ -432,12 +425,11 @@ export class SampleVoice {
       return;
     }
 
-    const target = resolveSampleEnvelopeTrigger(envType, {
-      depth: this.#envelopeConfigs.get(envType)!.depth,
+    const config = this.#envelopeConfigs.get(envType)!;
+    env.trigger(timestamp, {
+      ...resolveSampleEnvelopeTrigger(envType, config, playbackRate),
+      fromPoint,
     });
-    const timeScale = this.#timeScale(envType, playbackRate);
-
-    env.trigger(timestamp, { ...target, timeScale, fromPoint });
   }
 
   triggerEnvelopes(timestamp: number, playbackRate: number) {
@@ -700,16 +692,20 @@ export class SampleVoice {
     const envelope = this.#envelopes.get(envType);
     if (!envelope) return;
     const wasEnabled = this.#isEnvEnabled(envType);
-    const apply = () => {
-      this.#envelopeConfigs.set(envType, config);
-      envelope.shape = config.shape;
-      if (config.shape.mode.type === 'sustain') {
-        envelope.setSustainValue(config.shape.points[config.shape.sustainPoint].value);
-      }
-    };
+    // Read the current run before replacing its stored shape.
+    const fromPoint =
+      config.shape.mode.type === 'loop' && envelope.shape.mode.type !== 'loop'
+        ? envelope.currentPoint()
+        : null;
+    const retriggerAt = fromPoint !== null ? this.now : envelope.nextCycleTime();
+
+    this.#envelopeConfigs.set(envType, config);
+    envelope.shape = config.shape;
+    if (config.shape.mode.type === 'sustain') {
+      envelope.setSustainValue(config.shape.points[config.shape.sustainPoint].value);
+    }
 
     if (wasEnabled && !config.enabled) {
-      apply();
       // Keep an already scheduled amp release; switching it off must not reopen the gate.
       if (envType === 'amp' && this.#state === VoiceState.RELEASING) return;
       envelope.stop();
@@ -717,17 +713,16 @@ export class SampleVoice {
       return;
     }
 
-    applySampleEnvelopeShapeEdit(envelope, config.shape, apply, (at, fromPoint) =>
-      this.#retriggerAt(envType, envelope, at, fromPoint),
-    );
+    if (retriggerAt !== null && this.#lastTrigger) {
+      this.#triggerEnvelope(
+        envType,
+        envelope,
+        retriggerAt,
+        this.#lastTrigger.playbackRate,
+        fromPoint ?? 0,
+      );
+    }
   };
-
-  /** Restarts an envelope from the current note's trigger inputs, for a live edit. */
-  #retriggerAt(envType: SampleEnvelopeId, envelope: Envelope, at: number, fromPoint = 0) {
-    if (!this.#lastTrigger) return;
-    const { playbackRate } = this.#lastTrigger;
-    this.#triggerEnvelope(envType, envelope, at, playbackRate, fromPoint);
-  }
 
   get envelopes() {
     return this.#envelopes;

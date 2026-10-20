@@ -1,14 +1,13 @@
 import {
   envelopePresets,
   setDuration,
-  type Envelope,
   type EnvelopeShape,
   type EnvelopeTriggerOptions,
 } from '@/nodes/modulators/envelope';
 import type { EnvelopeConfig } from './envelope-config';
 
 /**
- * Sampler defaults, parameter mapping and live-edit decisions.
+ * Sampler defaults, parameter mapping and trigger options.
  * Envelope owns scheduling; unfinished behavior is tracked in envelopes/KNOWN-ISSUES.md.
  */
 
@@ -97,46 +96,20 @@ export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
   return id === 'amp' ? 1 : 0;
 }
 
-/** The trigger options that place a sampler envelope's shape on its param. */
+/** Resolve sampler units and timing before handing a run to the generic scheduler. */
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
-  { depth = 1 }: { depth?: number } = {},
-): Pick<EnvelopeTriggerOptions, 'depth' | 'curve'> {
-  if (id === 'amp') return { depth };
+  config: EnvelopeConfig,
+  playbackRate: number,
+): Pick<EnvelopeTriggerOptions, 'depth' | 'curve' | 'timeScale'> {
+  const options = {
+    depth: config.depth ?? 1,
+    timeScale: config.timeScale * (config.playbackRateSync ? playbackRate : 1),
+  };
+  if (id === 'amp') return options;
   // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
-  if (id === 'pitch') return { depth: PITCH_ENVELOPE_SEMITONES * 100 * depth, curve: 'linear' };
-  return { depth: FILTER_ENVELOPE_OCTAVES * 1200 * depth, curve: 'linear' };
-}
-
-/** Applies an envelope edit at the next loop boundary, when one exists. */
-function applyOnNextEnvLoopCycle(
-  envelope: Envelope,
-  apply: () => void,
-  retrigger: (at: number) => void,
-): void {
-  const at = envelope.nextCycleTime();
-  apply();
-  if (at !== null) retrigger(at);
-}
-
-/** Applies a sampler shape edit without interrupting an existing loop mid-cycle. */
-export function applySampleEnvelopeShapeEdit(
-  envelope: Envelope,
-  nextShape: EnvelopeShape,
-  apply: () => void,
-  retrigger: (at: number, fromPoint: number) => void,
-): void {
-  // A non-looping run has no cycle boundary. When loop is switched on, resume from the
-  // last point it reached so a sustained run carries on into its first full cycle.
-  const resumeFrom =
-    nextShape.mode.type === 'loop' && envelope.shape.mode.type !== 'loop'
-      ? envelope.currentPoint()
-      : null;
-  if (resumeFrom !== null) {
-    apply();
-    retrigger(envelope.clock.currentTime, resumeFrom);
-    return;
+  if (id === 'pitch') {
+    return { ...options, depth: PITCH_ENVELOPE_SEMITONES * 100 * options.depth, curve: 'linear' };
   }
-
-  applyOnNextEnvLoopCycle(envelope, apply, (at) => retrigger(at, 0));
+  return { ...options, depth: FILTER_ENVELOPE_OCTAVES * 1200 * options.depth, curve: 'linear' };
 }

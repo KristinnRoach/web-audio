@@ -37,12 +37,20 @@ it('accepts configs with valid defaults and without depth, rejects non-finite de
 
 it('scales amplitude by depth and pitch and filter detune in cents, without changing the shape', () => {
   for (const depth of [0, 0.5, 1, -1]) {
-    const amp = resolveSampleEnvelopeTrigger('amp', { depth });
+    const amp = resolveSampleEnvelopeTrigger('amp', { ...config, depth }, 1);
     expect(amp.depth).toBe(depth);
-    const pitch = resolveSampleEnvelopeTrigger('pitch', { depth });
-    expect(pitch).toEqual({ depth: 1200 * depth, curve: 'linear' });
-    const filter = resolveSampleEnvelopeTrigger('filter', { depth });
-    expect(filter).toEqual({ depth: 12000 * depth, curve: 'linear' });
+    const pitch = resolveSampleEnvelopeTrigger('pitch', { ...config, depth }, 1);
+    expect(pitch).toEqual({
+      timeScale: 1,
+      depth: 1200 * depth,
+      curve: 'linear',
+    });
+    const filter = resolveSampleEnvelopeTrigger('filter', { ...config, depth }, 1);
+    expect(filter).toEqual({
+      timeScale: 1,
+      depth: 12000 * depth,
+      curve: 'linear',
+    });
   }
   expect(config.shape.points[1].value).toBe(0.25);
 });
@@ -57,7 +65,8 @@ it('clones signed depth without adding legacy fields', () => {
   const snapshot = cloneEnvelopeConfig({ ...config, depth: -0.5 });
   expect(snapshot.depth).toBe(-0.5);
   expect(snapshot).not.toHaveProperty('amount');
-  expect(resolveSampleEnvelopeTrigger('pitch', { depth: -0.5 })).toEqual({
+  expect(resolveSampleEnvelopeTrigger('pitch', { ...config, depth: -0.5 }, 1)).toEqual({
+    timeScale: 1,
     depth: -600,
     curve: 'linear',
   });

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { SampleVoice } from './SampleVoice';
 import { VoiceState } from '../VoiceState';
 import { createDefaultSampleEnvelopeConfig } from './sample-envelope-policy';
+import type { EnvelopeConfig } from './envelope-config';
 
 const SAMPLE_RATE = 48000;
 
@@ -254,6 +255,53 @@ describe('SampleVoice state', () => {
       expect(target).not.toHaveBeenCalled();
     },
   );
+
+  it('preserves sustain glides and loop edits with the note’s depth and rate mapping', async () => {
+    const voice = await loadedVoice();
+    const config: EnvelopeConfig = {
+      enabled: true,
+      depth: 0.5,
+      timeScale: 0.75,
+      playbackRateSync: true,
+      shape: {
+        mode: { type: 'sustain' },
+        sustainPoint: 1,
+        releasePoint: 1,
+        points: [
+          { time: 0, value: 0 },
+          { time: 0.5, value: 1 },
+          { time: 1, value: 0 },
+        ],
+      },
+    };
+    voice.setEnvelopeConfig('pitch', config);
+    const detune = voice.getParam('detune')!;
+    const ramp = vi.spyOn(detune, 'linearRampToValueAtTime');
+    const set = vi.spyOn(detune, 'setValueAtTime');
+    const envelope = voice.envelopes.get('pitch')!;
+
+    trigger(voice, 72); // Playback rate 2, so the envelope runs at 1.5x.
+    expect(ramp).toHaveBeenCalledWith(600, expect.closeTo(1 / 3, 6));
+
+    Object.assign(envelope.clock, { currentTime: 0.5 });
+    const shape = {
+      ...config.shape,
+      points: config.shape.points.map((p) => ({ ...p, value: p.value / 2 })),
+    };
+    voice.setEnvelopeConfig('pitch', { ...config, shape });
+    expect(ramp).toHaveBeenCalledWith(300, 0.52);
+
+    Object.assign(envelope.clock, { currentTime: 0.55 });
+    const loop = { ...shape, mode: { type: 'loop' as const } };
+    voice.setEnvelopeConfig('pitch', { ...config, shape: loop });
+    expect(set).toHaveBeenCalledWith(300, 0.55); // Pick up at sustain, without a new attack.
+    const boundary = 0.55 + 1 / 3;
+    expect(ramp).toHaveBeenCalledWith(0, expect.closeTo(boundary, 6));
+
+    voice.setEnvelopeConfig('pitch', { ...config, shape: loop, depth: 0.25, timeScale: 1.25 });
+    expect(ramp).toHaveBeenCalledWith(150, expect.closeTo(boundary + 0.2, 6));
+    voice.stop();
+  });
 
   it('stops rather than retriggering an active voice', async () => {
     const voice = await loadedVoice();

@@ -7,8 +7,8 @@ Code observations below are not claims that every case has been reproduced audib
 
 ## Live edits
 
-- **Point-quantized loop pickup.** `applySampleEnvelopeShapeEdit` in
-  `../../instruments/Sample/sample-envelope-policy.ts` resumes from `currentPoint()`.
+- **Point-quantized loop pickup.** `SampleVoice.setEnvelopeConfig` in
+  `../../instruments/Sample/SampleVoice.ts` resumes from `currentPoint()`.
   Mid-segment, this can jump back to the preceding point. Preserve the held-sustain
   pickup when revisiting continuous continuation; `fromPoint` currently only supports loops.
 - **Pending handover.** `Envelope.trigger` replaces its run fields immediately, even
