@@ -1,10 +1,8 @@
-import { cancelAndPinParamValue } from '@/nodes/params/audioparam-utils';
-
 import {
-  releaseEnvelope,
   scheduleEnvelope,
   schedulePoint,
   scheduleRange,
+  scheduleRelease,
   valueOf,
   type AutomatableParam,
   type ScheduleOptions,
@@ -12,10 +10,10 @@ import {
 import {
   assertValidEnvelopeShape,
   getDuration,
-  interpolateAtTime,
   type EnvelopeShape,
   type EnvelopeCurve,
 } from './envelope-shape';
+import { TrackedParam } from './tracked-param';
 
 /** The clock surface used to place envelope automation on a timeline. */
 export type EnvelopeClock = { readonly currentTime: number };
@@ -83,12 +81,15 @@ export class Envelope {
   #timeScale = 1;
   #triggerTime = 0;
   #startTime = 0;
+  /** Every write goes through this, so holds read back what was actually scheduled. */
+  readonly param: TrackedParam;
 
   constructor(
     readonly clock: EnvelopeClock,
-    readonly param: AutomatableParam,
+    param: AutomatableParam,
     shape: EnvelopeShape,
   ) {
+    this.param = new TrackedParam(param, clock);
     this.#shape = snapshot(shape);
   }
 
@@ -134,17 +135,6 @@ export class Envelope {
     }
 
     return elapsed;
-  }
-
-  /** The envelope's value at `time`, wherever the shape has got to by then. */
-  #valueAt(time: number) {
-    if (!this.#envShape) return this.#base;
-    const { points } = this.#envShape;
-    if (points.length === 0) return this.#base;
-
-    return (
-      this.#base + this.#depth * interpolateAtTime(points, points[0].time + this.#positionAt(time))
-    );
   }
 
   /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
@@ -197,7 +187,7 @@ export class Envelope {
     }
 
     // Opening mid-shape moves the anchor back to where point 0 would have been, so
-    // every cycle boundary below still lands on the same grid and `valueAt` keeps
+    // every cycle boundary below still lands on the same grid and `position` keeps
     // reading the right phase. The anchor is in the past; nothing is scheduled there.
     const from = Math.min(Math.max(options.fromPoint ?? 0, 0), points.length - 1);
     this.#triggerTime = time - getDuration(points, { toIndex: from, timeScale });
@@ -254,23 +244,16 @@ export class Envelope {
   release(time = this.clock.currentTime) {
     if (!this.#triggered || !this.#envShape) return;
     time = Math.max(this.clock.currentTime, time);
-    // Read the shape before anything touches the param, so a future-dated release hands
-    // off the value the envelope will actually have reached rather than today's.
-    const holdValue = this.#valueAt(time);
-
-    // Deliberately not stop(): its pin would write the param's stale value at exactly
-    // the instant releaseEnvelope pins the right one. The second cancel drops the first
-    // write so the timeline ends up correct either way, but only one of them is true.
     this.#triggered = false;
     this.#stopLoop();
 
-    releaseEnvelope(
-      this.param,
-      this.#envShape,
-      time,
-      { base: this.#base, depth: this.#depth, timeScale: this.#timeScale },
-      holdValue,
-    );
+    // Hand off from the value the param will actually have at `time`, then play the tail.
+    const holdValue = this.param.holdAt(time);
+    scheduleRelease(this.param, this.#envShape, time, holdValue, {
+      base: this.#base,
+      depth: this.#depth,
+      timeScale: this.#timeScale,
+    });
   }
 
   /** Full duration of the latest run at its time scale; before any run, `shape` at 1. */
@@ -374,9 +357,8 @@ export class Envelope {
     // sustained run schedules points 0..sustain and stops, so the hold is not an event
     // but the absence of events, and nothing after it has to be rescheduled.
     //
-    // The point is mutated in place because `valueAt` and `releaseEnvelope` read the same
-    // object; without that the note-off handoff would pin the old value and jump. The
-    // player owns that clone, so nobody else sees the write.
+    // The point is mutated in place so `scheduleRelease` and later edits read the new
+    // sustain level. The player owns that clone, so nobody else sees the write.
     //
     // A run that has not reached its sustain point yet is left alone. Up to that instant
     // the points between here and sustain are still queued, and cancelling to write the new
@@ -386,13 +368,9 @@ export class Envelope {
     // queued: the edit reaches the note only through the caller's stored shape, on the
     // next trigger.
     //
-    // The cancel is what makes a fast drag safe: a second ramp ending before the first one
-    // would otherwise re-target the old value on the way past.
-    //
-    // ponytail: releasing mid-glide pins the shape's value, which is the glide's target
-    // rather than where it has actually got to, so a note-off inside the glide window can
-    // step by up to the edit distance. Inaudible while `glide` stays short. Track the
-    // pending glide in `valueAt` if a long one is ever wanted.
+    // The hold is what makes a fast drag safe: a second ramp ending before the first one
+    // would otherwise re-target the old value on the way past. It reads the scheduled
+    // timeline, so an edit or release mid-glide starts from where the glide has got to.
     if (!this.#envShape) return;
     const { points, mode, sustainPoint } = this.#envShape;
     if (!this.#triggered || mode.type !== 'sustain') return;
@@ -404,11 +382,9 @@ export class Envelope {
 
     if (time < sustainTime) return;
 
-    // Read the outgoing shape before mutating it, the same ordering release() follows.
-    const holdValue = this.#valueAt(time);
     (points[sustainPoint] as { value: number }).value = value;
 
-    cancelAndPinParamValue(this.param, time, holdValue);
+    this.param.holdAt(time);
     schedulePoint(
       this.param,
       valueOf(points, sustainPoint, 0, sustainPoint, this.#base, this.#depth),
@@ -417,11 +393,11 @@ export class Envelope {
     );
   }
 
-  /** Ends the run at `time` and pins the param there. The player stays reusable. */
+  /** Ends the run at `time`, clamped to now, and holds the param there. The player stays reusable. */
   stop(time = this.clock.currentTime) {
     if (!this.#triggered) return;
     this.#triggered = false;
     this.#stopLoop();
-    cancelAndPinParamValue(this.param, time);
+    this.param.holdAt(Math.max(this.clock.currentTime, time));
   }
 }
