@@ -1,5 +1,58 @@
 # @kidlib/web-audio
 
+## 0.7.0
+
+### Minor Changes
+
+- 17d69ea: Sampler envelopes:
+
+  - A disabled amp envelope plays the note as a gate (unity while held, ~10 ms fade on release) instead of going silent.
+  - Velocity is applied once. It was applied twice before, which made soft notes too quiet.
+  - Pitch and filter envelopes now modulate detune, so changing cutoff, glide or keytracking no longer overwrites a running envelope. When disabled, they reset detune to 0 on every trigger.
+  - `EnvelopeConfig` accepts an optional `depth` (default 1: gain for amp, 1200 cents for pitch, 12000 cents for filter).
+
+- 28a7c66: Loop modes:
+
+  - Inverted loop points (start after end) now loop backward. They used to loop forward over the same region.
+  - `SamplePlayer.setLoopPingPong(true)` turns loops around at both edges.
+  - Modes are relative to the voice direction. `loop:range` reports `loopMode` (`'forward' | 'backward' | 'pingPong'`).
+
+- 0a28979: Loop snapping to the scale runs in the audio processor.
+
+  - New per-voice `loop:range` (`{ voiceId, midiNote, loopStart, loopEnd, loopMode }`) and `trim:range` (`{ voiceId, midiNote, startPoint, endPoint, inverted }`) messages report what a voice actually plays, in seconds. Key on `voiceId` and drop it on `voice:stopped`. `loop-points:updated` and the point getters still report raw values.
+  - `voice:started` includes `voiceId`. Lifecycle messages no longer include the `voice` object; use `voiceId` and `midiNote`.
+  - `setScale()`: the `normalize` option is removed, invalid options throw `RangeError`, and the default scale starts at C1 (pass `lowestOctave: 0` for the old range).
+  - `setLoopRampDuration()` sets the glide time constant between snapped loop lengths (`0` = stepped, default `0.125`). `samplerParams.loopRampDuration` is now 0–0.5 s, linear. The `rampTime` argument is removed from `setLoopStart()`, `setLoopEnd()` and `setLoopDuration()`.
+  - `scrollLoopPoints(start)` replaces the two-argument form.
+  - `getAudioParam()` returns `null`.
+
+- 0b2ce83: Sampler pitch LFO modulates `detune` instead of `playbackRate`, so its interval no longer depends on the base rate. `player.pitchLFO.setDepth()` now takes cents; the `pitchLFODepth` control keeps its normalized 0–1 value and displays its mapped depth in cents (0–200), with a curve of 2. The pitch LFO now defaults to a sine wave. LFO rate controls show their value in Hz, and the amp LFO rate control default is 0.05 (5.1 Hz).
+- b86ffc4: Loop and trim points no longer clamp against each other.
+
+  - Setters store values as given, clamped only to the sample length. Getters and `loop-points:updated` return the raw values, and start can be past end. Drop any app-side clamping.
+  - Playback accepts either order. Inverted trim plays backward and inverted loop points loop backward. `cropSample` accepts either order.
+
+- 17d69ea: API removals:
+
+  - `SamplePlayer`: `mainOut` → `output`, `panic` → `releaseAll`, `sustainPedalOn`/`Off` → `setSustainPedal`. `outBus`/`outputBus` → effect setters (`setDistortionMacro`, `setDrive`, `setClippingMacro`, `setDelayTime`, `setDelayFeedback`). `voicePool` and `setLoopPoint` are now private; use `setLoopStart`/`setLoopEnd`/`setLoopDuration`.
+  - `SamplePlayer.freezeActiveVoices`, `randomizeVelocity`, `debugcounter` and `isNormalized` are removed, as is `Recorder.init()`.
+  - `inputController`: `registerNoteTarget` → `onNoteOn`/`onNoteOff`, and `midiSupported`/`supportInfo` → `getMidiSupportInfo()`.
+  - `sendUpstreamMessage` is now private everywhere.
+  - `setLoopEnabled` reapplies the value even when it is unchanged, which restores loop state after loading.
+
+- 8771468: - `SamplePlayer.enablePositionTracking(true)` emits per-voice `voice:position` (`{ voiceId, midiNote, position }`, 0..1, ~60/s). It is off by default.
+  - `voice:releasing` carries `releaseDuration` in seconds.
+  - The `releaseTime` argument is removed from `releaseAll`, `SampleVoicePool.noteOff`/`allNotesOff` and `SampleVoice.release`. Release timing comes from the amp envelope.
+
+### Patch Changes
+
+- cf8c4ad: Short pitched loops follow loop point changes and scale-snap glides per sample instead of once per render block.
+- 0a28979: Turning the loop off no longer releases playing voices. They play on through the trim range.
+- ccb4ff9: Releasing a note during an exponential envelope attack no longer clicks: release, stop and sustain edits now hold the value the param is actually at, including mid-glide and for future-dated times.
+- cfe7d97: Reverse playback now reads the sample at the playhead, not one sample behind.
+- 17d69ea: Export `samplerParamPosition`. Unitless param readouts show knob position as a percentage. `loopDurationDrift` uses `curve: 2` with a default of 0.07, and `loopStart`/`loopEnd` precision goes from 0.0001 to 0.00001.
+- 0a28979: Parameter changes on worklet nodes glide with a 5 ms time constant by default instead of stepping, to avoid clicks.
+
 ## 0.6.2
 
 ### Patch Changes
