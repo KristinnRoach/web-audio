@@ -351,6 +351,7 @@ export class Envelope {
    * point is honoured may all change. The stored `shape` is never touched.
    */
   setSustainValue(value: number, time = this.clock.currentTime, glide = 0.02) {
+    time = Math.max(this.clock.currentTime, time);
     // Current behaviour, not contract:
     //
     // The one envelope input that is still editable once the run is on the timeline: a

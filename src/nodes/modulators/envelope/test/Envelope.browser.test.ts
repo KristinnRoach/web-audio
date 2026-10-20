@@ -56,3 +56,28 @@ test('a release mid exponential attack hands off without a step', async () => {
   );
   expect(largestStep).toBeLessThan(0.001);
 });
+
+test('a sustain edit with a past timestamp starts its glide now', async () => {
+  const ctx = new OfflineAudioContext(1, SAMPLE_RATE * 0.5, SAMPLE_RATE);
+  const source = new ConstantSourceNode(ctx, { offset: 0 });
+  source.connect(ctx.destination);
+  source.start();
+  const envelope = new Envelope(ctx, source.offset, exponentialAttack);
+  envelope.trigger(0);
+
+  const suspended = ctx.suspend(0.2);
+  const rendering = ctx.startRendering();
+  await suspended;
+  const now = ctx.currentTime;
+  envelope.setSustainValue(0, 0.15, 0.2);
+  const times = [now, now + 0.1, now + 0.2];
+  const expected = [1, 0.5, 0];
+  const tracked = times.map((time) => envelope.param.valueAt(time));
+
+  await ctx.resume();
+  const data = (await rendering).getChannelData(0);
+  times.forEach((time, i) => {
+    expect(tracked[i]).toBeCloseTo(expected[i], 3);
+    expect(data[sampleAt(time)]).toBeCloseTo(expected[i], 3);
+  });
+});
