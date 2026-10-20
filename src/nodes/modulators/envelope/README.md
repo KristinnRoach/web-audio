@@ -6,7 +6,7 @@ then trigger and release it. See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for all defe
 `Envelope` owns parameter scheduling and per-trigger snapshots. `SamplePlayer` owns
 editable configs; `SampleVoice` applies them using
 [`sample-envelope-policy.ts`](../../instruments/Sample/sample-envelope-policy.ts) for
-defaults, parameter mapping and live-edit decisions.
+defaults, parameter mapping and trigger options. Live-edit decisions stay in `SampleVoice`.
 
 ```ts
 import { Envelope } from '@/nodes/modulators/envelope';
