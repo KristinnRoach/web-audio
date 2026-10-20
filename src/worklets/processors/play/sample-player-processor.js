@@ -1185,7 +1185,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (this.usePlaybackPosition) {
       this.#postRange(
         'voice:position',
-        { position: this.#samplesToNormalized(this.playbackPosition) },
+        { position: Math.max(0, Math.min(1, this.#samplesToNormalized(this.playbackPosition))) },
         1 / 60,
       );
     }
