@@ -83,8 +83,9 @@ describe('Device Access Utils', () => {
       expect(getUserMediaMock).toHaveBeenCalledWith({
         audio: {
           echoCancellation: false,
-          noiseSuppression: true,
-          autoGainControl: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+          voiceIsolation: false,
           deviceId: { exact: 'input-123' },
         },
       });
@@ -103,8 +104,9 @@ describe('Device Access Utils', () => {
       expect(getUserMediaMock).toHaveBeenLastCalledWith({
         audio: {
           echoCancellation: false,
-          noiseSuppression: true,
-          autoGainControl: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+          voiceIsolation: false,
         },
       });
       consoleSpy.mockRestore();

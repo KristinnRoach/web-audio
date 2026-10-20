@@ -26,10 +26,11 @@ export async function getMIDIAccess(): Promise<MIDIAccess> {
 
 // Audio Input (Microphone)
 export async function getMicrophone(
-  constraints: MediaTrackConstraints = {
+  constraints: MediaTrackConstraints & { voiceIsolation?: ConstrainBoolean } = {
     echoCancellation: false,
-    noiseSuppression: true, // ?
-    autoGainControl: true, // ?
+    autoGainControl: false,
+    noiseSuppression: false,
+    voiceIsolation: false,
   },
   deviceId = '',
 ): Promise<MediaStream> {
