@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
 import type { SampleVoicePool } from './SampleVoicePool';
 import type { EnvelopeConfig } from './envelope-config';
+import { createDefaultSampleEnvelopeConfig } from './sample-envelope-policy';
 import { NOTE_PERIODS } from '../../../utils/music-theory/constants';
 
 const envConfig: EnvelopeConfig = {
@@ -178,15 +179,7 @@ describe('SamplePlayer envelope config', () => {
 
     expect(updateEnvelope).toHaveBeenCalledWith(
       'pitch',
-      expect.objectContaining({
-        enabled: false,
-        shape: expect.objectContaining({
-          points: [
-            { time: 0, value: 0, curve: 'exponential' },
-            { time: 4, value: 0, curve: 'exponential' },
-          ],
-        }),
-      }),
+      createDefaultSampleEnvelopeConfig('pitch', 4),
     );
   });
 

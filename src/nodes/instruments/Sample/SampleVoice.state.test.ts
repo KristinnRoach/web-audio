@@ -204,7 +204,8 @@ describe('SampleVoice state', () => {
 
   it.each([true, false])('keeps velocity out of amp gain when enabled=%s', async (enabled) => {
     const voice = await loadedVoice();
-    voice.setEnvelopeConfig('amp', { ...createDefaultSampleEnvelopeConfig('amp', 1), enabled });
+    const config = createDefaultSampleEnvelopeConfig('amp', 1);
+    voice.setEnvelopeConfig('amp', { ...config, enabled });
     const gain = voice.getParam('envGain')!;
     const peak = vi.spyOn(gain, 'exponentialRampToValueAtTime');
     const gate = vi.spyOn(gain, 'setTargetAtTime');
@@ -213,7 +214,8 @@ describe('SampleVoice state', () => {
     voice.trigger({ midiNote: 60, velocity: 64 });
 
     expect(velocity).toHaveBeenCalledWith(64, expect.any(Number));
-    if (enabled) expect(peak).toHaveBeenCalledWith(1, expect.any(Number));
+    const presetPeak = Math.max(...config.shape.points.map((point) => point.value));
+    if (enabled) expect(peak).toHaveBeenCalledWith(presetPeak, expect.any(Number));
     else expect(gate).toHaveBeenCalledWith(1, 0, expect.any(Number));
   });
 

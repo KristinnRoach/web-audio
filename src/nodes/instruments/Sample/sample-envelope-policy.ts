@@ -65,15 +65,15 @@ export function createDefaultSampleEnvelopeConfig(
     case 'pitch':
       return {
         depth: 1,
-        enabled: false,
+        enabled: true,
         timeScale: 1,
         playbackRateSync: false,
         shape: flatPitchShape(durationSeconds),
       };
     case 'filter':
       return {
-        depth: 1,
-        enabled: false,
+        depth: 0.5,
+        enabled: true,
         timeScale: 1,
         playbackRateSync: false,
         shape: envelopePresets.filter(durationSeconds),

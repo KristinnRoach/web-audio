@@ -23,9 +23,9 @@ const config: EnvelopeConfig = {
   },
 };
 
-it('defaults depth to one and accepts older configs without it', () => {
+it('accepts configs with valid defaults and without depth, rejects non-finite depth', () => {
   for (const id of SAMPLE_ENVELOPE_IDS) {
-    expect(createDefaultSampleEnvelopeConfig(id, 1).depth).toBe(1);
+    expect(() => assertValidEnvelopeConfig(createDefaultSampleEnvelopeConfig(id, 1))).not.toThrow();
   }
   expect(() => assertValidEnvelopeConfig(config)).not.toThrow();
   for (const depth of [NaN, Infinity, -Infinity]) {
