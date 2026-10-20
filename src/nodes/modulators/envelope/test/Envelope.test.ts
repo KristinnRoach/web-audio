@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, test, vi } from 'vite-plus/test';
 import { Envelope } from '../Envelope';
-import { releaseEnvelope, scheduleEnvelope } from '../envelope-scheduling';
+import { scheduleEnvelope, scheduleRelease } from '../envelope-scheduling';
 import type { EnvelopeShape } from '../envelope-shape';
 import { createFakeParam } from './fakeParam';
 
@@ -39,9 +39,8 @@ test('schedules through sustain, then schedules the remaining points on release'
     time: 10.8,
   });
 
-  releaseEnvelope(param, envelope, 20);
+  scheduleRelease(param, envelope, 20, 0.5);
 
-  expect(param.events).toContainEqual({ type: 'cancel', time: 20 });
   expect(param.ramps()).toContainEqual({
     type: 'linear',
     value: 0,
@@ -103,7 +102,7 @@ test('keeps an exponential segment off zero at both ends', () => {
     time: 10.005,
   });
 
-  releaseEnvelope(param, envelope, 20, { depth: 20000 });
+  scheduleRelease(param, envelope, 20, 20000, { depth: 20000 });
 
   expect(param.ramps()).toContainEqual({
     type: 'exponential',
@@ -479,7 +478,7 @@ test('timeScale speeds up both the sustaining stage and the release', () => {
     time: 10.1,
   });
 
-  releaseEnvelope(param, envelope, 20, { timeScale: 2 });
+  scheduleRelease(param, envelope, 20, 0.5, { timeScale: 2 });
   expect(param.ramps()).toContainEqual({
     type: 'linear',
     value: 0,
@@ -846,10 +845,11 @@ describe('re-triggering one player', () => {
     player.setSustainValue(0.25);
     expect(param.ramps().at(-1)).toEqual({ type: 'linear', value: 0.25, time: 1.02 });
 
-    // The tail has to hand off from the edited value, not the one captured at trigger.
-    // The glide's own pin sits at this same instant, so it is the last write that counts.
-    player.release(1);
-    const pins = param.ramps().filter((event) => event.type === 'set' && event.time === 1);
+    // Once the glide lands, the tail hands off from the edited value, not the one
+    // captured at trigger.
+    clock.currentTime = 1.1;
+    player.release();
+    const pins = param.ramps().filter((event) => event.type === 'set' && event.time === 1.1);
     expect(pins.at(-1)?.value).toBe(0.25);
   });
 
@@ -947,4 +947,58 @@ test('signed depth schedules identically and invalid depth leaves an active run 
     expect(() => env.trigger(0, options)).toThrow(TypeError);
     expect(param.ramps()).toEqual(before);
   }
+});
+
+describe('holds read the scheduled timeline', () => {
+  /** Attack 0 -> 1 exponential over 10 ms, sustain at 1, linear release to 0. */
+  const exponentialAttack: EnvelopeShape = {
+    points: [
+      { time: 0, value: 0, curve: 'exponential' },
+      { time: 0.01, value: 1 },
+      { time: 0.1, value: 0 },
+    ],
+    mode: { type: 'sustain' },
+    sustainPoint: 1,
+    releasePoint: 1,
+  };
+
+  /** The last value written at exactly `time`, which is what the param holds from there. */
+  const pinAt = (param: ReturnType<typeof createFakeParam>, time: number) =>
+    param
+      .ramps()
+      .filter((event) => event.type === 'set' && event.time === time)
+      .at(-1)?.value;
+
+  test('a release mid exponential attack pins where the ramp actually is', () => {
+    const param = createFakeParam();
+    const env = new Envelope({ currentTime: 0 }, param, exponentialAttack);
+    env.trigger(0);
+    env.release(0.005);
+
+    // The ramp starts on the 1e-4 floor, so halfway it is at sqrt(1e-4 * 1) = 0.01.
+    // The shape reading 0.5 there is a ~0.49 step in one sample.
+    expect(pinAt(param, 0.005)).toBeCloseTo(0.01, 6);
+  });
+
+  test('a release mid sustain glide pins where the glide has got to', () => {
+    const param = createFakeParam();
+    const clock = { currentTime: 0 };
+    const env = new Envelope(clock, param, exponentialAttack);
+    env.trigger(0);
+    clock.currentTime = 0.05;
+    env.setSustainValue(0.5, 0.05, 0.02);
+    env.release(0.06);
+
+    // Halfway through a linear glide 1 -> 0.5.
+    expect(pinAt(param, 0.06)).toBeCloseTo(0.75, 6);
+  });
+
+  test('a future stop pins the value at that time, not the current one', () => {
+    const param = createFakeParam();
+    const env = new Envelope({ currentTime: 0 }, param, exponentialAttack);
+    env.trigger(0);
+    env.stop(0.02);
+
+    expect(pinAt(param, 0.02)).toBeCloseTo(1, 6);
+  });
 });

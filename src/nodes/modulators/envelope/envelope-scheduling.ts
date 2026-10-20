@@ -1,5 +1,3 @@
-import { cancelAndPinParamValue } from '@/nodes/params/audioparam-utils';
-
 import {
   getDuration,
   type EnvelopeCurve,
@@ -149,37 +147,30 @@ export function scheduleEnvelope(
 }
 
 /**
- * Holds `holdValue` at `releaseTime`, then schedules the points after `releasePoint`
- * at their time differences from `points[releasePoint].time`.
- *
- * ponytail: pins a value rather than calling `cancelAndHoldAtTime`, which Firefox
- * still has not implemented (bugzil.la/1308431). Without `holdValue` it falls back to
- * `param.value`, which is only accurate for now; the player passes the analytic
- * value so a `releaseTime` in the future hands off correctly.
+ * Schedules the points after `releasePoint` from `releaseTime`, at their time differences
+ * from `points[releasePoint].time`. The param must already hold `holdValue` at
+ * `releaseTime`; holding is the caller's job (`TrackedParam.holdAt`), since only the
+ * caller knows what was scheduled before.
  */
-export function releaseEnvelope(
+export function scheduleRelease(
   param: AutomatableParam,
   envelope: EnvelopeShape,
   releaseTime: number,
+  holdValue: number,
   options: ScheduleOptions = {},
-  holdValue?: number,
 ) {
   const { base = 0, depth = 1, timeScale = 1 } = options;
   const from = envelope.releasePoint;
-
   const { points } = envelope;
-  const exponentialOut = points[from].curve === 'exponential';
 
   // An exponential first segment cannot leave zero, so the handoff is floored the same
-  // way the point values are. Without a holdValue there is nothing to floor yet.
-  const pinned =
-    holdValue !== undefined && exponentialOut ? floorOffZero(holdValue, depth) : holdValue;
-
-  cancelAndPinParamValue(param, releaseTime, pinned);
+  // way the point values are.
+  const startValue =
+    points[from].curve === 'exponential' ? floorOffZero(holdValue, depth) : holdValue;
+  if (startValue !== holdValue) param.setValueAtTime(startValue, releaseTime);
 
   const last = points.length - 1;
-  // Without a holdValue the pinned value is unknown here; the release point stands in for it.
-  let previous = pinned ?? valueOf(points, from, from, last, base, depth);
+  let previous = startValue;
   for (let index = from + 1; index <= last; index++) {
     const value = valueOf(points, index, from, last, base, depth);
     schedulePoint(

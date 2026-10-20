@@ -17,9 +17,9 @@ Code observations below are not claims that every case has been reproduced audib
   continue targeting the same pending boundary. A boundary alone does not guarantee
   continuity if the new shape's opening value differs.
 - **Sustain glide.** `Envelope.setSustainValue` only responds after sustain is reached.
-  It changes the run's point immediately; release or another edit during the glide
-  reads the target rather than the intermediate value. Sustain-index and mid-attack
-  changes remain next-trigger edits. Preserve the trigger snapshot for the release tail.
+  It changes the run's point immediately. Sustain-index and mid-attack
+  changes remain next-trigger edits. A release or edit during the glide holds the
+  glide's current value. Preserve the trigger snapshot for the release tail.
   Rescheduling the rest of the attack from the current position was tried for
   mid-attack edits and still stepped audibly.
 - **Pitch envelope and disabled pitch.** The pitch envelope drives the sample worklet's
@@ -35,18 +35,13 @@ Code observations below are not claims that every case has been reproduced audib
 
 - **Release-tail cleanup.** `Envelope.release` clears `#triggered`, so a subsequent
   `stop()` does not cancel the tail. Revisit alongside sampler disable, reuse and disposal.
-- **Release-value agreement.** Release, sustain edits and stop pin `#valueAt`, which
-  re-derives the value from the shape (`interpolateAtTime`). The param plays what the
-  scheduler wrote: zero endpoints floored by `floorOffZero`, exponential ramps on param
-  values rather than shape values. They disagree for an exponential segment leaving 0 or a
-  nonzero `base`: releasing halfway through a 0 to 1 exponential attack pins 0.5 while the
-  param is near 0.01, a click. Planned fix: wrap the param in a `TrackedParam` that records
-  scheduled events and evaluates them with the spec's automation formulas, as Tone.js
-  `Param` does, and read every hold from it. Zero crossings already agree (`rampCurve`).
-  Also check that cancelling a future ramp preserves the trajectory before note-off.
+- **Writes outside the envelope.** Holds read `TrackedParam`, which only sees automation
+  scheduled through it. `SampleVoice` writes the same params directly while an envelope is
+  off (`#resetEnvTarget`, the amp gate); that is safe only because the envelope never reads
+  while it is not running. Keep it that way, or route those writes through the wrapper.
 - **Future commands.** Releasing or stopping a loop removes its refill callback
   immediately, even if the requested time is beyond the queued horizon. `stop(time)`
-  also pins today's parameter value rather than a value evaluated at that future time.
+  pins the value the scheduled timeline has at that time.
 - **Validation.** Shape, time scale, base and depth are validated before trigger mutation, but
   timestamps, pickup indices and sustain-glide inputs are not consistently checked. Invalid inputs should eventually leave the existing run untouched.
 - **Reported loop drift.** The cause remains unconfirmed. The existing 3,001-cycle
