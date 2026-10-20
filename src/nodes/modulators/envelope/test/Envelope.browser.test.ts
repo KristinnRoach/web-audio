@@ -57,6 +57,23 @@ test('a release mid exponential attack hands off without a step', async () => {
   expect(largestStep).toBeLessThan(0.001);
 });
 
+test('stop preserves a release ramp until the stop time, then holds its value', async () => {
+  const { data } = await render((envelope) => {
+    envelope.trigger(0);
+    envelope.release(0.03);
+    envelope.stop(0.055);
+  });
+
+  for (const [time, value] of [
+    [0.025, 1],
+    [0.04, 0.8],
+    [0.055, 0.5],
+    [0.09, 0.5],
+  ]) {
+    expect(data[sampleAt(time)]).toBeCloseTo(value, 3);
+  }
+});
+
 test('a sustain edit with a past timestamp starts its glide now', async () => {
   const ctx = new OfflineAudioContext(1, SAMPLE_RATE * 0.5, SAMPLE_RATE);
   const source = new ConstantSourceNode(ctx, { offset: 0 });

@@ -1001,4 +1001,24 @@ describe('holds read the scheduled timeline', () => {
 
     expect(pinAt(param, 0.02)).toBeCloseTo(1, 6);
   });
+
+  test.each([
+    [0.005, 0.01],
+    [0.065, 0.5],
+  ])('stop at %s cancels a scheduled release and relinquishes automation', (stopAt, value) => {
+    const param = createFakeParam();
+    const env = new Envelope({ currentTime: 0 }, param, exponentialAttack);
+    env.trigger(0);
+    env.release(0.02);
+    env.stop(stopAt);
+
+    expect(pinAt(param, stopAt)).toBeCloseTo(value, 6);
+    expect(env.param.valueAt(0.2)).toBeCloseTo(value, 6);
+
+    // Once stopped, later cleanup must leave the sampler's gate/reset writes alone.
+    param.setValueAtTime(0.75, 0.2);
+    const eventCount = param.events.length;
+    env.stop(0.3);
+    expect(param.events).toHaveLength(eventCount);
+  });
 });

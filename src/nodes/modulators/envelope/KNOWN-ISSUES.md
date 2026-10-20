@@ -33,8 +33,6 @@ Code observations below are not claims that every case has been reproduced audib
 
 ## Scheduling and lifecycle
 
-- **Release-tail cleanup.** `Envelope.release` clears `#triggered`, so a subsequent
-  `stop()` does not cancel the tail. Revisit alongside sampler disable, reuse and disposal.
 - **Writes outside the envelope.** Holds read `TrackedParam`, which only sees automation
   scheduled through it. `SampleVoice` writes the same params directly while an envelope is
   off (`#resetEnvTarget`, the amp gate); that is safe only because the envelope never reads
