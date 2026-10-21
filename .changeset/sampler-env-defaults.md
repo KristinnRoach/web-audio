@@ -2,4 +2,6 @@
 '@kidlib/web-audio': patch
 ---
 
-Tweak envelope default settings for SamplePlayer.
+SamplePlayer envelopes: Tweak default settings.
+
+samplerParams: Make loopDuration bipolar (normalized -1 to 1).

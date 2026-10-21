@@ -62,10 +62,10 @@ const hzOrKhz = (v: number) => (v >= 1000 ? kHz(v) : hz(v));
 const seconds = (v: number, duration: number) => `${(v * duration).toFixed(2)}s`;
 const milliseconds = (v: number, duration: number) => {
   const ms = v * duration * 1000;
-  return `${ms.toFixed(ms < 10 ? 1 : 0)}ms`;
+  return `${ms.toFixed(Math.abs(ms) < 10 ? 1 : 0)}ms`;
 };
 const secondsOrMilliseconds = (v: number, duration: number) =>
-  v * duration < 1 ? milliseconds(v, duration) : seconds(v, duration);
+  Math.abs(v * duration) < 1 ? milliseconds(v, duration) : seconds(v, duration);
 
 function defineSamplerParams<K extends string>(
   definitions: Record<K, SamplerParamDescriptor>,
@@ -294,7 +294,7 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.pitchLFO?.setDepth(v * PITCH_LFO_MAX_CENTS),
   },
 
-  // Trim / loop. Normalized 0..1 as a fraction of the loaded sample's duration:
+  // Trim / loop. Fractions of the loaded sample's duration (loop length is signed):
   // apply() converts to seconds, so the control range never depends on the sample.
   trimStart: {
     label: 'Start',
@@ -336,10 +336,10 @@ export const samplerParams = defineSamplerParams({
   },
   loopDuration: {
     label: 'Loop Length',
-    min: 0,
+    min: -1,
     max: 1,
     defaultValue: 1,
-    curve: 4,
+    curve: 1,
     format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopDuration(v * p.sampleDuration),
   },
