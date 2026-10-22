@@ -1,5 +1,14 @@
 # @kidlib/web-audio
 
+## 0.7.1
+
+### Patch Changes
+
+- aed8207: Disable browser noise suppression and automatic gain control by default to preserve microphone recording clarity.
+- 3e2d87f: SamplePlayer envelopes: Tweak default settings.
+
+  samplerParams: Make loopDuration bipolar (normalized -1 to 1).
+
 ## 0.7.0
 
 ### Minor Changes
