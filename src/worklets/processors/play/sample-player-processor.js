@@ -48,7 +48,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.usePlaybackPosition = false;
     this.enableLoopSmoothing = true; // Crossfade between loop points
     this.enableAdaptiveDrift = true; // Adaptive drift scaling based on loop duration
-    this.enableAmplitudeCompensation = true; // Automatic makeup gain for short loops
+    this.enableAmplitudeCompensation = false; // Automatic makeup gain for short loops
     this.syncLoopToTempo = false; // Todo: add controls for interactive testing
     // Ping-pong turns around at both loop edges and overrides loop point order.
     this.loopPingPong = false;
@@ -1138,8 +1138,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           }
         }
 
+        const loopGain = isWithinLoop ? amplitudeGain : 1;
         const finalSample =
-          interpolatedSample * velocityGain * envelopeGain * masterGain * amplitudeGain * tailGain;
+          interpolatedSample * velocityGain * envelopeGain * masterGain * loopGain * tailGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;
