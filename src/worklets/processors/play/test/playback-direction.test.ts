@@ -8,7 +8,6 @@ const toSeconds = (samples: number) => samples / TEST_SAMPLE_RATE;
 
 type DirectionProcessor = {
   enableLoopSmoothing: boolean;
-  enableAmplitudeCompensation: boolean;
   isPlaying: boolean;
   port: { onmessage: ((event: MessageEvent) => void) | null };
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: unknown): boolean;
@@ -18,7 +17,6 @@ async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPon
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as DirectionProcessor;
   processor.enableLoopSmoothing = false;
-  processor.enableAmplitudeCompensation = false;
   const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
 
   send({

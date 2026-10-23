@@ -38,7 +38,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // Only set properties that should persist across resets.
     // audioData[0] is the authority: every buffer-derived range (duration, playback
-    // range, loop amplitude, click compensation) reads it via the `buffer`
+    // range, click compensation) reads it via the `buffer`
     // getter below. Extra entries only contribute samples to the mix.
     this.audioData = [];
     this.audioDataGain = 1;
@@ -48,7 +48,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.usePlaybackPosition = false;
     this.enableLoopSmoothing = true; // Crossfade between loop points
     this.enableAdaptiveDrift = true; // Adaptive drift scaling based on loop duration
-    this.enableAmplitudeCompensation = false; // Automatic makeup gain for short loops
     this.syncLoopToTempo = false; // Todo: add controls for interactive testing
     // Ping-pong turns around at both loop edges and overrides loop point order.
     this.loopPingPong = false;
@@ -64,8 +63,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopRampDuration = 0.125;
     this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
     this.loopGlideLogLength = null;
-
-    this.AMPLITUDE_COMPENSATION_THRESHOLD = Math.floor(sampleRate / 65.406);
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -271,11 +268,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
     this.nextDriftGenerated = false;
-
-    // Amplitude compensation for short loops
-    this.loopAmplitudeGain = 1.0;
-    this.lastAnalyzedLoopStart = -1;
-    this.lastAnalyzedLoopEnd = -1;
 
     this.durationPreserver.reset();
   }
@@ -768,70 +760,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type, ...range, triggerId: this.triggerId });
   }
 
-  /**
-   * Analyze loop amplitude and calculate makeup gain for short loops
-   * @param {number} loopStart - Loop start position in samples
-   * @param {number} loopEnd - Loop end position in samples
-   * @returns {number} - Makeup gain multiplier (1.0 = no change)
-   */
-  #analyzeLoopAmplitude(loopStart, loopEnd) {
-    if (!this.enableAmplitudeCompensation || !this.buffer || !this.buffer[0]) {
-      return 1.0;
-    }
-
-    const loopDuration = loopEnd - loopStart;
-
-    // Only analyze very short loops
-    if (loopDuration >= this.AMPLITUDE_COMPENSATION_THRESHOLD) {
-      return 1.0;
-    }
-
-    // Skip if we already analyzed this exact loop range
-    if (loopStart === this.lastAnalyzedLoopStart && loopEnd === this.lastAnalyzedLoopEnd) {
-      return this.loopAmplitudeGain;
-    }
-
-    // Calculate RMS amplitude of the loop
-    let sumSquares = 0;
-    let sampleCount = 0;
-
-    // Analyze first channel only for simplicity
-    const channel = this.buffer[0];
-    const startIndex = Math.floor(loopStart);
-    const endIndex = Math.floor(loopEnd);
-
-    for (let i = startIndex; i < endIndex && i < channel.length; i++) {
-      const sample = channel[i];
-      sumSquares += sample * sample;
-      sampleCount++;
-    }
-
-    if (sampleCount === 0) return 1.0;
-
-    const rmsAmplitude = Math.sqrt(sumSquares / sampleCount);
-
-    // if the amplitude is below the target, we apply makeup gain to bring it closer
-    const targetAmplitude = 0.3;
-
-    // Calculate makeup gain, but limit it to reasonable range
-    let makeupGain = 1.0;
-    if (rmsAmplitude < targetAmplitude) {
-      // Use a minimum floor to avoid division by very small numbers
-      // This prevents huge gain values that would cause artifacts
-      const safeRms = Math.max(rmsAmplitude, 1e-3);
-      makeupGain = targetAmplitude / safeRms;
-      // Limit gain to reasonable range
-      makeupGain = Math.min(2.0, makeupGain);
-    }
-
-    // Cache the result
-    this.lastAnalyzedLoopStart = loopStart;
-    this.lastAnalyzedLoopEnd = loopEnd;
-    this.loopAmplitudeGain = makeupGain;
-
-    return makeupGain;
-  }
-
   // ===== MAIN PROCESS METHOD =====
 
   process(inputs, outputs, parameters) {
@@ -891,7 +819,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     let previousStart;
     let previousEnd;
     let previousRate;
-    let amplitudeGain = 1;
 
     const velocityGain =
       this.#midiVelocityToGain(parameters.velocity[0]) * this.velocitySensitivity;
@@ -1009,14 +936,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         ? Math.max(-1, Math.min(1, basePan + this.currentPanDrift))
         : basePan;
 
-      // shortcut: makeup gain is sampled once per block; measure gain modulation
-      // and CPU before adding per-sample RMS analysis of moving short loops.
-      if (sample === startOffset) {
-        amplitudeGain = this.#analyzeLoopAmplitude(
-          loopRange.loopStartSamples,
-          loopRange.loopEndSamples,
-        );
-      }
       // The preserver still has no independent turn state for backward/ping-pong.
       const durationPreservationActive =
         (!this.loopEnabled || (loopMode === 'forward' && !this.loopTurned)) &&
@@ -1138,9 +1057,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           }
         }
 
-        const loopGain = isWithinLoop ? amplitudeGain : 1;
         const finalSample =
-          interpolatedSample * velocityGain * envelopeGain * masterGain * loopGain * tailGain;
+          interpolatedSample * velocityGain * envelopeGain * masterGain * tailGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;

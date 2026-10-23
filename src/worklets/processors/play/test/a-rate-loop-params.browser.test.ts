@@ -47,8 +47,8 @@ it('applies a loop-end step within a real render quantum', async () => {
   node.connect(context.destination);
   const audio = await context.startRendering();
   const samples = audio.getChannelData(0);
-  expect(samples[95]).toBeGreaterThan(0.001);
-  expect(samples[96]).toBeCloseTo((0.5 / 100_000) * 2, 6);
+  expect(samples[95]).toBeCloseTo(95 / 100_000, 6);
+  expect(samples[96]).toBeCloseTo(0.5 / 100_000, 6);
   expect(samples.every(Number.isFinite)).toBe(true);
   node.disconnect();
   node.port.close();
