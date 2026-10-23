@@ -908,6 +908,28 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
+  /** Set both loop points at once: one voice update, one loop-points:updated. */
+  setLoopPoints(loopStartSeconds: number, loopEndSeconds: number) {
+    const loopStart = clamp(loopStartSeconds, 0, this.#bufferDuration);
+    const loopEnd = clamp(loopEndSeconds, 0, this.#bufferDuration);
+    if (loopStart === this.loopStart && loopEnd === this.loopEnd) return this;
+
+    const timestamp = this.context.currentTime;
+    this.#loopStart = loopStart;
+    this.#loopEnd = loopEnd;
+    this.#voicePool.applyToAllVoices((voice) => {
+      voice.setParam('loopStart', loopStart, timestamp);
+      voice.setParam('loopEnd', loopEnd, timestamp);
+    });
+
+    this.#sendUpstreamMessage('loop-points:updated', {
+      loopStart: this.loopStart,
+      loopEnd: this.loopEnd,
+    });
+
+    return this;
+  }
+
   scrollLoopPoints(loopStart: number) {
     const timestamp = this.context.currentTime;
     const loopDuration = this.loopEnd - this.loopStart;
