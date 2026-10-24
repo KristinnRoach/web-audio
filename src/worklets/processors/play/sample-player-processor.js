@@ -74,8 +74,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopRampDuration = 0.125;
     this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
     this.loopGlideLogLength = null;
-    this.loopGlideStart = null;
-    this.loopScrollMode = 'instant';
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -172,7 +170,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.driftUpdateCounter = 0; // and don't let the short-loop cadence skip it
         this.loopTurned = false;
         this.loopGlideLogLength = null; // new notes start on the target length
-        this.loopGlideStart = null;
         this.previousLoopRange = null;
         this.loopMoveCorrections = [];
         this.postedRanges = {}; // each note posts its first resolved range
@@ -238,10 +235,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'setLoopRampDuration':
         this.loopRampDuration = value;
         this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / value);
-        break;
-
-      case 'setLoopScrollMode':
-        this.loopScrollMode = value;
         break;
 
       case 'setKeytrackLoopAmount':
@@ -559,29 +552,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return Math.min(Math.exp(this.loopGlideLogLength), periods.at(-1));
   }
 
-  // Scroll (both points moved at constant length) in 'pitchGlide' mode: the start
-  // glides with the length glide's coefficient and gate. The playhead is carried with
-  // the start, so the start's velocity adds to the read speed: a pitch swoop that
-  // settles back. A length change steps the start, so single-point moves are unchanged.
-  #glideLoopStart(target, targetLength) {
-    const scrolled = targetLength === this.loopScrollLength;
-    this.loopScrollLength = targetLength;
-    if (
-      this.loopScrollMode !== 'pitchGlide' ||
-      !scrolled ||
-      this.loopGlideLogLength === null ||
-      this.loopGlideStart === null ||
-      !(this.loopRampDuration > 0)
-    ) {
-      this.loopGlideStart = target;
-      return target;
-    }
-    this.loopGlideStart += (target - this.loopGlideStart) * this.loopGlideCoefficient;
-    if (Math.abs(target - this.loopGlideStart) > 1e-6) this.loopGliding = true;
-    else this.loopGlideStart = target;
-    return this.loopGlideStart;
-  }
-
   /**
    * Calculate effective loop range in samples with optional drift
    * @param {Object} params - Position parameters from #extractPositionParams
@@ -611,7 +581,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         targetLength;
     }
     const loopLength = this.#glideLoopLength(targetLength);
-    lpStart = this.#glideLoopStart(lpStart, targetLength);
     if (loopLength >= 1 && loopLength <= this.pitchPreservationThreshold) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
       const fittedLength = Math.min(loopLength, playbackRange.durationSamples);
