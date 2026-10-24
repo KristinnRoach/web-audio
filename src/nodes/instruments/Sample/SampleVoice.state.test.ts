@@ -100,6 +100,20 @@ describe('SampleVoice state', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it('schedules both loop points together even if the audio clock advances', async () => {
+    const voice = await loadedVoice();
+    const start = vi.spyOn(voice.getParam('loopStart')!, 'setValueAtTime');
+    const end = vi.spyOn(voice.getParam('loopEnd')!, 'setValueAtTime');
+    vi.spyOn(voice, 'now', 'get')
+      .mockReturnValueOnce(2)
+      .mockReturnValue(2 + 128 / SAMPLE_RATE);
+
+    voice.setLoopPoints(0.1, 0.2, 1);
+
+    expect(start.mock.calls).toEqual([[0.1, 2.001]]);
+    expect(end.mock.calls).toEqual([[0.2, 2.001]]);
+  });
+
   it('refuses to trigger before audio is loaded', async () => {
     const voice = newVoice();
     await voice.init();

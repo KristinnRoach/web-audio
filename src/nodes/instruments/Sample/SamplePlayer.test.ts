@@ -49,7 +49,7 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
   const sendToProcessor = vi.fn();
   await initTestPlayer(player, {
     applyToAllVoices: (apply) =>
-      apply({ sendToProcessor, getParam: () => null, setParam() {} } as never),
+      apply({ sendToProcessor, getParam: () => null, setParam() {}, setLoopPoints() {} } as never),
     dispose() {},
   });
 
@@ -118,6 +118,7 @@ it('connects pitch LFO to every voice detune and maps normalized depth to cents'
           apply({
             getParam: (name: string) => (name === 'detune' ? detune : null),
             setParam() {},
+            setLoopPoints() {},
           } as never),
         ),
     });
@@ -197,7 +198,12 @@ describe('SamplePlayer envelope config', () => {
         points: envConfig.shape.points.map((point) => ({ ...point })),
       },
     };
-    const voices = [0, 1].map(() => ({ setEnvelopeConfig, getParam: () => null, setParam() {} }));
+    const voices = [0, 1].map(() => ({
+      setEnvelopeConfig,
+      getParam: () => null,
+      setParam() {},
+      setLoopPoints() {},
+    }));
     vi.stubGlobal(
       'GainNode',
       class {
