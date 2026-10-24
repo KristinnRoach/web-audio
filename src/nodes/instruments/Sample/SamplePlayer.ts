@@ -313,10 +313,9 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
     const timestamp = this.context.currentTime;
-    this.#voicePool.applyToAllVoices((voice) => {
-      voice.setParam('loopStart', this.#loopStart, timestamp);
-      voice.setParam('loopEnd', this.#loopEnd, timestamp);
-    });
+    this.#voicePool.applyToAllVoices((voice) =>
+      voice.setLoopPoints(this.#loopStart, this.#loopEnd, timestamp),
+    );
     return this;
   }
 
@@ -908,21 +907,16 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  scrollLoopPoints(loopStart: number) {
+  /** Set both loop points at once: one voice update, one loop-points:updated. */
+  setLoopPoints(loopStartSeconds: number, loopEndSeconds: number) {
+    const loopStart = clamp(loopStartSeconds, 0, this.#bufferDuration);
+    const loopEnd = clamp(loopEndSeconds, 0, this.#bufferDuration);
+    if (loopStart === this.loopStart && loopEnd === this.loopEnd) return this;
+
     const timestamp = this.context.currentTime;
-    const loopDuration = this.loopEnd - this.loopStart;
-    loopStart = clamp(
-      loopStart,
-      Math.max(0, -loopDuration),
-      this.#bufferDuration - Math.max(0, loopDuration),
-    );
-    const loopEnd = loopStart + loopDuration;
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
-    this.#voicePool.applyToAllVoices((voice) => {
-      voice.setParam('loopStart', loopStart, timestamp);
-      voice.setParam('loopEnd', loopEnd, timestamp);
-    });
+    this.#voicePool.applyToAllVoices((voice) => voice.setLoopPoints(loopStart, loopEnd, timestamp));
 
     this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
@@ -930,6 +924,16 @@ export class SamplePlayer implements ILibInstrumentNode {
     });
 
     return this;
+  }
+
+  scrollLoopPoints(loopStart: number) {
+    const loopDuration = this.loopEnd - this.loopStart;
+    loopStart = clamp(
+      loopStart,
+      Math.max(0, -loopDuration),
+      this.#bufferDuration - Math.max(0, loopDuration),
+    );
+    return this.setLoopPoints(loopStart, loopStart + loopDuration);
   }
 
   setParam(name: string, value: number): this {
