@@ -160,15 +160,38 @@ envelopePresets.amplitude(2); // attack, decay, sustain, release
 envelopePresets.filter(0.5); // quick sweep up, then back down, plays once
 ```
 
-## Internal helpers
+## Duration helpers
 
-These are available inside the source module, not exported from the package root.
+These helpers are exported from the package root and the internal envelope module.
 
-- `setDuration(points, seconds)` returns new points stretched to a total length.
+- `getDuration(points)` returns the sum of segment durations in seconds: last time minus
+  first time. Indefinite sustain holds and loop repetitions are excluded.
+- `setDuration(points, seconds)` returns new points scaled proportionally to that length,
+  preserving the first point's time, values and curves. Seconds must be finite and positive.
 
 ```ts
+import { getDuration, setDuration } from '@kidlib/web-audio';
+
 const longer = { ...shape, points: setDuration(shape.points, 4) };
+getDuration(longer.points); // 4
 ```
+
+SamplePlayer can resize an envelope through its existing update API:
+
+```ts
+player.updateEnvelope('amp', { duration: 2 });
+getDuration(player.getEnvelope('amp').shape.points); // 2
+```
+
+`duration` scales the resulting shape, including a replacement `shape` supplied in the
+same patch. It is an update instruction, not a second stored config field. `timeScale`
+and playback-rate synchronization still affect playback independently: a two-second
+shape at `timeScale: 2` plays in one second. `Envelope.duration()` reports the latest
+run's scaled duration, which can differ from the edited shape's duration.
+
+Duration updates use the same live-edit rules as other shape edits. Loading another
+sample still resizes shapes to its buffer duration; reset still sizes defaults to the
+current sample.
 
 `depth` and `base` use the destination parameter's units (gain, Hz, cents, etc.);
 shape values are unitless. Negative depth inverts the shape around `base`.

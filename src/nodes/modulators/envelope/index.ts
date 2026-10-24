@@ -2,6 +2,7 @@ export { Envelope, type EnvelopeClock, type EnvelopeTriggerOptions } from './Env
 export type { AutomatableParam } from './envelope-scheduling';
 export {
   assertValidEnvelopeShape,
+  getDuration,
   setDuration,
   type EnvelopeMode,
   type EnvelopePoint,
