@@ -952,7 +952,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // so a moving loop would shift its phase every sample and shorten or stretch the
       // cycles while it moves. Carry the playhead with the loop start instead.
       const previous = this.previousLoopRange;
-      let loopMoveOffset = 0;
+      let moveOutgoingPosition = null;
       if (
         previous &&
         loopRange.loopStartSamples !== previous.loopStartSamples &&
@@ -962,7 +962,21 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopPosition <= previous.loopEndSamples
       ) {
         if (this.enableLoopSmoothing) {
-          loopMoveOffset = loopRange.loopStartSamples - previous.loopStartSamples;
+          // Continue the old loop independently: a simultaneous length change
+          // can make the new range wrap/turn at a different source position.
+          moveOutgoingPosition = this.playbackPosition;
+          if (this.loopCount < parameters.maxLoopCount[0]) {
+            const direction = this.loopTurned ? -approachDirection : approachDirection;
+            const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
+            const mapEdge = turns ? reflectLoopPosition : wrapLoopPosition;
+            moveOutgoingPosition =
+              mapEdge(
+                moveOutgoingPosition,
+                direction,
+                previous.loopStartSamples,
+                previous.loopEndSamples,
+              ) ?? moveOutgoingPosition;
+          }
         }
         this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
       }
@@ -1056,11 +1070,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         }
 
         let interpolatedSample = this.#sumAudioData(this.playbackPosition, channel, lastAudioIndex);
-        // Compare corresponding phases after any wrap/turn, excluding its jump.
+        // Compare the old loop's continuation with the relocated playhead.
         let moveDiscontinuity = 0;
-        if (loopMoveOffset !== 0) {
-          const outgoingPosition = this.playbackPosition - loopMoveOffset;
-          const outgoingSample = this.#sumAudioData(outgoingPosition, channel, lastAudioIndex);
+        if (moveOutgoingPosition !== null) {
+          const outgoingSample = this.#sumAudioData(moveOutgoingPosition, channel, lastAudioIndex);
           moveDiscontinuity = outgoingSample - interpolatedSample;
         }
 

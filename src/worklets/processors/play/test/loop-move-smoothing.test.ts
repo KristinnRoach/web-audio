@@ -72,7 +72,68 @@ describe('audio-rate loop movement smoothing', () => {
     processor.process([], [[output]], params);
     expect(Math.max(...output) - Math.min(...output)).toBeGreaterThan(0.3);
     expect(output.every(Number.isFinite)).toBe(true);
+    expect(output.slice(1).every((sample, i) => Math.abs(sample - output[i]) < 0.02)).toBe(true);
   });
+
+  it.each([
+    { mode: 'forward', frames: 124 },
+    { mode: 'forward', frames: 125 },
+    { mode: 'backward', frames: 251 },
+    { mode: 'pingPong', frames: 124 },
+    { mode: 'pingPong', frames: 125 },
+  ])(
+    'uses the outgoing $mode phase when shortening after $frames frames',
+    async ({ mode, frames }) => {
+      const processors = await Promise.all(
+        [0, 1].map(async () => {
+          const processor = await startProcessor([], [1 / 512, 1 / 256]);
+          processor.port.onmessage?.({
+            data: {
+              type: 'voice:setBuffer',
+              buffer: [
+                Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) => Math.sin(i / 23) * 0.2),
+              ],
+              durationSeconds: 1,
+            },
+          } as MessageEvent);
+          processor.port.onmessage?.({
+            data: { type: 'setLoopRampDuration', value: 0 },
+          } as MessageEvent);
+          processor.port.onmessage?.({
+            data: { type: 'setLoopEnabled', value: true },
+          } as MessageEvent);
+          processor.port.onmessage?.({
+            data: { type: 'setLoopPingPong', value: mode === 'pingPong' },
+          } as MessageEvent);
+          processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
+          return processor;
+        }),
+      );
+      const parameters = (start: number, end: number) =>
+        makeParameters({
+          loopStart: (mode === 'backward' ? end : start) / TEST_SAMPLE_RATE,
+          loopEnd: (mode === 'backward' ? start : end) / TEST_SAMPLE_RATE,
+          playbackRate: 1.5,
+        });
+
+      for (const processor of processors) {
+        processor.process([], [[new Float32Array(frames)]], parameters(0, 187.5));
+      }
+      const output = processors.map((processor, i) => {
+        const result = new Float32Array(1);
+        processor.process(
+          [],
+          [[result]],
+          i === 0 ? parameters(0, 187.5) : parameters(11.71875, 105.46875),
+        );
+        return result[0];
+      });
+
+      // The move's first sample should match continuing the old loop, including
+      // its wrap/turn when the preceding step already crossed the old edge.
+      expect(output[1]).toBeCloseTo(output[0], 5);
+    },
+  );
 
   it.each([1, 2])(
     'smooths repeated stereo moves without changing phase at rate %s',
