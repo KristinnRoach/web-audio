@@ -1048,10 +1048,21 @@ export class SamplePlayer implements ILibInstrumentNode {
   /**
    * Merges `patch` into the current config and emits one `envelope:changed` message.
    * The merge is shallow: a `shape` in the patch replaces the whole shape.
+   * `duration` proportionally scales the resulting shape's segments to seconds,
+   * before playback timeScale/rate sync. It is not stored as a separate config field.
+   * Updates follow the existing live-edit rules; sample loads still resize shapes.
    */
-  updateEnvelope(id: SampleEnvelopeId, patch: Partial<EnvelopeConfig>): void {
-    const merged = { ...this.getEnvelope(id), ...patch };
+  updateEnvelope(
+    id: SampleEnvelopeId,
+    patch: Partial<EnvelopeConfig> & { duration?: number },
+  ): void {
+    const { duration, ...configPatch } = patch;
+    const merged = { ...this.getEnvelope(id), ...configPatch };
     assertValidEnvelopeConfig(merged);
+    if (duration !== undefined) {
+      merged.shape = { ...merged.shape, points: setDuration(merged.shape.points, duration) };
+      assertValidEnvelopeConfig(merged);
+    }
 
     const next = cloneEnvelopeConfig(merged);
     this.envelopeConfigs.set(id, next);
