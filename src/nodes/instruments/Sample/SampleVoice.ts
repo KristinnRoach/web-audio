@@ -765,6 +765,19 @@ export class SampleVoice {
     return this;
   }
 
+  /** Both points at one event time: re-reading `now` per param can split them across frames. */
+  setLoopPoints(loopStart: number, loopEnd: number, timestamp: number = this.now): this {
+    const startParam = this.getParam('loopStart');
+    const endParam = this.getParam('loopEnd');
+    if (!startParam || !endParam) return this;
+    const at = Math.max(timestamp, this.now + 0.001);
+    startParam.cancelScheduledValues(timestamp);
+    endParam.cancelScheduledValues(timestamp);
+    startParam.setValueAtTime(loopStart, at);
+    endParam.setValueAtTime(loopEnd, at);
+    return this;
+  }
+
   protected setParams(
     paramsAndValues: Array<{ name: string; value: number }>,
     atTime: number,

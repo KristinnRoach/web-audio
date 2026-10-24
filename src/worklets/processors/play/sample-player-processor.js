@@ -4,6 +4,17 @@ import { DurationPreserver } from './duration-preservation.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
+// Closer to 1 extends smoothing. At 48 kHz, 0.9 decays by 99% in about 1 ms.
+const LOOP_MOVE_CORRECTION_DECAY = 0.9;
+
+// Linear interpolation of one channel's samples at a fractional position.
+function interpolate(samples, position, lastIndex) {
+  const index = Math.floor(position);
+  const weight = position - index;
+  const a = samples[Math.min(index, lastIndex)] || 0;
+  const b = samples[Math.min(index + 1, lastIndex)] || 0;
+  return a + weight * (b - a);
+}
 
 /**
  * Resolves two raw points into an ordered range inside [lo, hi], at least
@@ -63,6 +74,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopRampDuration = 0.125;
     this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
     this.loopGlideLogLength = null;
+    this.loopGlideStart = null;
+    this.loopScrollMode = 'instant';
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -159,7 +172,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.driftUpdateCounter = 0; // and don't let the short-loop cadence skip it
         this.loopTurned = false;
         this.loopGlideLogLength = null; // new notes start on the target length
+        this.loopGlideStart = null;
         this.previousLoopRange = null;
+        this.loopMoveCorrections = [];
         this.postedRanges = {}; // each note posts its first resolved range
 
         // Set from the trim range on the first audible block
@@ -225,6 +240,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / value);
         break;
 
+      case 'setLoopScrollMode':
+        this.loopScrollMode = value;
+        break;
+
       case 'setKeytrackLoopAmount':
         this.keytrackLoopAmount = Math.max(0, Math.min(1, value));
         break;
@@ -259,6 +278,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.applyClickCompensation = false;
     this.loopClickCompensation = 0;
+    this.loopMoveCorrections = [];
 
     // Loop & Pan drift feature
     this.driftUpdateCounter = 0;
@@ -296,6 +316,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.compensationDecay = 0.9; // Smooth over ~32 samples
       this.applyClickCompensation = true;
     }
+  }
+
+  #smoothLoopMove(sample, channel, discontinuity) {
+    // Correct only the relocation jump, allowing normal playback to advance.
+    const correction = (this.loopMoveCorrections[channel] ?? 0) + discontinuity;
+    this.loopMoveCorrections[channel] =
+      Math.abs(correction) < 0.00001 ? 0 : correction * LOOP_MOVE_CORRECTION_DECAY;
+    return sample + correction;
   }
 
   /**
@@ -338,6 +366,17 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #sampleAt(position, audioEndSamples) {
     if (position >= audioEndSamples) return 0;
     return this.buffer[0][Math.floor(position)] || 0;
+  }
+
+  // Sum every loaded buffer at one position. Mono entries feed every output
+  // channel; shorter entries contribute silence after their end.
+  #sumAudioData(position, channel, lastAudioIndex) {
+    let sum = 0;
+    for (const data of this.audioData) {
+      const samples = data[Math.min(channel, data.length - 1)];
+      sum += interpolate(samples, position, lastAudioIndex) * this.audioDataGain;
+    }
+    return sum;
   }
 
   #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
@@ -520,6 +559,29 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return Math.min(Math.exp(this.loopGlideLogLength), periods.at(-1));
   }
 
+  // Scroll (both points moved at constant length) in 'pitchGlide' mode: the start
+  // glides with the length glide's coefficient and gate. The playhead is carried with
+  // the start, so the start's velocity adds to the read speed: a pitch swoop that
+  // settles back. A length change steps the start, so single-point moves are unchanged.
+  #glideLoopStart(target, targetLength) {
+    const scrolled = targetLength === this.loopScrollLength;
+    this.loopScrollLength = targetLength;
+    if (
+      this.loopScrollMode !== 'pitchGlide' ||
+      !scrolled ||
+      this.loopGlideLogLength === null ||
+      this.loopGlideStart === null ||
+      !(this.loopRampDuration > 0)
+    ) {
+      this.loopGlideStart = target;
+      return target;
+    }
+    this.loopGlideStart += (target - this.loopGlideStart) * this.loopGlideCoefficient;
+    if (Math.abs(target - this.loopGlideStart) > 1e-6) this.loopGliding = true;
+    else this.loopGlideStart = target;
+    return this.loopGlideStart;
+  }
+
   /**
    * Calculate effective loop range in samples with optional drift
    * @param {Object} params - Position parameters from #extractPositionParams
@@ -549,6 +611,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         targetLength;
     }
     const loopLength = this.#glideLoopLength(targetLength);
+    lpStart = this.#glideLoopStart(lpStart, targetLength);
     if (loopLength >= 1 && loopLength <= this.pitchPreservationThreshold) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
       const fittedLength = Math.min(loopLength, playbackRange.durationSamples);
@@ -920,6 +983,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // so a moving loop would shift its phase every sample and shorten or stretch the
       // cycles while it moves. Carry the playhead with the loop start instead.
       const previous = this.previousLoopRange;
+      let loopMoveOffset = 0;
       if (
         previous &&
         loopRange.loopStartSamples !== previous.loopStartSamples &&
@@ -928,6 +992,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopPosition >= previous.loopStartSamples &&
         this.previousLoopPosition <= previous.loopEndSamples
       ) {
+        if (this.enableLoopSmoothing) {
+          loopMoveOffset = loopRange.loopStartSamples - previous.loopStartSamples;
+        }
         this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
       }
       this.previousLoopRange = loopRange;
@@ -1008,11 +1075,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // be fractional (minimum-length growth), and a ping-pong turn at the audio
       // end reads exactly at endSamples. Past it, the silent tail gain is 0.
       const lastAudioIndex = Math.ceil(playbackRange.endSamples) - 1;
-      const playheadIndex = Math.floor(this.playbackPosition);
-      const interpWeight = this.playbackPosition - playheadIndex;
-      const currentPosition = Math.min(playheadIndex, lastAudioIndex);
-      const nextPosition = Math.min(playheadIndex + 1, lastAudioIndex);
-
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
@@ -1024,22 +1086,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           continue;
         }
 
-        // Sum all loaded audio data at the shared playhead. Mono entries use
-        // channel 0 for both outputs; entries shorter than the authority read
-        // past their end and contribute 0.
-        // ponytail: one shared position for all entries, so they play in
-        // unison. Per-entry detune means a position per entry here (or baking
-        // the transposition into the buffer at load).
-        let interpolatedSample = 0;
-        for (let d = 0; d < this.audioData.length; d++) {
-          const data = this.audioData[d];
-          const channelData = data[Math.min(channel, data.length - 1)];
-
-          // Linear interpolation between current and next positions
-          const currentSample = channelData[currentPosition] || 0;
-          const nextSample = channelData[nextPosition] || 0;
-          interpolatedSample +=
-            (currentSample + interpWeight * (nextSample - currentSample)) * this.audioDataGain;
+        let interpolatedSample = this.#sumAudioData(this.playbackPosition, channel, lastAudioIndex);
+        // Compare corresponding phases after any wrap/turn, excluding its jump.
+        let moveDiscontinuity = 0;
+        if (loopMoveOffset !== 0) {
+          const outgoingPosition = this.playbackPosition - loopMoveOffset;
+          const outgoingSample = this.#sumAudioData(outgoingPosition, channel, lastAudioIndex);
+          moveDiscontinuity = outgoingSample - interpolatedSample;
         }
 
         // Original click compensation (still active)
@@ -1056,6 +1109,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
             this.applyClickCompensation = false; // Single sample mode
           }
         }
+
+        interpolatedSample = this.#smoothLoopMove(interpolatedSample, channel, moveDiscontinuity);
 
         const finalSample =
           interpolatedSample * velocityGain * envelopeGain * masterGain * tailGain;
