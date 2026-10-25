@@ -168,6 +168,77 @@ describe('SamplePlayer.applyParams', () => {
 });
 
 describe('SamplePlayer envelope config', () => {
+  it('scales duration through the normal update path without storing a second duration', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('AudioContext', class {});
+    vi.stubGlobal('AudioWorkletNode', class {});
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        connect() {}
+        disconnect() {}
+      },
+    );
+    const { SamplePlayer } = await import('./SamplePlayer');
+    const setEnvelopeConfig = vi.fn();
+    const changed = vi.fn();
+    const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
+    await initTestPlayer(player, {
+      applyToAllVoices: (apply) =>
+        apply({
+          setEnvelopeConfig,
+          getParam: () => null,
+          setParam() {},
+          setLoopPoints() {},
+        } as never),
+      dispose() {},
+    });
+    player.onMessage('envelope:changed', changed);
+    const shape = {
+      ...envConfig.shape,
+      mode: { type: 'sustain' } as const,
+      points: [
+        { time: 5, value: 0, curve: 'linear' } as const,
+        { time: 6, value: 1, curve: 'exponential' } as const,
+        { time: 9, value: 0 } as const,
+      ],
+    };
+
+    try {
+      // A supplied shape is scaled in the same update, before playback speed is applied.
+      player.updateEnvelope('amp', { ...envConfig, shape, duration: 2 });
+      const config = player.getEnvelope('amp');
+      expect(config.shape).toEqual({
+        ...shape,
+        points: shape.points.map((point, i) => ({ ...point, time: [5, 5.5, 7][i] })),
+      });
+      expect(shape.points.map((point) => point.time)).toEqual([5, 6, 9]);
+      expect(player.getEnvelopeDuration('amp')).toBe(2);
+      expect(config.timeScale).toBe(2);
+      expect(config).not.toHaveProperty('duration');
+      expect(setEnvelopeConfig).toHaveBeenCalledExactlyOnceWith('amp', config);
+      expect(changed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ config }));
+
+      // A duration-only update scales the stored shape and preserves its other settings.
+      player.updateEnvelope('amp', { duration: 8 });
+      const resized = player.getEnvelope('amp');
+      expect(player.getEnvelopeDuration('amp')).toBe(8);
+      expect(resized).toMatchObject({ enabled: false, timeScale: 2 });
+
+      setEnvelopeConfig.mockClear();
+      changed.mockClear();
+      for (const duration of [0, -1, NaN, Infinity]) {
+        expect(() => player.updateEnvelope('amp', { duration })).toThrow(RangeError);
+      }
+      expect(player.getEnvelope('amp')).toEqual(resized);
+      expect(setEnvelopeConfig).not.toHaveBeenCalled();
+      expect(changed).not.toHaveBeenCalled();
+    } finally {
+      player.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('resets an envelope to defaults at the current sample duration', async () => {
     const { SamplePlayer } = await import('./SamplePlayer');
     const updateEnvelope = vi.fn();
