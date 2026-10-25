@@ -1,5 +1,13 @@
 # @kidlib/web-audio
 
+## 0.7.2
+
+### Patch Changes
+
+- e9a1bb2: Add `duration` to `SamplePlayer.updateEnvelope` to resize an envelope shape, and `SamplePlayer.getEnvelopeDuration(id)` to read it.
+- 0e0ac24: Remove automatic gain compensation for short loops.
+- 6af9b65: Reduce clicks when moving or resizing short loops.
+
 ## 0.7.1
 
 ### Patch Changes
