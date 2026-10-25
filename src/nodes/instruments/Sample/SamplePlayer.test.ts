@@ -184,7 +184,12 @@ describe('SamplePlayer envelope config', () => {
     const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
     await initTestPlayer(player, {
       applyToAllVoices: (apply) =>
-        apply({ setEnvelopeConfig, getParam: () => null, setParam() {} } as never),
+        apply({
+          setEnvelopeConfig,
+          getParam: () => null,
+          setParam() {},
+          setLoopPoints() {},
+        } as never),
       dispose() {},
     });
     player.onMessage('envelope:changed', changed);
