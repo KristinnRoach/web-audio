@@ -160,27 +160,25 @@ envelopePresets.amplitude(2); // attack, decay, sustain, release
 envelopePresets.filter(0.5); // quick sweep up, then back down, plays once
 ```
 
-## Duration helpers
+## Internal helpers
 
-These helpers are exported from the package root and the internal envelope module.
+These are available inside the source module, not exported from the package root.
 
-- `getDuration(points)` returns the sum of segment durations in seconds: last time minus
-  first time. Indefinite sustain holds and loop repetitions are excluded.
+- `getDuration(points)` returns last time minus first time, in seconds. Indefinite
+  sustain holds and loop repetitions are excluded.
 - `setDuration(points, seconds)` returns new points scaled proportionally to that length,
   preserving the first point's time, values and curves. Seconds must be finite and positive.
 
 ```ts
-import { getDuration, setDuration } from '@kidlib/web-audio';
-
 const longer = { ...shape, points: setDuration(shape.points, 4) };
 getDuration(longer.points); // 4
 ```
 
-SamplePlayer can resize an envelope through its existing update API:
+SamplePlayer reads and resizes envelope duration through its own API:
 
 ```ts
 player.updateEnvelope('amp', { duration: 2 });
-getDuration(player.getEnvelope('amp').shape.points); // 2
+player.getEnvelopeDuration('amp'); // 2
 ```
 
 `duration` scales the resulting shape, including a replacement `shape` supplied in the

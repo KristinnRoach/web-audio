@@ -28,7 +28,7 @@ import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
 import { SampleVoicePool } from './SampleVoicePool';
-import { setDuration } from '@/nodes/modulators/envelope';
+import { getDuration, setDuration } from '@/nodes/modulators/envelope';
 import {
   assertValidEnvelopeConfig,
   cloneEnvelopeConfig,
@@ -1043,6 +1043,11 @@ export class SamplePlayer implements ILibInstrumentNode {
     const config = createDefaultSampleEnvelopeConfig(id, this.sampleDuration || 1);
     this.envelopeConfigs.set(id, config);
     return cloneEnvelopeConfig(config);
+  }
+
+  /** Shape length in seconds, before timeScale/rate sync; excludes sustain holds and loop repeats. */
+  getEnvelopeDuration(id: SampleEnvelopeId): number {
+    return getDuration(this.getEnvelope(id).shape.points);
   }
 
   /**
