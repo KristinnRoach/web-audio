@@ -224,7 +224,11 @@ export async function preProcessAudioBuffer(
  * @param semitones The number of semitones to transpose (-6 to +6 recommended)
  * @returns A new audio buffer with adjusted pitch
  */
-function resampleForPitch(ctx: AudioContext, buffer: AudioBuffer, semitones: number): AudioBuffer {
+export function resampleForPitch(
+  ctx: AudioContext,
+  buffer: AudioBuffer,
+  semitones: number,
+): AudioBuffer {
   // Calculate playback rate based on semitone difference
   const playbackRate = Math.pow(2, semitones / 12);
 

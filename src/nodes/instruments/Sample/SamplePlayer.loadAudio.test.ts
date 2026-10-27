@@ -9,7 +9,8 @@ vi.mock('@/nodes/params', async (importOriginal) => ({
     dispose() {}
   },
 }));
-vi.mock('@/nodes/preprocessor/Preprocessor', () => ({
+vi.mock('@/nodes/preprocessor/Preprocessor', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   preProcessAudioBuffer: vi.fn(async (_context, buffer) => ({ audiobuffer: buffer })),
 }));
 vi.mock('@/utils/audiodata/convert/resampleAudioBuffer', () => ({
@@ -128,6 +129,16 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     });
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
     await player.loadAudio(originals);
+    player.commitRePitchedSamples(12);
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([240, 60, 24]);
+    expect(publish).toHaveBeenLastCalledWith(player.samples, []);
+    player.commitRePitchedSamples(-12);
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([960, 240, 96]);
+    player.commitRePitchedSamples(0);
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([480, 120, 48]);
+    for (const [index, sample] of player.samples.entries()) {
+      expect(sample.getChannelData(0)).toEqual(originals[index].getChannelData(0));
+    }
     // Inverted points crop the same 0.002..0.006 region
     const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });
     expect(cropped).toBe(player.samples[0]);

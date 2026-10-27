@@ -3,10 +3,11 @@
 import { Message, MessageHandler } from '@/events';
 import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
 import { resampleAudioBuffer } from '@/utils/audiodata/convert/resampleAudioBuffer';
-import { clamp, ROOT_NOTES, assert } from '@/utils';
+import { clamp, ROOT_NOTES, assert, findZeroCrossings } from '@/utils';
 
 import {
   preProcessAudioBuffer,
+  resampleForPitch,
   PreProcessOptions,
   PreProcessResults,
 } from '@/nodes/preprocessor/Preprocessor';
@@ -71,6 +72,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #incoming = new Set<NodeID>();
 
   #audioData: AudioBuffer[] = [];
+  #sourceSamples: AudioBuffer[] = [];
   static readonly MAX_SAMPLES = 4;
   #bufferDuration: number = 0;
 
@@ -480,6 +482,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.transposeSemitones = 0;
       this.#isLoaded = false;
       this.#audioData = audioData;
+      this.#sourceSamples = audioData;
       this.#bufferDuration = audioData[0].duration;
 
       const loadedPromise = new Promise<void>((resolve) => {
@@ -609,6 +612,26 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   tuneSample(semitones: number): this {
     this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(semitones));
+    return this;
+  }
+
+  /** Retrigger to preview after replacing the audio with tuned source samples. */
+  commitRePitchedSamples(semitones: number): this {
+    if (!this.#sourceSamples.length || !Number.isFinite(semitones)) return this;
+    const buffers = this.#sourceSamples.map((source) =>
+      resampleForPitch(this.context, source, semitones),
+    );
+    const buffer = buffers[0];
+    const zeroCrossings = this.#useZeroCrossings
+      ? findZeroCrossings(buffer.getChannelData(0), {
+          unit: 'seconds',
+          sampleRate: buffer.sampleRate,
+        })
+      : [];
+    this.releaseAll();
+    this.#audioData = buffers;
+    this.#bufferDuration = buffer.duration;
+    this.#voicePool.setAudioData(buffers, zeroCrossings);
     return this;
   }
 
@@ -1381,6 +1404,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       // Reset state variables
       this.#bufferDuration = 0;
       this.#audioData = [];
+      this.#sourceSamples = [];
       this.#initialized = false;
       this.#isLoaded = false;
       this.#useZeroCrossings = false;

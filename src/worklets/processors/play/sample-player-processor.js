@@ -54,6 +54,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.audioData = [];
     this.audioDataGain = 1;
     this.basePlaybackRate = 1;
+    this.loopEnabled = false;
+    this.reversePlayback = false;
+    this.panDriftEnabled = true;
     this.minZeroCrossing = 0;
     this.maxZeroCrossing = 0;
 
@@ -259,10 +262,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isReleasing = false;
     this.pendingStartFrame = 0;
     this.triggerId = 0;
-    this.loopEnabled = false;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
-    this.reversePlayback = false;
     this.previousApproachDirection = null;
     // True while cycling a loop against the approach direction (backward loops,
     // or the return half of a ping-pong). Direction = approach, negated when turned.
@@ -282,7 +283,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.driftUpdateCounter = 0;
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
-    this.panDriftEnabled = true;
     this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
     this.nextDriftGenerated = false;
@@ -590,7 +590,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.loopSnapPeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
         targetLength;
     }
-    const snapping = this.#canSnapLoopLength(targetLength);
     const loopLength = this.#glideLoopLength(targetLength);
     if (loopLength >= 1 && loopLength <= this.pitchPreservationThreshold) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
@@ -725,7 +724,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     range.loopStartSamples = calcLoopStart;
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
-    range.snapping = snapping;
     return range;
   }
 
@@ -918,7 +916,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.basePlaybackRate *
         this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
       const detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
-      let rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
+      const rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
 
       const loopStart = this.#getSafeParam(
         parameters.loopStart,
@@ -961,10 +959,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         previousEnd = loopEnd;
         previousRate = rate;
       }
-
-      const maxLoopCount = parameters.maxLoopCount[0];
-      const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
-      if (canWrapLoop && loopRange.snapping) rate /= this.basePlaybackRate;
 
       // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
       // so a moving loop would shift its phase every sample and shorten or stretch the
@@ -1016,6 +1010,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping
+      const maxLoopCount = parameters.maxLoopCount[0];
+      const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
       if (canWrapLoop) {
         this.#passLoopEdge(approachDirection, loopMode, loopRange, playbackRange.endSamples, rate);
       }

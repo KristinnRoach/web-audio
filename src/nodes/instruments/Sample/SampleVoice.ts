@@ -925,8 +925,8 @@ export class SampleVoice {
 
             this.#createEnvelopes();
 
-            this.setStartPoint(0);
-            this.setEndPoint(data.durationSeconds);
+            // this.setStartPoint(0);
+            // this.setEndPoint(data.durationSeconds);
           }
           break;
 
