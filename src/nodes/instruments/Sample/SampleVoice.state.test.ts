@@ -100,6 +100,19 @@ describe('SampleVoice state', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it('forwards source tuning without rewriting note playback-rate automation', async () => {
+    const voice = await loadedVoice();
+    const set = vi.spyOn(voice.getParam('playbackRate')!, 'setValueAtTime');
+    voice.setPitchOffset(12);
+    trigger(voice, 72);
+    expect(set).toHaveBeenLastCalledWith(2, 0.001);
+
+    set.mockClear();
+    voice.setPitchOffset(-12);
+    expect(audio.posted).toContainEqual({ type: 'setPitchOffset', value: -12 });
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it('schedules both loop points together even if the audio clock advances', async () => {
     const voice = await loadedVoice();
     const start = vi.spyOn(voice.getParam('loopStart')!, 'setValueAtTime');

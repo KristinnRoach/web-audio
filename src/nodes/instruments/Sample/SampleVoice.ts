@@ -62,7 +62,6 @@ export class SampleVoice {
   // the round trip still arrives after the audio data is in place.
   #hasLoadedAudio = false;
 
-  #basePlaybackRate = 1; // playbackRate before pitch offset is applied
   #midiNote: number | null = null;
   #startedTimestamp: number = -1;
   #triggerId = 0;
@@ -296,11 +295,7 @@ export class SampleVoice {
   }
 
   setPitchOffset(semitones: number): this {
-    this.#basePlaybackRate = 2 ** (semitones / 12);
-    if (this.#midiNote !== null) {
-      const playbackRate = this.#basePlaybackRate * midiToPlaybackRate(this.#midiNote);
-      this.setParams([{ name: 'playbackRate', value: playbackRate }], this.now);
-    }
+    this.sendToProcessor({ type: 'setPitchOffset', value: semitones });
     return this;
   }
 
@@ -348,11 +343,11 @@ export class SampleVoice {
     const glideTime = options.glide?.glideTime ?? this.#pitchGlideTime;
     const scaledGlideTime = glideTime / GLIDE_TEMP_SCALAR;
 
-    let playbackRate = this.#basePlaybackRate;
+    let playbackRate = 1;
     let prevRate = 1;
 
     if (!this.#pitchDisabled) {
-      playbackRate *= midiToPlaybackRate(midiNote);
+      playbackRate = midiToPlaybackRate(midiNote);
       if (options.glide) {
         prevRate = midiToPlaybackRate(options.glide.prevMidiNote);
       }
