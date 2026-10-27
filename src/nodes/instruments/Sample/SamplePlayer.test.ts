@@ -20,7 +20,7 @@ const envConfig: EnvelopeConfig = {
   },
 };
 
-it('sends the loop-end period in seconds to voices after scale and root updates', async () => {
+it('sends loop snap periods on scale updates but not on transpose', async () => {
   vi.resetModules();
   vi.doUnmock('@/nodes/params');
   vi.stubGlobal('window', {});
@@ -73,11 +73,17 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
       value: [60, 48, 36, 24, 12, 0].map((i) => NOTE_PERIODS[i]),
     });
 
-    // The transpose carries snapped loops to D; rebuilding the periods too would shift twice.
-    player.setRootNote('D');
+    // The transpose carries snapped loops; rebuilding the periods too would shift them twice.
+    player.transpose(2);
     expect(sendToProcessor).toHaveBeenCalledTimes(1);
-    expect(setPitchOffset).toHaveBeenLastCalledWith(-10);
-    expect(player.transposedBySemitones).toBe(-10);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(2);
+    expect(player.transposedBySemitones).toBe(2);
+
+    // Fine tune sums with transpose instead of replacing it.
+    player.fineTune(-50);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(1.5);
+    player.transpose(-1);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5);
 
     const valid = {
       rootNote: 'C',

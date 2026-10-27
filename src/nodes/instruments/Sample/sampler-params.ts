@@ -372,13 +372,22 @@ export const samplerParams = defineSamplerParams({
     format: positionPercent('keytrackLoop'),
     apply: (p, v) => p.setKeytrackLoopAmount(v),
   },
-  tune: {
+  transpose: {
     label: 'Transpose',
     min: -12,
     max: 12,
     defaultValue: 0,
     step: 1,
     apply: (p, v) => p.transpose(v),
+  },
+  fineTune: {
+    label: 'Fine Tune',
+    min: -100,
+    max: 100,
+    defaultValue: 0,
+    step: 1,
+    format: (v) => `${v.toFixed(0)} cents`,
+    apply: (p, v) => p.fineTune(v),
   },
   sourceSampleTune: {
     label: 'Source Sample Tune',
