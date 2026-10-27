@@ -607,6 +607,11 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === SCALE SETTINGS === */
 
+  tuneSample(semitones: number): this {
+    this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(semitones));
+    return this;
+  }
+
   get transposedBySemitones() {
     return this.#transposedBySemitones;
   }

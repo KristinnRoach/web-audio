@@ -372,6 +372,14 @@ export const samplerParams = defineSamplerParams({
     format: positionPercent('keytrackLoop'),
     apply: (p, v) => p.setKeytrackLoopAmount(v),
   },
+  tune: {
+    label: 'Tune',
+    min: -12,
+    max: 12,
+    defaultValue: 0,
+    step: 1,
+    apply: (p, v) => p.tuneSample(v),
+  },
 });
 
 export type SamplerParamKey = keyof typeof samplerParams;

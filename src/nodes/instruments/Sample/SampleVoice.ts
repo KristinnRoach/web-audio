@@ -62,6 +62,7 @@ export class SampleVoice {
   // the round trip still arrives after the audio data is in place.
   #hasLoadedAudio = false;
 
+  #basePlaybackRate = 1; // playbackRate before pitch offset is applied
   #midiNote: number | null = null;
   #startedTimestamp: number = -1;
   #triggerId = 0;
@@ -294,6 +295,15 @@ export class SampleVoice {
     return true;
   }
 
+  setPitchOffset(semitones: number): this {
+    this.#basePlaybackRate = 2 ** (semitones / 12);
+    if (this.#midiNote !== null) {
+      const playbackRate = this.#basePlaybackRate * midiToPlaybackRate(this.#midiNote);
+      this.setParams([{ name: 'playbackRate', value: playbackRate }], this.now);
+    }
+    return this;
+  }
+
   freeze(freeze: boolean): this {
     console.info(
       `SampleVoice: freeze(${freeze}) called. 
@@ -317,13 +327,9 @@ export class SampleVoice {
     secondsFromNow?: number;
     glide?: { prevMidiNote: number; glideTime?: number };
   }): MidiValue | null {
-    const { midiNote, velocity, secondsFromNow = 0 } = options;
-
-    const timestamp = this.now + secondsFromNow;
-
-    // An unloaded voice sounds nothing and cannot complete naturally, so it
-    // must not enter PLAYING.
     if (!this.#hasLoadedAudio) return null;
+    const { midiNote, velocity, secondsFromNow = 0 } = options;
+    const timestamp = this.now + secondsFromNow;
 
     if (this.#state !== VoiceState.AVAILABLE) {
       console.log(`had to stop a playing voice, midinote: ${midiNote}`);
@@ -342,11 +348,11 @@ export class SampleVoice {
     const glideTime = options.glide?.glideTime ?? this.#pitchGlideTime;
     const scaledGlideTime = glideTime / GLIDE_TEMP_SCALAR;
 
-    let playbackRate = 1;
+    let playbackRate = this.#basePlaybackRate;
     let prevRate = 1;
 
     if (!this.#pitchDisabled) {
-      playbackRate = midiToPlaybackRate(midiNote);
+      playbackRate *= midiToPlaybackRate(midiNote);
       if (options.glide) {
         prevRate = midiToPlaybackRate(options.glide.prevMidiNote);
       }
