@@ -520,10 +520,15 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     };
   }
 
+  #canSnapLoopLength(length) {
+    const periods = this.loopSnapPeriods;
+    return !!periods?.length && length >= 1 && length <= periods.at(-1);
+  }
+
   // Select the nearest period target; glide is applied separately.
   #snapLoopLength(length) {
+    if (!this.#canSnapLoopLength(length)) return length;
     const periods = this.loopSnapPeriods;
-    if (!periods?.length || length < 1 || length > periods[periods.length - 1]) return length;
     let best = periods[0];
     let distance = Math.abs(best - length);
     for (let i = 1; i < periods.length; i++) {
@@ -541,7 +546,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   #glideLoopLength(target) {
     this.loopGliding = false;
     const periods = this.loopSnapPeriods;
-    if (!periods?.length || target < 1 || target > periods[periods.length - 1]) {
+    if (!this.#canSnapLoopLength(target)) {
       this.loopGlideLogLength = null;
       return target;
     }
@@ -585,6 +590,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.loopSnapPeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
         targetLength;
     }
+    const snapping = this.#canSnapLoopLength(targetLength);
     const loopLength = this.#glideLoopLength(targetLength);
     if (loopLength >= 1 && loopLength <= this.pitchPreservationThreshold) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
@@ -719,6 +725,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     range.loopStartSamples = calcLoopStart;
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
+    range.snapping = snapping;
     return range;
   }
 
@@ -911,7 +918,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.basePlaybackRate *
         this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
       const detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
-      const rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
+      let rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
 
       const loopStart = this.#getSafeParam(
         parameters.loopStart,
@@ -954,6 +961,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         previousEnd = loopEnd;
         previousRate = rate;
       }
+
+      const maxLoopCount = parameters.maxLoopCount[0];
+      const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
+      if (canWrapLoop && loopRange.snapping) rate /= this.basePlaybackRate;
 
       // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
       // so a moving loop would shift its phase every sample and shorten or stretch the
@@ -1005,8 +1016,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping
-      const maxLoopCount = parameters.maxLoopCount[0];
-      const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
       if (canWrapLoop) {
         this.#passLoopEdge(approachDirection, loopMode, loopRange, playbackRange.endSamples, rate);
       }
