@@ -47,9 +47,16 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
   expect(() => player.setLoopEnabled(false)).not.toThrow();
   const sendToProcessor = vi.fn();
+  const setPitchOffset = vi.fn();
   await initTestPlayer(player, {
     applyToAllVoices: (apply) =>
-      apply({ sendToProcessor, getParam: () => null, setParam() {}, setLoopPoints() {} } as never),
+      apply({
+        sendToProcessor,
+        setPitchOffset,
+        getParam: () => null,
+        setParam() {},
+        setLoopPoints() {},
+      } as never),
     dispose() {},
   });
 
@@ -57,7 +64,6 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
     player.setScale({
       rootNote: 'C',
       scale: [0],
-      tuningOffset: 0,
       lowestOctave: 0,
       highestOctave: 5,
     });
@@ -67,17 +73,15 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
       value: [60, 48, 36, 24, 12, 0].map((i) => NOTE_PERIODS[i]),
     });
 
+    // The transpose carries snapped loops to D; rebuilding the periods too would shift twice.
     player.setRootNote('D');
-    expect(sendToProcessor).toHaveBeenCalledTimes(2);
-    expect(sendToProcessor).toHaveBeenLastCalledWith({
-      type: 'setLoopSnapPeriods',
-      value: [62, 50, 38, 26, 14, 2].map((i) => NOTE_PERIODS[i]), // D5 ... D0
-    });
+    expect(sendToProcessor).toHaveBeenCalledTimes(1);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(-10);
+    expect(player.transposedBySemitones).toBe(-10);
 
     const valid = {
       rootNote: 'C',
       scale: [0],
-      tuningOffset: 0,
       lowestOctave: 0,
       highestOctave: 5,
     } as const;
@@ -87,7 +91,6 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
     expect(() => player.setScale({ ...valid, scale: [] })).toThrow(RangeError);
     expect(() => player.setScale({ ...valid, lowestOctave: 0.5, scale: [0] })).toThrow(RangeError);
     expect(() => player.setScale({ ...valid, lowestOctave: 6, scale: [0] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, tuningOffset: NaN, scale: [0] })).toThrow(RangeError);
   } finally {
     player.dispose();
     expect(() => player.setLoopEnabled(false)).not.toThrow();

@@ -14,7 +14,7 @@ import {
 
 import { isValidAudioBuffer, isMidiValue } from '@/utils';
 
-import { createScale, offsetPeriodsBySemitones } from '@/utils/music-theory/utils/scale-utils';
+import { createScale } from '@/utils/music-theory/utils/scale-utils';
 import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
@@ -86,12 +86,11 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #loopStart = 0;
   #loopEnd = 0;
-  #loopScaleOptions: Parameters<SamplePlayer['setScale']>[0] | null = null;
   #loopSnapPeriods: number[] = [];
   #gainLFO: LFO | null = null;
   #pitchLFO: LFO | null = null;
 
-  #transposedBySemitones = 0;
+  #transposeSemitones = 0;
 
   #tempo = 120;
   #glideTime: number = samplerParams.glide.defaultValue;
@@ -479,7 +478,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       // Clear and release only if all preprocessing succeeds.
       this.releaseAll();
-      this.transposeSemitones = 0;
       this.#isLoaded = false;
       this.#audioData = audioData;
       this.#sourceSamples = audioData;
@@ -498,7 +496,6 @@ export class SamplePlayer implements ILibInstrumentNode {
         scale: [0],
         lowestOctave: 1,
         highestOctave: 5,
-        tuningOffset: 0,
       };
 
       this.setScale(defaultScaleOptions);
@@ -562,42 +559,39 @@ export class SamplePlayer implements ILibInstrumentNode {
     secondsFromNow = 0,
   ): MidiValue | null {
     const safeVelocity = isMidiValue(velocity) ? velocity : 100;
-    const transposedMidiNote = midiNote + this.#transposedBySemitones;
-    if (!isMidiValue(transposedMidiNote)) {
-      console.warn(`Invalid midiNote: ${transposedMidiNote}`);
+    if (!isMidiValue(midiNote)) {
+      console.warn(`Invalid midiNote: ${midiNote}`);
       return null;
     }
+    // Voices are keyed by the played note so release() still finds them after
+    // a transpose; anything that tracks pitch gets the sounding note.
+    const soundingNote = midiNote + this.#transposeSemitones;
 
-    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(transposedMidiNote);
+    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(soundingNote);
     if (this.#syncPitchLFOToMidiNote) {
-      this.#pitchLFO?.setMusicalNote(transposedMidiNote, { divisor: 4 });
+      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4 });
     }
 
-    this.#outBus.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
+    this.#outBus.noteOn(soundingNote, safeVelocity, secondsFromNow, glideTime);
 
-    return this.#voicePool.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
+    return this.#voicePool.noteOn(midiNote, safeVelocity, secondsFromNow, glideTime);
   }
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
   release(midiNote: MidiValue, secondsFromNow = 0): this {
     if (this.holdEnabled || this.#holdLocked) return this;
 
-    const transposedMidiNote = midiNote + this.#transposedBySemitones;
-
     if (this.#sustainPedalPressed) {
-      this.#sustainedNotes.set(
-        transposedMidiNote,
-        (this.#sustainedNotes.get(transposedMidiNote) ?? 0) + 1,
-      );
+      this.#sustainedNotes.set(midiNote, (this.#sustainedNotes.get(midiNote) ?? 0) + 1);
       return this;
     }
 
     // Remove from sustained notes if it was there
-    this.#sustainedNotes.delete(transposedMidiNote);
+    this.#sustainedNotes.delete(midiNote);
 
-    this.#voicePool.noteOff(transposedMidiNote, secondsFromNow);
-    this.#outBus.noteOff(transposedMidiNote);
-    this.#sendUpstreamMessage('note:off', { transposedMidiNote });
+    this.#voicePool.noteOff(midiNote, secondsFromNow);
+    this.#outBus.noteOff(midiNote + this.#transposeSemitones);
+    this.#sendUpstreamMessage('note:off', { midiNote });
     return this;
   }
 
@@ -610,7 +604,10 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   /* === SCALE SETTINGS === */
 
-  tuneSample(semitones: number): this {
+  /** The one pitch offset: retunes held voices, and new notes, LFO sync and feedback follow. */
+  transpose(semitones: number): this {
+    if (!Number.isFinite(semitones)) return this;
+    this.#transposeSemitones = semitones;
     this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(semitones));
     return this;
   }
@@ -636,12 +633,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   get transposedBySemitones() {
-    return this.#transposedBySemitones;
-  }
-
-  set transposeSemitones(semitones: number) {
-    if (this.#transposedBySemitones === semitones) return;
-    this.#transposedBySemitones = semitones;
+    return this.#transposeSemitones;
   }
 
   /**
@@ -651,18 +643,17 @@ export class SamplePlayer implements ILibInstrumentNode {
     rootNote: keyof typeof ROOT_NOTES;
     /** Custom pattern as semitone offsets from the root. */
     scale: number[];
-    /** Shifts every allowed period by this many semitones. Positive is up. */
-    tuningOffset: number;
     highestOctave: number;
     lowestOctave: number;
   }) {
     this.#validateScaleOptions(options);
-    this.#loopScaleOptions = { ...options, scale: [...options.scale] };
-    const { rootNote, scale, lowestOctave, highestOctave, tuningOffset } = options;
-    const periodsInSeconds = createScale(rootNote, scale, lowestOctave, highestOctave).periodsInSec;
-    this.#loopSnapPeriods = offsetPeriodsBySemitones(periodsInSeconds, tuningOffset).sort(
-      (a, b) => a - b,
-    );
+    const { rootNote, scale, lowestOctave, highestOctave } = options;
+    this.#loopSnapPeriods = createScale(
+      rootNote,
+      scale,
+      lowestOctave,
+      highestOctave,
+    ).periodsInSec.sort((a, b) => a - b);
 
     this.#voicePool?.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setLoopSnapPeriods', value: this.#loopSnapPeriods });
@@ -675,7 +666,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     scale,
     lowestOctave,
     highestOctave,
-    tuningOffset,
   }: Parameters<SamplePlayer['setScale']>[0]) {
     if (scale.length === 0) {
       throw new RangeError('Scale must contain at least one note');
@@ -692,26 +682,15 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (highestOctave > 9) {
       throw new RangeError(`highestOctave must be at most 9, got ${highestOctave}`);
     }
-    if (!Number.isFinite(tuningOffset)) {
-      throw new RangeError(`tuningOffset must be finite, got ${tuningOffset}`);
-    }
   }
 
-  /** Transposes playback to the new root and rebuilds processor snapping periods. */
+  /**
+   * Transposes down to the new root. Loop snap periods are left alone: they sit
+   * in untransposed space and the transpose already carries them to the new root.
+   */
   setRootNote(note: keyof typeof ROOT_NOTES) {
     const rootNoteNumber = ROOT_NOTES[note];
-
-    let semitones = rootNoteNumber === 0 ? 0 : rootNoteNumber - 12;
-
-    if (this.transposedBySemitones === semitones) return this;
-
-    this.transposeSemitones = semitones;
-
-    if (this.#loopScaleOptions) {
-      this.setScale({ ...this.#loopScaleOptions, rootNote: note });
-    }
-
-    return this;
+    return this.transpose(rootNoteNumber === 0 ? 0 : rootNoteNumber - 12);
   }
 
   /** PARAM SETTERS  */
@@ -818,8 +797,8 @@ export class SamplePlayer implements ILibInstrumentNode {
       for (const [note, count] of this.#sustainedNotes) {
         this.#voicePool.noteOff(note);
         // One outBus release per held release: InstrumentBus counts note-ons.
-        for (let i = 0; i < count; i++) this.#outBus.noteOff(note);
-        this.#sendUpstreamMessage('note:off', { transposedMidiNote: note });
+        for (let i = 0; i < count; i++) this.#outBus.noteOff(note + this.#transposeSemitones);
+        this.#sendUpstreamMessage('note:off', { midiNote: note });
       }
       this.#sustainedNotes.clear();
     }

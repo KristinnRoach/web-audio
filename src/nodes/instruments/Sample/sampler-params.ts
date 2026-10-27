@@ -373,12 +373,12 @@ export const samplerParams = defineSamplerParams({
     apply: (p, v) => p.setKeytrackLoopAmount(v),
   },
   tune: {
-    label: 'Tune',
+    label: 'Transpose',
     min: -12,
     max: 12,
     defaultValue: 0,
     step: 1,
-    apply: (p, v) => p.tuneSample(v),
+    apply: (p, v) => p.transpose(v),
   },
   sourceSampleTune: {
     label: 'Source Sample Tune',

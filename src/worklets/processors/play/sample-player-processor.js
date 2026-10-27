@@ -53,7 +53,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // getter below. Extra entries only contribute samples to the mix.
     this.audioData = [];
     this.audioDataGain = 1;
-    this.basePlaybackRate = 1;
     this.loopEnabled = false;
     this.reversePlayback = false;
     this.panDriftEnabled = true;
@@ -122,10 +121,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = event.data;
 
     switch (type) {
-      case 'setPitchOffset':
-        this.basePlaybackRate = 2 ** (value / 12);
-        break;
-
       case 'setLoopSnapPeriods':
         // Seconds to samples, ascending: [0] is the shortest, at(-1) the longest.
         this.loopSnapPeriods = value.map((seconds) => seconds * sampleRate).sort((a, b) => a - b);
@@ -912,9 +907,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
       // Use getSafeParam for a-rate params
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
-      const baseRate =
-        this.basePlaybackRate *
-        this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
+      const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
       const detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
       const rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
 

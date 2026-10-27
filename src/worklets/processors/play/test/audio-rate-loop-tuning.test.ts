@@ -59,16 +59,12 @@ async function measureLoopPeriod(
   playbackDirection: 'forward' | 'reverse' = 'forward',
   loopLengthSamples = LOOP_LENGTH_SAMPLES,
   driftAmount = 0,
-  tuningSemitones = 0,
 ): Promise<number> {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
   const channel = new Float32Array(TEST_SAMPLE_RATE);
 
   processor.enableLoopSmoothing = false;
-  processor.port.onmessage?.({
-    data: { type: 'setPitchOffset', value: tuningSemitones },
-  } as MessageEvent);
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
@@ -119,14 +115,6 @@ describe('audio-rate loop tuning', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
-  it.each([-12, 0, 12])(
-    'applies source tuning of %s semitones across audio loading',
-    async (tuning) => {
-      const period = await measureLoopPeriod(72, 'forward', LOOP_LENGTH_SAMPLES, 0, tuning);
-      expect(period).toBe(LOOP_LENGTH_SAMPLES / (2 * 2 ** (tuning / 12)));
-    },
-  );
 
   it.each(['forward', 'reverse'] as const)(
     'does not shift a minimum-length %s loop for sub-half-sample drift',

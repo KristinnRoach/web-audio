@@ -100,17 +100,17 @@ describe('SampleVoice state', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('forwards source tuning without rewriting note playback-rate automation', async () => {
+  it('adds the pitch offset to new notes and retunes a held one', async () => {
     const voice = await loadedVoice();
     const set = vi.spyOn(voice.getParam('playbackRate')!, 'setValueAtTime');
     voice.setPitchOffset(12);
-    trigger(voice, 72);
+    trigger(voice, 60);
     expect(set).toHaveBeenLastCalledWith(2, 0.001);
 
-    set.mockClear();
+    const glide = vi.spyOn(voice.getParam('playbackRate')!, 'linearRampToValueAtTime');
     voice.setPitchOffset(-12);
-    expect(audio.posted).toContainEqual({ type: 'setPitchOffset', value: -12 });
-    expect(set).not.toHaveBeenCalled();
+    expect(glide.mock.calls.at(-1)?.[0]).toBe(0.5);
+    expect(voice.midiNote).toBe(60);
   });
 
   it('schedules both loop points together even if the audio clock advances', async () => {
