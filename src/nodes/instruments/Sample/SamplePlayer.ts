@@ -723,20 +723,12 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   setSampleStartPoint(seconds: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setStartPoint(seconds));
-
-    this.#sendUpstreamMessage('start-point:updated', {
-      startPoint: seconds,
-    });
+    this.#voicePool.applyToAllVoices((voice) => voice.setParam('startPoint', seconds));
     return this;
   }
 
   setSampleEndPoint(seconds: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setEndPoint(seconds));
-
-    this.#sendUpstreamMessage('end-point:updated', {
-      endPoint: seconds,
-    });
+    this.#voicePool.applyToAllVoices((voice) => voice.setParam('endPoint', seconds));
     return this;
   }
 

@@ -729,14 +729,6 @@ export class SampleVoice {
     return this.#envelopes;
   }
 
-  setStartPoint = (time: number, timestamp = this.now) => {
-    this.setParam('startPoint', time, timestamp);
-  };
-
-  setEndPoint = (time: number, timestamp = this.now) => {
-    this.setParam('endPoint', time, timestamp);
-  };
-
   setParam(
     name: string,
     targetValue: number,
@@ -922,11 +914,7 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
-
-            this.#createEnvelopes();
-
-            // this.setStartPoint(0);
-            // this.setEndPoint(data.durationSeconds);
+            this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
           }
           break;
 
