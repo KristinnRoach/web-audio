@@ -11,4 +11,5 @@
 - Breaking: rename `SamplePlayer.setScale` to `setLoopPitchQuantization`, remove `rootNote` and `tuningOffset` (shift `scale` intervals instead) and make all options optional.
 - Breaking: remove the `SamplePlayer.transposeSemitones` setter.
 - Breaking: remove `SampleVoice.setAllowedPeriods`, `setPlaybackRate`, `setStartPoint` and `setEndPoint`.
+- Breaking: `setSampleStartPoint` and `setSampleEndPoint` no longer post `start-point:updated` and `end-point:updated`.
 - Breaking: `note:off`, `voice:started` and `voice:stopped` report the played note, not the transposed one. `note:off` sends `{ midiNote }`.
