@@ -53,6 +53,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // getter below. Extra entries only contribute samples to the mix.
     this.audioData = [];
     this.audioDataGain = 1;
+    this.loopEnabled = false;
+    this.reversePlayback = false;
+    this.panDriftEnabled = true;
     this.minZeroCrossing = 0;
     this.maxZeroCrossing = 0;
 
@@ -69,7 +72,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.durationPreserver = new DurationPreserver(sampleRate);
 
-    // Glide time constant between snapped loop lengths, not an arrival time
+    // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
     this.loopRampDuration = 0.125;
     this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
@@ -90,14 +93,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   // Shortest allowed playback range, can be inverted:
   // Math.abs(end - start) >= minRangeSamples
-  // C5's period, lowered to the shortest snap period so scales above C5 keep their pitch.
+  // C5's period, lowered to the shortest quantize period so scales above C5 keep their pitch.
   get minRangeSamples() {
-    return Math.min(sampleRate / 523.25, this.loopSnapPeriods?.[0] ?? Infinity);
+    return Math.min(sampleRate / 523.25, this.loopQuantizePeriods?.[0] ?? Infinity);
   }
 
   get pitchPreservationThreshold() {
     return (
-      this.loopSnapPeriods?.at(-1) ??
+      this.loopQuantizePeriods?.at(-1) ??
       Math.floor(sampleRate * DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS)
     );
   }
@@ -118,9 +121,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = event.data;
 
     switch (type) {
-      case 'setLoopSnapPeriods':
+      case 'setLoopQuantizePeriods':
         // Seconds to samples, ascending: [0] is the shortest, at(-1) the longest.
-        this.loopSnapPeriods = value.map((seconds) => seconds * sampleRate).sort((a, b) => a - b);
+        this.loopQuantizePeriods = value
+          .map((seconds) => seconds * sampleRate)
+          .sort((a, b) => a - b);
         break;
 
       case 'voice:reset':
@@ -254,10 +259,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isReleasing = false;
     this.pendingStartFrame = 0;
     this.triggerId = 0;
-    this.loopEnabled = false;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
 
-    this.reversePlayback = false;
     this.previousApproachDirection = null;
     // True while cycling a loop against the approach direction (backward loops,
     // or the return half of a ping-pong). Direction = approach, negated when turned.
@@ -277,7 +280,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.driftUpdateCounter = 0;
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
-    this.panDriftEnabled = true;
     this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
     this.nextDriftGenerated = false;
@@ -423,13 +425,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 
   /**
-   * Quantize loop duration to the nearest tempo-synced note duration (skips if below the smallest quantize option)
+   * Sync loop duration to the nearest tempo-synced note duration (skips if below the shortest option)
    * @param {number} loopDurationSamples - Current loop duration in samples
    * @param {number} tempo - Current tempo in BPM
    * @param {number} playbackRate - Current playback rate
-   * @returns {number} - Quantized loop duration in samples
+   * @returns {number} - Tempo-synced loop duration in samples
    */
-  #quantizeLoopDurationToTempo(loopDurationSamples, tempo, playbackRate) {
+  #syncLoopDurationToTempo(loopDurationSamples, tempo, playbackRate) {
     if (!this.syncLoopToTempo) {
       return loopDurationSamples;
     }
@@ -439,10 +441,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Account for playback rate - faster playback means shorter effective duration
     const effectiveDuration = loopDurationSamples / Math.abs(playbackRate);
 
-    // Find the smallest quantize option (32nd note)
+    // Find the shortest option (32nd note)
     const smallestInterval = noteDurations.thirtySecond;
 
-    // Skip quantization if the base duration is smaller than the smallest option
+    // Skip syncing if the base duration is shorter than the shortest option
     if (effectiveDuration < smallestInterval) {
       return loopDurationSamples;
     }
@@ -474,7 +476,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       startPointSamples: Math.floor(parameters.startPoint[0] * sampleRate),
       endPointSamples: Math.floor(parameters.endPoint[0] * sampleRate),
       // Keep loop points fractional: the loop length sets the pitch of an audio-rate
-      // loop, and flooring quantized it to whole source samples (~5 cents at a
+      // loop, and flooring rounded it to whole source samples (~5 cents at a
       // C5-length loop). Playback position and interpolation are already
       // fractional; every consumer that needs an index floors locally.
       loopStartSamples: parameters.loopStart[0] * sampleRate,
@@ -515,14 +517,19 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     };
   }
 
+  #canQuantizeLoopPeriod(period) {
+    const periods = this.loopQuantizePeriods;
+    return !!periods?.length && period >= 1 && period <= periods.at(-1);
+  }
+
   // Select the nearest period target; glide is applied separately.
-  #snapLoopLength(length) {
-    const periods = this.loopSnapPeriods;
-    if (!periods?.length || length < 1 || length > periods[periods.length - 1]) return length;
+  #quantizeLoopPeriod(period) {
+    if (!this.#canQuantizeLoopPeriod(period)) return period;
+    const periods = this.loopQuantizePeriods;
     let best = periods[0];
-    let distance = Math.abs(best - length);
+    let distance = Math.abs(best - period);
     for (let i = 1; i < periods.length; i++) {
-      const candidateDistance = Math.abs(periods[i] - length);
+      const candidateDistance = Math.abs(periods[i] - period);
       if (candidateDistance < distance) {
         best = periods[i];
         distance = candidateDistance;
@@ -532,11 +539,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 
   // One-pole glide in the log domain (even pitch glide), once per audible sample.
-  // Only inside the snapping range; outside it, or entering it, the length jumps.
+  // Only inside the quantization range; outside it, or entering it, the length jumps.
   #glideLoopLength(target) {
     this.loopGliding = false;
-    const periods = this.loopSnapPeriods;
-    if (!periods?.length || target < 1 || target > periods[periods.length - 1]) {
+    const periods = this.loopQuantizePeriods;
+    if (!this.#canQuantizeLoopPeriod(target)) {
       this.loopGlideLogLength = null;
       return target;
     }
@@ -548,7 +555,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.loopGliding = Math.abs(logTarget - this.loopGlideLogLength) > 1e-12;
       if (!this.loopGliding) this.loopGlideLogLength = logTarget;
     }
-    // The log round trip can exceed the longest period by an ULP and bypass snapping.
+    // The log round trip can exceed the longest period by an ULP and bypass quantization.
     return Math.min(Math.exp(this.loopGlideLogLength), periods.at(-1));
   }
 
@@ -570,20 +577,20 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // An audio-rate loop's length is its pitch. Shift it inside effective trim
     // to preserve its period when possible; longer loops clamp below.
     // A zero-length loop (end dragged onto start) floors at minRangeSamples,
-    // which snapping lifts to the shortest period when a scale is set.
-    let targetLength = this.#snapLoopLength(Math.max(this.minRangeSamples, lpEnd - lpStart));
+    // which quantization lifts to the shortest period when a scale is set.
+    let targetPeriod = this.#quantizeLoopPeriod(Math.max(this.minRangeSamples, lpEnd - lpStart));
     if (
-      targetLength > playbackRange.durationSamples &&
+      targetPeriod > playbackRange.durationSamples &&
       playbackRange.durationSamples <= this.pitchPreservationThreshold
     ) {
-      targetLength =
-        this.loopSnapPeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
-        targetLength;
+      targetPeriod =
+        this.loopQuantizePeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
+        targetPeriod;
     }
-    const loopLength = this.#glideLoopLength(targetLength);
-    if (loopLength >= 1 && loopLength <= this.pitchPreservationThreshold) {
+    const loopPeriod = this.#glideLoopLength(targetPeriod);
+    if (loopPeriod >= 1 && loopPeriod <= this.pitchPreservationThreshold) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
-      const fittedLength = Math.min(loopLength, playbackRange.durationSamples);
+      const fittedLength = Math.min(loopPeriod, playbackRange.durationSamples);
       lpStart = Math.min(Math.max(lpStart, rangeStart), rangeEnd - fittedLength);
       lpEnd = lpStart + fittedLength;
     }
@@ -600,25 +607,21 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
-    // Apply tempo quantization if enabled
+    // Apply tempo sync if enabled
     if (this.syncLoopToTempo) {
-      const quantizedDuration = this.#quantizeLoopDurationToTempo(
-        baseDuration,
-        tempo,
-        playbackRate,
-      );
+      const syncedDuration = this.#syncLoopDurationToTempo(baseDuration, tempo, playbackRate);
 
-      calcLoopEnd = calcLoopStart + quantizedDuration;
+      calcLoopEnd = calcLoopStart + syncedDuration;
       // Ensure we don't exceed playback range
       calcLoopEnd = Math.min(calcLoopEnd, playbackRange.endSamples);
     }
 
     // Keytrack loop: scale sample-domain loop length by playbackRate so the real-time
-    // loop period stays constant across notes (amount=1); amount=0 leaves it fixed.
+    // loop time stays constant across notes (amount=1); amount=0 leaves it fixed.
     // Keytrack and tempo-sync both remap loop length as a function of playbackRate, in
     // opposite directions (real-time vs. musical length). They are mutually exclusive:
-    // tempo-sync wins whenever it is enabled, even when quantization left the
-    // duration unchanged (already on-grid, or too short to quantize).
+    // tempo-sync wins whenever it is enabled, even when syncing left the
+    // duration unchanged (already on-grid, or too short to sync).
     if (
       baseDuration > this.pitchPreservationThreshold &&
       this.keytrackLoopAmount > 0 &&

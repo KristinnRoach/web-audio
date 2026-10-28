@@ -8,11 +8,11 @@ import {
   setupProcessorGlobals,
 } from './range-test-helpers';
 
-describe('loop snapping and voice reuse', () => {
+describe('loop pitch quantization and voice reuse', () => {
   setupProcessorGlobals();
 
   describe.each([0, 0.125])('with glide time constant %f', (ramp) => {
-    it.each(['E', 'A', 'B'] as const)('snaps upward to the longest %s period', async (root) => {
+    it.each(['E', 'A', 'B'] as const)('quantizes upward to the longest %s period', async (root) => {
       const periods = createScale(root, [0], 1, 5).periodsInSec.sort((a, b) => a - b);
       const longest = periods.at(-1)!;
       const processor = await startProcessor([], periods);

@@ -17,7 +17,7 @@ describe('loop range clamping', () => {
     [0.25, 0.75],
     [0, 1],
     [0, 99_999],
-  ])('keeps a long loop covering trim at %f..%f unsnapped', async (loopStart, loopEnd) => {
+  ])('keeps a long loop covering trim at %f..%f unquantized', async (loopStart, loopEnd) => {
     const processor = await startProcessor([0.3, 0.7], [0.004, 0.01]);
     render(processor, makeParameters({ startPoint: 0.25, endPoint: 0.75, loopStart, loopEnd }), 1);
     const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
@@ -47,7 +47,7 @@ describe('loop range clamping', () => {
       const start = TEST_SAMPLE_RATE / 2;
       const processor = await startProcessor(
         [(start + 20) / TEST_SAMPLE_RATE, 0.9],
-        // The longest period sets the threshold; the loop's own length snaps to itself.
+        // The longest period sets the threshold; the loop's own period quantizes to itself.
         loopLength > 92 ? [loopLength / TEST_SAMPLE_RATE, 0.101] : undefined,
       );
       const parameters = makeParameters({

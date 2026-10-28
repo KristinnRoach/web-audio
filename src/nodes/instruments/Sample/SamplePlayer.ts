@@ -3,17 +3,16 @@
 import { Message, MessageHandler } from '@/events';
 import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
 import { resampleAudioBuffer } from '@/utils/audiodata/convert/resampleAudioBuffer';
-import { clamp, ROOT_NOTES, assert } from '@/utils';
+import { clamp, assert } from '@/utils';
 
 import {
   preProcessAudioBuffer,
+  resampleForPitch,
   PreProcessOptions,
   PreProcessResults,
 } from '@/nodes/preprocessor/Preprocessor';
 
 import { isValidAudioBuffer, isMidiValue } from '@/utils';
-
-import { createScale, offsetPeriodsBySemitones } from '@/utils/music-theory/utils/scale-utils';
 import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
@@ -84,12 +83,11 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #loopStart = 0;
   #loopEnd = 0;
-  #loopScaleOptions: Parameters<SamplePlayer['setScale']>[0] | null = null;
-  #loopSnapPeriods: number[] = [];
   #gainLFO: LFO | null = null;
   #pitchLFO: LFO | null = null;
 
-  #transposedBySemitones = 0;
+  #transposeSemitones = 0;
+  #fineTuneCents = 0;
 
   #tempo = 120;
   #glideTime: number = samplerParams.glide.defaultValue;
@@ -103,6 +101,8 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #syncGainLFOToMidiNote = false;
   #syncPitchLFOToMidiNote = false;
+  /** Last played note, so synced LFOs follow a transpose/fineTune too. */
+  #lastPlayedNote: number | null = null;
 
   #useZeroCrossings = true;
   #preprocessAudio = true;
@@ -148,6 +148,8 @@ export class SamplePlayer implements ILibInstrumentNode {
           this.#polyphony,
           this.#voiceSignalChain,
         );
+        // Processors persist the periods across sample loads, so defaults are set once here.
+        this.setLoopPitchQuantization();
 
         // Connect audio chain
         this.#connectAudioChain();
@@ -365,13 +367,15 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #setupLFOs() {
     const gainLFO = new LFO(this.context);
-    gainLFO.setWaveform('sine');
-
     const pitchLFO = new LFO(this.context);
-    pitchLFO.setWaveform('sine');
-    // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform().
+    gainLFO.setWaveform('colored-noise', { harmonics: 18, slope: -0.2 });
+    // LFO runs noise at rate / harmonics: rate sets the fastest jitter,
+    // harmonics / rate is how long before the pattern repeats.
+    pitchLFO.setWaveform('colored-noise', { harmonics: 42, slope: -0.4 });
+    // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform()
 
     gainLFO.connect(this.#outBus.input.gain);
+
     this.#voicePool.applyToAllVoices((voice) => {
       const param = voice.getParam('detune');
       if (param) pitchLFO.connect(param);
@@ -477,7 +481,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       // Clear and release only if all preprocessing succeeds.
       this.releaseAll();
-      this.transposeSemitones = 0;
       this.#isLoaded = false;
       this.#audioData = audioData;
       this.#bufferDuration = audioData[0].duration;
@@ -490,15 +493,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       this.#voicePool.setAudioData(audioData, newZeroCrossings);
 
-      const defaultScaleOptions = {
-        rootNote: 'C' as keyof typeof ROOT_NOTES,
-        scale: [0],
-        lowestOctave: 1,
-        highestOctave: 5,
-        tuningOffset: 0,
-      };
-
-      this.setScale(defaultScaleOptions);
       this.#resetLoopPoints();
 
       await loadedPromise;
@@ -559,42 +553,36 @@ export class SamplePlayer implements ILibInstrumentNode {
     secondsFromNow = 0,
   ): MidiValue | null {
     const safeVelocity = isMidiValue(velocity) ? velocity : 100;
-    const transposedMidiNote = midiNote + this.#transposedBySemitones;
-    if (!isMidiValue(transposedMidiNote)) {
-      console.warn(`Invalid midiNote: ${transposedMidiNote}`);
+    if (!isMidiValue(midiNote)) {
+      console.warn(`Invalid midiNote: ${midiNote}`);
       return null;
     }
+    // Voices are keyed by the played note so release() still finds them after
+    // a transpose; anything that tracks pitch gets the sounding note.
+    const soundingNote = midiNote + this.#pitchOffset;
+    this.#lastPlayedNote = midiNote;
+    this.#syncLFOsToNote(soundingNote);
 
-    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(transposedMidiNote);
-    if (this.#syncPitchLFOToMidiNote) {
-      this.#pitchLFO?.setMusicalNote(transposedMidiNote, { divisor: 4 });
-    }
+    this.#outBus.noteOn(soundingNote, safeVelocity, secondsFromNow, glideTime);
 
-    this.#outBus.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
-
-    return this.#voicePool.noteOn(transposedMidiNote, safeVelocity, secondsFromNow, glideTime);
+    return this.#voicePool.noteOn(midiNote, safeVelocity, secondsFromNow, glideTime);
   }
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
   release(midiNote: MidiValue, secondsFromNow = 0): this {
     if (this.holdEnabled || this.#holdLocked) return this;
 
-    const transposedMidiNote = midiNote + this.#transposedBySemitones;
-
     if (this.#sustainPedalPressed) {
-      this.#sustainedNotes.set(
-        transposedMidiNote,
-        (this.#sustainedNotes.get(transposedMidiNote) ?? 0) + 1,
-      );
+      this.#sustainedNotes.set(midiNote, (this.#sustainedNotes.get(midiNote) ?? 0) + 1);
       return this;
     }
 
     // Remove from sustained notes if it was there
-    this.#sustainedNotes.delete(transposedMidiNote);
+    this.#sustainedNotes.delete(midiNote);
 
-    this.#voicePool.noteOff(transposedMidiNote, secondsFromNow);
-    this.#outBus.noteOff(transposedMidiNote);
-    this.#sendUpstreamMessage('note:off', { transposedMidiNote });
+    this.#voicePool.noteOff(midiNote, secondsFromNow);
+    this.#outBus.noteOff(midiNote + this.#pitchOffset);
+    this.#sendUpstreamMessage('note:off', { midiNote });
     return this;
   }
 
@@ -605,55 +593,126 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  /* === SCALE SETTINGS === */
+  /* === PITCH === */
 
-  get transposedBySemitones() {
-    return this.#transposedBySemitones;
+  setPitchEnabled(enabled: boolean): this {
+    this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
+    return this;
   }
 
-  set transposeSemitones(semitones: number) {
-    if (this.#transposedBySemitones === semitones) return;
-    this.#transposedBySemitones = semitones;
+  /** Semitones added to every played note: transpose plus fine tune. */
+  get #pitchOffset() {
+    return this.#transposeSemitones + this.#fineTuneCents / 100;
+  }
+
+  #syncLFOsToNote(soundingNote: number) {
+    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+    if (this.#syncPitchLFOToMidiNote) {
+      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+    }
+  }
+
+  #applyPitchOffset(): this {
+    const offset = this.#pitchOffset;
+    this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(offset));
+    if (this.#lastPlayedNote !== null) this.#syncLFOsToNote(this.#lastPlayedNote + offset);
+    return this;
+  }
+
+  /** Musical transposition. Sums with fineTune() into one offset that retunes held voices too. */
+  transpose(semitones: number): this {
+    if (!Number.isFinite(semitones)) return this;
+    this.#transposeSemitones = semitones;
+    return this.#applyPitchOffset();
+  }
+
+  /** Tuning correction in cents. Sums with transpose(). */
+  fineTune(cents: number): this {
+    if (!Number.isFinite(cents)) return this;
+    this.#fineTuneCents = cents;
+    return this.#applyPitchOffset();
   }
 
   /**
-   * Sends scale periods in seconds to every voice for processor-side snapping.
+   * Bakes transpose() + fineTune() into the samples and zeroes both, so notes keep
+   * their pitch but play from re-pitched audio. Reloads like cropSample(): held
+   * notes stop, trim/loop reset to the full buffer and `sample:loaded` fires,
+   * then `pitch:committed` once the offsets are updated.
+   * Returns null if there is no sample or no offset to commit.
    */
-  setScale(options: {
-    rootNote: keyof typeof ROOT_NOTES;
-    /** Custom pattern as semitone offsets from the root. */
-    scale: number[];
-    /** Shifts every allowed period by this many semitones. Positive is up. */
-    tuningOffset: number;
-    highestOctave: number;
-    lowestOctave: number;
-  }) {
-    this.#validateScaleOptions(options);
-    this.#loopScaleOptions = { ...options, scale: [...options.scale] };
-    const { rootNote, scale, lowestOctave, highestOctave, tuningOffset } = options;
-    const periodsInSeconds = createScale(rootNote, scale, lowestOctave, highestOctave).periodsInSec;
-    this.#loopSnapPeriods = offsetPeriodsBySemitones(periodsInSeconds, tuningOffset).sort(
-      (a, b) => a - b,
+  async commitPitch(): Promise<AudioBuffer | null> {
+    const transpose = this.#transposeSemitones;
+    const fineTune = this.#fineTuneCents;
+    const semitones = this.#pitchOffset;
+    if (!this.#audioData.length || semitones === 0) return null;
+    const pitched = this.#audioData.map((sample) =>
+      resampleForPitch(this.context, sample, semitones),
     );
+    const loaded = await this.#loadAudio(pitched, { skipPreProcessing: true }, true);
+    if (!loaded) return null;
+    // Subtract what was baked rather than zeroing, so a transpose() or
+    // fineTune() made during the reload is kept.
+    this.#transposeSemitones -= transpose;
+    this.#fineTuneCents -= fineTune;
+    this.#applyPitchOffset();
+    this.#sendUpstreamMessage('pitch:committed', { semitones });
+    return loaded[0];
+  }
+
+  get transposedBySemitones() {
+    return this.#transposeSemitones;
+  }
+
+  get fineTuneCents() {
+    return this.#fineTuneCents;
+  }
+
+  /** Periods (sec) of `scale` degrees (semitones above C) over an octave range, ascending. */
+  #getNotePeriodsInSeconds(scale: number[], lowestOctave: number, highestOctave: number): number[] {
+    const periods: number[] = [];
+    for (let octave = lowestOctave; octave <= highestOctave; octave++) {
+      for (const interval of scale) {
+        const midi = (octave + 1) * 12 + interval;
+        periods.push(1 / (440 * 2 ** ((midi - 69) / 12)));
+      }
+    }
+    return periods.sort((a, b) => a - b);
+  }
+
+  /**
+   * Quantizes audio-rate loop periods to pitches of this scale. Pitches follow the
+   * played midi-note like unlooped playback: with `scale: [0]`, a quantized
+   * loop matches the midi-note's relative pitch in an octave within the given octave range.
+   */
+  setLoopPitchQuantization({
+    scale = [0],
+    lowestOctave = 1,
+    highestOctave = 5,
+  }: {
+    scale?: number[];
+    highestOctave?: number;
+    lowestOctave?: number;
+  } = {}) {
+    this.#validateLoopPitchQuantization({ scale, lowestOctave, highestOctave });
+    const periods = this.#getNotePeriodsInSeconds(scale, lowestOctave, highestOctave);
 
     this.#voicePool?.applyToAllVoices((voice) => {
-      voice.sendToProcessor({ type: 'setLoopSnapPeriods', value: this.#loopSnapPeriods });
+      voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
     });
 
     return this;
   }
 
-  #validateScaleOptions({
+  #validateLoopPitchQuantization({
     scale,
     lowestOctave,
     highestOctave,
-    tuningOffset,
-  }: Parameters<SamplePlayer['setScale']>[0]) {
+  }: Required<NonNullable<Parameters<SamplePlayer['setLoopPitchQuantization']>[0]>>) {
     if (scale.length === 0) {
       throw new RangeError('Scale must contain at least one note');
     }
-    if (!scale.every((note) => Number.isInteger(note) && note >= 0 && note <= 11)) {
-      throw new RangeError(`Scale notes must be integers from 0 to 11, got [${scale.join(', ')}]`);
+    if (!scale.every(Number.isFinite)) {
+      throw new RangeError(`Scale notes must be finite, got [${scale.join(', ')}]`);
     }
     if (!Number.isInteger(lowestOctave) || !Number.isInteger(highestOctave)) {
       throw new RangeError(`Octaves must be integers, got ${lowestOctave} to ${highestOctave}`);
@@ -664,26 +723,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (highestOctave > 9) {
       throw new RangeError(`highestOctave must be at most 9, got ${highestOctave}`);
     }
-    if (!Number.isFinite(tuningOffset)) {
-      throw new RangeError(`tuningOffset must be finite, got ${tuningOffset}`);
-    }
-  }
-
-  /** Transposes playback to the new root and rebuilds processor snapping periods. */
-  setRootNote(note: keyof typeof ROOT_NOTES) {
-    const rootNoteNumber = ROOT_NOTES[note];
-
-    let semitones = rootNoteNumber === 0 ? 0 : rootNoteNumber - 12;
-
-    if (this.transposedBySemitones === semitones) return this;
-
-    this.transposeSemitones = semitones;
-
-    if (this.#loopScaleOptions) {
-      this.setScale({ ...this.#loopScaleOptions, rootNote: note });
-    }
-
-    return this;
   }
 
   /** PARAM SETTERS  */
@@ -695,20 +734,12 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   setSampleStartPoint(seconds: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setStartPoint(seconds));
-
-    this.#sendUpstreamMessage('start-point:updated', {
-      startPoint: seconds,
-    });
+    this.#voicePool.applyToAllVoices((voice) => voice.setParam('startPoint', seconds));
     return this;
   }
 
   setSampleEndPoint(seconds: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setEndPoint(seconds));
-
-    this.#sendUpstreamMessage('end-point:updated', {
-      endPoint: seconds,
-    });
+    this.#voicePool.applyToAllVoices((voice) => voice.setParam('endPoint', seconds));
     return this;
   }
 
@@ -719,7 +750,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  // Glide time constant between snapped loop lengths, applied in the processor. 0 = stepped.
+  // Glide time constant between quantized loop periods, applied in the processor. 0 = stepped.
   setLoopRampDuration(seconds: number): this {
     this.#loopRampDuration = seconds;
     this.#voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
@@ -798,8 +829,8 @@ export class SamplePlayer implements ILibInstrumentNode {
       for (const [note, count] of this.#sustainedNotes) {
         this.#voicePool.noteOff(note);
         // One outBus release per held release: InstrumentBus counts note-ons.
-        for (let i = 0; i < count; i++) this.#outBus.noteOff(note);
-        this.#sendUpstreamMessage('note:off', { transposedMidiNote: note });
+        for (let i = 0; i < count; i++) this.#outBus.noteOff(note + this.#pitchOffset);
+        this.#sendUpstreamMessage('note:off', { midiNote: note });
       }
       this.#sustainedNotes.clear();
     }
@@ -881,7 +912,8 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.
-    // The processor resolves ordering, snapping and trim containment.
+    // The processor resolves ordering, pitch quantization, zero-crossing snapping
+    // and trim containment.
     const seconds = clamp(
       loopPoint === 'start' ? loopStartSeconds : loopEndSeconds,
       0,
@@ -1024,13 +1056,6 @@ export class SamplePlayer implements ILibInstrumentNode {
         console.warn(`Unknown parameter: ${name}`);
         return undefined;
     }
-  }
-
-  /* === PITCH === */
-
-  setPitchEnabled(enabled: boolean): this {
-    this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
-    return this;
   }
 
   /* === ENVELOPES === */

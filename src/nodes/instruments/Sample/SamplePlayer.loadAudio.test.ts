@@ -9,7 +9,8 @@ vi.mock('@/nodes/params', async (importOriginal) => ({
     dispose() {}
   },
 }));
-vi.mock('@/nodes/preprocessor/Preprocessor', () => ({
+vi.mock('@/nodes/preprocessor/Preprocessor', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   preProcessAudioBuffer: vi.fn(async (_context, buffer) => ({ audiobuffer: buffer })),
 }));
 vi.mock('@/utils/audiodata/convert/resampleAudioBuffer', () => ({
@@ -66,7 +67,6 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     dispose: vi.fn(),
   } as unknown as Partial<SampleVoicePool>);
   vi.spyOn(player, 'releaseAll').mockReturnValue(player);
-  vi.spyOn(player, 'setScale').mockReturnValue(player);
 
   try {
     const loopChanged = vi.fn();
@@ -124,9 +124,32 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     const originals = [480, 120, 48].map((length) => {
       const buffer = createBuffer(1, length, 48000);
       buffer.getChannelData(0).fill(0.5);
+      if (length === 480) buffer.getChannelData(0)[400] = 1;
       return buffer;
     });
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
+    await player.loadAudio(originals);
+    // commitPitch bakes the summed offset and zeroes it
+    const committed = vi.fn();
+    player.onMessage('pitch:committed', committed);
+    await expect(player.commitPitch()).resolves.toBeNull();
+    player.transpose(-12);
+    await player.commitPitch();
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([960, 240, 96]);
+    // The sinc filter slightly attenuates a one-frame marker, but keeps its position.
+    expect(player.samples[0].getChannelData(0)[800]).toBeGreaterThan(0.9);
+    expect(player.samples[0].getChannelData(0)[700]).toBeCloseTo(0.5, 4);
+    expect(player.transposedBySemitones).toBe(0);
+    expect(committed).toHaveBeenCalledTimes(1);
+    // A transpose during the reload survives as a delta on the baked audio
+    player.transpose(12);
+    const pending = player.commitPitch();
+    player.transpose(14);
+    await pending;
+    expect(player.transposedBySemitones).toBe(2);
+    player.transpose(0);
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([480, 120, 48]);
+    // Band-limited resampling isn't bit-exact over a round trip; crop the originals.
     await player.loadAudio(originals);
     // Inverted points crop the same 0.002..0.006 region
     const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });

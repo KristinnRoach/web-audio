@@ -50,3 +50,39 @@ describe('LFO.retrigger', () => {
     expect(Math.abs(data[atSample + oneCycle])).toBeLessThan(0.02);
   });
 });
+
+describe('LFO noise rate scaling', () => {
+  it('stores and restores the logical noise rate before rendering', async () => {
+    const data = await renderLFO((lfo) => {
+      lfo.setWaveform('colored-noise', { harmonics: 8, seed: 1 });
+      lfo.setFrequency(LFO_HZ);
+      lfo.storeCurrentValues();
+      expect(lfo.getStoredValues()?.rate).toBe(LFO_HZ);
+
+      lfo.setFrequency(440);
+      lfo.setFrequency(lfo.getStoredValues()!.rate);
+      lfo.setWaveform('sine');
+    });
+
+    expect(data[Math.round(SAMPLE_RATE / LFO_HZ / 4)]).toBeCloseTo(1, 1);
+    expect(Math.abs(data[Math.round(SAMPLE_RATE / LFO_HZ)])).toBeLessThan(0.02);
+  });
+
+  it('repeats every harmonics / rate seconds instead of every 1 / rate', async () => {
+    const harmonics = 8;
+    const data = await renderLFO((lfo) => {
+      lfo.setWaveform('colored-noise', { harmonics, seed: 1 });
+      lfo.setFrequency(LFO_HZ);
+    });
+
+    const maxDiff = (lag: number) => {
+      let max = 0;
+      for (let i = 0; i < SAMPLE_RATE / 10; i++)
+        max = Math.max(max, Math.abs(data[i] - data[i + lag]));
+      return max;
+    };
+
+    expect(maxDiff(Math.round((SAMPLE_RATE * harmonics) / LFO_HZ))).toBeLessThan(0.01);
+    expect(maxDiff(Math.round(SAMPLE_RATE / LFO_HZ))).toBeGreaterThan(0.1);
+  });
+});

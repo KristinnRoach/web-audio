@@ -69,6 +69,8 @@ export class SampleVoice {
   #sampleDurationSeconds = 0;
 
   #pitchGlideTime = 0; // in seconds
+  /** Semitones added to the played note for everything that tracks pitch. */
+  #pitchOffset = 0;
 
   #internalSignalChain: readonly SampleVoiceChainNode[];
   #pitchDisabled = false;
@@ -195,9 +197,11 @@ export class SampleVoice {
     if (this.#chainIncludes('am') && !this.#am_gain) {
       this.#am_gain = new GainNode(this.context, { gain: 1 });
       this.#am_lfo = new LFO(this.context);
-      this.#am_lfo.setWaveform('square');
+      this.#am_lfo.setWaveform('pulse');
       this.#am_lfo.setDepth(0);
-      this.#am_lfo.setMusicalNote((this.#midiNote ?? 60) + this.#am_lfo_semitone_offset);
+      this.#am_lfo.setMusicalNote(
+        (this.#midiNote ?? 60) + this.#pitchOffset + this.#am_lfo_semitone_offset,
+      );
       this.#am_lfo.connect(this.#am_gain.gain);
     }
 
@@ -294,6 +298,22 @@ export class SampleVoice {
     return true;
   }
 
+  /** Retunes a held note too: rate, keytracked filters and the AM LFO follow. */
+  setPitchOffset(semitones: number): this {
+    if (this.#pitchOffset === semitones) return this;
+    this.#pitchOffset = semitones;
+    if (this.#midiNote === null) return this;
+    if (!this.#pitchDisabled) {
+      const rate = midiToPlaybackRate(this.#midiNote + semitones);
+      const glide = { glideTime: 0.01 };
+      this.setParam('playbackRate', rate, this.now, glide);
+      this.#updateHPFCutoffForPlaybackRate(rate, this.now, glide);
+      this.#updateLPFCutoffForPlaybackRate(rate, this.now, glide);
+    }
+    this.#am_lfo?.setMusicalNote(this.#midiNote + semitones + this.#am_lfo_semitone_offset);
+    return this;
+  }
+
   freeze(freeze: boolean): this {
     console.info(
       `SampleVoice: freeze(${freeze}) called. 
@@ -317,13 +337,9 @@ export class SampleVoice {
     secondsFromNow?: number;
     glide?: { prevMidiNote: number; glideTime?: number };
   }): MidiValue | null {
-    const { midiNote, velocity, secondsFromNow = 0 } = options;
-
-    const timestamp = this.now + secondsFromNow;
-
-    // An unloaded voice sounds nothing and cannot complete naturally, so it
-    // must not enter PLAYING.
     if (!this.#hasLoadedAudio) return null;
+    const { midiNote, velocity, secondsFromNow = 0 } = options;
+    const timestamp = this.now + secondsFromNow;
 
     if (this.#state !== VoiceState.AVAILABLE) {
       console.log(`had to stop a playing voice, midinote: ${midiNote}`);
@@ -345,10 +361,11 @@ export class SampleVoice {
     let playbackRate = 1;
     let prevRate = 1;
 
+    const soundingNote = midiNote + this.#pitchOffset;
     if (!this.#pitchDisabled) {
-      playbackRate = midiToPlaybackRate(midiNote);
+      playbackRate = midiToPlaybackRate(soundingNote);
       if (options.glide) {
-        prevRate = midiToPlaybackRate(options.glide.prevMidiNote);
+        prevRate = midiToPlaybackRate(options.glide.prevMidiNote + this.#pitchOffset);
       }
       this.#updateHPFCutoffForPlaybackRate(playbackRate, timestamp, {
         glideTime: scaledGlideTime,
@@ -387,18 +404,18 @@ export class SampleVoice {
     this.triggerEnvelopes(timestamp, playbackRate);
 
     // Trigger effects
-    this.#feedback?.trigger(midiNote, {
+    this.#feedback?.trigger(soundingNote, {
       velocity,
       secondsFromNow,
       glideTime: scaledGlideTime,
       triggerDecay: true,
     });
 
-    this.#am_lfo?.setMusicalNote(midiNote + this.#am_lfo_semitone_offset, {
+    this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
       divisor: 1,
       glideTime: scaledGlideTime,
       glideFromMidiNote: options.glide
-        ? options.glide.prevMidiNote + this.#am_lfo_semitone_offset
+        ? options.glide.prevMidiNote + this.#pitchOffset + this.#am_lfo_semitone_offset
         : undefined,
       timestamp,
     });
@@ -728,14 +745,6 @@ export class SampleVoice {
     return this.#envelopes;
   }
 
-  setStartPoint = (time: number, timestamp = this.now) => {
-    this.setParam('startPoint', time, timestamp);
-  };
-
-  setEndPoint = (time: number, timestamp = this.now) => {
-    this.setParam('endPoint', time, timestamp);
-  };
-
   setParam(
     name: string,
     targetValue: number,
@@ -822,15 +831,6 @@ export class SampleVoice {
     return this;
   }
 
-  setAllowedPeriods(periods: number[]): this {
-    this.sendToProcessor({
-      type: 'setAllowedPeriods',
-      allowedPeriods: periods,
-    });
-
-    return this;
-  }
-
   disablePitch = () => {
     this.#pitchDisabled = true;
     const timestamp = this.now;
@@ -848,7 +848,7 @@ export class SampleVoice {
     const glideTime = 0.1;
 
     if (this.#midiNote !== null) {
-      const rate = midiToPlaybackRate(this.#midiNote);
+      const rate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
       this.getParam('playbackRate')?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
       this.#updateHPFCutoffForPlaybackRate(rate, timestamp, {
         glideTime,
@@ -921,11 +921,7 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
-
-            this.#createEnvelopes();
-
-            this.setStartPoint(0);
-            this.setEndPoint(data.durationSeconds);
+            this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
           }
           break;
 
@@ -1063,20 +1059,6 @@ export class SampleVoice {
     return this;
   }
 
-  setPlaybackRate(
-    rate: number,
-    atTime = this.now,
-    options?: {
-      glideTime?: number;
-      cancelPrevious?: boolean;
-    },
-  ): this {
-    this.setParam('playbackRate', rate, atTime, options);
-    this.#updateHPFCutoffForPlaybackRate(rate, atTime, options);
-    this.#updateLPFCutoffForPlaybackRate(rate, atTime, options);
-    return this;
-  }
-
   /**
    * @param options.glideTime Ramp duration in seconds. For the filter cutoffs this is
    * converted to a `setTargetAtTime` time constant (glideTime / 3), so the cutoff is
@@ -1166,7 +1148,7 @@ export class SampleVoice {
     const semitoneOffset = offset * 12; // convert octaves to semitones
     this.#am_lfo_semitone_offset = semitoneOffset;
     if (this.#am_lfo && this.#midiNote !== null) {
-      this.#am_lfo.setMusicalNote(this.#midiNote + semitoneOffset);
+      this.#am_lfo.setMusicalNote(this.#midiNote + this.#pitchOffset + semitoneOffset);
     }
   }
 

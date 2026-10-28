@@ -20,7 +20,7 @@ const envConfig: EnvelopeConfig = {
   },
 };
 
-it('sends the loop-end period in seconds to voices after scale and root updates', async () => {
+it('sends loop quantize periods on quantization updates but not on transpose', async () => {
   vi.resetModules();
   vi.doUnmock('@/nodes/params');
   vi.stubGlobal('window', {});
@@ -47,47 +47,77 @@ it('sends the loop-end period in seconds to voices after scale and root updates'
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
   expect(() => player.setLoopEnabled(false)).not.toThrow();
   const sendToProcessor = vi.fn();
+  const setPitchOffset = vi.fn();
   await initTestPlayer(player, {
     applyToAllVoices: (apply) =>
-      apply({ sendToProcessor, getParam: () => null, setParam() {}, setLoopPoints() {} } as never),
+      apply({
+        sendToProcessor,
+        setPitchOffset,
+        getParam: () => null,
+        setParam() {},
+        setLoopPoints() {},
+      } as never),
     dispose() {},
   });
+  // init() sets the default quantization once; sample loads no longer resend it.
+  expect(sendToProcessor).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'setLoopQuantizePeriods' }),
+  );
+  sendToProcessor.mockClear();
 
   try {
-    player.setScale({
-      rootNote: 'C',
+    player.setLoopPitchQuantization({
       scale: [0],
-      tuningOffset: 0,
       lowestOctave: 0,
       highestOctave: 5,
     });
     // Root in octaves 0–5, in seconds, sorted shortest first (C5 ... C0).
     expect(sendToProcessor).toHaveBeenLastCalledWith({
-      type: 'setLoopSnapPeriods',
-      value: [60, 48, 36, 24, 12, 0].map((i) => NOTE_PERIODS[i]),
+      type: 'setLoopQuantizePeriods',
+      value: [60, 48, 36, 24, 12, 0].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)),
     });
 
-    player.setRootNote('D');
-    expect(sendToProcessor).toHaveBeenCalledTimes(2);
+    // The transpose carries quantized loops; rebuilding the periods too would shift them twice.
+    player.transpose(2);
+    expect(sendToProcessor).toHaveBeenCalledTimes(1);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(2);
+    expect(player.transposedBySemitones).toBe(2);
+
+    // Fine tune sums with transpose instead of replacing it.
+    player.fineTune(-50);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(1.5);
+    player.transpose(-1);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5);
+
+    player.setLoopPitchQuantization({
+      scale: [2],
+      lowestOctave: 0,
+      highestOctave: 5,
+    });
     expect(sendToProcessor).toHaveBeenLastCalledWith({
-      type: 'setLoopSnapPeriods',
-      value: [62, 50, 38, 26, 14, 2].map((i) => NOTE_PERIODS[i]), // D5 ... D0
+      type: 'setLoopQuantizePeriods',
+      value: [62, 50, 38, 26, 14, 2].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)), // D5 ... D0
     });
 
     const valid = {
-      rootNote: 'C',
       scale: [0],
-      tuningOffset: 0,
       lowestOctave: 0,
       highestOctave: 5,
     } as const;
-    expect(() => player.setScale({ ...valid, scale: [12] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, scale: [0.5] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, highestOctave: 10, scale: [0] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, scale: [] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, lowestOctave: 0.5, scale: [0] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, lowestOctave: 6, scale: [0] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, tuningOffset: NaN, scale: [0] })).toThrow(RangeError);
+    expect(() => player.setLoopPitchQuantization({ ...valid, scale: [NaN] })).toThrow(RangeError);
+    expect(() => player.setLoopPitchQuantization({ ...valid, scale: [Infinity] })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      player.setLoopPitchQuantization({ ...valid, highestOctave: 10, scale: [0] }),
+    ).toThrow(RangeError);
+    expect(() => player.setLoopPitchQuantization({ ...valid, scale: [] })).toThrow(RangeError);
+    expect(() =>
+      player.setLoopPitchQuantization({ ...valid, lowestOctave: 0.5, scale: [0] }),
+    ).toThrow(RangeError);
+    expect(() =>
+      player.setLoopPitchQuantization({ ...valid, lowestOctave: 6, scale: [0] }),
+    ).toThrow(RangeError);
   } finally {
     player.dispose();
     expect(() => player.setLoopEnabled(false)).not.toThrow();
@@ -117,6 +147,7 @@ it('connects pitch LFO to every voice detune and maps normalized depth to cents'
         detunes.forEach((detune) =>
           apply({
             getParam: (name: string) => (name === 'detune' ? detune : null),
+            sendToProcessor() {},
             setParam() {},
             setLoopPoints() {},
           } as never),
@@ -188,6 +219,7 @@ describe('SamplePlayer envelope config', () => {
         apply({
           setEnvelopeConfig,
           getParam: () => null,
+          sendToProcessor() {},
           setParam() {},
           setLoopPoints() {},
         } as never),
@@ -272,6 +304,7 @@ describe('SamplePlayer envelope config', () => {
     const voices = [0, 1].map(() => ({
       setEnvelopeConfig,
       getParam: () => null,
+      sendToProcessor() {},
       setParam() {},
       setLoopPoints() {},
     }));
