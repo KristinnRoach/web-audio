@@ -389,14 +389,6 @@ export const samplerParams = defineSamplerParams({
     format: (v) => `${v.toFixed(0)} cents`,
     apply: (p, v) => p.fineTune(v),
   },
-  sourceSampleTune: {
-    label: 'Source Sample Tune',
-    min: -12,
-    max: 12,
-    defaultValue: 0,
-    step: 0.01,
-    apply: (p, v) => p.commitRePitchedSamples(v),
-  },
 });
 
 export type SamplerParamKey = keyof typeof samplerParams;

@@ -3,7 +3,7 @@
 ---
 
 - Add `SamplePlayer.transpose(semitones)` and `fineTune(cents)`, with `transpose` and `fineTune` params. Held notes retune too.
-- Add `SamplePlayer.commitRePitchedSamples(semitones)` and the `sourceSampleTune` param.
+- Add `SamplePlayer.commitPitch()` to bake transpose and fineTune into the samples, and `commitRePitchedSamples(semitones)`.
 - Add `SampleVoice.setPitchOffset(semitones)`.
 - Breaking: remove `SamplePlayer.setRootNote`. Use `transpose(semitones)`.
 - Breaking: transposition persists across sample loads.

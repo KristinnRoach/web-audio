@@ -646,6 +646,26 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
+  /**
+   * Bakes transpose() + fineTune() into the samples and zeroes both, so notes keep
+   * their pitch but play from re-pitched audio. Reloads like cropSample(): held
+   * notes stop, trim/loop reset to the full buffer and `sample:loaded` fires.
+   * Returns null if there is no sample or no offset to commit.
+   */
+  async commitPitch(): Promise<AudioBuffer | null> {
+    const semitones = this.#pitchOffset;
+    if (!this.#audioData.length || semitones === 0) return null;
+    const pitched = this.#audioData.map((sample) =>
+      resampleForPitch(this.context, sample, semitones),
+    );
+    const loaded = await this.#loadAudio(pitched, { skipPreProcessing: true }, true);
+    if (!loaded) return null;
+    this.#transposeSemitones = 0;
+    this.#fineTuneCents = 0;
+    this.#applyPitchOffset();
+    return loaded[0];
+  }
+
   get transposedBySemitones() {
     return this.#transposeSemitones;
   }

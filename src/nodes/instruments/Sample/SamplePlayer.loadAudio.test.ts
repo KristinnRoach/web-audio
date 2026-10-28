@@ -138,6 +138,15 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     for (const [index, sample] of player.samples.entries()) {
       expect(sample.getChannelData(0)).toEqual(originals[index].getChannelData(0));
     }
+    // commitPitch bakes the summed offset and zeroes it
+    await expect(player.commitPitch()).resolves.toBeNull();
+    player.transpose(-12);
+    await player.commitPitch();
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([960, 240, 96]);
+    expect(player.transposedBySemitones).toBe(0);
+    player.transpose(12);
+    await player.commitPitch();
+    expect(player.samples.map((buffer) => buffer.length)).toEqual([480, 120, 48]);
     // Inverted points crop the same 0.002..0.006 region
     const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });
     expect(cropped).toBe(player.samples[0]);
