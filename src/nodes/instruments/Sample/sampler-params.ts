@@ -261,7 +261,7 @@ export const samplerParams = defineSamplerParams({
     label: 'Amp LFO Rate',
     min: 0,
     max: 1,
-    defaultValue: 0.05,
+    defaultValue: 0.03,
     curve: 5,
     format: (v) => hzOrKhz(v * 100 + 0.1),
     apply: (p, v) => p.gainLFO?.setFrequency(v * 100 + 0.1),

@@ -197,7 +197,7 @@ export class SampleVoice {
     if (this.#chainIncludes('am') && !this.#am_gain) {
       this.#am_gain = new GainNode(this.context, { gain: 1 });
       this.#am_lfo = new LFO(this.context);
-      this.#am_lfo.setWaveform('square');
+      this.#am_lfo.setWaveform('pulse');
       this.#am_lfo.setDepth(0);
       this.#am_lfo.setMusicalNote(
         (this.#midiNote ?? 60) + this.#pitchOffset + this.#am_lfo_semitone_offset,

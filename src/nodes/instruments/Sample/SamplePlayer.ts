@@ -101,6 +101,8 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #syncGainLFOToMidiNote = false;
   #syncPitchLFOToMidiNote = false;
+  /** Last played note, so synced LFOs follow a transpose/fineTune too. */
+  #lastPlayedNote: number | null = null;
 
   #useZeroCrossings = true;
   #preprocessAudio = true;
@@ -365,13 +367,15 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #setupLFOs() {
     const gainLFO = new LFO(this.context);
-    gainLFO.setWaveform('sine');
-
     const pitchLFO = new LFO(this.context);
-    pitchLFO.setWaveform('sine');
-    // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform().
+    gainLFO.setWaveform('triangle');
+    // Few harmonics + brown slope keeps the wobble near the fundamental, so
+    // rate means the same thing as for sine.
+    pitchLFO.setWaveform('colored-noise', { harmonics: 32, slope: -0.5 });
+    // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform()
 
     gainLFO.connect(this.#outBus.input.gain);
+
     this.#voicePool.applyToAllVoices((voice) => {
       const param = voice.getParam('detune');
       if (param) pitchLFO.connect(param);
@@ -556,11 +560,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     // Voices are keyed by the played note so release() still finds them after
     // a transpose; anything that tracks pitch gets the sounding note.
     const soundingNote = midiNote + this.#pitchOffset;
-
-    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(soundingNote);
-    if (this.#syncPitchLFOToMidiNote) {
-      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4 });
-    }
+    this.#lastPlayedNote = midiNote;
+    this.#syncLFOsToNote(soundingNote);
 
     this.#outBus.noteOn(soundingNote, safeVelocity, secondsFromNow, glideTime);
 
@@ -604,9 +605,17 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#transposeSemitones + this.#fineTuneCents / 100;
   }
 
+  #syncLFOsToNote(soundingNote: number) {
+    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+    if (this.#syncPitchLFOToMidiNote) {
+      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+    }
+  }
+
   #applyPitchOffset(): this {
     const offset = this.#pitchOffset;
     this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(offset));
+    if (this.#lastPlayedNote !== null) this.#syncLFOsToNote(this.#lastPlayedNote + offset);
     return this;
   }
 
