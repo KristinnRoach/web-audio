@@ -767,6 +767,31 @@ export class SampleVoice {
     }
   };
 
+  /**
+   * Re-times running loop envelopes when the loop length changes during a held note.
+   * ponytail: experiment for LOOP_RELATIVE_ENVELOPES. Retimes at the envelope's next
+   * cycle, not the sample's next wrap, so the phase is not realigned; drift-rolled
+   * lengths retrigger every cycle.
+   */
+  #followLoopLength(processedSeconds: number) {
+    const previous = this.#processedLoopSeconds;
+    if (
+      !(processedSeconds > 0) ||
+      Math.abs(processedSeconds - previous) <= previous * 1e-3 ||
+      this.#state === VoiceState.RELEASING ||
+      !this.#loopEnabled ||
+      !this.#lastTrigger
+    ) {
+      return;
+    }
+    this.#processedLoopSeconds = processedSeconds;
+    this.#envelopes.forEach((env, envType) => {
+      if (env.shape.mode.type !== 'loop' || !this.#isEnvEnabled(envType)) return;
+      const at = env.nextCycleTime();
+      if (at !== null) this.#triggerEnvelope(envType, env, at, this.#lastTrigger!.playbackRate);
+    });
+  }
+
   get envelopes() {
     return this.#envelopes;
   }
@@ -981,7 +1006,9 @@ export class SampleVoice {
           }
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
-          if (type === 'voice:position') {
+          if (type === 'loop:range' && LOOP_RELATIVE_ENVELOPES) {
+            this.#followLoopLength(data.loopEnd - data.loopStart);
+          } else if (type === 'voice:position') {
             this.getParam('playbackPosition')?.setValueAtTime(
               data.position,
               this.context.currentTime,
