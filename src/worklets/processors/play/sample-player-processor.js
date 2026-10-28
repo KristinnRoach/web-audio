@@ -800,7 +800,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * before the next note triggers its envelopes. Recomputed only when an input changed.
    * No drift and unit rate: drift is rolled per note, and the voice only uses this for
    * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
-   * note's rate, so this is off for those until the voice needs them.
+   * note's rate, so those report the nominal length (no correction) until the voice
+   * needs them.
    */
   #postIdleLoopRange(parameters) {
     const key = this.idleLoopKey ?? [];
@@ -812,6 +813,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.buffer,
       this.zeroCrossings,
       this.loopQuantizePeriods,
+      this.syncLoopToTempo,
+      this.keytrackLoopAmount,
     ];
     if (inputs.every((value, i) => value === key[i])) return;
     this.idleLoopKey = inputs;
@@ -834,12 +837,17 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const hi = Math.min(Math.max(a, b), this.buffer[0].length);
     const clamp = (value) => Math.min(Math.max(value, lo), hi);
     const nominalLoopSeconds = Math.abs(clamp(d) - clamp(c)) / sampleRate;
+    const loopStart = loopRange.loopStartSamples / sampleRate;
+    // Resolved here at tempo 120 and rate 1, not the note's: report no correction.
+    const rateDependent = this.syncLoopToTempo || this.keytrackLoopAmount > 0;
     // Unthrottled: the key check already limits this to real changes.
     this.#postRange(
       'loop:range',
       {
-        loopStart: loopRange.loopStartSamples / sampleRate,
-        loopEnd: loopRange.loopEndSamples / sampleRate,
+        loopStart,
+        loopEnd: rateDependent
+          ? loopStart + nominalLoopSeconds
+          : loopRange.loopEndSamples / sampleRate,
         nominalLoopSeconds,
         idle: true,
       },
