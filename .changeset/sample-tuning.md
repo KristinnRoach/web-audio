@@ -7,7 +7,7 @@
 - Add `SampleVoice.setPitchOffset(semitones)`.
 - Breaking: remove `SamplePlayer.setRootNote`. Use `transpose(semitones)`.
 - Breaking: transposition persists across sample loads.
-- Breaking: remove `tuningOffset` from `SamplePlayer.setScale`.
+- Breaking: rename `SamplePlayer.setScale` to `setLoopPitchQuantization`, remove `rootNote` and `tuningOffset` (shift `scale` intervals instead) and make all options optional.
 - Breaking: remove the `SamplePlayer.transposeSemitones` setter.
 - Breaking: remove `SampleVoice.setAllowedPeriods`, `setPlaybackRate`, `setStartPoint` and `setEndPoint`.
 - Breaking: `note:off`, `voice:started` and `voice:stopped` report the played note, not the transposed one. `note:off` sends `{ midiNote }`.

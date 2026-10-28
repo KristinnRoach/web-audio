@@ -67,7 +67,7 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     dispose: vi.fn(),
   } as unknown as Partial<SampleVoicePool>);
   vi.spyOn(player, 'releaseAll').mockReturnValue(player);
-  vi.spyOn(player, 'setScale').mockReturnValue(player);
+  vi.spyOn(player, 'setLoopPitchQuantization').mockReturnValue(player);
 
   try {
     const loopChanged = vi.fn();

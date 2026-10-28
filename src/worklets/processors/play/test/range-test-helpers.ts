@@ -51,14 +51,14 @@ export function makeParameters(overrides: Record<string, number> = {}): Paramete
 
 export async function startProcessor(
   zeroCrossingSeconds: number[] = [],
-  snapPeriodsSeconds?: number[],
+  quantizePeriodsSeconds?: number[],
 ) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
-  if (snapPeriodsSeconds !== undefined) {
+  if (quantizePeriodsSeconds !== undefined) {
     processor.port.onmessage?.({
-      data: { type: 'setLoopSnapPeriods', value: snapPeriodsSeconds },
+      data: { type: 'setLoopQuantizePeriods', value: quantizePeriodsSeconds },
     } as MessageEvent);
   }
 

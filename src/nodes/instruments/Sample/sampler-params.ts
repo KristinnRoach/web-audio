@@ -382,8 +382,8 @@ export const samplerParams = defineSamplerParams({
   },
   fineTune: {
     label: 'Fine Tune',
-    min: -100,
-    max: 100,
+    min: -50,
+    max: 50,
     defaultValue: 0,
     step: 1,
     format: (v) => `${v.toFixed(0)} cents`,

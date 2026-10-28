@@ -3,7 +3,7 @@
 import { Message, MessageHandler } from '@/events';
 import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
 import { resampleAudioBuffer } from '@/utils/audiodata/convert/resampleAudioBuffer';
-import { clamp, ROOT_NOTES, assert, findZeroCrossings } from '@/utils';
+import { clamp, assert, findZeroCrossings } from '@/utils';
 
 import {
   preProcessAudioBuffer,
@@ -13,8 +13,6 @@ import {
 } from '@/nodes/preprocessor/Preprocessor';
 
 import { isValidAudioBuffer, isMidiValue } from '@/utils';
-
-import { createScale } from '@/utils/music-theory/utils/scale-utils';
 import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
@@ -86,7 +84,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #loopStart = 0;
   #loopEnd = 0;
-  #loopSnapPeriods: number[] = [];
   #gainLFO: LFO | null = null;
   #pitchLFO: LFO | null = null;
 
@@ -492,14 +489,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       this.#voicePool.setAudioData(audioData, newZeroCrossings);
 
-      const defaultScaleOptions = {
-        rootNote: 'C' as keyof typeof ROOT_NOTES,
-        scale: [0],
-        lowestOctave: 1,
-        highestOctave: 5,
-      };
-
-      this.setScale(defaultScaleOptions);
+      this.setLoopPitchQuantization();
       this.#resetLoopPoints();
 
       await loadedPromise;
@@ -603,7 +593,23 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  /* === SCALE SETTINGS === */
+  /* === PITCH === */
+
+  setPitchEnabled(enabled: boolean): this {
+    this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
+    return this;
+  }
+
+  /** Semitones added to every played note: transpose plus fine tune. */
+  get #pitchOffset() {
+    return this.#transposeSemitones + this.#fineTuneCents / 100;
+  }
+
+  #applyPitchOffset(): this {
+    const offset = this.#pitchOffset;
+    this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(offset));
+    return this;
+  }
 
   /** Musical transposition. Sums with fineTune() into one offset that retunes held voices too. */
   transpose(semitones: number): this {
@@ -617,17 +623,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     if (!Number.isFinite(cents)) return this;
     this.#fineTuneCents = cents;
     return this.#applyPitchOffset();
-  }
-
-  /** Semitones added to every played note: transpose plus fine tune. */
-  get #pitchOffset() {
-    return this.#transposeSemitones + this.#fineTuneCents / 100;
-  }
-
-  #applyPitchOffset(): this {
-    const offset = this.#pitchOffset;
-    this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(offset));
-    return this;
   }
 
   /** Retrigger to preview after replacing the audio with tuned source samples. */
@@ -658,42 +653,52 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#fineTuneCents;
   }
 
+  /** Periods (sec) of `scale` degrees (semitones above C) over an octave range, ascending. */
+  #getNotePeriodsInSeconds(scale: number[], lowestOctave: number, highestOctave: number): number[] {
+    const periods: number[] = [];
+    for (let octave = lowestOctave; octave <= highestOctave; octave++) {
+      for (const interval of scale) {
+        const midi = (octave + 1) * 12 + interval;
+        periods.push(1 / (440 * 2 ** ((midi - 69) / 12)));
+      }
+    }
+    return periods.sort((a, b) => a - b);
+  }
+
   /**
-   * Sends scale periods in seconds to every voice for processor-side snapping.
+   * Quantizes audio-rate loop periods to pitches of this scale. Pitches follow the
+   * played midi-note like unlooped playback: with `scale: [0]`, a quantized
+   * loop matches the midi-note's relative pitch in an octave within the given octave range.
    */
-  setScale(options: {
-    rootNote: keyof typeof ROOT_NOTES;
-    /** Custom pattern as semitone offsets from the root. */
-    scale: number[];
-    highestOctave: number;
-    lowestOctave: number;
-  }) {
-    this.#validateScaleOptions(options);
-    const { rootNote, scale, lowestOctave, highestOctave } = options;
-    this.#loopSnapPeriods = createScale(
-      rootNote,
-      scale,
-      lowestOctave,
-      highestOctave,
-    ).periodsInSec.sort((a, b) => a - b);
+  setLoopPitchQuantization({
+    scale = [0],
+    lowestOctave = 1,
+    highestOctave = 5,
+  }: {
+    scale?: number[];
+    highestOctave?: number;
+    lowestOctave?: number;
+  } = {}) {
+    this.#validateLoopPitchQuantization({ scale, lowestOctave, highestOctave });
+    const periods = this.#getNotePeriodsInSeconds(scale, lowestOctave, highestOctave);
 
     this.#voicePool?.applyToAllVoices((voice) => {
-      voice.sendToProcessor({ type: 'setLoopSnapPeriods', value: this.#loopSnapPeriods });
+      voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
     });
 
     return this;
   }
 
-  #validateScaleOptions({
+  #validateLoopPitchQuantization({
     scale,
     lowestOctave,
     highestOctave,
-  }: Parameters<SamplePlayer['setScale']>[0]) {
+  }: Required<NonNullable<Parameters<SamplePlayer['setLoopPitchQuantization']>[0]>>) {
     if (scale.length === 0) {
       throw new RangeError('Scale must contain at least one note');
     }
-    if (!scale.every((note) => Number.isInteger(note) && note >= 0 && note <= 11)) {
-      throw new RangeError(`Scale notes must be integers from 0 to 11, got [${scale.join(', ')}]`);
+    if (!scale.every(Number.isFinite)) {
+      throw new RangeError(`Scale notes must be finite, got [${scale.join(', ')}]`);
     }
     if (!Number.isInteger(lowestOctave) || !Number.isInteger(highestOctave)) {
       throw new RangeError(`Octaves must be integers, got ${lowestOctave} to ${highestOctave}`);
@@ -731,7 +736,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  // Glide time constant between snapped loop lengths, applied in the processor. 0 = stepped.
+  // Glide time constant between quantized loop periods, applied in the processor. 0 = stepped.
   setLoopRampDuration(seconds: number): this {
     this.#loopRampDuration = seconds;
     this.#voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
@@ -893,7 +898,8 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.
-    // The processor resolves ordering, snapping and trim containment.
+    // The processor resolves ordering, pitch quantization, zero-crossing snapping
+    // and trim containment.
     const seconds = clamp(
       loopPoint === 'start' ? loopStartSeconds : loopEndSeconds,
       0,
@@ -1036,13 +1042,6 @@ export class SamplePlayer implements ILibInstrumentNode {
         console.warn(`Unknown parameter: ${name}`);
         return undefined;
     }
-  }
-
-  /* === PITCH === */
-
-  setPitchEnabled(enabled: boolean): this {
-    this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
-    return this;
   }
 
   /* === ENVELOPES === */

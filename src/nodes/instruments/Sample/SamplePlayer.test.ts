@@ -20,7 +20,7 @@ const envConfig: EnvelopeConfig = {
   },
 };
 
-it('sends loop snap periods on scale updates but not on transpose', async () => {
+it('sends loop quantize periods on quantization updates but not on transpose', async () => {
   vi.resetModules();
   vi.doUnmock('@/nodes/params');
   vi.stubGlobal('window', {});
@@ -61,19 +61,18 @@ it('sends loop snap periods on scale updates but not on transpose', async () => 
   });
 
   try {
-    player.setScale({
-      rootNote: 'C',
+    player.setLoopPitchQuantization({
       scale: [0],
       lowestOctave: 0,
       highestOctave: 5,
     });
     // Root in octaves 0–5, in seconds, sorted shortest first (C5 ... C0).
     expect(sendToProcessor).toHaveBeenLastCalledWith({
-      type: 'setLoopSnapPeriods',
-      value: [60, 48, 36, 24, 12, 0].map((i) => NOTE_PERIODS[i]),
+      type: 'setLoopQuantizePeriods',
+      value: [60, 48, 36, 24, 12, 0].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)),
     });
 
-    // The transpose carries snapped loops; rebuilding the periods too would shift them twice.
+    // The transpose carries quantized loops; rebuilding the periods too would shift them twice.
     player.transpose(2);
     expect(sendToProcessor).toHaveBeenCalledTimes(1);
     expect(setPitchOffset).toHaveBeenLastCalledWith(2);
@@ -85,18 +84,35 @@ it('sends loop snap periods on scale updates but not on transpose', async () => 
     player.transpose(-1);
     expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5);
 
+    player.setLoopPitchQuantization({
+      scale: [2],
+      lowestOctave: 0,
+      highestOctave: 5,
+    });
+    expect(sendToProcessor).toHaveBeenLastCalledWith({
+      type: 'setLoopQuantizePeriods',
+      value: [62, 50, 38, 26, 14, 2].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)), // D5 ... D0
+    });
+
     const valid = {
-      rootNote: 'C',
       scale: [0],
       lowestOctave: 0,
       highestOctave: 5,
     } as const;
-    expect(() => player.setScale({ ...valid, scale: [12] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, scale: [0.5] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, highestOctave: 10, scale: [0] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, scale: [] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, lowestOctave: 0.5, scale: [0] })).toThrow(RangeError);
-    expect(() => player.setScale({ ...valid, lowestOctave: 6, scale: [0] })).toThrow(RangeError);
+    expect(() => player.setLoopPitchQuantization({ ...valid, scale: [NaN] })).toThrow(RangeError);
+    expect(() => player.setLoopPitchQuantization({ ...valid, scale: [Infinity] })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      player.setLoopPitchQuantization({ ...valid, highestOctave: 10, scale: [0] }),
+    ).toThrow(RangeError);
+    expect(() => player.setLoopPitchQuantization({ ...valid, scale: [] })).toThrow(RangeError);
+    expect(() =>
+      player.setLoopPitchQuantization({ ...valid, lowestOctave: 0.5, scale: [0] }),
+    ).toThrow(RangeError);
+    expect(() =>
+      player.setLoopPitchQuantization({ ...valid, lowestOctave: 6, scale: [0] }),
+    ).toThrow(RangeError);
   } finally {
     player.dispose();
     expect(() => player.setLoopEnabled(false)).not.toThrow();

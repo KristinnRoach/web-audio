@@ -15,12 +15,12 @@ describe('trim and loop minimum lengths', () => {
     const defaultThreshold = processor.pitchPreservationThreshold;
 
     processor.port.onmessage?.({
-      data: { type: 'setLoopSnapPeriods', value: [0.004, 0.01] },
+      data: { type: 'setLoopQuantizePeriods', value: [0.004, 0.01] },
     } as MessageEvent);
     expect(processor.pitchPreservationThreshold).toBe(0.01 * TEST_SAMPLE_RATE);
 
     processor.port.onmessage?.({
-      data: { type: 'setLoopSnapPeriods', value: [] },
+      data: { type: 'setLoopQuantizePeriods', value: [] },
     } as MessageEvent);
     expect(processor.pitchPreservationThreshold).toBe(defaultThreshold);
   });
@@ -104,7 +104,7 @@ describe('trim and loop minimum lengths', () => {
   });
 
   it.each([0.501, 0.503])(
-    'fills trim ending at %f when a snapped period cannot fit, respecting the trim minimum',
+    'fills trim ending at %f when a quantized period cannot fit, respecting the trim minimum',
     async (endPoint) => {
       const processor = await startProcessor([], [0.004]);
       render(
@@ -157,8 +157,8 @@ describe('trim and loop minimum lengths', () => {
     },
   );
 
-  // Without snap periods a loop shorter than minRangeSamples lifts to it.
-  it('lifts a 1-sample loop to the minimum range without snap periods', async () => {
+  // Without quantize periods a loop shorter than minRangeSamples lifts to it.
+  it('lifts a 1-sample loop to the minimum range without quantize periods', async () => {
     const start = TEST_SAMPLE_RATE / 2;
     const processor = await startProcessor();
     const minLength = processor.minRangeSamples;
@@ -180,13 +180,13 @@ describe('trim and loop minimum lengths', () => {
     expect(Math.abs(wraps[1] - wraps[0] - minLength)).toBeLessThan(1);
   });
 
-  // loopEnd dragged onto loopStart: the loop floors at 1 sample and snaps up to the
+  // loopEnd dragged onto loopStart: the loop floors at 1 sample and quantizes up to the
   // shortest allowed period, instead of falling back to the full playback range.
-  it('snaps a zero-length loop to the shortest period', async () => {
+  it('quantizes a zero-length loop to the shortest period', async () => {
     const shortestPeriod = 46;
     const processor = await startProcessor();
     processor.port.onmessage?.({
-      data: { type: 'setLoopSnapPeriods', value: [shortestPeriod / TEST_SAMPLE_RATE, 0.01] },
+      data: { type: 'setLoopQuantizePeriods', value: [shortestPeriod / TEST_SAMPLE_RATE, 0.01] },
     } as MessageEvent);
     const parameters = makeParameters({ loopStart: 0.5, loopEnd: 0.5 });
 

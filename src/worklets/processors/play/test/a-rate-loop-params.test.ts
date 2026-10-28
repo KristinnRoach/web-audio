@@ -144,7 +144,7 @@ describe('a-rate loop points and duration glide', () => {
     expect(state.currentLoopDrift).not.toBe(12345);
   });
 
-  it.each([0, 0.01])('advances snapped glide by audible frames with ramp %f', async (ramp) => {
+  it.each([0, 0.01])('advances quantized glide by audible frames with ramp %f', async (ramp) => {
     const processor = await makeProcessor();
     processor.port.onmessage?.({
       data: { type: 'setLoopRampDuration', value: ramp },
