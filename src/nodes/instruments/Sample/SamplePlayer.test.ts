@@ -59,6 +59,11 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
       } as never),
     dispose() {},
   });
+  // init() sets the default quantization once; sample loads no longer resend it.
+  expect(sendToProcessor).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'setLoopQuantizePeriods' }),
+  );
+  sendToProcessor.mockClear();
 
   try {
     player.setLoopPitchQuantization({
@@ -142,6 +147,7 @@ it('connects pitch LFO to every voice detune and maps normalized depth to cents'
         detunes.forEach((detune) =>
           apply({
             getParam: (name: string) => (name === 'detune' ? detune : null),
+            sendToProcessor() {},
             setParam() {},
             setLoopPoints() {},
           } as never),
@@ -213,6 +219,7 @@ describe('SamplePlayer envelope config', () => {
         apply({
           setEnvelopeConfig,
           getParam: () => null,
+          sendToProcessor() {},
           setParam() {},
           setLoopPoints() {},
         } as never),
@@ -297,6 +304,7 @@ describe('SamplePlayer envelope config', () => {
     const voices = [0, 1].map(() => ({
       setEnvelopeConfig,
       getParam: () => null,
+      sendToProcessor() {},
       setParam() {},
       setLoopPoints() {},
     }));

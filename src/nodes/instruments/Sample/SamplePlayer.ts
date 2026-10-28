@@ -147,6 +147,8 @@ export class SamplePlayer implements ILibInstrumentNode {
           this.#polyphony,
           this.#voiceSignalChain,
         );
+        // Processors persist the periods across sample loads, so defaults are set once here.
+        this.setLoopPitchQuantization();
 
         // Connect audio chain
         this.#connectAudioChain();
@@ -489,7 +491,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       this.#voicePool.setAudioData(audioData, newZeroCrossings);
 
-      this.setLoopPitchQuantization();
       this.#resetLoopPoints();
 
       await loadedPromise;
