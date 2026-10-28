@@ -13,3 +13,4 @@
 - Breaking: remove `SampleVoice.setAllowedPeriods`, `setPlaybackRate`, `setStartPoint` and `setEndPoint`.
 - Breaking: `setSampleStartPoint` and `setSampleEndPoint` no longer post `start-point:updated` and `end-point:updated`.
 - Breaking: `note:off`, `voice:started` and `voice:stopped` report the played note, not the transposed one. `note:off` sends `{ midiNote }`.
+- Breaking: noise LFO waveforms run at `rate / harmonics`, so `setFrequency` sets the fastest jitter and the pattern repeats every `harmonics / rate` seconds. SamplePlayer gain and pitch LFOs default to colored noise.
