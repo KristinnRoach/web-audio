@@ -124,6 +124,7 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     const originals = [480, 120, 48].map((length) => {
       const buffer = createBuffer(1, length, 48000);
       buffer.getChannelData(0).fill(0.5);
+      if (length === 480) buffer.getChannelData(0)[400] = 1;
       return buffer;
     });
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
@@ -135,6 +136,9 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     player.transpose(-12);
     await player.commitPitch();
     expect(player.samples.map((buffer) => buffer.length)).toEqual([960, 240, 96]);
+    // The sinc filter slightly attenuates a one-frame marker, but keeps its position.
+    expect(player.samples[0].getChannelData(0)[800]).toBeGreaterThan(0.9);
+    expect(player.samples[0].getChannelData(0)[700]).toBeCloseTo(0.5, 4);
     expect(player.transposedBySemitones).toBe(0);
     expect(committed).toHaveBeenCalledTimes(1);
     // A transpose during the reload survives as a delta on the baked audio

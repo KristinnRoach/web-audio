@@ -183,7 +183,7 @@ export class LFO {
 
   storeCurrentValues = () => {
     this.#storedValues = {
-      rate: this.#oscillator.frequency.value * this.#rateDivisor,
+      rate: this.#frequency,
       depth: this.#gain.gain.value,
     };
   };

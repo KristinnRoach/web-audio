@@ -191,8 +191,8 @@ export function createPulseWave(
   // Pulse wave is generated using Fourier series
   // a_n = (2/π) * sin(n*π*dutyCycle) / n
   for (let n = 1; n <= harmonics; n++) {
-    real[n] = 0; // Pulse wave has no cosine components
-    imag[n] = ((2 / Math.PI) * Math.sin(n * Math.PI * dutyCycle)) / n;
+    real[n] = ((2 / Math.PI) * Math.sin(n * Math.PI * dutyCycle)) / n;
+    imag[n] = 0;
   }
 
   return audioContext.createPeriodicWave(real, imag, {
@@ -600,8 +600,8 @@ export function createColoredNoise(
   };
 
   for (let n = 1; n <= harmonics; n++) {
-    // Colored noise: amplitude = 1/n^(slope/2)
-    const amplitude = 1 / (Math.pow(n, slope / 2) * Math.sqrt(harmonics));
+    // Spectral power scales as n^slope, so amplitude scales as n^(slope/2).
+    const amplitude = Math.pow(n, slope / 2) / Math.sqrt(harmonics);
     const phase = random() * 2 * Math.PI;
 
     real[n] = amplitude * Math.cos(phase);
