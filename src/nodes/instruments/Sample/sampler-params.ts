@@ -279,7 +279,7 @@ export const samplerParams = defineSamplerParams({
     label: 'Pitch LFO Rate',
     min: 0,
     max: 1,
-    defaultValue: 0.01,
+    defaultValue: 0.015,
     curve: 5,
     format: (v) => hzOrKhz(v * 100 + 0.1),
     apply: (p, v) => p.pitchLFO?.setFrequency(v * 100 + 0.1),

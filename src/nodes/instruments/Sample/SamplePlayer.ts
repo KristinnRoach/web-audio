@@ -368,10 +368,10 @@ export class SamplePlayer implements ILibInstrumentNode {
   #setupLFOs() {
     const gainLFO = new LFO(this.context);
     const pitchLFO = new LFO(this.context);
-    gainLFO.setWaveform('triangle');
+    gainLFO.setWaveform('colored-noise', { harmonics: 18, slope: -0.2 });
     // LFO runs noise at rate / harmonics: rate sets the fastest jitter,
     // harmonics / rate is how long before the pattern repeats.
-    pitchLFO.setWaveform('colored-noise', { harmonics: 32, slope: -0.5 });
+    pitchLFO.setWaveform('colored-noise', { harmonics: 42, slope: -0.4 });
     // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform()
 
     gainLFO.connect(this.#outBus.input.gain);
