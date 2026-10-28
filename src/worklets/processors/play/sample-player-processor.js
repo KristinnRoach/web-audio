@@ -795,6 +795,44 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type, ...range, triggerId: this.triggerId });
   }
 
+  /**
+   * Resolves the loop range while idle, so the voice knows the snapped loop length
+   * before the next note triggers its envelopes. Recomputed only when an input changed.
+   * No drift and unit rate: drift is rolled per note, and the voice only uses this for
+   * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
+   * note's rate, so this is off for those until the voice needs them.
+   */
+  #postIdleLoopRange(parameters) {
+    const key = this.idleLoopKey ?? [];
+    const inputs = [
+      parameters.loopStart[0],
+      parameters.loopEnd[0],
+      parameters.startPoint[0],
+      parameters.endPoint[0],
+      this.buffer,
+      this.zeroCrossings,
+      this.loopQuantizePeriods,
+    ];
+    if (inputs.every((value, i) => value === key[i])) return;
+    this.idleLoopKey = inputs;
+
+    const positionParams = this.#extractPositionParams(parameters);
+    const loopRange = this.#calculateLoopRange(
+      positionParams,
+      this.#calculatePlaybackRange(positionParams),
+    );
+    // Unthrottled: the key check already limits this to real changes.
+    this.#postRange(
+      'loop:range',
+      {
+        loopStart: loopRange.loopStartSamples / sampleRate,
+        loopEnd: loopRange.loopEndSamples / sampleRate,
+        idle: true,
+      },
+      0,
+    );
+  }
+
   // ===== MAIN PROCESS METHOD =====
 
   process(inputs, outputs, parameters) {
@@ -802,6 +840,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.debugCounter++;
 
     if (!output || !this.isPlaying || !this.buffer?.[0]?.length) {
+      if (output && this.buffer?.[0]?.length) this.#postIdleLoopRange(parameters);
       return true;
     }
 

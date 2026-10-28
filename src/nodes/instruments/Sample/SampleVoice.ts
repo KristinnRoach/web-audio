@@ -67,6 +67,12 @@ export class SampleVoice {
   #triggerId = 0;
 
   #sampleDurationSeconds = 0;
+  #loopEnabled = false;
+  /**
+   * Loop length the processor actually plays, after zero-crossing snapping; 0 until it
+   * reports one. Reported while idle, so it is current before the next note triggers.
+   */
+  #effectiveLoopSeconds = 0;
 
   #pitchGlideTime = 0; // in seconds
   /** Semitones added to the played note for everything that tracks pitch. */
@@ -443,10 +449,19 @@ export class SampleVoice {
     }
 
     const config = this.#envelopeConfigs.get(envType)!;
-    env.trigger(timestamp, {
-      ...resolveSampleEnvelopeTrigger(envType, config, playbackRate),
-      fromPoint,
-    });
+    const resolved = resolveSampleEnvelopeTrigger(envType, config, playbackRate);
+    // Envelope durations are relative to the sample; a looping envelope follows the
+    // loop the processor really plays, which zero-crossing snapping makes shorter.
+    if (
+      this.#loopEnabled &&
+      env.shape.mode.type === 'loop' &&
+      this.#effectiveLoopSeconds > 0 &&
+      this.#sampleDurationSeconds > 0
+    ) {
+      resolved.timeScale =
+        ((resolved.timeScale ?? 1) * this.#sampleDurationSeconds) / this.#effectiveLoopSeconds;
+    }
+    env.trigger(timestamp, { ...resolved, fromPoint });
   }
 
   triggerEnvelopes(timestamp: number, playbackRate: number) {
@@ -921,6 +936,7 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
+            this.#effectiveLoopSeconds = 0;
             this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
           }
           break;
@@ -942,6 +958,11 @@ export class SampleVoice {
         case 'loop:range':
         case 'trim:range':
         case 'voice:position': {
+          // Idle report: the steady loop length for the next note. Not a playing range.
+          if (data.idle) {
+            this.#effectiveLoopSeconds = data.loopEnd - data.loopStart;
+            return;
+          }
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
@@ -958,6 +979,8 @@ export class SampleVoice {
 
         // Forwarded upstream by the tail call, nothing to do here.
         case 'loop:enabled':
+          this.#loopEnabled = data.enabled;
+          break;
         case 'loop:syncToTempo':
         case 'voice:reset':
         case 'voice:playbackDirectionChange':
