@@ -35,6 +35,15 @@ const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feed
  * fast enough to read as a gate, slow enough not to click. */
 const AMP_GATE_SMOOTHING_SEC = 0.002;
 
+/**
+ * How a loop-mode envelope is timed against a looping sample.
+ * false: durations stay absolute; only the zero-crossing shortfall of the loop is
+ * corrected, so an envelope as long as the loop (or a multiple) stays in sync.
+ * true: durations are relative to the loop; a sample-length envelope is one loop cycle,
+ * whatever the loop points. ponytail: test flag, becomes an envelope mode if kept.
+ */
+const LOOP_RELATIVE_ENVELOPES = false;
+
 export class SampleVoice {
   // TODO: implements ILibAudioNode
   readonly nodeId: NodeID;
@@ -69,9 +78,11 @@ export class SampleVoice {
   #sampleDurationSeconds = 0;
   #loopEnabled = false;
   /**
-   * Loop length the processor actually plays, after zero-crossing snapping; 0 until it
-   * reports one. Reported while idle, so it is current before the next note triggers.
+   * Loop length as set, and as the processor actually plays it after zero-crossing
+   * snapping; 0 until it reports them. Reported while idle, so they are current before
+   * the next note triggers.
    */
+  #nominalLoopSeconds = 0;
   #effectiveLoopSeconds = 0;
 
   #pitchGlideTime = 0; // in seconds
@@ -450,16 +461,15 @@ export class SampleVoice {
 
     const config = this.#envelopeConfigs.get(envType)!;
     const resolved = resolveSampleEnvelopeTrigger(envType, config, playbackRate);
-    // Envelope durations are relative to the sample; a looping envelope follows the
-    // loop the processor really plays, which zero-crossing snapping makes shorter.
-    if (
-      this.#loopEnabled &&
-      env.shape.mode.type === 'loop' &&
-      this.#effectiveLoopSeconds > 0 &&
-      this.#sampleDurationSeconds > 0
-    ) {
-      resolved.timeScale =
-        ((resolved.timeScale ?? 1) * this.#sampleDurationSeconds) / this.#effectiveLoopSeconds;
+    // Zero-crossing snapping shortens the loop the processor plays; a looping envelope
+    // shrinks by the same ratio so it keeps its place relative to the loop.
+    if (this.#loopEnabled && env.shape.mode.type === 'loop' && this.#effectiveLoopSeconds > 0) {
+      const reference = LOOP_RELATIVE_ENVELOPES
+        ? this.#sampleDurationSeconds
+        : this.#nominalLoopSeconds;
+      if (reference > 0) {
+        resolved.timeScale = ((resolved.timeScale ?? 1) * reference) / this.#effectiveLoopSeconds;
+      }
     }
     env.trigger(timestamp, { ...resolved, fromPoint });
   }
@@ -936,6 +946,7 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
+            this.#nominalLoopSeconds = 0;
             this.#effectiveLoopSeconds = 0;
             this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
           }
@@ -960,6 +971,7 @@ export class SampleVoice {
         case 'voice:position': {
           // Idle report: the steady loop length for the next note. Not a playing range.
           if (data.idle) {
+            this.#nominalLoopSeconds = data.nominalLoopSeconds;
             this.#effectiveLoopSeconds = data.loopEnd - data.loopStart;
             return;
           }

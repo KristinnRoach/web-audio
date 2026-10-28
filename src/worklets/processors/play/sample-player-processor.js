@@ -821,12 +821,24 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       positionParams,
       this.#calculatePlaybackRange(positionParams),
     );
+    // The loop as set, before snapping: inside the raw trim range and the buffer.
+    const {
+      startPointSamples: a,
+      endPointSamples: b,
+      loopStartSamples: c,
+      loopEndSamples: d,
+    } = positionParams;
+    const lo = Math.max(Math.min(a, b), 0);
+    const hi = Math.min(Math.max(a, b), this.buffer[0].length);
+    const clamp = (value) => Math.min(Math.max(value, lo), hi);
+    const nominalLoopSeconds = Math.abs(clamp(d) - clamp(c)) / sampleRate;
     // Unthrottled: the key check already limits this to real changes.
     this.#postRange(
       'loop:range',
       {
         loopStart: loopRange.loopStartSamples / sampleRate,
         loopEnd: loopRange.loopEndSamples / sampleRate,
+        nominalLoopSeconds,
         idle: true,
       },
       0,
