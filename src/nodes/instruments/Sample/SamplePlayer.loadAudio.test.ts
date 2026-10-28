@@ -128,24 +128,22 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     });
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
     await player.loadAudio(originals);
-    player.commitRePitchedSamples(12);
-    expect(player.samples.map((buffer) => buffer.length)).toEqual([240, 60, 24]);
-    expect(publish).toHaveBeenLastCalledWith(player.samples, []);
-    player.commitRePitchedSamples(-12);
-    expect(player.samples.map((buffer) => buffer.length)).toEqual([960, 240, 96]);
-    player.commitRePitchedSamples(0);
-    expect(player.samples.map((buffer) => buffer.length)).toEqual([480, 120, 48]);
-    for (const [index, sample] of player.samples.entries()) {
-      expect(sample.getChannelData(0)).toEqual(originals[index].getChannelData(0));
-    }
     // commitPitch bakes the summed offset and zeroes it
+    const committed = vi.fn();
+    player.onMessage('pitch:committed', committed);
     await expect(player.commitPitch()).resolves.toBeNull();
     player.transpose(-12);
     await player.commitPitch();
     expect(player.samples.map((buffer) => buffer.length)).toEqual([960, 240, 96]);
     expect(player.transposedBySemitones).toBe(0);
+    expect(committed).toHaveBeenCalledTimes(1);
+    // A transpose during the reload survives as a delta on the baked audio
     player.transpose(12);
-    await player.commitPitch();
+    const pending = player.commitPitch();
+    player.transpose(14);
+    await pending;
+    expect(player.transposedBySemitones).toBe(2);
+    player.transpose(0);
     expect(player.samples.map((buffer) => buffer.length)).toEqual([480, 120, 48]);
     // Inverted points crop the same 0.002..0.006 region
     const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });

@@ -3,7 +3,7 @@
 import { Message, MessageHandler } from '@/events';
 import { trimAudioBuffer, type FadeMs } from '@/utils/audiodata/process/trimBuffer';
 import { resampleAudioBuffer } from '@/utils/audiodata/convert/resampleAudioBuffer';
-import { clamp, assert, findZeroCrossings } from '@/utils';
+import { clamp, assert } from '@/utils';
 
 import {
   preProcessAudioBuffer,
@@ -70,7 +70,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   #incoming = new Set<NodeID>();
 
   #audioData: AudioBuffer[] = [];
-  #sourceSamples: AudioBuffer[] = [];
   static readonly MAX_SAMPLES = 4;
   #bufferDuration: number = 0;
 
@@ -480,7 +479,6 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.releaseAll();
       this.#isLoaded = false;
       this.#audioData = audioData;
-      this.#sourceSamples = audioData;
       this.#bufferDuration = audioData[0].duration;
 
       const loadedPromise = new Promise<void>((resolve) => {
@@ -626,33 +624,16 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#applyPitchOffset();
   }
 
-  /** Retrigger to preview after replacing the audio with tuned source samples. */
-  commitRePitchedSamples(semitones: number): this {
-    if (!this.#sourceSamples.length || !Number.isFinite(semitones)) return this;
-    const buffers = this.#sourceSamples.map((source) =>
-      resampleForPitch(this.context, source, semitones),
-    );
-    const buffer = buffers[0];
-    const zeroCrossings = this.#useZeroCrossings
-      ? findZeroCrossings(buffer.getChannelData(0), {
-          unit: 'seconds',
-          sampleRate: buffer.sampleRate,
-        })
-      : [];
-    this.releaseAll();
-    this.#audioData = buffers;
-    this.#bufferDuration = buffer.duration;
-    this.#voicePool.setAudioData(buffers, zeroCrossings);
-    return this;
-  }
-
   /**
    * Bakes transpose() + fineTune() into the samples and zeroes both, so notes keep
    * their pitch but play from re-pitched audio. Reloads like cropSample(): held
-   * notes stop, trim/loop reset to the full buffer and `sample:loaded` fires.
+   * notes stop, trim/loop reset to the full buffer and `sample:loaded` fires,
+   * then `pitch:committed` once the offsets are updated.
    * Returns null if there is no sample or no offset to commit.
    */
   async commitPitch(): Promise<AudioBuffer | null> {
+    const transpose = this.#transposeSemitones;
+    const fineTune = this.#fineTuneCents;
     const semitones = this.#pitchOffset;
     if (!this.#audioData.length || semitones === 0) return null;
     const pitched = this.#audioData.map((sample) =>
@@ -660,9 +641,12 @@ export class SamplePlayer implements ILibInstrumentNode {
     );
     const loaded = await this.#loadAudio(pitched, { skipPreProcessing: true }, true);
     if (!loaded) return null;
-    this.#transposeSemitones = 0;
-    this.#fineTuneCents = 0;
+    // Subtract what was baked rather than zeroing, so a transpose() or
+    // fineTune() made during the reload is kept.
+    this.#transposeSemitones -= transpose;
+    this.#fineTuneCents -= fineTune;
     this.#applyPitchOffset();
+    this.#sendUpstreamMessage('pitch:committed', { semitones });
     return loaded[0];
   }
 
@@ -1408,7 +1392,6 @@ export class SamplePlayer implements ILibInstrumentNode {
       // Reset state variables
       this.#bufferDuration = 0;
       this.#audioData = [];
-      this.#sourceSamples = [];
       this.#initialized = false;
       this.#isLoaded = false;
       this.#useZeroCrossings = false;
