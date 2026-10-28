@@ -6,6 +6,15 @@ import {
 } from '@/utils/audiodata/generate/generateWaveform';
 import { maxSafeHz } from '@/nodes/params/audioparam-utils';
 
+const NOISE_WAVEFORMS: ReadonlySet<string> = new Set([
+  'white-noise',
+  'pink-noise',
+  'brown-noise',
+  'colored-noise',
+]);
+/** Matches the noise generators' default harmonic count. */
+const DEFAULT_NOISE_HARMONICS = 64;
+
 export class LFO {
   #context: AudioContext;
   #oscillator: OscillatorNode;
@@ -18,6 +27,12 @@ export class LFO {
   // oscillator can be built with the same settings.
   #waveform: OscillatorType | PeriodicWave = 'sine';
   #frequency = 1;
+  /**
+   * Noise waves pack `harmonics` partials into one period, so the oscillator
+   * runs at frequency / harmonics: the requested rate sets the fastest jitter
+   * and the pattern only repeats every harmonics / rate seconds.
+   */
+  #rateDivisor = 1;
 
   constructor(context: AudioContext) {
     this.#context = context;
@@ -36,7 +51,7 @@ export class LFO {
       osc.type = this.#waveform;
     }
 
-    osc.frequency.value = this.#frequency;
+    osc.frequency.value = this.#frequency / this.#rateDivisor;
     osc.connect(this.#gain);
     osc.start(startTime);
 
@@ -70,7 +85,7 @@ export class LFO {
 
   setFrequency(hz: number, timestamp = this.now) {
     this.#frequency = hz;
-    this.#oscillator.frequency.setValueAtTime(hz, timestamp);
+    this.#oscillator.frequency.setValueAtTime(hz / this.#rateDivisor, timestamp);
   }
 
   /** Signed depth in the connected parameter's units; negative values invert the waveform. */
@@ -84,23 +99,34 @@ export class LFO {
     customWaveOptions?: WaveformOptions,
   ) {
     if (waveform instanceof PeriodicWave) {
-      this.#waveform = waveform;
-      this.#oscillator.setPeriodicWave(waveform);
+      this.setPeriodicWave(waveform);
     } else if (typeof waveform === 'string' && isCustomLibWaveform(waveform)) {
       // It's a custom library waveform string
-      const periodicWave = createWave(this.#context, waveform, customWaveOptions);
-      this.#waveform = periodicWave;
-      this.#oscillator.setPeriodicWave(periodicWave);
+      this.#waveform = createWave(this.#context, waveform, customWaveOptions);
+      this.#oscillator.setPeriodicWave(this.#waveform);
+      this.#setRateDivisor(
+        NOISE_WAVEFORMS.has(waveform)
+          ? (customWaveOptions?.harmonics ?? DEFAULT_NOISE_HARMONICS)
+          : 1,
+      );
     } else {
       // It's a built-in OscillatorType
       this.#waveform = waveform as OscillatorType;
       this.#oscillator.type = waveform as OscillatorType;
+      this.#setRateDivisor(1);
     }
   }
 
   setPeriodicWave(wave: PeriodicWave) {
     this.#waveform = wave;
     this.#oscillator.setPeriodicWave(wave);
+    this.#setRateDivisor(1);
+  }
+
+  #setRateDivisor(divisor: number) {
+    if (divisor === this.#rateDivisor) return;
+    this.#rateDivisor = divisor;
+    this.setFrequency(this.#frequency);
   }
 
   // Connect to target AudioParam
@@ -148,12 +174,16 @@ export class LFO {
     }
     // todo: test diff ramp methods
     this.#frequency = scaledHz;
-    this.#oscillator.frequency.setTargetAtTime(scaledHz, timestamp + 0.001, glideTime);
+    this.#oscillator.frequency.setTargetAtTime(
+      scaledHz / this.#rateDivisor,
+      timestamp + 0.001,
+      glideTime,
+    );
   }
 
   storeCurrentValues = () => {
     this.#storedValues = {
-      rate: this.#oscillator.frequency.value,
+      rate: this.#oscillator.frequency.value * this.#rateDivisor,
       depth: this.#gain.gain.value,
     };
   };

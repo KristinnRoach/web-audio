@@ -369,8 +369,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     const gainLFO = new LFO(this.context);
     const pitchLFO = new LFO(this.context);
     gainLFO.setWaveform('triangle');
-    // Few harmonics + brown slope keeps the wobble near the fundamental, so
-    // rate means the same thing as for sine.
+    // LFO runs noise at rate / harmonics: rate sets the fastest jitter,
+    // harmonics / rate is how long before the pattern repeats.
     pitchLFO.setWaveform('colored-noise', { harmonics: 32, slope: -0.5 });
     // Other wave options: 'colored-noise', pitchLFO.getPitchWobbleWaveform()
 
