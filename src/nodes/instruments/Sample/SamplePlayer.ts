@@ -494,6 +494,10 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#voicePool.setAudioData(audioData, newZeroCrossings);
 
       this.#resetLoopPoints();
+      // Trim points are seconds: one left from the previous sample (or set while
+      // none was loaded) would cut the new one short.
+      this.setSampleStartPoint(0);
+      this.setSampleEndPoint(this.#bufferDuration);
 
       await loadedPromise;
       return [...audioData];
