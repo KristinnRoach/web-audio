@@ -817,6 +817,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.idleLoopKey = inputs;
 
     const positionParams = this.#extractPositionParams(parameters);
+    // A stopped note's glide must not leak in: the next note starts on the target length.
+    this.loopGlideLogLength = null;
     const loopRange = this.#calculateLoopRange(
       positionParams,
       this.#calculatePlaybackRange(positionParams),

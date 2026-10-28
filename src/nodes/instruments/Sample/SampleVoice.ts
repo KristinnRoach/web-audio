@@ -1086,6 +1086,7 @@ export class SampleVoice {
   }
 
   setLoopEnabled(enabled: boolean): this {
+    this.#loopEnabled = enabled; // a trigger right after must see it, not wait for the reply
     this.sendToProcessor({
       type: 'setLoopEnabled',
       value: enabled,
