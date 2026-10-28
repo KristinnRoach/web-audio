@@ -214,10 +214,10 @@ export function setDuration(
   return points.map((point, index) => ({
     ...point,
     time:
-      current > 0
-        ? start + (point.time - start) * (seconds / current)
-        : index === lastIndex(points)
-          ? start + seconds
+      index === lastIndex(points)
+        ? start + seconds
+        : current > 0
+          ? start + (point.time - start) * (seconds / current)
           : point.time,
   }));
 }

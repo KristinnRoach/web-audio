@@ -1084,17 +1084,31 @@ export class SamplePlayer implements ILibInstrumentNode {
    * The merge is shallow: a `shape` in the patch replaces the whole shape.
    * `duration` proportionally scales the resulting shape's segments to seconds,
    * before playback timeScale/rate sync. It is not stored as a separate config field.
+   * Alternatively, `durationRatio` scales to a positive multiple of the loaded sample's
+   * duration (1 = full sample). Requires a loaded sample; cannot be combined with `duration`.
    * Updates follow the existing live-edit rules; sample loads still resize shapes.
    */
   updateEnvelope(
     id: SampleEnvelopeId,
-    patch: Partial<EnvelopeConfig> & { duration?: number },
+    patch: Partial<EnvelopeConfig> & { duration?: number; durationRatio?: number },
   ): void {
-    const { duration, ...configPatch } = patch;
+    const { duration, durationRatio, ...configPatch } = patch;
+    if (durationRatio !== undefined) {
+      if (duration !== undefined) {
+        throw new TypeError('Specify either duration or durationRatio');
+      }
+      if (!Number.isFinite(durationRatio) || durationRatio <= 0) {
+        throw new RangeError('Envelope duration ratio must be finite and greater than zero');
+      }
+      if (this.sampleDuration <= 0) {
+        throw new RangeError('Envelope duration ratio requires a loaded sample');
+      }
+    }
+    const seconds = durationRatio === undefined ? duration : durationRatio * this.sampleDuration;
     const merged = { ...this.getEnvelope(id), ...configPatch };
     assertValidEnvelopeConfig(merged);
-    if (duration !== undefined) {
-      merged.shape = { ...merged.shape, points: setDuration(merged.shape.points, duration) };
+    if (seconds !== undefined) {
+      merged.shape = { ...merged.shape, points: setDuration(merged.shape.points, seconds) };
       assertValidEnvelopeConfig(merged);
     }
 

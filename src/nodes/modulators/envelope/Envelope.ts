@@ -37,6 +37,10 @@ const REFILL_INTERVAL_MS = 50;
 const activeLoops = new Set<() => void>();
 let refillTimer: ReturnType<typeof setInterval> | undefined;
 
+function assertFiniteTime(time: number) {
+  if (!Number.isFinite(time)) throw new RangeError('Envelope time must be finite');
+}
+
 function addLoop(fill: () => void) {
   activeLoops.add(fill);
   fill();
@@ -157,6 +161,10 @@ export class Envelope {
     const base = options.base ?? 0;
     if (!Number.isFinite(base)) throw new TypeError('Envelope base must be finite');
     const fullDuration = getDuration(runEnvelope.points, { timeScale });
+    assertFiniteTime(time);
+    if (runEnvelope.mode.type === 'loop' && !Number.isInteger(options.fromPoint ?? 0)) {
+      throw new RangeError('Envelope pickup point must be an integer');
+    }
     time = Math.max(this.clock.currentTime, time);
     this.#envShape = runEnvelope;
     this.#stopLoop();
@@ -243,6 +251,7 @@ export class Envelope {
   /** Plays the release stage from `time`, clamped to now like `trigger`. */
   release(time = this.clock.currentTime) {
     if (this.#state !== 'triggered' || !this.#envShape) return;
+    assertFiniteTime(time);
     time = Math.max(this.clock.currentTime, time);
     this.#state = 'released';
     this.#stopLoop();
@@ -352,7 +361,6 @@ export class Envelope {
    * point is honoured may all change. The stored `shape` is never touched.
    */
   setSustainValue(value: number, time = this.clock.currentTime, glide = 0.02) {
-    time = Math.max(this.clock.currentTime, time);
     // Current behaviour, not contract:
     //
     // The one envelope input that is still editable once the run is on the timeline: a
@@ -376,6 +384,12 @@ export class Envelope {
     if (!this.#envShape) return;
     const { points, mode, sustainPoint } = this.#envShape;
     if (this.#state !== 'triggered' || mode.type !== 'sustain') return;
+    assertFiniteTime(time);
+    if (!Number.isFinite(value)) throw new RangeError('Envelope sustain value must be finite');
+    if (!Number.isFinite(glide) || glide < 0) {
+      throw new RangeError('Envelope sustain glide must be finite and nonnegative');
+    }
+    time = Math.max(this.clock.currentTime, time);
     if (points[sustainPoint].value === value) return;
 
     const sustainTime =
@@ -398,6 +412,7 @@ export class Envelope {
   /** Ends the run at `time`, clamped to now, and holds the param there. The player stays reusable. */
   stop(time = this.clock.currentTime) {
     if (this.#state === 'idle') return;
+    assertFiniteTime(time);
     this.#state = 'idle';
     this.#stopLoop();
     this.param.holdAt(Math.max(this.clock.currentTime, time));

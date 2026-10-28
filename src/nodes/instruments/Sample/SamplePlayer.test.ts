@@ -237,6 +237,7 @@ describe('SamplePlayer envelope config', () => {
     };
 
     try {
+      expect(() => player.updateEnvelope('amp', { durationRatio: 1 })).toThrow(RangeError);
       // A supplied shape is scaled in the same update, before playback speed is applied.
       player.updateEnvelope('amp', { ...envConfig, shape, duration: 2 });
       const config = player.getEnvelope('amp');
@@ -265,6 +266,44 @@ describe('SamplePlayer envelope config', () => {
       expect(player.getEnvelope('amp')).toEqual(resized);
       expect(setEnvelopeConfig).not.toHaveBeenCalled();
       expect(changed).not.toHaveBeenCalled();
+
+      const sampleDuration = 10007 / 48000;
+      const durationGetter = vi
+        .spyOn(player, 'sampleDuration', 'get')
+        .mockReturnValue(sampleDuration);
+      try {
+        player.updateEnvelope('amp', {
+          shape: {
+            ...envConfig.shape,
+            points: [
+              { time: 0, value: 0 },
+              { time: 0.3, value: 1 },
+            ],
+          },
+          durationRatio: 1,
+        });
+        expect(player.getEnvelopeDuration('amp')).toBe(sampleDuration);
+        expect(player.getEnvelope('amp')).not.toHaveProperty('durationRatio');
+        player.updateEnvelope('amp', { durationRatio: 2 });
+        expect(player.getEnvelopeDuration('amp')).toBe(sampleDuration * 2);
+        player.updateEnvelope('amp', { durationRatio: 0.5 });
+        expect(player.getEnvelopeDuration('amp')).toBe(sampleDuration / 2);
+
+        const before = player.getEnvelope('amp');
+        changed.mockClear();
+        setEnvelopeConfig.mockClear();
+        for (const durationRatio of [0, -1, NaN, Infinity, -Infinity]) {
+          expect(() => player.updateEnvelope('amp', { durationRatio })).toThrow(RangeError);
+        }
+        expect(() => player.updateEnvelope('amp', { duration: 1, durationRatio: 1 })).toThrow(
+          TypeError,
+        );
+        expect(player.getEnvelope('amp')).toEqual(before);
+        expect(changed).not.toHaveBeenCalled();
+        expect(setEnvelopeConfig).not.toHaveBeenCalled();
+      } finally {
+        durationGetter.mockRestore();
+      }
     } finally {
       player.dispose();
       vi.unstubAllGlobals();

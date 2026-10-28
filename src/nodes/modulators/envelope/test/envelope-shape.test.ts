@@ -114,6 +114,17 @@ describe('envelope edits', () => {
     expect(getDuration(next)).toBe(6);
     expect(() => setDuration(next, 0)).toThrow(RangeError);
   });
+
+  it('assigns the final endpoint directly rather than rounding through a scale factor', () => {
+    const seconds = 10007 / 48000;
+    const points = [
+      { time: 0, value: 0 },
+      { time: 0.3, value: 1 },
+    ];
+    const next = setDuration(points, seconds);
+    expect(next.at(-1)?.time).toBe(seconds);
+    expect(points.at(-1)?.time).toBe(0.3);
+  });
 });
 
 describe('envelope timing', () => {

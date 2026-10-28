@@ -136,6 +136,14 @@ held sustain levels can glide.
 These live-edit behaviors are retained but provisional; their limitations are tracked
 in [live edits](KNOWN-ISSUES.md#live-edits).
 
+Resize a sampler envelope with `player.updateEnvelope('amp', { duration: seconds })`, or
+use `{ durationRatio: 1 }` to match the loaded sample's full duration exactly for a
+zero-origin shape. Ratios are positive multiples: `0.5` is half the sample and `2` is
+twice its length. They require a loaded sample and cannot be combined with `duration`.
+Both inputs resize point times before speed/rate sync and follow the existing live-edit
+rules. Neither is stored as a second config field; sample loads still resize shapes
+to the new sample's full duration.
+
 ### Reading state
 
 | Method                 | Returns                                                                                       |

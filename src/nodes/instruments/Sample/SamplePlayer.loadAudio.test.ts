@@ -129,6 +129,11 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     });
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
     await player.loadAudio(originals);
+    // Ratios use sample 0's authoritative duration, even with shorter companion samples.
+    player.updateEnvelope('amp', { duration: 0.3 });
+    player.updateEnvelope('amp', { durationRatio: 1 });
+    expect(player.getEnvelopeDuration('amp')).toBe(originals[0].duration);
+    expect(player.getEnvelope('amp').shape.points.at(-1)?.time).toBe(originals[0].duration);
     // commitPitch bakes the summed offset and zeroes it
     const committed = vi.fn();
     player.onMessage('pitch:committed', committed);

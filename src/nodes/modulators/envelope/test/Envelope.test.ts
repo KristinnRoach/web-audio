@@ -671,6 +671,58 @@ describe('Envelope lifecycle', () => {
     player.stop();
   });
 
+  it('rejects invalid scheduling inputs without interrupting a live loop', () => {
+    vi.useFakeTimers();
+    const clock = { currentTime: 0 };
+    const param = createFakeParam();
+    const player = new Envelope(clock, param, { ...envelopeShape, mode: { type: 'loop' } });
+    player.trigger();
+    const before = [...param.events];
+
+    for (const time of [NaN, Infinity, -Infinity]) {
+      for (const command of ['trigger', 'release', 'stop'] as const) {
+        expect(() => player[command](time)).toThrow(RangeError);
+        expect(param.events).toEqual(before);
+        expect(player.position(0.5)).toBe(0.5);
+      }
+    }
+    for (const fromPoint of [NaN, Infinity, -Infinity, 0.5]) {
+      expect(() => player.trigger(0, { fromPoint })).toThrow(RangeError);
+      expect(param.events).toEqual(before);
+    }
+
+    clock.currentTime = 1;
+    vi.advanceTimersByTime(50);
+    expect(param.events.length).toBeGreaterThan(before.length);
+    player.stop();
+  });
+
+  it('rejects invalid sustain edits without changing the held value or release tail', () => {
+    const param = createFakeParam();
+    const player = new Envelope({ currentTime: 0 }, param, {
+      ...envelopeShape,
+      mode: { type: 'sustain' },
+    });
+    player.trigger();
+    const before = [...param.events];
+
+    for (const invalid of [NaN, Infinity, -Infinity]) {
+      for (const args of [
+        [invalid, 0, 0.02],
+        [0.5, invalid, 0.02],
+        [0.5, 0, invalid],
+      ]) {
+        expect(() => player.setSustainValue(args[0], args[1], args[2])).toThrow(RangeError);
+        expect(param.events).toEqual(before);
+      }
+    }
+    expect(() => player.setSustainValue(0.5, 0, -0.01)).toThrow(RangeError);
+    expect(param.events).toEqual(before);
+    player.release(0.5);
+    expect(param.ramps()).toContainEqual({ type: 'set', value: 0, time: 0.5 });
+    expect(param.ramps()).toContainEqual({ type: 'linear', value: 1, time: 1.5 });
+  });
+
   it('snapshots the shape it is given, and plays a new one from the next trigger', () => {
     const param = createFakeParam();
     const definition: EnvelopeShape = {

@@ -40,8 +40,9 @@ Code observations below are not claims that every case has been reproduced audib
 - **Future commands.** Releasing or stopping a loop removes its refill callback
   immediately, even if the requested time is beyond the queued horizon. `stop(time)`
   pins the value the scheduled timeline has at that time.
-- **Validation.** Shape, time scale, base and depth are validated before trigger mutation, but
-  timestamps, pickup indices and sustain-glide inputs are not consistently checked. Invalid inputs should eventually leave the existing run untouched.
+- **Validation.** Shape, time scale, base, depth, finite scheduling timestamps, integer loop
+  pickup indices, and sustain values/glides are checked before run mutation. Finite past
+  times and out-of-range integer pickup indices retain their existing clamping.
 - **Reported loop drift.** The cause remains unconfirmed. The existing 3,001-cycle
   grid check measured roughly 1e-12 seconds of error for a 7 ms loop, and drift heard
   after a few cycles is too fast for float error anyway. Two candidates:
