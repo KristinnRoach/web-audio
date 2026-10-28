@@ -145,6 +145,8 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     expect(player.transposedBySemitones).toBe(2);
     player.transpose(0);
     expect(player.samples.map((buffer) => buffer.length)).toEqual([480, 120, 48]);
+    // Band-limited resampling isn't bit-exact over a round trip; crop the originals.
+    await player.loadAudio(originals);
     // Inverted points crop the same 0.002..0.006 region
     const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });
     expect(cropped).toBe(player.samples[0]);
