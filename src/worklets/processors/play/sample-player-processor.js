@@ -801,7 +801,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * No drift and unit rate: drift is rolled per note, and the voice only uses this for
    * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
    * note's rate, so those report the requested length (no correction) until the voice
-   * needs them.
+   * needs them. Loops requested shorter than minRangeSamples also report the
+   * requested length.
    */
   #postIdleLoopRange(parameters) {
     const key = this.idleLoopKey ?? [];
@@ -837,17 +838,26 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const lo = Math.max(Math.min(a, b), 0);
     const hi = Math.min(Math.max(a, b), this.buffer[0].length);
     const clamp = (value) => Math.min(Math.max(value, lo), hi);
-    const requestedLoopSeconds = Math.abs(clamp(d) - clamp(c)) / sampleRate;
+    const requestedLoopSamples = Math.abs(clamp(d) - clamp(c));
+    const requestedLoopSeconds = requestedLoopSamples / sampleRate;
     const loopStart = loopRange.loopStartSamples / sampleRate;
-    // Resolved here at tempo 120 and rate 1, not the note's: report no correction.
-    const rateDependent = this.syncLoopToTempo || this.keytrackLoopAmount > 0;
+    // Report the requested length (no envelope correction) when:
+    // - tempo sync or keytrack is on: this range is resolved at tempo 120 and rate 1,
+    //   not the note's, so its length would be wrong.
+    // - the requested loop is shorter than minRangeSamples: the processor plays at
+    //   least minRangeSamples, and scaling the envelope by that ratio would stretch
+    //   it many times over (a 1-sample loop at 48 kHz would stretch it ~92x).
+    const noCorrection =
+      this.syncLoopToTempo ||
+      this.keytrackLoopAmount > 0 ||
+      requestedLoopSamples < this.minRangeSamples;
     // Posted directly, not through #postRange: its dedup compares against ranges
     // posted before a buffer reload, while the voice has cleared its copy. The key
     // check already limits this to real changes.
     this.port.postMessage({
       type: 'loop:range',
       loopStart,
-      loopEnd: rateDependent
+      loopEnd: noCorrection
         ? loopStart + requestedLoopSeconds
         : loopRange.loopEndSamples / sampleRate,
       requestedLoopSeconds,
