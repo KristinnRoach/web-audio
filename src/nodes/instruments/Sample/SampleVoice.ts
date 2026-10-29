@@ -991,8 +991,6 @@ export class SampleVoice {
 
         // Forwarded upstream by the tail call, nothing to do here.
         case 'loop:enabled':
-          this.#loopEnabled = data.enabled;
-          break;
         case 'loop:syncToTempo':
         case 'voice:reset':
         case 'voice:playbackDirectionChange':
