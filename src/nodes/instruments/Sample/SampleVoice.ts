@@ -78,12 +78,12 @@ export class SampleVoice {
   #sampleDurationSeconds = 0;
   #loopEnabled = false;
   /**
-   * Loop length as set, and as the processor actually plays it after zero-crossing
-   * snapping; 0 until it reports them. Reported while idle, so they are current before
+   * Loop length from the loop points as set, and as the processor plays it after
+   * zero-crossing snapping, pitch quantization and minimum lengths; 0 until it reports them. Reported while idle, so they are current before
    * the next note triggers.
    */
-  #nominalLoopSeconds = 0;
-  #effectiveLoopSeconds = 0;
+  #requestedLoopSeconds = 0;
+  #processedLoopSeconds = 0;
 
   #pitchGlideTime = 0; // in seconds
   /** Semitones added to the played note for everything that tracks pitch. */
@@ -461,14 +461,14 @@ export class SampleVoice {
 
     const config = this.#envelopeConfigs.get(envType)!;
     const resolved = resolveSampleEnvelopeTrigger(envType, config, playbackRate);
-    // Zero-crossing snapping shortens the loop the processor plays; a looping envelope
-    // shrinks by the same ratio so it keeps its place relative to the loop.
-    if (this.#loopEnabled && env.shape.mode.type === 'loop' && this.#effectiveLoopSeconds > 0) {
+    // The processor plays a different loop length than requested (mostly zero-crossing
+    // snapping); a looping envelope scales by the same ratio to keep its place in the loop.
+    if (this.#loopEnabled && env.shape.mode.type === 'loop' && this.#processedLoopSeconds > 0) {
       const reference = LOOP_RELATIVE_ENVELOPES
         ? this.#sampleDurationSeconds
-        : this.#nominalLoopSeconds;
+        : this.#requestedLoopSeconds;
       if (reference > 0) {
-        resolved.timeScale = ((resolved.timeScale ?? 1) * reference) / this.#effectiveLoopSeconds;
+        resolved.timeScale = ((resolved.timeScale ?? 1) * reference) / this.#processedLoopSeconds;
       }
     }
     env.trigger(timestamp, { ...resolved, fromPoint });
@@ -946,8 +946,8 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
-            this.#nominalLoopSeconds = 0;
-            this.#effectiveLoopSeconds = 0;
+            this.#requestedLoopSeconds = 0;
+            this.#processedLoopSeconds = 0;
             this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
           }
           break;
@@ -971,8 +971,8 @@ export class SampleVoice {
         case 'voice:position': {
           // Idle report: the steady loop length for the next note. Not a playing range.
           if (data.idle) {
-            this.#nominalLoopSeconds = data.nominalLoopSeconds;
-            this.#effectiveLoopSeconds = data.loopEnd - data.loopStart;
+            this.#requestedLoopSeconds = data.requestedLoopSeconds;
+            this.#processedLoopSeconds = data.loopEnd - data.loopStart;
             return;
           }
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {

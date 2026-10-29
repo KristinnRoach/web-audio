@@ -717,7 +717,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     range.loopStartSamples = calcLoopStart;
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
-    range.unsnappedDurationSamples = baseDuration; // before snapping and drift
     return range;
   }
 
@@ -801,7 +800,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * before the next note triggers its envelopes. Recomputed only when an input changed.
    * No drift and unit rate: drift is rolled per note, and the voice only uses this for
    * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
-   * note's rate, so those report the nominal length (no correction) until the voice
+   * note's rate, so those report the requested length (no correction) until the voice
    * needs them.
    */
   #postIdleLoopRange(parameters) {
@@ -827,8 +826,18 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       positionParams,
       this.#calculatePlaybackRange(positionParams),
     );
-    // The resolved loop before zero-crossing snapping, so only the snap is corrected.
-    const nominalLoopSeconds = loopRange.unsnappedDurationSamples / sampleRate;
+    // The loop as set, inside the raw trim range and the buffer. Not the loop range's
+    // own length: the trim range it resolves in is already snapped to zero crossings.
+    const {
+      startPointSamples: a,
+      endPointSamples: b,
+      loopStartSamples: c,
+      loopEndSamples: d,
+    } = positionParams;
+    const lo = Math.max(Math.min(a, b), 0);
+    const hi = Math.min(Math.max(a, b), this.buffer[0].length);
+    const clamp = (value) => Math.min(Math.max(value, lo), hi);
+    const requestedLoopSeconds = Math.abs(clamp(d) - clamp(c)) / sampleRate;
     const loopStart = loopRange.loopStartSamples / sampleRate;
     // Resolved here at tempo 120 and rate 1, not the note's: report no correction.
     const rateDependent = this.syncLoopToTempo || this.keytrackLoopAmount > 0;
@@ -839,9 +848,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       type: 'loop:range',
       loopStart,
       loopEnd: rateDependent
-        ? loopStart + nominalLoopSeconds
+        ? loopStart + requestedLoopSeconds
         : loopRange.loopEndSamples / sampleRate,
-      nominalLoopSeconds,
+      requestedLoopSeconds,
       idle: true,
       triggerId: this.triggerId,
     });
