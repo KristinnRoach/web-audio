@@ -717,6 +717,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     range.loopStartSamples = calcLoopStart;
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
+    range.unsnappedDurationSamples = baseDuration; // before snapping and drift
     return range;
   }
 
@@ -826,33 +827,24 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       positionParams,
       this.#calculatePlaybackRange(positionParams),
     );
-    // The loop as set, before snapping: inside the raw trim range and the buffer.
-    const {
-      startPointSamples: a,
-      endPointSamples: b,
-      loopStartSamples: c,
-      loopEndSamples: d,
-    } = positionParams;
-    const lo = Math.max(Math.min(a, b), 0);
-    const hi = Math.min(Math.max(a, b), this.buffer[0].length);
-    const clamp = (value) => Math.min(Math.max(value, lo), hi);
-    const nominalLoopSeconds = Math.abs(clamp(d) - clamp(c)) / sampleRate;
+    // The resolved loop before zero-crossing snapping, so only the snap is corrected.
+    const nominalLoopSeconds = loopRange.unsnappedDurationSamples / sampleRate;
     const loopStart = loopRange.loopStartSamples / sampleRate;
     // Resolved here at tempo 120 and rate 1, not the note's: report no correction.
     const rateDependent = this.syncLoopToTempo || this.keytrackLoopAmount > 0;
-    // Unthrottled: the key check already limits this to real changes.
-    this.#postRange(
-      'loop:range',
-      {
-        loopStart,
-        loopEnd: rateDependent
-          ? loopStart + nominalLoopSeconds
-          : loopRange.loopEndSamples / sampleRate,
-        nominalLoopSeconds,
-        idle: true,
-      },
-      0,
-    );
+    // Posted directly, not through #postRange: its dedup compares against ranges
+    // posted before a buffer reload, while the voice has cleared its copy. The key
+    // check already limits this to real changes.
+    this.port.postMessage({
+      type: 'loop:range',
+      loopStart,
+      loopEnd: rateDependent
+        ? loopStart + nominalLoopSeconds
+        : loopRange.loopEndSamples / sampleRate,
+      nominalLoopSeconds,
+      idle: true,
+      triggerId: this.triggerId,
+    });
   }
 
   // ===== MAIN PROCESS METHOD =====
