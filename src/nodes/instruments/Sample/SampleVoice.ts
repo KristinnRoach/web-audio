@@ -35,6 +35,15 @@ const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feed
  * fast enough to read as a gate, slow enough not to click. */
 const AMP_GATE_SMOOTHING_SEC = 0.002;
 
+/**
+ * How a loop-mode envelope is timed against a looping sample.
+ * false: durations stay absolute; only the zero-crossing shortfall of the loop is
+ * corrected, so an envelope as long as the loop (or a multiple) stays in sync.
+ * true: durations are relative to the loop; a sample-length envelope is one loop cycle,
+ * whatever the loop points. ponytail: test flag, becomes an envelope mode if kept.
+ */
+const LOOP_RELATIVE_ENVELOPES = false;
+
 export class SampleVoice {
   // TODO: implements ILibAudioNode
   readonly nodeId: NodeID;
@@ -67,6 +76,14 @@ export class SampleVoice {
   #triggerId = 0;
 
   #sampleDurationSeconds = 0;
+  #loopEnabled = false;
+  /**
+   * Loop length from the loop points as set, and as the processor plays it after
+   * zero-crossing snapping, pitch quantization and minimum lengths; 0 until it reports them. Reported while idle, so they are current before
+   * the next note triggers.
+   */
+  #requestedLoopSeconds = 0;
+  #processedLoopSeconds = 0;
 
   #pitchGlideTime = 0; // in seconds
   /** Semitones added to the played note for everything that tracks pitch. */
@@ -443,10 +460,18 @@ export class SampleVoice {
     }
 
     const config = this.#envelopeConfigs.get(envType)!;
-    env.trigger(timestamp, {
-      ...resolveSampleEnvelopeTrigger(envType, config, playbackRate),
-      fromPoint,
-    });
+    const resolved = resolveSampleEnvelopeTrigger(envType, config, playbackRate);
+    // The processor plays a different loop length than requested (mostly zero-crossing
+    // snapping); a looping envelope scales by the same ratio to keep its place in the loop.
+    if (this.#loopEnabled && env.shape.mode.type === 'loop' && this.#processedLoopSeconds > 0) {
+      const reference = LOOP_RELATIVE_ENVELOPES
+        ? this.#sampleDurationSeconds
+        : this.#requestedLoopSeconds;
+      if (reference > 0) {
+        resolved.timeScale = ((resolved.timeScale ?? 1) * reference) / this.#processedLoopSeconds;
+      }
+    }
+    env.trigger(timestamp, { ...resolved, fromPoint });
   }
 
   triggerEnvelopes(timestamp: number, playbackRate: number) {
@@ -921,6 +946,8 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
+            this.#requestedLoopSeconds = 0;
+            this.#processedLoopSeconds = 0;
             this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
           }
           break;
@@ -942,6 +969,12 @@ export class SampleVoice {
         case 'loop:range':
         case 'trim:range':
         case 'voice:position': {
+          // Idle report: the steady loop length for the next note. Not a playing range.
+          if (data.idle) {
+            this.#requestedLoopSeconds = data.requestedLoopSeconds;
+            this.#processedLoopSeconds = data.loopEnd - data.loopStart;
+            return;
+          }
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
@@ -1051,6 +1084,7 @@ export class SampleVoice {
   }
 
   setLoopEnabled(enabled: boolean): this {
+    this.#loopEnabled = enabled; // a trigger right after must see it, not wait for the reply
     this.sendToProcessor({
       type: 'setLoopEnabled',
       value: enabled,

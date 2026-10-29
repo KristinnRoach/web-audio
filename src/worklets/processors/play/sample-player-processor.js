@@ -795,6 +795,80 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type, ...range, triggerId: this.triggerId });
   }
 
+  /**
+   * Resolves the loop range while idle, so the voice knows the snapped loop length
+   * before the next note triggers its envelopes. Recomputed only when an input changed,
+   * at most every `interval` seconds; a change skipped by the throttle is sent on a
+   * later block, since the key only updates when a report is posted. No drift and unit rate: drift is rolled per note, and the voice only uses this for
+   * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
+   * note's rate, so those report the requested length (no correction) until the voice
+   * needs them. Loops requested shorter than minRangeSamples also report the
+   * requested length.
+   */
+  #postIdleLoopRange(parameters, interval = 1 / 30) {
+    if (currentTime - (this.idleLoopPostTime ?? -1) < interval) return;
+    const key = this.idleLoopKey ?? [];
+    const inputs = [
+      parameters.loopStart[0],
+      parameters.loopEnd[0],
+      parameters.startPoint[0],
+      parameters.endPoint[0],
+      this.buffer,
+      this.zeroCrossings,
+      this.loopQuantizePeriods,
+      this.syncLoopToTempo,
+      this.keytrackLoopAmount,
+    ];
+    if (inputs.every((value, i) => value === key[i])) return;
+    this.idleLoopKey = inputs;
+    this.idleLoopPostTime = currentTime;
+
+    const positionParams = this.#extractPositionParams(parameters);
+    // A stopped note's glide must not leak in: the next note starts on the target length.
+    this.loopGlideLogLength = null;
+    const loopRange = this.#calculateLoopRange(
+      positionParams,
+      this.#calculatePlaybackRange(positionParams),
+    );
+    // The loop as set, inside the raw trim range and the buffer. Not the loop range's
+    // own length: the trim range it resolves in is already snapped to zero crossings.
+    const {
+      startPointSamples: a,
+      endPointSamples: b,
+      loopStartSamples: c,
+      loopEndSamples: d,
+    } = positionParams;
+    const lo = Math.max(Math.min(a, b), 0);
+    const hi = Math.min(Math.max(a, b), this.buffer[0].length);
+    const clamp = (value) => Math.min(Math.max(value, lo), hi);
+    const requestedLoopSamples = Math.abs(clamp(d) - clamp(c));
+    const requestedLoopSeconds = requestedLoopSamples / sampleRate;
+    const loopStart = loopRange.loopStartSamples / sampleRate;
+    // Report the requested length (no envelope correction) when:
+    // - tempo sync or keytrack is on: this range is resolved at tempo 120 and rate 1,
+    //   not the note's, so its length would be wrong.
+    // - the requested loop is shorter than minRangeSamples: the processor plays at
+    //   least minRangeSamples, and scaling the envelope by that ratio would stretch
+    //   it many times over (a 1-sample loop at 48 kHz would stretch it ~92x).
+    const noCorrection =
+      this.syncLoopToTempo ||
+      this.keytrackLoopAmount > 0 ||
+      requestedLoopSamples < this.minRangeSamples;
+    // Posted directly, not through #postRange: its dedup compares against ranges
+    // posted before a buffer reload, while the voice has cleared its copy. The key
+    // check already limits this to real changes.
+    this.port.postMessage({
+      type: 'loop:range',
+      loopStart,
+      loopEnd: noCorrection
+        ? loopStart + requestedLoopSeconds
+        : loopRange.loopEndSamples / sampleRate,
+      requestedLoopSeconds,
+      idle: true,
+      triggerId: this.triggerId,
+    });
+  }
+
   // ===== MAIN PROCESS METHOD =====
 
   process(inputs, outputs, parameters) {
@@ -802,6 +876,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.debugCounter++;
 
     if (!output || !this.isPlaying || !this.buffer?.[0]?.length) {
+      if (output && this.buffer?.[0]?.length) this.#postIdleLoopRange(parameters);
       return true;
     }
 

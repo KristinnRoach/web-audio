@@ -462,6 +462,39 @@ describe('SampleVoice state', () => {
     expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
   });
 
+  it('scales loop envelopes by requested over processed loop length', async () => {
+    const loopTimeScale = async (idleReport: boolean) => {
+      const voice = await loadedVoice();
+      const ranges = vi.fn();
+      voice.onMessage('loop:range', ranges);
+      voice.setLoopEnabled(true);
+      const config = createDefaultSampleEnvelopeConfig('pitch', 1);
+      voice.setEnvelopeConfig('pitch', {
+        ...config,
+        enabled: true,
+        shape: { ...config.shape, mode: { type: 'loop' } },
+      });
+      if (idleReport) {
+        audio.port.onmessage({
+          data: {
+            type: 'loop:range',
+            loopStart: 0.01,
+            loopEnd: 0.49,
+            requestedLoopSeconds: 0.5,
+            idle: true,
+          },
+        });
+      }
+      const envTrigger = vi.spyOn(voice.envelopes.get('pitch')!, 'trigger');
+      trigger(voice);
+      voice.stop();
+      expect(ranges).not.toHaveBeenCalled(); // idle reports stay inside the voice
+      return envTrigger.mock.calls[0][1]!.timeScale ?? 1;
+    };
+
+    expect(await loopTimeScale(true)).toBeCloseTo(((await loopTimeScale(false)) * 0.5) / 0.48, 9);
+  });
+
   it('forwards only the current note’s position, tagged with voice and note', async () => {
     const voice = await loadedVoice();
     const positions = vi.fn();
