@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   makeParameters,
   render,
@@ -11,6 +11,7 @@ import {
 // note's loop envelopes can absorb the zero-crossing shortfall.
 describe('idle loop range', () => {
   setupProcessorGlobals();
+  beforeEach(() => vi.stubGlobal('currentTime', 0));
 
   const send = (processor: TestProcessor, data: Record<string, unknown>) =>
     processor.port.onmessage?.({ data } as MessageEvent);
@@ -49,10 +50,24 @@ describe('idle loop range', () => {
     const processor = await idleProcessor();
     render(processor, parameters, 1);
     load(processor);
+    vi.stubGlobal('currentTime', 1);
     render(processor, parameters, 1);
 
     const [first, second] = idleReports(processor);
     expect(second).toEqual(first);
+  });
+
+  it('throttles reports and sends the latest change once the interval passes', async () => {
+    const processor = await idleProcessor();
+    render(processor, parameters, 1);
+    render(processor, makeParameters({ loopStart: 0, loopEnd: 0.4, endPoint: 1 }), 1);
+    expect(idleReports(processor)).toHaveLength(1);
+
+    vi.stubGlobal('currentTime', 1);
+    render(processor, makeParameters({ loopStart: 0, loopEnd: 0.4, endPoint: 1 }), 1);
+    const reports = idleReports(processor);
+    expect(reports).toHaveLength(2);
+    expect(reports[1].requestedLoopSeconds).toBeCloseTo(0.4, 6);
   });
 
   it('reports no correction for tempo-synced loops', async () => {

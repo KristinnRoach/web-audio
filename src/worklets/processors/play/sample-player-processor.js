@@ -797,14 +797,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   /**
    * Resolves the loop range while idle, so the voice knows the snapped loop length
-   * before the next note triggers its envelopes. Recomputed only when an input changed.
-   * No drift and unit rate: drift is rolled per note, and the voice only uses this for
+   * before the next note triggers its envelopes. Recomputed only when an input changed,
+   * at most every `interval` seconds; a change skipped by the throttle is sent on a
+   * later block, since the key only updates when a report is posted. No drift and unit rate: drift is rolled per note, and the voice only uses this for
    * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
    * note's rate, so those report the requested length (no correction) until the voice
    * needs them. Loops requested shorter than minRangeSamples also report the
    * requested length.
    */
-  #postIdleLoopRange(parameters) {
+  #postIdleLoopRange(parameters, interval = 1 / 30) {
+    if (currentTime - (this.idleLoopPostTime ?? -1) < interval) return;
     const key = this.idleLoopKey ?? [];
     const inputs = [
       parameters.loopStart[0],
@@ -819,6 +821,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     ];
     if (inputs.every((value, i) => value === key[i])) return;
     this.idleLoopKey = inputs;
+    this.idleLoopPostTime = currentTime;
 
     const positionParams = this.#extractPositionParams(parameters);
     // A stopped note's glide must not leak in: the next note starts on the target length.
