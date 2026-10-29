@@ -419,6 +419,7 @@ export class SampleVoice {
     });
 
     // Trigger amp, filter and pitch envelopes if enabled
+    this.#lastTrigger = { playbackRate, loopSeconds: this.#processedLoopSeconds };
     this.triggerEnvelopes(timestamp, playbackRate);
 
     // Trigger effects
@@ -441,8 +442,11 @@ export class SampleVoice {
     return this.#midiNote;
   }
 
-  /** Trigger inputs of the current note, kept so a config edit can restart from them. */
-  #lastTrigger: { playbackRate: number } | null = null;
+  /**
+   * Trigger inputs of the current note, kept so a config edit can restart from them.
+   * `loopSeconds` starts at the idle loop length and follows live reports while held.
+   */
+  #lastTrigger: { playbackRate: number; loopSeconds: number } | null = null;
 
   #isEnvEnabled(envType: SampleEnvelopeId) {
     return this.#envelopeConfigs.get(envType)?.enabled ?? false;
@@ -464,19 +468,19 @@ export class SampleVoice {
     const resolved = resolveSampleEnvelopeTrigger(envType, config, playbackRate);
     // The processor plays a different loop length than requested (mostly zero-crossing
     // snapping); a looping envelope scales by the same ratio to keep its place in the loop.
-    if (this.#loopEnabled && env.shape.mode.type === 'loop' && this.#processedLoopSeconds > 0) {
+    const loopSeconds = this.#lastTrigger?.loopSeconds ?? 0;
+    if (this.#loopEnabled && env.shape.mode.type === 'loop' && loopSeconds > 0) {
       const reference = LOOP_RELATIVE_ENVELOPES
         ? this.#sampleDurationSeconds
         : this.#requestedLoopSeconds;
       if (reference > 0) {
-        resolved.timeScale = ((resolved.timeScale ?? 1) * reference) / this.#processedLoopSeconds;
+        resolved.timeScale = ((resolved.timeScale ?? 1) * reference) / loopSeconds;
       }
     }
     env.trigger(timestamp, { ...resolved, fromPoint });
   }
 
   triggerEnvelopes(timestamp: number, playbackRate: number) {
-    this.#lastTrigger = { playbackRate };
     this.#envelopes.forEach((env, envType) => {
       this.#triggerEnvelope(envType, env, timestamp, playbackRate);
     });
@@ -774,21 +778,21 @@ export class SampleVoice {
    * lengths retrigger every cycle.
    */
   #followLoopLength(processedSeconds: number) {
-    const previous = this.#processedLoopSeconds;
+    const trigger = this.#lastTrigger;
     if (
+      !trigger ||
       !(processedSeconds > 0) ||
-      Math.abs(processedSeconds - previous) <= previous * 1e-3 ||
+      Math.abs(processedSeconds - trigger.loopSeconds) <= trigger.loopSeconds * 1e-3 ||
       this.#state === VoiceState.RELEASING ||
-      !this.#loopEnabled ||
-      !this.#lastTrigger
+      !this.#loopEnabled
     ) {
       return;
     }
-    this.#processedLoopSeconds = processedSeconds;
+    trigger.loopSeconds = processedSeconds;
     this.#envelopes.forEach((env, envType) => {
       if (env.shape.mode.type !== 'loop' || !this.#isEnvEnabled(envType)) return;
       const at = env.nextCycleTime();
-      if (at !== null) this.#triggerEnvelope(envType, env, at, this.#lastTrigger!.playbackRate);
+      if (at !== null) this.#triggerEnvelope(envType, env, at, trigger.playbackRate);
     });
   }
 

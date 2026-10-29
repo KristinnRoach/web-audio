@@ -800,9 +800,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * before the next note triggers its envelopes. Recomputed only when an input changed,
    * at most every `interval` seconds; a change skipped by the throttle is sent on a
    * later block, since the key only updates when a report is posted. No drift and unit rate: drift is rolled per note, and the voice only uses this for
-   * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
-   * note's rate, so those report the requested length (no correction) until the voice
-   * needs them. Loops requested shorter than minRangeSamples also report the
+   * the steady loop length. ponytail: tempo-sync lengths depend on the song's tempo, so
+   * those report the requested length (no correction) until the voice needs them. Loops requested shorter than minRangeSamples also report the
    * requested length.
    */
   #postIdleLoopRange(parameters, interval = 1 / 30) {
@@ -845,15 +844,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const requestedLoopSeconds = requestedLoopSamples / sampleRate;
     const loopStart = loopRange.loopStartSamples / sampleRate;
     // Report the requested length (no envelope correction) when:
-    // - tempo sync or keytrack is on: this range is resolved at tempo 120 and rate 1,
-    //   not the note's, so its length would be wrong.
+    // - tempo sync is on: this range is resolved at tempo 120, not the song's, so its
+    //   snapped length would be wrong. Keytrack needs no exception: at rate 1 its
+    //   scale is 1, so the range is the snapped length.
     // - the requested loop is shorter than minRangeSamples: the processor plays at
     //   least minRangeSamples, and scaling the envelope by that ratio would stretch
     //   it many times over (a 1-sample loop at 48 kHz would stretch it ~92x).
-    const noCorrection =
-      this.syncLoopToTempo ||
-      this.keytrackLoopAmount > 0 ||
-      requestedLoopSamples < this.minRangeSamples;
+    const noCorrection = this.syncLoopToTempo || requestedLoopSamples < this.minRangeSamples;
     // Posted directly, not through #postRange: its dedup compares against ranges
     // posted before a buffer reload, while the voice has cleared its copy. The key
     // check already limits this to real changes.
