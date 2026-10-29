@@ -43,7 +43,7 @@ const AMP_GATE_SMOOTHING_SEC = 0.002;
  * true: durations are relative to the loop; a sample-length envelope is one loop cycle,
  * whatever the loop points. ponytail: test flag, becomes an envelope mode if kept.
  */
-const LOOP_RELATIVE_ENVELOPES = false;
+const LOOP_RELATIVE_ENVELOPES = true;
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
@@ -796,6 +796,24 @@ export class SampleVoice {
     });
   }
 
+  #syncLoopCycle(processedSeconds: number, time: number) {
+    const trigger = this.#lastTrigger;
+    if (
+      !trigger ||
+      !(processedSeconds > 0) ||
+      !Number.isFinite(time) ||
+      this.#state === VoiceState.RELEASING ||
+      !this.#loopEnabled
+    ) {
+      return;
+    }
+    trigger.loopSeconds = processedSeconds;
+    this.#envelopes.forEach((env, envType) => {
+      if (env.shape.mode.type !== 'loop' || !this.#isEnvEnabled(envType)) return;
+      this.#triggerEnvelope(envType, env, time, trigger.playbackRate);
+    });
+  }
+
   get envelopes() {
     return this.#envelopes;
   }
@@ -997,6 +1015,7 @@ export class SampleVoice {
         }
 
         case 'loop:range':
+        case 'loop:cycle':
         case 'trim:range':
         case 'voice:position': {
           // Idle report: the steady loop length for the next note. Not a playing range.
@@ -1010,7 +1029,9 @@ export class SampleVoice {
           }
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
-          if (type === 'loop:range' && LOOP_RELATIVE_ENVELOPES) {
+          if (type === 'loop:cycle' && LOOP_RELATIVE_ENVELOPES) {
+            this.#syncLoopCycle(data.loopSeconds, data.time);
+          } else if (type === 'loop:range' && LOOP_RELATIVE_ENVELOPES) {
             this.#followLoopLength(data.loopEnd - data.loopStart);
           } else if (type === 'voice:position') {
             this.getParam('playbackPosition')?.setValueAtTime(

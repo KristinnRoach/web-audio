@@ -327,7 +327,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopMode, loopRange, audioEndSamples, playbackRate) {
+  #passLoopEdge(approachDirection, loopMode, loopRange, audioEndSamples, playbackRate, cycleTime) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { loopStartSamples: loopStart, loopEndSamples: loopEnd } = loopRange;
     const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
@@ -351,6 +351,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
+    this.port.postMessage({
+      type: 'loop:cycle',
+      loopSeconds: loopRange.loopDurationSamples / sampleRate,
+      time: cycleTime,
+      triggerId: this.triggerId,
+    });
 
     // Reset drift flag to generate new drift for next loop iteration
     this.nextDriftGenerated = false;
@@ -1076,7 +1082,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const maxLoopCount = parameters.maxLoopCount[0];
       const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
       if (canWrapLoop) {
-        this.#passLoopEdge(approachDirection, loopMode, loopRange, playbackRange.endSamples, rate);
+        this.#passLoopEdge(
+          approachDirection,
+          loopMode,
+          loopRange,
+          playbackRange.endSamples,
+          rate,
+          currentTime + sample / sampleRate,
+        );
       }
       // Out of loop passes (the edge just passed may have been the last), or
       // loop off: play out in the approach direction
