@@ -43,7 +43,7 @@ const AMP_GATE_SMOOTHING_SEC = 0.002;
  * true: durations are relative to the loop; a sample-length envelope is one loop cycle,
  * whatever the loop points. ponytail: test flag, becomes an envelope mode if kept.
  */
-const LOOP_RELATIVE_ENVELOPES = false;
+const LOOP_RELATIVE_ENVELOPES = true;
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
