@@ -70,6 +70,19 @@ describe('idle loop range', () => {
     expect(reports[1].requestedLoopSeconds).toBeCloseTo(0.4, 6);
   });
 
+  it('reports the loop keytrack the voice must apply at the note rate', async () => {
+    const processor = await idleProcessor();
+    send(processor, { type: 'setKeytrackLoopAmount', value: 0.5 });
+    render(processor, parameters, 1);
+    send(processor, { type: 'syncLoopToTempo', value: true });
+    vi.stubGlobal('currentTime', 1);
+    render(processor, parameters, 1);
+
+    const [keytracked, tempoSynced] = idleReports(processor);
+    expect(keytracked.keytrackAmount).toBe(0.5);
+    expect(tempoSynced.keytrackAmount).toBe(0); // tempo sync overrides keytrack
+  });
+
   it('reports no correction for tempo-synced loops', async () => {
     const processor = await idleProcessor();
     send(processor, { type: 'syncLoopToTempo', value: true });

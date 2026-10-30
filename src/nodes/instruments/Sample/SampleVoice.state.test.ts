@@ -464,7 +464,7 @@ describe('SampleVoice state', () => {
   });
 
   it('scales loop envelopes against the processed loop length', async () => {
-    const loopTimeScale = async (idleReport: boolean) => {
+    const loopTimeScale = async (idleReport: boolean, keytrackAmount = 0, midiNote = 60) => {
       const voice = await loadedVoice();
       const ranges = vi.fn();
       voice.onMessage('loop:range', ranges);
@@ -482,12 +482,13 @@ describe('SampleVoice state', () => {
             loopStart: 0.01,
             loopEnd: 0.49,
             requestedLoopSeconds: 0.5,
+            keytrackAmount,
             idle: true,
           },
         });
       }
       const envTrigger = vi.spyOn(voice.envelopes.get('pitch')!, 'trigger');
-      trigger(voice);
+      trigger(voice, midiNote);
       voice.stop();
       expect(ranges).not.toHaveBeenCalled(); // idle reports stay inside the voice
       return envTrigger.mock.calls[0][1]!.timeScale ?? 1;
@@ -496,6 +497,10 @@ describe('SampleVoice state', () => {
     const withoutProcessedLoop = await loopTimeScale(false);
     const withProcessedLoop = await loopTimeScale(true);
     expect(withProcessedLoop).toBeGreaterThan(withoutProcessedLoop);
+
+    // The idle length is resolved at rate 1; keytrack stretches it an octave up.
+    expect(await loopTimeScale(true, 0, 72)).toBeCloseTo(withProcessedLoop, 9);
+    expect(await loopTimeScale(true, 1, 72)).toBeCloseTo(withProcessedLoop / 2, 9);
   });
 
   it('forwards only the current note’s position, tagged with voice and note', async () => {

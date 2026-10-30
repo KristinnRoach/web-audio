@@ -628,12 +628,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // opposite directions (real-time vs. musical length). They are mutually exclusive:
     // tempo-sync wins whenever it is enabled, even when syncing left the
     // duration unchanged (already on-grid, or too short to sync).
-    if (
-      baseDuration > this.pitchPreservationThreshold &&
-      this.keytrackLoopAmount > 0 &&
-      !this.syncLoopToTempo
-    ) {
-      const scale = 1 + this.keytrackLoopAmount * (Math.abs(playbackRate) - 1);
+    const keytrackAmount =
+      baseDuration > this.pitchPreservationThreshold && !this.syncLoopToTempo
+        ? this.keytrackLoopAmount
+        : 0;
+    if (keytrackAmount > 0) {
+      const scale = 1 + keytrackAmount * (Math.abs(playbackRate) - 1);
       baseDuration = Math.max(1, Math.floor(baseDuration * scale));
       // Deliberately unclamped: above the loop's root note the period is longer than
       // the available audio. The tail is padded with silence in process() so the
@@ -723,6 +723,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     range.loopStartSamples = calcLoopStart;
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
+    range.keytrackAmount = keytrackAmount;
     return range;
   }
 
@@ -867,6 +868,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         ? loopStart + requestedLoopSeconds
         : loopRange.loopEndSamples / sampleRate,
       requestedLoopSeconds,
+      // Resolved at rate 1: the voice rescales the length by the note's rate.
+      keytrackAmount: loopRange.keytrackAmount,
       idle: true,
       triggerId: this.triggerId,
     });

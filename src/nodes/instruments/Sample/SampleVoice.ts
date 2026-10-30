@@ -43,7 +43,7 @@ const AMP_GATE_SMOOTHING_SEC = 0.002;
  * true: durations are relative to the loop; a sample-length envelope is one loop cycle,
  * whatever the loop points. ponytail: test flag, becomes an envelope mode if kept.
  */
-const LOOP_RELATIVE_ENVELOPES = true;
+const LOOP_RELATIVE_ENVELOPES = false;
 
 export class SampleVoice {
   // TODO: implements ILibAudioNode
@@ -85,6 +85,8 @@ export class SampleVoice {
    */
   #requestedLoopSeconds = 0;
   #processedLoopSeconds = 0;
+  /** Loop keytrack in effect for the idle length, which is resolved at rate 1. */
+  #idleLoopKeytrack = 0;
 
   #pitchGlideTime = 0; // in seconds
   /** Semitones added to the played note for everything that tracks pitch. */
@@ -419,7 +421,10 @@ export class SampleVoice {
     });
 
     // Trigger amp, filter and pitch envelopes if enabled
-    this.#lastTrigger = { playbackRate, loopSeconds: this.#processedLoopSeconds };
+    // Same keytrack scale as the processor's loop range.
+    const loopSeconds =
+      this.#processedLoopSeconds * (1 + this.#idleLoopKeytrack * (Math.abs(playbackRate) - 1));
+    this.#lastTrigger = { playbackRate, loopSeconds };
     this.triggerEnvelopes(timestamp, playbackRate);
 
     // Trigger effects
@@ -1011,6 +1016,7 @@ export class SampleVoice {
           if (data.idle) {
             this.#requestedLoopSeconds = data.requestedLoopSeconds;
             this.#processedLoopSeconds = data.loopEnd - data.loopStart;
+            this.#idleLoopKeytrack = data.keytrackAmount ?? 0;
             return;
           }
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
