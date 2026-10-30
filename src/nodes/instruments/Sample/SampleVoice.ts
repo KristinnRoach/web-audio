@@ -459,6 +459,7 @@ export class SampleVoice {
     playbackRate: number,
     fromPoint = 0,
   ) {
+    assert(Number.isFinite(timestamp), 'SampleVoice envelope timestamp must be finite');
     if (!this.#isEnvEnabled(envType)) {
       this.#resetEnvTarget(envType, timestamp, envType === 'amp');
       return;
@@ -771,46 +772,34 @@ export class SampleVoice {
     }
   };
 
-  /**
-   * Re-times running loop envelopes when the loop length changes during a held note.
-   * ponytail: experiment for LOOP_RELATIVE_ENVELOPES. Retimes at the envelope's next
-   * cycle, not the sample's next wrap, so the phase is not realigned; drift-rolled
-   * lengths retrigger every cycle.
-   */
-  #followLoopLength(processedSeconds: number) {
+  /** Stores the processor-resolved loop length for the held note. */
+  #onLoopRangeChange(processedSeconds: number) {
     const trigger = this.#lastTrigger;
-    if (
-      !trigger ||
-      !(processedSeconds > 0) ||
-      Math.abs(processedSeconds - trigger.loopSeconds) <= trigger.loopSeconds * 1e-3 ||
-      this.#state === VoiceState.RELEASING ||
-      !this.#loopEnabled
-    ) {
+    if (!trigger || !(processedSeconds > 0)) return;
+
+    if (Math.abs(processedSeconds - trigger.loopSeconds) <= trigger.loopSeconds * 1e-3) {
       return;
     }
+
     trigger.loopSeconds = processedSeconds;
-    this.#envelopes.forEach((env, envType) => {
-      if (env.shape.mode.type !== 'loop' || !this.#isEnvEnabled(envType)) return;
-      const at = env.nextCycleTime();
-      if (at !== null) this.#triggerEnvelope(envType, env, at, trigger.playbackRate);
-    });
   }
 
-  #syncLoopCycle(processedSeconds: number, time: number) {
+  #onLoopCycleStart(processedSeconds: number, timestamp: number) {
     const trigger = this.#lastTrigger;
-    if (
-      !trigger ||
-      !(processedSeconds > 0) ||
-      !Number.isFinite(time) ||
-      this.#state === VoiceState.RELEASING ||
-      !this.#loopEnabled
-    ) {
-      return;
-    }
+    if (!trigger || !(processedSeconds > 0)) return;
+
     trigger.loopSeconds = processedSeconds;
+
+    // Re-trigger active loop envelopes at the sample loop cycle boundary
+    if (LOOP_RELATIVE_ENVELOPES) this.#retriggerLoopingEnvelopes(timestamp, trigger.playbackRate);
+  }
+
+  #retriggerLoopingEnvelopes(timestamp: number, playbackRate: number) {
+    if (this.#state === VoiceState.RELEASING || !this.#loopEnabled) return;
+
     this.#envelopes.forEach((env, envType) => {
-      if (env.shape.mode.type !== 'loop' || !this.#isEnvEnabled(envType)) return;
-      this.#triggerEnvelope(envType, env, time, trigger.playbackRate);
+      if (env.shape.mode.type !== 'loop') return;
+      this.#triggerEnvelope(envType, env, timestamp, playbackRate);
     });
   }
 
@@ -1029,10 +1018,10 @@ export class SampleVoice {
           }
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
-          if (type === 'loop:cycle' && LOOP_RELATIVE_ENVELOPES) {
-            this.#syncLoopCycle(data.loopSeconds, data.time);
-          } else if (type === 'loop:range' && LOOP_RELATIVE_ENVELOPES) {
-            this.#followLoopLength(data.loopEnd - data.loopStart);
+          if (type === 'loop:cycle') {
+            this.#onLoopCycleStart(data.loopSeconds, data.time);
+          } else if (type === 'loop:range') {
+            this.#onLoopRangeChange(data.loopEnd - data.loopStart);
           } else if (type === 'voice:position') {
             this.getParam('playbackPosition')?.setValueAtTime(
               data.position,
