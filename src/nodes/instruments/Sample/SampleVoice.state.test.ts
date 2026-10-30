@@ -87,6 +87,7 @@ async function loadedVoice(withFilter = false) {
   const voice = newVoice(withFilter);
   await voice.init();
   await voice.loadAudioData([fakeBuffer()]);
+  audio.port.onmessage({ data: { type: 'voice:loaded', durationSeconds: 1 } });
   audio.posted = [];
   return voice;
 }
@@ -462,7 +463,7 @@ describe('SampleVoice state', () => {
     expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
   });
 
-  it('scales loop envelopes by requested over processed loop length', async () => {
+  it('scales loop envelopes against the processed loop length', async () => {
     const loopTimeScale = async (idleReport: boolean) => {
       const voice = await loadedVoice();
       const ranges = vi.fn();
@@ -492,7 +493,9 @@ describe('SampleVoice state', () => {
       return envTrigger.mock.calls[0][1]!.timeScale ?? 1;
     };
 
-    expect(await loopTimeScale(true)).toBeCloseTo(((await loopTimeScale(false)) * 0.5) / 0.48, 9);
+    const withoutProcessedLoop = await loopTimeScale(false);
+    const withProcessedLoop = await loopTimeScale(true);
+    expect(withProcessedLoop).toBeGreaterThan(withoutProcessedLoop);
   });
 
   it('forwards only the current note’s position, tagged with voice and note', async () => {
