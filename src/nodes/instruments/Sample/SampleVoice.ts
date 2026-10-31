@@ -36,15 +36,6 @@ const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feed
  * fast enough to read as a gate, slow enough not to click. */
 const AMP_GATE_SMOOTHING_SEC = 0.002;
 
-/**
- * How a loop-mode envelope is timed against a looping sample.
- * false: durations stay absolute; only the zero-crossing shortfall of the loop is
- * corrected, so an envelope as long as the loop (or a multiple) stays in sync.
- * true: durations are relative to the loop; a sample-length envelope is one loop cycle,
- * whatever the loop points. ponytail: test flag, becomes an envelope mode if kept.
- */
-const LOOP_RELATIVE_ENVELOPES = true;
-
 export class SampleVoice {
   // TODO: implements ILibAudioNode
   readonly nodeId: NodeID;
@@ -61,7 +52,7 @@ export class SampleVoice {
   #feedback: HarmonicFeedback | null = null;
 
   #envelopes = new Map<SampleEnvelopeId, Envelope>();
-  /** Host policy the envelope does not know about: `enabled`, `timeScale` and `playbackRateSync`. */
+  /** Host policy the envelope does not know about: `enabled`, `timeScale`, `playbackRateSync` and `loopRelative`. */
   #envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
 
   #state: VoiceState = VoiceState.AVAILABLE;
@@ -424,7 +415,11 @@ export class SampleVoice {
     // Same keytrack scale as the processor's loop range.
     const loopSeconds =
       this.#processedLoopSeconds * (1 + this.#idleLoopKeytrack * (Math.abs(playbackRate) - 1));
-    this.#lastTrigger = { playbackRate, loopSeconds };
+    const snapScale =
+      loopSeconds > 0 && this.#requestedLoopSeconds > 0
+        ? this.#requestedLoopSeconds / loopSeconds
+        : 1;
+    this.#lastTrigger = { playbackRate, loopSeconds, snapScale };
     this.triggerEnvelopes(timestamp, playbackRate);
 
     // Trigger effects
@@ -449,9 +444,11 @@ export class SampleVoice {
 
   /**
    * Trigger inputs of the current note, kept so a config edit can restart from them.
-   * `loopSeconds` starts at the idle loop length and follows live reports while held.
+   * `snapScale` is fixed per note: requested over processed loop length, both from the
+   * idle report in effect at trigger. `loopSeconds` starts at the idle loop length and
+   * follows each sample loop cycle while held.
    */
-  #lastTrigger: { playbackRate: number; loopSeconds: number } | null = null;
+  #lastTrigger: { playbackRate: number; loopSeconds: number; snapScale: number } | null = null;
 
   #isEnvEnabled(envType: SampleEnvelopeId) {
     return this.#envelopeConfigs.get(envType)?.enabled ?? false;
@@ -471,19 +468,27 @@ export class SampleVoice {
     }
 
     const config = this.#envelopeConfigs.get(envType)!;
-    const resolved = resolveSampleEnvelopeTrigger(envType, config, playbackRate);
-    // The processor plays a different loop length than requested (mostly zero-crossing
-    // snapping); a looping envelope scales by the same ratio to keep its place in the loop.
-    const loopSeconds = this.#lastTrigger?.loopSeconds ?? 0;
-    if (this.#loopEnabled && env.shape.mode.type === 'loop' && loopSeconds > 0) {
-      const reference = LOOP_RELATIVE_ENVELOPES
-        ? this.#sampleDurationSeconds
-        : this.#requestedLoopSeconds;
-      if (reference > 0) {
-        resolved.timeScale = ((resolved.timeScale ?? 1) * reference) / loopSeconds;
-      }
-    }
+    const resolved = resolveSampleEnvelopeTrigger(
+      envType,
+      config,
+      playbackRate,
+      this.#loopTimeScale(config, env),
+    );
     env.trigger(timestamp, { ...resolved, fromPoint });
+  }
+
+  /**
+   * Fits a loop-mode envelope to the sample loop. Relative: a sample-length shape spans
+   * one loop cycle. Absolute: only the processor's deviation from the requested length
+   * (mostly zero-crossing snapping) is corrected, fixed for the note.
+   */
+  #loopTimeScale(config: EnvelopeConfig, env: Envelope) {
+    const trigger = this.#lastTrigger;
+    if (!trigger || !this.#loopEnabled || env.shape.mode.type !== 'loop') return 1;
+    if (!config.loopRelative) return trigger.snapScale;
+    return trigger.loopSeconds > 0 && this.#sampleDurationSeconds > 0
+      ? this.#sampleDurationSeconds / trigger.loopSeconds
+      : 1;
   }
 
   triggerEnvelopes(timestamp: number, playbackRate: number) {
@@ -777,26 +782,14 @@ export class SampleVoice {
     }
   };
 
-  /** Stores the processor-resolved loop length for the held note. */
-  #onLoopRangeChange(processedSeconds: number) {
-    const trigger = this.#lastTrigger;
-    if (!trigger || !(processedSeconds > 0)) return;
-
-    if (Math.abs(processedSeconds - trigger.loopSeconds) <= trigger.loopSeconds * 1e-3) {
-      return;
-    }
-
-    trigger.loopSeconds = processedSeconds;
-  }
-
   #onLoopCycleStart(processedSeconds: number, timestamp: number) {
     const trigger = this.#lastTrigger;
     if (!trigger || !(processedSeconds > 0)) return;
 
     trigger.loopSeconds = processedSeconds;
 
-    // Re-trigger active loop envelopes at the sample loop cycle boundary
-    if (LOOP_RELATIVE_ENVELOPES) this.#retriggerLoopingEnvelopes(timestamp, trigger.playbackRate);
+    // Re-trigger loop-relative envelopes at the sample loop cycle boundary
+    this.#retriggerLoopingEnvelopes(timestamp, trigger.playbackRate);
   }
 
   #retriggerLoopingEnvelopes(timestamp: number, playbackRate: number) {
@@ -804,6 +797,7 @@ export class SampleVoice {
 
     this.#envelopes.forEach((env, envType) => {
       if (env.shape.mode.type !== 'loop') return;
+      if (!this.#envelopeConfigs.get(envType)?.loopRelative) return;
       this.#triggerEnvelope(envType, env, timestamp, playbackRate);
     });
   }
@@ -1026,8 +1020,6 @@ export class SampleVoice {
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           if (type === 'loop:cycle') {
             this.#onLoopCycleStart(data.loopSeconds, data.time);
-          } else if (type === 'loop:range') {
-            this.#onLoopRangeChange(data.loopEnd - data.loopStart);
           } else if (type === 'voice:position') {
             this.getParam('playbackPosition')?.setValueAtTime(
               data.position,
