@@ -6,9 +6,9 @@ using only note playback rate and detune. Loop periods stay in corrected-source
 coordinates; no snap-specific tuning bypass is needed.
 
 Duration becomes `originalDuration / ratio`. Bounds, zero crossings, position
-reporting, smoothing and duration preservation must all use compatible coordinates.
+reporting, smoothing and timestretch must all use compatible coordinates.
 Live ratio changes still need a continuity policy (retrigger or crossfade).
 
 References: [current sample reads](./sample-player-processor.js),
-[duration preservation](./duration-preservation.js),
+[splice timestretch](./splice-stretch.js),
 [existing baked resampling (option A)](../../../nodes/preprocessor/Preprocessor.ts).

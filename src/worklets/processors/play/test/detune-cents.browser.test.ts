@@ -37,7 +37,7 @@ async function measureRate(playbackRate: number, envCents: number, lfoCents: num
     node.port.onmessage = ({ data }) => {
       if (data.type === 'loop:enabled') resolve();
     };
-    node.port.postMessage({ type: 'setPreserveDuration', value: false });
+    node.port.postMessage({ type: 'setTimestretchMode', value: 'off' });
     node.port.postMessage({ type: 'voice:start' });
     // voice:start has no ack; this reply confirms it landed before rendering.
     node.port.postMessage({ type: 'setLoopEnabled', value: false });

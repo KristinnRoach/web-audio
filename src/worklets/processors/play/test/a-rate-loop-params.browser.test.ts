@@ -40,7 +40,7 @@ it('applies a loop-end step within a real render quantum', async () => {
     node.port.postMessage({ type: 'setKeytrackLoopAmount', value: 0 });
     node.port.postMessage({ type: 'syncLoopToTempo', value: false });
     node.port.postMessage({ type: 'setLoopPingPong', value: false });
-    node.port.postMessage({ type: 'setPreserveDuration', value: false });
+    node.port.postMessage({ type: 'setTimestretchMode', value: 'off' });
     node.port.postMessage({ type: 'voice:start' });
     node.port.postMessage({ type: 'setLoopEnabled', value: true });
   });

@@ -1,6 +1,6 @@
 import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
-import { DurationPreserver } from './duration-preservation.js';
+import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
@@ -70,7 +70,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
 
-    this.durationPreserver = new DurationPreserver(sampleRate);
+    this.timestretch = new SpliceStretcher(sampleRate);
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
@@ -246,8 +246,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.keytrackLoopAmount = Math.max(0, Math.min(1, value));
         break;
 
-      case 'setPreserveDuration':
-        this.durationPreserver.setEnabled(value, this.playbackPosition);
+      case 'setTimestretchMode':
+        this.timestretch.setEnabled(value === 'splice', this.playbackPosition);
         break;
     }
   }
@@ -284,7 +284,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.nextDriftGenerated = false;
 
-    this.durationPreserver.reset();
+    this.timestretch.reset();
   }
 
   #stop() {
@@ -950,7 +950,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (this.needsStartPosition) {
       this.needsStartPosition = false;
       this.playbackPosition = approachDirection < 0 ? lastPosition : playbackRange.startSamples;
-      this.durationPreserver.reset(this.playbackPosition);
+      this.timestretch.reset(this.playbackPosition);
     }
 
     // A turn can happen after the preceding block advanced past a trim edge.
@@ -960,10 +960,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     ) {
       if (this.playbackPosition >= playbackRange.endSamples) {
         this.playbackPosition = lastPosition;
-        this.durationPreserver.reset(this.playbackPosition);
+        this.timestretch.reset(this.playbackPosition);
       } else if (this.playbackPosition < playbackRange.startSamples) {
         this.playbackPosition = playbackRange.startSamples;
-        this.durationPreserver.reset(this.playbackPosition);
+        this.timestretch.reset(this.playbackPosition);
       }
     }
     this.previousApproachDirection = approachDirection;
@@ -1064,10 +1064,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         ? Math.max(-1, Math.min(1, basePan + this.currentPanDrift))
         : basePan;
 
-      // The preserver still has no independent turn state for backward/ping-pong.
-      const durationPreservationActive =
+      // The stretcher still has no independent turn state for backward/ping-pong.
+      const timestretchActive =
         (!this.loopEnabled || (loopMode === 'forward' && !this.loopTurned)) &&
-        this.durationPreserver.isActive(
+        this.timestretch.isActive(
           this.zeroCrossings,
           this.loopEnabled,
           loopRange.loopDurationSamples,
@@ -1087,8 +1087,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const direction = this.loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(rate);
 
-      const durationCorrection = this.durationPreserver.prepareCorrection(
-        durationPreservationActive,
+      const timestretchCorrection = this.timestretch.prepareCorrection(
+        timestretchActive,
         this.playbackPosition,
         playbackStep,
         this.zeroCrossings,
@@ -1100,14 +1100,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           ? Math.min(playbackRange.endSamples, loopRange.loopEndSamples)
           : playbackRange.endSamples,
       );
-      const durationResetTarget = durationCorrection?.resetTarget ?? null;
-      if (durationCorrection) this.playbackPosition = durationCorrection.outgoingPosition;
+      const timestretchResetTarget = timestretchCorrection?.resetTarget ?? null;
+      if (timestretchCorrection) this.playbackPosition = timestretchCorrection.outgoingPosition;
 
-      // End of playback: the playhead (or the preserver's unit-rate timeline)
+      // End of playback: the playhead (or the stretcher's unit-rate timeline)
       // has left [startSamples, endSamples) in its direction of travel.
       // Don't stop if we're looping and within the playback range.
-      const transportPosition = durationPreservationActive
-        ? this.durationPreserver.timelinePosition
+      const transportPosition = timestretchActive
+        ? this.timestretch.timelinePosition
         : this.playbackPosition;
       const leftPlaybackRange =
         direction > 0
@@ -1142,9 +1142,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // be fractional (minimum-length growth), and a ping-pong turn at the audio
       // end reads exactly at endSamples. Past it, the silent tail gain is 0.
       const lastAudioIndex = Math.ceil(playbackRange.endSamples) - 1;
-      const durationOutgoingPosition = this.durationPreserver.outgoingPosition;
-      const durationCrossfadeMix =
-        durationOutgoingPosition === null ? 1 : this.durationPreserver.crossfadeMix;
+      const timestretchOutgoingPosition = this.timestretch.outgoingPosition;
+      const timestretchCrossfadeMix =
+        timestretchOutgoingPosition === null ? 1 : this.timestretch.crossfadeMix;
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
@@ -1157,9 +1157,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         }
 
         let interpolatedSample = this.#sumAudioData(this.playbackPosition, channel, lastAudioIndex);
-        if (durationOutgoingPosition !== null) {
-          const outgoing = this.#sumAudioData(durationOutgoingPosition, channel, lastAudioIndex);
-          interpolatedSample = outgoing + durationCrossfadeMix * (interpolatedSample - outgoing);
+        if (timestretchOutgoingPosition !== null) {
+          const outgoing = this.#sumAudioData(timestretchOutgoingPosition, channel, lastAudioIndex);
+          interpolatedSample = outgoing + timestretchCrossfadeMix * (interpolatedSample - outgoing);
         }
         // Compare the old loop's continuation with the relocated playhead.
         let moveDiscontinuity = 0;
@@ -1210,11 +1210,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // Remember the rendered position, before a fractional step can overshoot
       // the edge. The next sample must carry that overshoot with a moving loop.
       this.previousLoopPosition = this.playbackPosition;
-      this.playbackPosition = this.durationPreserver.advance(
-        durationPreservationActive,
+      this.playbackPosition = this.timestretch.advance(
+        timestretchActive,
         this.playbackPosition,
         playbackStep,
-        durationResetTarget,
+        timestretchResetTarget,
         canWrapLoop,
         loopRange.loopStartSamples,
         loopRange.loopEndSamples,
