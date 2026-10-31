@@ -463,6 +463,38 @@ describe('SampleVoice state', () => {
     expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
   });
 
+  it('leaves disabled loop-synced targets alone at sample loop boundaries', async () => {
+    const voice = await loadedVoice();
+    voice.setLoopEnabled(true);
+    for (const id of ['amp', 'pitch'] as const) {
+      const config = createDefaultSampleEnvelopeConfig(id, 1);
+      voice.setEnvelopeConfig(id, {
+        ...config,
+        enabled: false,
+        loopSync: true,
+        shape: { ...config.shape, mode: { type: 'loop' } },
+      });
+    }
+    trigger(voice);
+    const targets = ['envGain', 'detune'].map((name) => {
+      const param = voice.getParam(name)!;
+      return [
+        vi.spyOn(param, 'cancelScheduledValues'),
+        vi.spyOn(param, 'setTargetAtTime'),
+        vi.spyOn(param, 'setValueAtTime'),
+      ];
+    });
+    for (const time of [0.5, 1]) {
+      audio.port.onmessage({
+        data: { type: 'loop:cycle', loopSeconds: 0.5, time, triggerId: 1 },
+      });
+    }
+    for (const writes of targets) {
+      for (const write of writes) expect(write).not.toHaveBeenCalled();
+    }
+    voice.stop();
+  });
+
   it('scales loop envelopes against the processed loop length', async () => {
     const loopTimeScale = async (
       idleReport: boolean,

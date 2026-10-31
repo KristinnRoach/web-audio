@@ -100,7 +100,7 @@ export function valueOf(
   return exponential ? floorOffZero(value, depth) : value;
 }
 
-/** Returns the time of the last point scheduled. */
+/** Schedules from a point or mid-segment `fromTime`; returns the last scheduled time. */
 export function scheduleRange(
   param: AutomatableParam,
   envelope: EnvelopeShape,
@@ -110,22 +110,36 @@ export function scheduleRange(
   base: number,
   depth: number,
   timeScale: number,
+  fromTime = envelope.points[from].time,
 ) {
   const points = envelope.points;
-  let previous = valueOf(points, from, from, to, base, depth);
+  const first = from;
+  while (from < to && points[from + 1].time <= fromTime) from++;
+  let previous = valueOf(points, from, first, to, base, depth);
+  if (from < to && fromTime > points[from].time) {
+    const next = valueOf(points, from + 1, first, to, base, depth);
+    const curve = rampCurve(points[from].curve ?? 'linear', previous, next);
+    const progress = (fromTime - points[from].time) / (points[from + 1].time - points[from].time);
+    if (curve === 'linear') previous += (next - previous) * progress;
+    else if (curve === 'exponential') previous *= (next / previous) ** progress;
+  }
   param.setValueAtTime(previous, startTime);
   let last = startTime;
 
   for (let index = from + 1; index <= to; index++) {
-    last = startTime + getDuration(points, { fromIndex: from, toIndex: index, timeScale });
-    const value = valueOf(points, index, from, to, base, depth);
+    last = startTime + (points[index].time - fromTime) / timeScale;
+    const value = valueOf(points, index, first, to, base, depth);
     schedulePoint(
       param,
       value,
       last,
-      rampCurve(points[index - 1].curve ?? 'linear', previous, value),
+      // A partial segment keeps its original curve, including signed linear fallbacks.
+      rampCurve(
+        points[index - 1].curve ?? 'linear',
+        valueOf(points, index - 1, first, to, base, depth),
+        value,
+      ),
     );
-    previous = value;
   }
 
   return last;

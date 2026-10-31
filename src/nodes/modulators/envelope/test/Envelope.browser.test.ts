@@ -98,3 +98,148 @@ test('a sustain edit with a past timestamp starts its glide now', async () => {
     expect(data[sampleAt(time)]).toBeCloseTo(expected[i], 3);
   });
 });
+
+const loopShape: EnvelopeShape = {
+  points: [
+    { time: 0, value: 0, curve: 'exponential' },
+    { time: 0.005, value: 1, curve: 'exponential' },
+    { time: 0.05, value: 0.75, curve: 'exponential' },
+    { time: 0.18, value: 0.5, curve: 'exponential' },
+    { time: 0.2, value: 0, curve: 'exponential' },
+  ],
+  mode: { type: 'loop' },
+  sustainPoint: 3,
+  releasePoint: 3,
+};
+
+async function renderLoop(
+  retrigger: 'none' | 'future' | 'late',
+  shape = loopShape,
+  lateTime = 0.203,
+  timeScale = 1,
+) {
+  const context = new OfflineAudioContext(
+    1,
+    Math.ceil(SAMPLE_RATE * Math.max(0.25, lateTime + 0.25)),
+    SAMPLE_RATE,
+  );
+  const source = new ConstantSourceNode(context, { offset: 0 });
+  source.connect(context.destination);
+  source.start();
+  const envelope = new Envelope(context, source.offset, shape);
+  envelope.trigger(0, { timeScale });
+  if (retrigger === 'future') envelope.trigger(0.2, { timeScale });
+  if (retrigger !== 'late') {
+    const samples = (await context.startRendering()).getChannelData(0);
+    envelope.stop();
+    return { samples, at: 0.2 };
+  }
+  // Suspend a few ms into the next attack, then deliver its already-past wrap.
+  const paused = context.suspend(lateTime);
+  const rendering = context.startRendering();
+  await paused;
+  const at = context.currentTime;
+  envelope.trigger(0.2, { catchUp: true, timeScale });
+  await context.resume();
+  const samples = (await rendering).getChannelData(0);
+  envelope.stop();
+  return { samples, at };
+}
+
+test('a future boundary retrigger preserves the closing ramp already in flight', async () => {
+  const reference = await renderLoop('none');
+  const retriggered = await renderLoop('future');
+  for (const time of [0.185, 0.19, 0.195, 0.199]) {
+    expect(retriggered.samples[sampleAt(time)], `closing ramp at ${time}`).toBeCloseTo(
+      reference.samples[sampleAt(time)],
+      5,
+    );
+  }
+});
+
+test('a late cycle report resumes the rendered loop phase without resetting the attack', async () => {
+  const { samples, at } = await renderLoop('late');
+  const index = sampleAt(at);
+  const reference = await renderLoop('none');
+  for (const time of [at, at + 0.001, 0.22, 0.24]) {
+    expect(samples[sampleAt(time)]).toBeCloseTo(reference.samples[sampleAt(time)], 5);
+  }
+  expect(Math.abs(samples[index] - samples[index - 1])).toBeLessThan(0.001);
+});
+
+// Compare native rendered automation, including floored exponential endpoints,
+// signed linear fallbacks, exact step points and multiple missed cycles.
+for (const [name, shape, timeScale, lateTime] of [
+  ['missed cycles', loopShape, 1, 0.603],
+  [
+    'scaled nonzero origin',
+    { ...loopShape, points: loopShape.points.map((p) => ({ ...p, time: p.time + 7 })) },
+    2,
+    0.213,
+  ],
+  [
+    'signed exponential',
+    {
+      ...loopShape,
+      points: [
+        { time: 0, value: -1, curve: 'exponential' },
+        { time: 0.1, value: 1, curve: 'exponential' },
+        { time: 0.2, value: -1, curve: 'exponential' },
+      ],
+      sustainPoint: 1,
+      releasePoint: 1,
+    },
+    1,
+    0.243,
+  ],
+  [
+    'step segment',
+    {
+      ...loopShape,
+      points: [
+        { time: 0, value: 0.25, curve: 'step' },
+        { time: 0.1, value: 0.75, curve: 'step' },
+        { time: 0.2, value: 0.25, curve: 'step' },
+      ],
+      sustainPoint: 1,
+      releasePoint: 1,
+    },
+    1,
+    0.243,
+  ],
+] as const) {
+  test(`delayed loop catch-up matches uninterrupted audio: ${name}`, async () => {
+    const reference = await renderLoop('none', shape, lateTime, timeScale);
+    const resumed = await renderLoop('late', shape, lateTime, timeScale);
+    for (let index = sampleAt(resumed.at); index < resumed.samples.length; index++) {
+      expect(resumed.samples[index]).toBeCloseTo(reference.samples[index], 4);
+    }
+  });
+}
+
+for (const command of ['release', 'stop'] as const) {
+  test(`${command} before a catch-up handover cancels it without reopening`, async () => {
+    const render = async (catchUp: boolean) => {
+      const context = new OfflineAudioContext(1, SAMPLE_RATE * 0.3, SAMPLE_RATE);
+      const source = new ConstantSourceNode(context, { offset: 0 });
+      source.connect(context.destination);
+      source.start();
+      const envelope = new Envelope(context, source.offset, loopShape);
+      envelope.trigger(0);
+      const paused = context.suspend(0.203);
+      const rendering = context.startRendering();
+      await paused;
+      if (catchUp) envelope.trigger(0.2, { catchUp: true });
+      envelope[command](context.currentTime + 0.005);
+      await context.resume();
+      const samples = (await rendering).getChannelData(0);
+      envelope.stop();
+      return samples;
+    };
+    const reference = await render(false);
+    const caughtUp = await render(true);
+    for (let index = sampleAt(0.203); index < reference.length; index++) {
+      expect(caughtUp[index]).toBeCloseTo(reference[index], 4);
+    }
+  });
+}

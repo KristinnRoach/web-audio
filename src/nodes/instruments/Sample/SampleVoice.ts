@@ -452,6 +452,7 @@ export class SampleVoice {
     timestamp: number,
     playbackRate: number,
     fromPoint = 0,
+    catchUp = false,
   ) {
     assert(Number.isFinite(timestamp), 'SampleVoice envelope timestamp must be finite');
     if (!this.#isEnvEnabled(envType)) {
@@ -466,7 +467,7 @@ export class SampleVoice {
       playbackRate,
       this.#loopTimeScale(config, env),
     );
-    env.trigger(timestamp, { ...resolved, fromPoint });
+    env.trigger(timestamp, { ...resolved, fromPoint, catchUp });
   }
 
   /** Fit the full buffer timeline to one audible sample loop; otherwise use ordinary timing. */
@@ -784,9 +785,9 @@ export class SampleVoice {
     if (this.#state === VoiceState.RELEASING || !this.#loopEnabled) return;
 
     this.#envelopes.forEach((env, envType) => {
-      if (env.shape.mode.type !== 'loop') return;
+      if (!this.#isEnvEnabled(envType) || env.shape.mode.type !== 'loop') return;
       if (!this.#envelopeConfigs.get(envType)?.loopSync) return;
-      this.#triggerEnvelope(envType, env, timestamp, playbackRate);
+      this.#triggerEnvelope(envType, env, timestamp, playbackRate, 0, true);
     });
   }
 

@@ -26,6 +26,8 @@ export type EnvelopeClock = { readonly currentTime: number };
  */
 export type EnvelopeTriggerOptions = ScheduleOptions & {
   fromPoint?: number;
+  /** Resume the reported loop phase with a 10 ms handover lead; ignored outside loop mode. */
+  catchUp?: boolean;
   /** Overrides ramp curves for this run, preserving step segments. */
   curve?: EnvelopeCurve;
   /** Plays this shape for this run only; the stored `shape` is left as it is. */
@@ -34,6 +36,8 @@ export type EnvelopeTriggerOptions = ScheduleOptions & {
 
 const LOOKAHEAD_SECONDS = 1;
 const REFILL_INTERVAL_MS = 50;
+// Leave the render thread time to receive a catch-up handover before it plays it.
+const CATCH_UP_LEAD_SECONDS = 0.01;
 const activeLoops = new Set<() => void>();
 let refillTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -141,7 +145,7 @@ export class Envelope {
     return elapsed;
   }
 
-  /** Starts a run at `time`, clamped to now: a moment already past cannot be scheduled. */
+  /** Starts no earlier than now; `catchUp` keeps a delayed loop's original phase. */
   trigger(time = this.clock.currentTime, options: EnvelopeTriggerOptions = {}) {
     // Validated before anything changes, so a rejected trigger leaves the live run alone.
     let runEnvelope = snapshot(options.shape ?? this.#shape);
@@ -165,7 +169,13 @@ export class Envelope {
     if (runEnvelope.mode.type === 'loop' && !Number.isInteger(options.fromPoint ?? 0)) {
       throw new RangeError('Envelope pickup point must be an integer');
     }
-    time = Math.max(this.clock.currentTime, time);
+    const requestedTime = time;
+    time = Math.max(
+      this.clock.currentTime +
+        (options.catchUp && runEnvelope.mode.type === 'loop' ? CATCH_UP_LEAD_SECONDS : 0),
+      time,
+    );
+    const wasRunning = this.#state !== 'idle';
     this.#envShape = runEnvelope;
     this.#stopLoop();
     this.#state = 'triggered';
@@ -179,10 +189,9 @@ export class Envelope {
     // below reads the same values rather than whatever a later trigger has set.
     const { param } = this;
 
-    // Clear only. Every scheduling path below opens with its own setValueAtTime at
-    // this same instant, so pinning here would write the param's stale value and be
-    // overwritten by the envelope's first point a moment later.
-    param.cancelScheduledValues(time);
+    // Keep the old ramp moving up to the handover before replacing future events.
+    if (wasRunning) param.holdAt(time);
+    else param.cancelScheduledValues(time);
 
     const { points } = runEnvelope;
     // A loop repeats the whole envelope. Every other mode schedules one pass;
@@ -198,7 +207,13 @@ export class Envelope {
     // every cycle boundary below still lands on the same grid and `position` keeps
     // reading the right phase. The anchor is in the past; nothing is scheduled there.
     const from = Math.min(Math.max(options.fromPoint ?? 0, 0), points.length - 1);
-    this.#triggerTime = time - getDuration(points, { toIndex: from, timeScale });
+    const catchUp = options.catchUp && time > requestedTime;
+    this.#triggerTime =
+      (catchUp ? requestedTime : time) - getDuration(points, { toIndex: from, timeScale });
+    const elapsed = time - this.#triggerTime;
+    const fromTime = catchUp
+      ? points[0].time + (elapsed % loopDuration) * timeScale
+      : points[from].time;
 
     // Cycle n opens at time + n * duration, the first pass included, so there is no
     // pre-loop stage and point 0 lands on the trigger time every pass. Absolute
@@ -210,18 +225,18 @@ export class Envelope {
     let cycleEnd = scheduleRange(
       param,
       runEnvelope,
-      from,
+      catchUp ? 0 : from,
       points.length - 1,
       time,
       base,
       depth,
       timeScale,
+      fromTime,
     );
 
-    // A partial opening pass ends exactly where cycle 1 begins, so the grid carries on
-    // from here either way.
+    // Continue on the original grid, skipping any cycles elapsed before this report.
     const anchor = this.#triggerTime;
-    let cycle = 1;
+    let cycle = catchUp ? Math.floor(elapsed / loopDuration) + 1 : 1;
     this.#removeLoop = addLoop(() => {
       const now = this.clock.currentTime;
       const horizon = now + LOOKAHEAD_SECONDS;

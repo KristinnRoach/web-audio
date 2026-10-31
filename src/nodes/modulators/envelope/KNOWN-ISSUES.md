@@ -3,7 +3,36 @@
 Single backlog for envelope internals and sampler integration. Current live editing,
 including switching to and from loop mode, is intentionally preserved: it works well
 in the consuming app's listening sessions. These are follow-ups, not a cleanup-PR checklist.
-Code observations below are not claims that every case has been reproduced audibly.
+Listening tests reported clicks on some sample loop boundaries after the `loopSync`
+change. Rendered tests isolated dropped closing ramps and late attack resets; both
+are fixed below. Other observations remain candidates, not confirmed audible defects.
+
+## Real-audio click regression
+
+`../../instruments/Sample/SamplePlayer.loop-clicks.browser.test.ts` captures a real
+AudioContext playing a seamless 200 ms tone with full-buffer looping for 3 seconds.
+With drift off, a default looped amp shape and `loopSync` on reproduced intermittent
+single-sample impulses (one jumped about 0.199 full scale against a peak of 0.5).
+Flat synced and unsynced-shape controls stayed below the detector threshold.
+
+Two independent OfflineAudioContext tests isolated the timing defects:
+
+- Future retriggers removed the old closing ramp, holding its preceding value until
+  the boundary. Retriggers now preserve the ramp through the handover with `holdAt`.
+- Late notifications restarted the next attack at zero instead of its elapsed phase.
+  Sampler cycle notifications now opt into `catchUp`, resuming the appropriate segment
+  and keeping subsequent cycles anchored to the reported wrap time. These handovers
+  are scheduled at least 10 ms ahead; rewriting the current render quantum still
+  produced intermittent spikes without that lead. Ordinary note triggers retain
+  their restart-at-now behavior.
+
+The real-time regression includes an extra 30 ms notification delay. Fixed-rate,
+fixed-range loops stay on phase without needing a future notification protocol.
+Run after `vp run build:worklets` with:
+
+```
+vp test run --config vitest.browser.config.ts src/nodes/instruments/Sample/SamplePlayer.loop-clicks.browser.test.ts
+```
 
 ## Live edits
 
@@ -26,12 +55,13 @@ Code observations below are not claims that every case has been reproduced audib
   `detune` (cents), so glide and keytracking keep `playbackRate`. `disablePitch` resets
   `playbackRate` to 1 but leaves `detune` alone, so a pitch envelope still bends a voice
   whose pitch is disabled.
-- **Boundary cancel.** A loop retrigger cancels from the boundary, and
-  `cancelScheduledValues(t)` removes events at `t` too, which includes the closing ramp
-  of the cycle in progress. Per the Web Audio spec that ramp would be dropped mid-flight.
-  Not yet heard in listening sessions; check with a browser test.
 
 ## Loop timing
+
+- **Live loop-point clicks.** Listening confirmed that fixed loop boundaries are now
+  clean, but moving loop points while holding a note with a synced envelope still
+  clicks. The stable-loop regression does not cover range edits. Isolate sample-splice
+  discontinuities from envelope phase/scale handovers before choosing the fix.
 
 `loopSync` now fits the full loaded buffer's duration to one audible sample loop
 for loop-mode envelopes, including the note's playback rate regardless of
@@ -42,6 +72,32 @@ there is no hidden loop-snapping correction.
   glide or pitch-envelope modulation. Continuous phase lock remains unresolved.
 - **Boundary restart.** Synced envelopes restart at each sample loop boundary;
   shapes that do not divide evenly into that interval are cut at the boundary.
+- **Per-wrap message load.** The processor posts `loop:cycle` on every wrap, even
+  without an enabled loop-synced envelope. At rate 1, a 5 ms loop produces about
+  200 messages/s per voice; enabled loop-synced envelopes retrigger for each message.
+  `SampleVoicePool` forwards these too, but `SamplePlayer` already excludes them.
+  The consuming app currently listens to `loop:range`, not `loop:cycle`; direct pool
+  consumers may still observe cycles. Consider an explicit processor reporting flag
+  maintained across envelope enable/mode/sync edits and voice lifecycle, and a separate
+  opt-in for upstream cycle observation. Do not simply throttle messages while every
+  sample boundary still controls retriggering; that would change envelope playback.
+- **Delayed changes to loop timing.** Phase catch-up handles late reports for an
+  unchanged loop, but cannot change already rendered audio when rate, range or drift
+  changes. A future-boundary protocol would need enough lead time and a policy for
+  changing inputs; posting only the next boundary can still be late for tiny loops.
+  Message coalescing must retain the newest authoritative phase rather than resetting
+  at receipt time.
+- **Approximate first-pass keytracking.** `SampleVoice.trigger` scales the already
+  processed idle length by `1 + k * (|targetRate| - 1)`. The processor applies that
+  scale to the pre-snap length with integer floor/minimum, then snaps boundaries and
+  applies drift; these operations do not commute. Idle reports already include base
+  quantization and minimum lengths, but cannot predict every post-scale result;
+  idle tempo sync also resolves at 120. Voice starts reset processor glide to target,
+  so target-versus-glide mismatch is not established for a fresh start here.
+  Live reports update the length after the first wrap, but keep using the stored note
+  rate (see changing pitch above). A shared multiplier alone will not make the first
+  pass exact. Prefer authoritative processor timing with enough lead time; test
+  non-integer rates, snapping, glide and tempo sync before changing this path.
 
 ## Scheduling and lifecycle
 
@@ -63,10 +119,11 @@ there is no hidden loop-snapping correction.
     or after its own start and Web Audio applies it immediately. Probe: advance the
     clock in 1 s steps, fire the timer once per step, and assert every cycle is
     scheduled strictly ahead of `clock.currentTime`.
-  - _Time-scale composition._ `SampleVoice.#timeScale` multiplies `timeScale` by
-    `playbackRate`. If the sample's rate lands on a different grid than the envelope's,
-    the two walk apart in proportion to the error. Probe: drive a loop and a sample
-    from one trigger at a non-integer rate and compare cycle boundaries to buffer wraps.
+  - _Time-scale composition._ Loop sync includes the stored note playback rate.
+    If the actual sample rate or loop length differs from those inputs, the sample
+    and envelope can walk apart. See delayed changes to loop timing and approximate
+    first-pass keytracking above. Probe: compare envelope boundaries to sample wraps
+    at a non-integer rate with realistic message delay.
 
   Listen in the consuming app before landing either fix.
 
