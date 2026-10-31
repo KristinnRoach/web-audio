@@ -38,7 +38,7 @@ import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { createSampleVoicePool } from './createSampleVoicePool';
-import type { SampleVoiceChainNode } from './SampleVoice';
+import type { SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
 import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeConfig,
@@ -869,8 +869,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   };
 
-  setTimestretchEnabled = (enabled: boolean) => {
-    this.#voicePool.applyToAllVoices((voice) => voice.setTimestretchEnabled(enabled));
+  setTimestretchMode = (mode: TimestretchMode) => {
+    this.#voicePool.applyToAllVoices((voice) => voice.setTimestretchMode(mode));
     return this;
   };
 

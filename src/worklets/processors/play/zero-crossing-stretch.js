@@ -11,11 +11,11 @@ const DEFAULT_CROSSFADE_DURATION_MS = 5;
 export const MAX_DRIFT_MS = 40;
 
 /**
- * Owns the private timeline and correction state for zero-crossing duration preservation.
+ * Owns the private timeline and correction state for zero-crossing timestretch.
  * Playback position, playback rate, loop state, and zero crossings remain caller-owned inputs.
  * Methods return playback positions and never mutate the caller's transport state.
  */
-export class DurationPreserver {
+export class ZeroCrossingStretcher {
   #enabled = false;
   #maxDriftSamples;
   #timelinePosition = 0;
@@ -58,8 +58,8 @@ export class DurationPreserver {
   }
 
   /**
-   * Enables or disables preservation and aligns its timeline with the authoritative playhead.
-   * @param {boolean} enabled Whether preservation should be enabled.
+   * Enables or disables the stretch and aligns its timeline with the authoritative playhead.
+   * @param {boolean} enabled Whether the stretch should be enabled.
    * @param {number} playbackPosition Current caller-owned playback position in samples.
    */
   setEnabled(enabled, playbackPosition) {
@@ -69,7 +69,7 @@ export class DurationPreserver {
 
   /**
    * Aligns the private timeline with a playback position and clears any pending correction.
-   * This does not change whether preservation is enabled.
+   * This does not change whether the stretch is enabled.
    * @param {number} [position=0] Playback position in samples.
    */
   reset(position = 0) {
@@ -79,7 +79,7 @@ export class DurationPreserver {
   }
 
   /**
-   * Reports whether preservation can run for the current transport context.
+   * Reports whether the stretch can run for the current transport context.
    * Loops at or below the threshold are intentionally excluded.
    * @param {number[]} zeroCrossings Zero-crossing positions in ascending sample order.
    * @param {boolean} loopEnabled Whether sample looping is enabled.

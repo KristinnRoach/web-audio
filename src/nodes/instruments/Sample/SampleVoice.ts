@@ -28,6 +28,7 @@ import {
 } from './sample-envelope-policy';
 
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
+export type TimestretchMode = 'off' | 'zero-crossing';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 
@@ -1170,8 +1171,8 @@ export class SampleVoice {
   setPanDriftEnabled = (enabled: boolean) =>
     this.sendToProcessor({ type: 'setPanDriftEnabled', value: enabled });
 
-  setTimestretchEnabled = (enabled: boolean) =>
-    this.sendToProcessor({ type: 'setPreserveDuration', value: enabled });
+  setTimestretchMode = (mode: TimestretchMode) =>
+    this.sendToProcessor({ type: 'setTimestretchMode', value: mode });
 
   setAMModOctaveOffset(offset: number) {
     assert(

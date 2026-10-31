@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { DurationPreserver } from '../duration-preservation.js';
+import { ZeroCrossingStretcher } from '../zero-crossing-stretch.js';
 import {
   makeParameters,
   setupProcessorGlobals,
@@ -9,7 +9,7 @@ import {
 
 setupProcessorGlobals();
 
-describe('duration correction crossfade', () => {
+describe('timestretch correction crossfade', () => {
   it('blends advancing stereo heads, then rejoins the unchanged transport', async () => {
     const results = await Promise.all(
       [false, true].map(async (enabled) => {
@@ -28,16 +28,16 @@ describe('duration correction crossfade', () => {
         });
         send({ type: 'setLoopEnabled', value: false });
         send({ type: 'setPanDriftEnabled', value: false });
-        send({ type: 'setPreserveDuration', value: true });
-        const { durationPreserver } = processor as typeof processor & {
-          durationPreserver: DurationPreserver;
+        send({ type: 'setTimestretchMode', value: 'zero-crossing' });
+        const { timestretch } = processor as typeof processor & {
+          timestretch: ZeroCrossingStretcher;
         };
-        durationPreserver.crossfadeDurationMs = enabled ? 5 : 0;
+        timestretch.crossfadeDurationMs = enabled ? 5 : 0;
         send({ type: 'voice:start' });
         const params = makeParameters({ playbackRate: 2 });
         processor.process([], [[new Float32Array(1), new Float32Array(1)]], params);
         processor.playbackPosition = 4000;
-        durationPreserver.reset(1000);
+        timestretch.reset(1000);
         const output = [new Float32Array(300), new Float32Array(300)];
         processor.process([], [output], params);
         return { output, position: processor.playbackPosition };

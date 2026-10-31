@@ -1,4 +1,4 @@
-// Pure loop-edge rules shared by the playhead and the duration preserver's
+// Pure loop-edge rules shared by the playhead and the stretcher's
 // timeline. Loop ranges are plain arguments, so they work with block-rate or
 // per-sample ranges.
 
