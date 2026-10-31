@@ -1173,6 +1173,9 @@ export class SampleVoice {
   setTimestretchEnabled = (enabled: boolean) =>
     this.sendToProcessor({ type: 'setPreserveDuration', value: enabled });
 
+  setCrossfadeDurationMs = (milliseconds: number) =>
+    this.sendToProcessor({ type: 'setCrossfadeDurationMs', value: milliseconds });
+
   setAMModOctaveOffset(offset: number) {
     assert(
       offset >= samplerParams.amModOctaveOffset.min &&

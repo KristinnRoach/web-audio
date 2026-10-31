@@ -874,6 +874,15 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   };
 
+  /** Experimental overlap length at timestretch correction jumps. Zero disables it. */
+  setCrossfadeDurationMs = (milliseconds: number) => {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+      throw new RangeError('Crossfade duration must be finite and non-negative');
+    }
+    this.#voicePool.applyToAllVoices((voice) => voice.setCrossfadeDurationMs(milliseconds));
+    return this;
+  };
+
   setLoopStart = (seconds: number) => {
     return this.#setLoopPoint('start', seconds, this.loopEnd);
   };

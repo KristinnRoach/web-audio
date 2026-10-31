@@ -24,6 +24,21 @@ const player = await createSamplePlayer({ audio: sampleData });
 player.play(60);
 ```
 
+### Experimental timestretch crossfade
+
+```ts
+player.setTimestretchEnabled(true);
+player.setCrossfadeDurationMs(5); // On by default; see duration-preservation.js
+// A/B against the original zero-crossing jumps:
+player.setCrossfadeDurationMs(0);
+```
+
+The experiment overlaps advancing audio for the configured duration at preservation jumps,
+using smooth equal-gain fades for the slope-matched crossings. Fades shorten near
+trim/loop boundaries and at high playback rates, and reset with the voice. It adds no playback delay and does
+not change the existing timestretch eligibility rules. Overlaps can soften
+transients or cause phase cancellation; compare with your own samples.
+
 ### Live demo app: [Hljóð-Smali](https://kristinnroach.github.io/hljod-smali)
 
 ## Global audio context
