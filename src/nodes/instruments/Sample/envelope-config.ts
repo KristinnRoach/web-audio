@@ -9,6 +9,14 @@ export type EnvelopeConfig = {
   readonly timeScale: number;
   /** Scales timing by the note's playback rate, so higher notes run the envelope faster. */
   readonly playbackRateSync?: boolean;
+  /**
+   * Sync a loop-mode envelope to a looping sample, ignoring playbackRateSync.
+   * At timeScale 1, a shape spanning the full loaded buffer's duration plays once
+   * per sample loop; a half-duration shape plays twice. Restarts at every sample
+   * loop boundary, cutting any unfinished pass. Inactive outside loop mode or
+   * when the sample loop is off. Otherwise timing uses seconds and playbackRateSync.
+   */
+  readonly loopSync?: boolean;
   readonly shape: EnvelopeShape;
 };
 
@@ -31,7 +39,8 @@ export function assertValidEnvelopeConfig(config: EnvelopeConfig): void {
     (config.depth !== undefined && !Number.isFinite(config.depth)) ||
     !Number.isFinite(config?.timeScale) ||
     config.timeScale <= 0 ||
-    (config.playbackRateSync !== undefined && typeof config.playbackRateSync !== 'boolean')
+    (config.playbackRateSync !== undefined && typeof config.playbackRateSync !== 'boolean') ||
+    (config.loopSync !== undefined && typeof config.loopSync !== 'boolean')
   ) {
     throw new TypeError('Invalid envelope settings');
   }

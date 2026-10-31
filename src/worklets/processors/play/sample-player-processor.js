@@ -327,7 +327,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopMode, loopRange, audioEndSamples, playbackRate) {
+  #passLoopEdge(approachDirection, loopMode, loopRange, audioEndSamples, playbackRate, cycleTime) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { loopStartSamples: loopStart, loopEndSamples: loopEnd } = loopRange;
     const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
@@ -351,6 +351,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
+    this.port.postMessage({
+      type: 'loop:cycle',
+      loopSeconds: loopRange.loopDurationSamples / sampleRate,
+      time: cycleTime,
+      triggerId: this.triggerId,
+    });
 
     // Reset drift flag to generate new drift for next loop iteration
     this.nextDriftGenerated = false;
@@ -622,12 +628,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // opposite directions (real-time vs. musical length). They are mutually exclusive:
     // tempo-sync wins whenever it is enabled, even when syncing left the
     // duration unchanged (already on-grid, or too short to sync).
-    if (
-      baseDuration > this.pitchPreservationThreshold &&
-      this.keytrackLoopAmount > 0 &&
-      !this.syncLoopToTempo
-    ) {
-      const scale = 1 + this.keytrackLoopAmount * (Math.abs(playbackRate) - 1);
+    const keytrackAmount =
+      baseDuration > this.pitchPreservationThreshold && !this.syncLoopToTempo
+        ? this.keytrackLoopAmount
+        : 0;
+    if (keytrackAmount > 0) {
+      const scale = 1 + keytrackAmount * (Math.abs(playbackRate) - 1);
       baseDuration = Math.max(1, Math.floor(baseDuration * scale));
       // Deliberately unclamped: above the loop's root note the period is longer than
       // the available audio. The tail is padded with silence in process() so the
@@ -717,6 +723,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     range.loopStartSamples = calcLoopStart;
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
+    range.keytrackAmount = keytrackAmount;
     return range;
   }
 
@@ -799,11 +806,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * Resolves the loop range while idle, so the voice knows the snapped loop length
    * before the next note triggers its envelopes. Recomputed only when an input changed,
    * at most every `interval` seconds; a change skipped by the throttle is sent on a
-   * later block, since the key only updates when a report is posted. No drift and unit rate: drift is rolled per note, and the voice only uses this for
-   * the steady loop length. ponytail: keytrack and tempo-sync lengths depend on the
-   * note's rate, so those report the requested length (no correction) until the voice
-   * needs them. Loops requested shorter than minRangeSamples also report the
-   * requested length.
+   * later block, since the key only updates when a report is posted. No drift and unit
+   * rate: drift is rolled per note, and the voice only uses this for the steady loop length.
+   * ponytail: tempo sync resolves at tempo 120 here; the first loop:cycle corrects it.
    */
   #postIdleLoopRange(parameters, interval = 1 / 30) {
     if (currentTime - (this.idleLoopPostTime ?? -1) < interval) return;
@@ -830,40 +835,15 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       positionParams,
       this.#calculatePlaybackRange(positionParams),
     );
-    // The loop as set, inside the raw trim range and the buffer. Not the loop range's
-    // own length: the trim range it resolves in is already snapped to zero crossings.
-    const {
-      startPointSamples: a,
-      endPointSamples: b,
-      loopStartSamples: c,
-      loopEndSamples: d,
-    } = positionParams;
-    const lo = Math.max(Math.min(a, b), 0);
-    const hi = Math.min(Math.max(a, b), this.buffer[0].length);
-    const clamp = (value) => Math.min(Math.max(value, lo), hi);
-    const requestedLoopSamples = Math.abs(clamp(d) - clamp(c));
-    const requestedLoopSeconds = requestedLoopSamples / sampleRate;
-    const loopStart = loopRange.loopStartSamples / sampleRate;
-    // Report the requested length (no envelope correction) when:
-    // - tempo sync or keytrack is on: this range is resolved at tempo 120 and rate 1,
-    //   not the note's, so its length would be wrong.
-    // - the requested loop is shorter than minRangeSamples: the processor plays at
-    //   least minRangeSamples, and scaling the envelope by that ratio would stretch
-    //   it many times over (a 1-sample loop at 48 kHz would stretch it ~92x).
-    const noCorrection =
-      this.syncLoopToTempo ||
-      this.keytrackLoopAmount > 0 ||
-      requestedLoopSamples < this.minRangeSamples;
     // Posted directly, not through #postRange: its dedup compares against ranges
     // posted before a buffer reload, while the voice has cleared its copy. The key
     // check already limits this to real changes.
     this.port.postMessage({
       type: 'loop:range',
-      loopStart,
-      loopEnd: noCorrection
-        ? loopStart + requestedLoopSeconds
-        : loopRange.loopEndSamples / sampleRate,
-      requestedLoopSeconds,
+      loopStart: loopRange.loopStartSamples / sampleRate,
+      loopEnd: loopRange.loopEndSamples / sampleRate,
+      // Resolved at rate 1: the voice rescales the length by the note's rate.
+      keytrackAmount: loopRange.keytrackAmount,
       idle: true,
       triggerId: this.triggerId,
     });
@@ -1079,7 +1059,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const maxLoopCount = parameters.maxLoopCount[0];
       const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
       if (canWrapLoop) {
-        this.#passLoopEdge(approachDirection, loopMode, loopRange, playbackRange.endSamples, rate);
+        this.#passLoopEdge(
+          approachDirection,
+          loopMode,
+          loopRange,
+          playbackRange.endSamples,
+          rate,
+          currentTime + sample / sampleRate,
+        );
       }
       // Out of loop passes (the edge just passed may have been the last), or
       // loop off: play out in the approach direction

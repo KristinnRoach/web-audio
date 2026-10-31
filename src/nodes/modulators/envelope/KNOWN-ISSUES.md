@@ -31,6 +31,18 @@ Code observations below are not claims that every case has been reproduced audib
   of the cycle in progress. Per the Web Audio spec that ramp would be dropped mid-flight.
   Not yet heard in listening sessions; check with a browser test.
 
+## Loop timing
+
+`loopSync` now fits the full loaded buffer's duration to one audible sample loop
+for loop-mode envelopes, including the note's playback rate regardless of
+`playbackRateSync`. Other timing uses seconds with optional `playbackRateSync`;
+there is no hidden loop-snapping correction.
+
+- **Changing pitch while held.** Sync uses the stored note playback rate, not continuous
+  glide or pitch-envelope modulation. Continuous phase lock remains unresolved.
+- **Boundary restart.** Synced envelopes restart at each sample loop boundary;
+  shapes that do not divide evenly into that interval are cut at the boundary.
+
 ## Scheduling and lifecycle
 
 - **Writes outside the envelope.** Holds read `TrackedParam`, which only sees automation
