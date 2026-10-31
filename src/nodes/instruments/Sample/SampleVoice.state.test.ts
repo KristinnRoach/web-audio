@@ -464,16 +464,23 @@ describe('SampleVoice state', () => {
   });
 
   it('scales loop envelopes against the processed loop length', async () => {
-    const loopTimeScale = async (idleReport: boolean, keytrackAmount = 0, midiNote = 60) => {
+    const loopTimeScale = async (
+      idleReport: boolean,
+      keytrackAmount = 0,
+      midiNote = 60,
+      overrides: Partial<EnvelopeConfig> = {},
+      sampleLoop = true,
+    ) => {
       const voice = await loadedVoice();
       const ranges = vi.fn();
       voice.onMessage('loop:range', ranges);
-      voice.setLoopEnabled(true);
+      voice.setLoopEnabled(sampleLoop);
       const config = createDefaultSampleEnvelopeConfig('pitch', 1);
       voice.setEnvelopeConfig('pitch', {
         ...config,
         enabled: true,
         shape: { ...config.shape, mode: { type: 'loop' } },
+        ...overrides,
       });
       if (idleReport) {
         audio.port.onmessage({
@@ -489,18 +496,58 @@ describe('SampleVoice state', () => {
       }
       const envTrigger = vi.spyOn(voice.envelopes.get('pitch')!, 'trigger');
       trigger(voice, midiNote);
+      const scale = envTrigger.mock.calls[0][1]!.timeScale ?? 1;
+      const duration = voice.envelopes.get('pitch')!.duration();
+      audio.port.onmessage({
+        data: { type: 'loop:cycle', loopSeconds: 0.48, time: 1, triggerId: 1 },
+      });
+      const syncActive =
+        sampleLoop &&
+        (overrides.loopSync ?? true) &&
+        (overrides.shape?.mode.type ?? 'loop') === 'loop';
+      expect(envTrigger).toHaveBeenCalledTimes(syncActive ? 2 : 1);
       voice.stop();
       expect(ranges).not.toHaveBeenCalled(); // idle reports stay inside the voice
-      return envTrigger.mock.calls[0][1]!.timeScale ?? 1;
+      return { scale, duration };
     };
 
-    const withoutProcessedLoop = await loopTimeScale(false);
-    const withProcessedLoop = await loopTimeScale(true);
+    const { scale: withoutProcessedLoop } = await loopTimeScale(false);
+    const { scale: withProcessedLoop } = await loopTimeScale(true);
+    expect(withProcessedLoop).toBeCloseTo(1 / 0.48, 9);
     expect(withProcessedLoop).toBeGreaterThan(withoutProcessedLoop);
 
-    // The idle length is resolved at rate 1; keytrack stretches it an octave up.
-    expect(await loopTimeScale(true, 0, 72)).toBeCloseTo(withProcessedLoop, 9);
-    expect(await loopTimeScale(true, 1, 72)).toBeCloseTo(withProcessedLoop / 2, 9);
+    // Rate always applies under sync; keytrack stretches the buffer-time loop length.
+    expect((await loopTimeScale(true, 0, 72)).scale).toBeCloseTo(withProcessedLoop * 2, 9);
+    expect((await loopTimeScale(true, 1, 72)).scale).toBeCloseTo(withProcessedLoop, 9);
+    expect((await loopTimeScale(true, 0, 72, { playbackRateSync: true })).scale).toBeCloseTo(
+      withProcessedLoop * 2,
+      9,
+    );
+
+    // Unsynced timing has no correction for snapping or loop length.
+    expect((await loopTimeScale(true, 0, 72, { loopSync: false })).scale).toBe(1);
+    expect(
+      (
+        await loopTimeScale(true, 0, 72, {
+          loopSync: false,
+          playbackRateSync: true,
+          timeScale: 3,
+        })
+      ).scale,
+    ).toBe(6);
+    expect((await loopTimeScale(true, 0, 72, {}, false)).scale).toBe(1);
+    expect((await loopTimeScale(true, 0, 72, { playbackRateSync: true }, false)).scale).toBe(2);
+    const once = createDefaultSampleEnvelopeConfig('pitch', 1).shape;
+    expect((await loopTimeScale(true, 0, 72, { shape: once })).scale).toBe(1);
+    expect((await loopTimeScale(true, 0, 72, { shape: once, playbackRateSync: true })).scale).toBe(
+      2,
+    );
+
+    const halfShape = createDefaultSampleEnvelopeConfig('pitch', 0.5).shape;
+    const half = await loopTimeScale(true, 0, 72, {
+      shape: { ...halfShape, mode: { type: 'loop' } },
+    });
+    expect(half.duration).toBeCloseTo(0.12, 9); // Two envelope passes per 0.24 s sample loop.
   });
 
   it('forwards only the current note’s position, tagged with voice and note', async () => {

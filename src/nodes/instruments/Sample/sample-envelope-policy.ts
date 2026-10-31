@@ -59,7 +59,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
-        loopRelative: true,
+        loopSync: true,
         shape: envelopePresets.amplitude(durationSeconds),
       };
     case 'pitch':
@@ -68,7 +68,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
-        loopRelative: true,
+        loopSync: true,
         shape: flatPitchShape(durationSeconds),
       };
     case 'filter':
@@ -77,7 +77,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
-        loopRelative: true,
+        loopSync: true,
         shape: envelopePresets.filter(durationSeconds),
       };
   }
@@ -101,17 +101,18 @@ export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
 
 /**
  * Resolve sampler units and timing before handing a run to the generic scheduler.
- * `loopTimeScale` fits a loop-mode envelope to the sample loop; the voice resolves it.
+ * `loopTimeScale`, when present, includes playback rate and overrides playbackRateSync.
  */
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,
   playbackRate: number,
-  loopTimeScale = 1,
+  loopTimeScale?: number,
 ): Pick<EnvelopeTriggerOptions, 'depth' | 'curve' | 'timeScale'> {
   const options = {
     depth: config.depth ?? 1,
-    timeScale: config.timeScale * (config.playbackRateSync ? playbackRate : 1) * loopTimeScale,
+    timeScale:
+      config.timeScale * (loopTimeScale ?? (config.playbackRateSync ? Math.abs(playbackRate) : 1)),
   };
   if (id === 'amp') return options;
   // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.

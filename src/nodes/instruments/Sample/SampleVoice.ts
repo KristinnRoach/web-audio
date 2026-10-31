@@ -52,7 +52,7 @@ export class SampleVoice {
   #feedback: HarmonicFeedback | null = null;
 
   #envelopes = new Map<SampleEnvelopeId, Envelope>();
-  /** Host policy the envelope does not know about: `enabled`, `timeScale`, `playbackRateSync` and `loopRelative`. */
+  /** Host policy the envelope does not know about: `enabled`, `timeScale`, `playbackRateSync` and `loopSync`. */
   #envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
 
   #state: VoiceState = VoiceState.AVAILABLE;
@@ -70,11 +70,9 @@ export class SampleVoice {
   #sampleDurationSeconds = 0;
   #loopEnabled = false;
   /**
-   * Loop length from the loop points as set, and as the processor plays it after
-   * zero-crossing snapping, pitch quantization and minimum lengths; 0 until it reports them. Reported while idle, so they are current before
-   * the next note triggers.
+   * Buffer-time loop length after snapping, pitch quantization and minimum lengths.
+   * Reported while idle for the next note; 0 until the processor reports it.
    */
-  #requestedLoopSeconds = 0;
   #processedLoopSeconds = 0;
   /** Loop keytrack in effect for the idle length, which is resolved at rate 1. */
   #idleLoopKeytrack = 0;
@@ -415,11 +413,7 @@ export class SampleVoice {
     // Same keytrack scale as the processor's loop range.
     const loopSeconds =
       this.#processedLoopSeconds * (1 + this.#idleLoopKeytrack * (Math.abs(playbackRate) - 1));
-    const snapScale =
-      loopSeconds > 0 && this.#requestedLoopSeconds > 0
-        ? this.#requestedLoopSeconds / loopSeconds
-        : 1;
-    this.#lastTrigger = { playbackRate, loopSeconds, snapScale };
+    this.#lastTrigger = { playbackRate, loopSeconds };
     this.triggerEnvelopes(timestamp, playbackRate);
 
     // Trigger effects
@@ -444,11 +438,9 @@ export class SampleVoice {
 
   /**
    * Trigger inputs of the current note, kept so a config edit can restart from them.
-   * `snapScale` is fixed per note: requested over processed loop length, both from the
-   * idle report in effect at trigger. `loopSeconds` starts at the idle loop length and
-   * follows each sample loop cycle while held.
+   * `loopSeconds` starts at the idle loop length and follows each sample loop cycle while held.
    */
-  #lastTrigger: { playbackRate: number; loopSeconds: number; snapScale: number } | null = null;
+  #lastTrigger: { playbackRate: number; loopSeconds: number } | null = null;
 
   #isEnvEnabled(envType: SampleEnvelopeId) {
     return this.#envelopeConfigs.get(envType)?.enabled ?? false;
@@ -477,18 +469,14 @@ export class SampleVoice {
     env.trigger(timestamp, { ...resolved, fromPoint });
   }
 
-  /**
-   * Fits a loop-mode envelope to the sample loop. Relative: a sample-length shape spans
-   * one loop cycle. Absolute: only the processor's deviation from the requested length
-   * (mostly zero-crossing snapping) is corrected, fixed for the note.
-   */
+  /** Fit the full buffer timeline to one audible sample loop; otherwise use ordinary timing. */
   #loopTimeScale(config: EnvelopeConfig, env: Envelope) {
     const trigger = this.#lastTrigger;
-    if (!trigger || !this.#loopEnabled || env.shape.mode.type !== 'loop') return 1;
-    if (!config.loopRelative) return trigger.snapScale;
+    if (!trigger || !config.loopSync || !this.#loopEnabled || env.shape.mode.type !== 'loop')
+      return undefined;
     return trigger.loopSeconds > 0 && this.#sampleDurationSeconds > 0
-      ? this.#sampleDurationSeconds / trigger.loopSeconds
-      : 1;
+      ? (this.#sampleDurationSeconds * Math.abs(trigger.playbackRate)) / trigger.loopSeconds
+      : undefined;
   }
 
   triggerEnvelopes(timestamp: number, playbackRate: number) {
@@ -788,7 +776,7 @@ export class SampleVoice {
 
     trigger.loopSeconds = processedSeconds;
 
-    // Re-trigger loop-relative envelopes at the sample loop cycle boundary
+    // Re-trigger loop-synced envelopes at the sample loop cycle boundary
     this.#retriggerLoopingEnvelopes(timestamp, trigger.playbackRate);
   }
 
@@ -797,7 +785,7 @@ export class SampleVoice {
 
     this.#envelopes.forEach((env, envType) => {
       if (env.shape.mode.type !== 'loop') return;
-      if (!this.#envelopeConfigs.get(envType)?.loopRelative) return;
+      if (!this.#envelopeConfigs.get(envType)?.loopSync) return;
       this.#triggerEnvelope(envType, env, timestamp, playbackRate);
     });
   }
@@ -982,7 +970,6 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
-            this.#requestedLoopSeconds = 0;
             this.#processedLoopSeconds = 0;
             this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
           }
@@ -1008,7 +995,6 @@ export class SampleVoice {
         case 'voice:position': {
           // Idle report: the steady loop length for the next note. Not a playing range.
           if (data.idle) {
-            this.#requestedLoopSeconds = data.requestedLoopSeconds;
             this.#processedLoopSeconds = data.loopEnd - data.loopStart;
             this.#idleLoopKeytrack = data.keytrackAmount ?? 0;
             return;

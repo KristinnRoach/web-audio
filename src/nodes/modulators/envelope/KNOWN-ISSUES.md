@@ -31,20 +31,17 @@ Code observations below are not claims that every case has been reproduced audib
   of the cycle in progress. Per the Web Audio spec that ramp would be dropped mid-flight.
   Not yet heard in listening sessions; check with a browser test.
 
-## Loop timing modes (undecided)
+## Loop timing
 
-- **`loopRelative` and `playbackRateSync` overlap.** `loop:cycle` reports `loopSeconds` in
-  buffer time; one loop lasts `loopSeconds / |rate|` in real time. With `loopRelative` on,
-  `playbackRateSync` decides whether the envelope locks to real time (on) or buffer time
-  (off). Off, the per-cycle retrigger cuts the shape at `1/rate` of its length above the
-  root, which is hard to hear.
-- **Proposal.** Rename to `loopSync`, lock to real time
-  (`sampleDuration * |rate| / loopSeconds`) and ignore `playbackRateSync` under it; loop
-  keytrack is then the pitch-follow control. Drop `snapScale` so `loopSync` off is plain
-  seconds, which also removes the voice's use of `requestedLoopSeconds`.
-- **Open.** Whether `loopSync` measures against the sample-length timeline (half-length
-  shape plays twice per loop) or the whole shape (one shape per loop), and what applies
-  when the sample loop is off.
+`loopSync` now fits the full loaded buffer's duration to one audible sample loop
+for loop-mode envelopes, including the note's playback rate regardless of
+`playbackRateSync`. Other timing uses seconds with optional `playbackRateSync`;
+there is no hidden loop-snapping correction.
+
+- **Changing pitch while held.** Sync uses the stored note playback rate, not continuous
+  glide or pitch-envelope modulation. Continuous phase lock remains unresolved.
+- **Boundary restart.** Synced envelopes restart at each sample loop boundary;
+  shapes that do not divide evenly into that interval are cut at the boundary.
 
 ## Scheduling and lifecycle
 
