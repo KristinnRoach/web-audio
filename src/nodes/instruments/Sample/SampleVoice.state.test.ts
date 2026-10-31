@@ -488,7 +488,6 @@ describe('SampleVoice state', () => {
             type: 'loop:range',
             loopStart: 0.01,
             loopEnd: 0.49,
-            requestedLoopSeconds: 0.5,
             keytrackAmount,
             idle: true,
           },
