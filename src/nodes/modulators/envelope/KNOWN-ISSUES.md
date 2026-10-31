@@ -60,8 +60,17 @@ vp test run --config vitest.browser.config.ts src/nodes/instruments/Sample/Sampl
 
 - **Live loop-point clicks.** Listening confirmed that fixed loop boundaries are now
   clean, but moving loop points while holding a note with a synced envelope still
-  clicks. The stable-loop regression does not cover range edits. Isolate sample-splice
-  discontinuities from envelope phase/scale handovers before choosing the fix.
+  clicks. A real-audio six-edit probe with phase-matched sample splices was clean
+  with a flat or unsynced envelope, but stepped by about 0.173 full scale with sync.
+  The step occurred exactly at the scheduled envelope handover. Offline rendering
+  confirms that `holdAt` preserves the outgoing ramp but the incoming phase's
+  `setValueAtTime` jumps to a different value. Same-duration reanchoring can also
+  jump; this is not only a scale-change problem. Fix (pending an ear test): a catch-up
+  handover whose incoming value differs from the held one by more than 0.1% of depth
+  ramps over 5 ms to the new phase at the ramp's end, keeping the reported cycle
+  anchor. Matching handovers are set directly as before. The six-edit probe is now a
+  case in `SamplePlayer.loop-clicks.browser.test.ts`. Not yet covered: a rendered
+  same-duration reanchoring assertion, and release/stop during a bridge.
 
 `loopSync` now fits the full loaded buffer's duration to one audible sample loop
 for loop-mode envelopes, including the note's playback rate regardless of

@@ -79,7 +79,7 @@ function detectClicks(samples: Float32Array) {
   return { peak, maximum, clicks };
 }
 
-test('detects discontinuities in a held full-buffer loop with real loop-synced audio', async ({
+test('detects discontinuities in a held loop with real loop-synced audio, including live edits', async ({
   annotate,
 }) => {
   const results = [];
@@ -88,6 +88,7 @@ test('detects discontinuities in a held full-buffer loop with real loop-synced a
     'envelope-free',
     'envelope-sync',
     'envelope-sync-delayed',
+    'envelope-sync-edited',
   ] as const) {
     const context = new AudioContext({ sampleRate: SR });
     let player: SamplePlayer | undefined;
@@ -162,6 +163,19 @@ test('detects discontinuities in a held full-buffer loop with real loop-synced a
       player.disconnect();
       recorder.connect(context.destination); // Recorder outputs silence, keeping the graph live.
       expect(player.play(60, 127, 0, 0.05)).toBe(60);
+      if (mode === 'envelope-sync-edited') {
+        // Live range edits on whole tone periods, so only the envelope handover can click.
+        for (const [delay, startPoint, endPoint] of [
+          [650, 0, 0.1],
+          [1050, 0.05, 0.2],
+          [1450, 0, 0.15],
+          [1850, 0.05, 0.15],
+          [2250, 0, 0.2],
+          [2650, 0, 0.1],
+        ]) {
+          pending.push(setTimeout(() => player!.setLoopPoints(startPoint, endPoint), delay));
+        }
+      }
       const { samples, start } = await recorded;
       const detection = detectClicks(samples);
       const late = starts.slice(1).map(({ requested, received }) => (received - requested) * 1000);

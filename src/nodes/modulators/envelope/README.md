@@ -87,7 +87,10 @@ past times to now. Stop also cancels an already-released tail, holding its sched
 at the stop time. With `catchUp: true`, a past loop trigger resumes the phase implied
 by its original timestamp. Catch-up handovers are scheduled at least 10 ms ahead to
 avoid editing the render quantum already in flight; the preceding run continues until
-then. Ordinary triggers still start at point 0 now. Retriggering preserves the old ramp
+then. If the resumed phase's value differs from the held one, as when a retrigger
+changes the loop's length or phase, the handover ramps over 5 ms to where the new
+phase will be at the ramp's end instead of stepping. Ordinary triggers still start at
+point 0 now. Retriggering preserves the old ramp
 up to the handover before replacing future automation.
 
 A looping envelope keeps scheduling ahead on a timer until you call `release()` or `stop()`.

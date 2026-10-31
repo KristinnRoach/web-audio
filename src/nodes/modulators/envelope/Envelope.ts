@@ -1,4 +1,5 @@
 import {
+  rangeOpening,
   scheduleEnvelope,
   schedulePoint,
   scheduleRange,
@@ -26,7 +27,10 @@ export type EnvelopeClock = { readonly currentTime: number };
  */
 export type EnvelopeTriggerOptions = ScheduleOptions & {
   fromPoint?: number;
-  /** Resume the reported loop phase with a 10 ms handover lead; ignored outside loop mode. */
+  /**
+   * Resume the reported loop phase with a 10 ms handover lead; ignored outside loop mode.
+   * A handover whose value would step ramps over 5 ms to the new phase instead.
+   */
   catchUp?: boolean;
   /** Overrides ramp curves for this run, preserving step segments. */
   curve?: EnvelopeCurve;
@@ -38,6 +42,11 @@ const LOOKAHEAD_SECONDS = 1;
 const REFILL_INTERVAL_MS = 50;
 // Leave the render thread time to receive a catch-up handover before it plays it.
 const CATCH_UP_LEAD_SECONDS = 0.01;
+// Ramp length for a catch-up handover whose incoming value would otherwise step.
+// ponytail: tuned by ear, not derived; half the loop caps it on very short loops.
+const BRIDGE_SECONDS = 0.005;
+// Mismatch, as a fraction of depth, below which the handover is set directly.
+const BRIDGE_TOLERANCE = 1e-3;
 const activeLoops = new Set<() => void>();
 let refillTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -190,8 +199,8 @@ export class Envelope {
     const { param } = this;
 
     // Keep the old ramp moving up to the handover before replacing future events.
-    if (wasRunning) param.holdAt(time);
-    else param.cancelScheduledValues(time);
+    const held = wasRunning ? param.holdAt(time) : undefined;
+    if (!wasRunning) param.cancelScheduledValues(time);
 
     const { points } = runEnvelope;
     // A loop repeats the whole envelope. Every other mode schedules one pass;
@@ -210,10 +219,24 @@ export class Envelope {
     const catchUp = options.catchUp && time > requestedTime;
     this.#triggerTime =
       (catchUp ? requestedTime : time) - getDuration(points, { toIndex: from, timeScale });
-    const elapsed = time - this.#triggerTime;
-    const fromTime = catchUp
-      ? points[0].time + (elapsed % loopDuration) * timeScale
-      : points[from].time;
+    const phaseAt = (at: number) =>
+      catchUp
+        ? points[0].time + ((at - this.#triggerTime) % loopDuration) * timeScale
+        : points[from].time;
+    let start = time;
+    let fromTime = phaseAt(time);
+
+    // A live loop edit can move the reported phase or change the cycle length, so the
+    // incoming value at the handover may not match the held one. Bridge that gap with
+    // a short ramp to where the new phase will be at the bridge's end, not its start.
+    if (catchUp && held !== undefined) {
+      const { value } = rangeOpening(points, 0, points.length - 1, fromTime, base, depth);
+      if (Math.abs(value - held) > BRIDGE_TOLERANCE * (Math.abs(depth) || 1)) {
+        start = time + Math.min(BRIDGE_SECONDS, loopDuration / 2);
+        fromTime = phaseAt(start);
+      }
+    }
+    const elapsed = start - this.#triggerTime;
 
     // Cycle n opens at time + n * duration, the first pass included, so there is no
     // pre-loop stage and point 0 lands on the trigger time every pass. Absolute
@@ -227,11 +250,12 @@ export class Envelope {
       runEnvelope,
       catchUp ? 0 : from,
       points.length - 1,
-      time,
+      start,
       base,
       depth,
       timeScale,
       fromTime,
+      start > time,
     );
 
     // Continue on the original grid, skipping any cycles elapsed before this report.
