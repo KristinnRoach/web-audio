@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { ZeroCrossingStretcher, MAX_DRIFT_MS } from '../zero-crossing-stretch.js';
+import { SpliceStretcher, MAX_DRIFT_MS } from '../splice-stretch.js';
 
 function samplesWithSlopes(slopes: Record<number, 'rising' | 'falling'>) {
   const samples = new Float32Array(32);
@@ -11,9 +11,9 @@ function samplesWithSlopes(slopes: Record<number, 'rising' | 'falling'>) {
   return samples;
 }
 
-describe('ZeroCrossingStretcher', () => {
+describe('SpliceStretcher', () => {
   it.each([0, 0.1, 2, 5, 12.5])('uses the configured %s ms overlap duration', (milliseconds) => {
-    const stretcher = new ZeroCrossingStretcher(1000);
+    const stretcher = new SpliceStretcher(1000);
     const samples = new Float32Array(200);
     samples[21] = samples[101] = 1;
     stretcher.crossfadeDurationMs = milliseconds;
@@ -35,7 +35,7 @@ describe('ZeroCrossingStretcher', () => {
     const start = 20;
     const playhead = start + maxDrift + 10;
     const length = playhead + 10 * maxDrift;
-    const stretcher = new ZeroCrossingStretcher(1000);
+    const stretcher = new SpliceStretcher(1000);
     const samples = new Float32Array(length);
     samples[start + 1] = samples[playhead + 1] = 1;
     stretcher.crossfadeDurationMs = 10 * maxDrift;
@@ -59,7 +59,7 @@ describe('ZeroCrossingStretcher', () => {
   });
 
   it.each([1, -1])('finishes a bounded overlap without changing transport at rate %s', (rate) => {
-    const stretcher = new ZeroCrossingStretcher(1000);
+    const stretcher = new SpliceStretcher(1000);
     const samples = new Float32Array(200);
     samples[21] = samples[101] = 1;
     stretcher.setEnabled(true, 20);
@@ -86,7 +86,7 @@ describe('ZeroCrossingStretcher', () => {
   it.each(['toggle', 'reset', 'inactive', 'direction', 'boundary'])(
     'clears an overlap on %s',
     (reason) => {
-      const stretcher = new ZeroCrossingStretcher(1000);
+      const stretcher = new SpliceStretcher(1000);
       const samples = new Float32Array(200);
       samples[21] = samples[101] = 1;
       stretcher.setEnabled(true, 20);
@@ -103,7 +103,7 @@ describe('ZeroCrossingStretcher', () => {
   );
 
   it('shortens the fade at an edge', () => {
-    const stretcher = new ZeroCrossingStretcher(1000);
+    const stretcher = new SpliceStretcher(1000);
     const samples = new Float32Array(103);
     samples[21] = samples[101] = 1;
     stretcher.setEnabled(true, 20);
@@ -118,7 +118,7 @@ describe('ZeroCrossingStretcher', () => {
   });
 
   it('selects the nearest reset crossing with the outgoing slope', () => {
-    const stretcher = new ZeroCrossingStretcher(100);
+    const stretcher = new SpliceStretcher(100);
     const zeroCrossings = [10, 12, 20];
     const samples = samplesWithSlopes({ 10: 'falling', 12: 'rising', 20: 'rising' });
     stretcher.setEnabled(true, 10);
@@ -130,7 +130,7 @@ describe('ZeroCrossingStretcher', () => {
   });
 
   it('keeps the correction pending when no slope-matched target is available', () => {
-    const stretcher = new ZeroCrossingStretcher(100);
+    const stretcher = new SpliceStretcher(100);
     const samples = samplesWithSlopes({ 10: 'falling', 12: 'rising', 20: 'rising' });
     stretcher.setEnabled(true, 10);
 

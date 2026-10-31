@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { ZeroCrossingStretcher } from '../zero-crossing-stretch.js';
+import { SpliceStretcher } from '../splice-stretch.js';
 import {
   makeParameters,
   setupProcessorGlobals,
@@ -28,9 +28,9 @@ describe('timestretch correction crossfade', () => {
         });
         send({ type: 'setLoopEnabled', value: false });
         send({ type: 'setPanDriftEnabled', value: false });
-        send({ type: 'setTimestretchMode', value: 'zero-crossing' });
+        send({ type: 'setTimestretchMode', value: 'splice' });
         const { timestretch } = processor as typeof processor & {
-          timestretch: ZeroCrossingStretcher;
+          timestretch: SpliceStretcher;
         };
         timestretch.crossfadeDurationMs = enabled ? 5 : 0;
         send({ type: 'voice:start' });

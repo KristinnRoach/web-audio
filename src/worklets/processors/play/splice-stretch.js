@@ -11,11 +11,11 @@ const DEFAULT_CROSSFADE_DURATION_MS = 5;
 export const MAX_DRIFT_MS = 40;
 
 /**
- * Owns the private timeline and correction state for zero-crossing timestretch.
+ * Owns the private timeline and correction state for the splice timestretch (jumps land on slope-matched zero crossings).
  * Playback position, playback rate, loop state, and zero crossings remain caller-owned inputs.
  * Methods return playback positions and never mutate the caller's transport state.
  */
-export class ZeroCrossingStretcher {
+export class SpliceStretcher {
   #enabled = false;
   #maxDriftSamples;
   #timelinePosition = 0;

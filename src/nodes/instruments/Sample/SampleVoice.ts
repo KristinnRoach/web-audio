@@ -28,7 +28,7 @@ import {
 } from './sample-envelope-policy';
 
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
-export type TimestretchMode = 'off' | 'zero-crossing';
+export type TimestretchMode = 'off' | 'splice';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 

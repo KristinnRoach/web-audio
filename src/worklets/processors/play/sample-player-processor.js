@@ -1,6 +1,6 @@
 import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
-import { ZeroCrossingStretcher } from './zero-crossing-stretch.js';
+import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
@@ -70,7 +70,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
 
-    this.timestretch = new ZeroCrossingStretcher(sampleRate);
+    this.timestretch = new SpliceStretcher(sampleRate);
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
@@ -247,7 +247,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'setTimestretchMode':
-        this.timestretch.setEnabled(value === 'zero-crossing', this.playbackPosition);
+        this.timestretch.setEnabled(value === 'splice', this.playbackPosition);
         break;
     }
   }
