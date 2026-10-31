@@ -31,6 +31,21 @@ Code observations below are not claims that every case has been reproduced audib
   of the cycle in progress. Per the Web Audio spec that ramp would be dropped mid-flight.
   Not yet heard in listening sessions; check with a browser test.
 
+## Loop timing modes (undecided)
+
+- **`loopRelative` and `playbackRateSync` overlap.** `loop:cycle` reports `loopSeconds` in
+  buffer time; one loop lasts `loopSeconds / |rate|` in real time. With `loopRelative` on,
+  `playbackRateSync` decides whether the envelope locks to real time (on) or buffer time
+  (off). Off, the per-cycle retrigger cuts the shape at `1/rate` of its length above the
+  root, which is hard to hear.
+- **Proposal.** Rename to `loopSync`, lock to real time
+  (`sampleDuration * |rate| / loopSeconds`) and ignore `playbackRateSync` under it; loop
+  keytrack is then the pitch-follow control. Drop `snapScale` so `loopSync` off is plain
+  seconds, which also removes the voice's use of `requestedLoopSeconds`.
+- **Open.** Whether `loopSync` measures against the sample-length timeline (half-length
+  shape plays twice per loop) or the whole shape (one shape per loop), and what applies
+  when the sample loop is off.
+
 ## Scheduling and lifecycle
 
 - **Writes outside the envelope.** Holds read `TrackedParam`, which only sees automation
