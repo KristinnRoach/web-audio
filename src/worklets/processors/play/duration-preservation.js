@@ -5,10 +5,10 @@ import {
 import { wrapLoopPosition } from './loop-edges.js';
 
 // In ms so the audible length is the same at every sample rate.
-const DEFAULT_CROSSFADE_DURATION_MS = 10;
+const DEFAULT_CROSSFADE_DURATION_MS = 5;
 // How far the playhead may stray from the unit-rate timeline before a jump back is scheduled.
 // Also caps how far from the timeline the slope-matched landing crossing may be.
-const MAX_DRIFT_MS = 30;
+export const MAX_DRIFT_MS = 40;
 
 /**
  * Owns the private timeline and correction state for zero-crossing duration preservation.

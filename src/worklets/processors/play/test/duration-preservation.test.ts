@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { DurationPreserver } from '../duration-preservation.js';
+import { DurationPreserver, MAX_DRIFT_MS } from '../duration-preservation.js';
 
 function samplesWithSlopes(slopes: Record<number, 'rising' | 'falling'>) {
   const samples = new Float32Array(32);
@@ -28,24 +28,34 @@ describe('DurationPreserver', () => {
     expect(frames).toBe(milliseconds === 0 ? 0 : Math.max(2, Math.round(milliseconds)));
   });
 
-  // 30 ms drift at 1 kHz = 30 samples; at rate 4 jumps recur every 10, so the fade caps at 5.
-  it.each([
-    [1, 10],
-    [4, 5],
-  ])('caps the fade to half the jump interval at rate %s', (rate, expectedFrames) => {
+  // At 1 kHz one ms is one sample. Jumps recur every maxDrift / |rate - 1| output samples,
+  // and the fade may use at most half of that. The requested fade is longer than the cap.
+  it.each([4, 2])('caps the fade to half the jump interval at rate %s', (rate) => {
+    const maxDrift = MAX_DRIFT_MS;
+    const start = 20;
+    const playhead = start + maxDrift + 10;
+    const length = playhead + 10 * maxDrift;
     const preserver = new DurationPreserver(1000);
-    const samples = new Float32Array(200);
-    samples[21] = samples[101] = 1;
-    preserver.crossfadeDurationMs = 10;
-    preserver.setEnabled(true, 20);
-    preserver.prepareCorrection(true, 100, rate, [20, 100], samples);
+    const samples = new Float32Array(length);
+    samples[start + 1] = samples[playhead + 1] = 1;
+    preserver.crossfadeDurationMs = 10 * maxDrift;
+    preserver.setEnabled(true, start);
+    preserver.prepareCorrection(true, playhead, rate, [start, playhead], samples);
     let frames = 0;
-    let position = 100;
-    while (preserver.outgoingPosition !== null && frames < 200) {
-      position = preserver.advance(true, position, rate, frames === 0 ? 20 : null, false, 0, 200);
+    let position = playhead;
+    while (preserver.outgoingPosition !== null && frames < length) {
+      position = preserver.advance(
+        true,
+        position,
+        rate,
+        frames === 0 ? start : null,
+        false,
+        0,
+        length,
+      );
       frames++;
     }
-    expect(frames).toBe(expectedFrames);
+    expect(frames).toBe(Math.floor(maxDrift / Math.abs(Math.abs(rate) - 1) / 2));
   });
 
   it.each([1, -1])('finishes a bounded overlap without changing transport at rate %s', (rate) => {
