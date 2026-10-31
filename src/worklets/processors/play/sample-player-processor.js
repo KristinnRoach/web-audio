@@ -1093,6 +1093,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         playbackStep,
         this.zeroCrossings,
         this.buffer[0],
+        canWrapLoop
+          ? Math.max(playbackRange.startSamples, loopRange.loopStartSamples)
+          : playbackRange.startSamples,
+        canWrapLoop
+          ? Math.min(playbackRange.endSamples, loopRange.loopEndSamples)
+          : playbackRange.endSamples,
       );
       const durationResetTarget = durationCorrection?.resetTarget ?? null;
       if (durationCorrection) this.playbackPosition = durationCorrection.outgoingPosition;
@@ -1136,6 +1142,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // be fractional (minimum-length growth), and a ping-pong turn at the audio
       // end reads exactly at endSamples. Past it, the silent tail gain is 0.
       const lastAudioIndex = Math.ceil(playbackRange.endSamples) - 1;
+      const durationOutgoingPosition = this.durationPreserver.outgoingPosition;
+      const durationCrossfadeMix =
+        durationOutgoingPosition === null ? 1 : this.durationPreserver.crossfadeMix;
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
@@ -1148,6 +1157,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         }
 
         let interpolatedSample = this.#sumAudioData(this.playbackPosition, channel, lastAudioIndex);
+        if (durationOutgoingPosition !== null) {
+          const outgoing = this.#sumAudioData(durationOutgoingPosition, channel, lastAudioIndex);
+          interpolatedSample = outgoing + durationCrossfadeMix * (interpolatedSample - outgoing);
+        }
         // Compare the old loop's continuation with the relocated playhead.
         let moveDiscontinuity = 0;
         if (moveOutgoingPosition !== null) {

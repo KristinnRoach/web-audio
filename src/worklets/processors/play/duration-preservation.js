@@ -4,6 +4,12 @@ import {
 } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { wrapLoopPosition } from './loop-edges.js';
 
+// In ms so the audible length is the same at every sample rate.
+const DEFAULT_CROSSFADE_DURATION_MS = 5;
+// How far the playhead may stray from the unit-rate timeline before a jump back is scheduled.
+// Also caps how far from the timeline the slope-matched landing crossing may be.
+export const MAX_DRIFT_MS = 40;
+
 /**
  * Owns the private timeline and correction state for zero-crossing duration preservation.
  * Playback position, playback rate, loop state, and zero crossings remain caller-owned inputs.
@@ -14,10 +20,36 @@ export class DurationPreserver {
   #maxDriftSamples;
   #timelinePosition = 0;
   #resetPending = false;
+  #crossfadeSamples = 0;
+  #sampleRate;
+  #outgoingPosition = null;
+  #fadeIndex = 0;
+  #fadeLength = 0;
+  #fadeDirection = 1;
 
   /** @param {number} contextSampleRate Audio-context sample rate in Hz. */
   constructor(contextSampleRate) {
-    this.#maxDriftSamples = Math.floor(contextSampleRate * 0.04);
+    this.#maxDriftSamples = Math.floor(contextSampleRate * (MAX_DRIFT_MS / 1000));
+    this.#sampleRate = contextSampleRate;
+    this.crossfadeDurationMs = DEFAULT_CROSSFADE_DURATION_MS;
+  }
+
+  /** Zero restores the original correction path. Changes clear an in-flight fade. */
+  set crossfadeDurationMs(milliseconds) {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) return;
+    this.#crossfadeSamples =
+      milliseconds === 0 ? 0 : Math.max(2, Math.round(this.#sampleRate * (milliseconds / 1000)));
+    this.#outgoingPosition = null;
+  }
+
+  get outgoingPosition() {
+    return this.#outgoingPosition;
+  }
+
+  /** Smooth equal-gain fade: matched crossings may still be strongly correlated. */
+  get crossfadeMix() {
+    const t = this.#fadeIndex / (this.#fadeLength - 1);
+    return t * t * (3 - 2 * t);
   }
 
   /** Current unit-rate reference position in samples. */
@@ -43,6 +75,7 @@ export class DurationPreserver {
   reset(position = 0) {
     this.#timelinePosition = position;
     this.#resetPending = false;
+    this.#outgoingPosition = null;
   }
 
   /**
@@ -70,9 +103,34 @@ export class DurationPreserver {
    * @param {number} playbackRate Signed source-sample advance per output sample.
    * @param {number[]} zeroCrossings Zero-crossing positions in ascending sample order.
    * @param {Float32Array} referenceSamples Channel used to detect the zero crossings.
+   * @param {number} [startSamples=0] Inclusive source boundary for both fade heads.
+   * @param {number} [endSamples=referenceSamples.length] Exclusive source boundary.
    * @returns {{outgoingPosition: number, resetTarget: number} | null}
    */
-  prepareCorrection(active, playbackPosition, playbackRate, zeroCrossings, referenceSamples) {
+  prepareCorrection(
+    active,
+    playbackPosition,
+    playbackRate,
+    zeroCrossings,
+    referenceSamples,
+    startSamples = 0,
+    endSamples = referenceSamples.length,
+  ) {
+    if (this.#outgoingPosition !== null) {
+      if (
+        !active ||
+        Math.sign(playbackRate) !== this.#fadeDirection ||
+        this.#outgoingPosition < startSamples ||
+        this.#outgoingPosition >= endSamples ||
+        playbackPosition < startSamples ||
+        playbackPosition >= endSamples
+      ) {
+        this.#outgoingPosition = null;
+      } else {
+        // Finish this overlap before starting another correction.
+        return null;
+      }
+    }
     if (!active) return null;
 
     if (Math.abs(playbackPosition - this.#timelinePosition) > this.#maxDriftSamples) {
@@ -94,6 +152,34 @@ export class DurationPreserver {
       this.#maxDriftSamples,
     );
     if (resetTarget === null) return null;
+
+    if (
+      this.#crossfadeSamples > 0 &&
+      resetTarget !== outgoingPosition &&
+      playbackRate !== 0 &&
+      outgoingPosition >= startSamples &&
+      outgoingPosition < endSamples &&
+      resetTarget >= startSamples &&
+      resetTarget < endSamples
+    ) {
+      // Keep both heads inside the trim/loop; never read across an edge for a fade.
+      const available =
+        playbackRate > 0
+          ? endSamples - Math.max(outgoingPosition, resetTarget)
+          : Math.min(outgoingPosition, resetTarget) - startSamples;
+      // Jumps recur every maxDrift / ||rate| - 1| output samples; at most half of that may fade.
+      const jumpInterval = this.#maxDriftSamples / Math.abs(Math.abs(playbackRate) - 1);
+      this.#fadeLength = Math.min(
+        this.#crossfadeSamples,
+        Math.floor(available / Math.abs(playbackRate)),
+        Math.floor(jumpInterval / 2),
+      );
+      if (this.#fadeLength >= 2) {
+        this.#outgoingPosition = outgoingPosition;
+        this.#fadeIndex = 0;
+        this.#fadeDirection = Math.sign(playbackRate);
+      }
+    }
 
     this.#resetPending = false;
     return { outgoingPosition, resetTarget };
@@ -124,6 +210,11 @@ export class DurationPreserver {
     if (!active) {
       this.reset(nextPosition);
       return nextPosition;
+    }
+
+    if (this.#outgoingPosition !== null) {
+      this.#outgoingPosition += playbackRate;
+      if (++this.#fadeIndex >= this.#fadeLength) this.#outgoingPosition = null;
     }
 
     const direction = playbackRate < 0 ? -1 : 1;
