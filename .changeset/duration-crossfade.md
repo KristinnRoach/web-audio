@@ -1,6 +1,5 @@
 ---
-'@kidlib/web-audio': minor
+'@kidlib/web-audio': patch
 ---
 
-- Timestretch correction jumps now crossfade for 10 ms by default, shortened near trim/loop edges and at high playback rates. Add `SampleVoice.setCrossfadeDurationMs(ms)`; `0` restores the hard jump.
-- Timestretch drift window shrinks from 40 ms to 30 ms, so corrections happen slightly more often.
+Timestretch correction jumps crossfade for 10 ms instead of jumping hard, and the drift window before a correction shrinks from 40 ms to 30 ms.

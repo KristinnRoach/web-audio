@@ -249,10 +249,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'setPreserveDuration':
         this.durationPreserver.setEnabled(value, this.playbackPosition);
         break;
-
-      case 'setCrossfadeDurationMs':
-        this.durationPreserver.crossfadeDurationMs = value;
-        break;
     }
   }
 

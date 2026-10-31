@@ -29,14 +29,15 @@ describe('duration correction crossfade', () => {
         send({ type: 'setLoopEnabled', value: false });
         send({ type: 'setPanDriftEnabled', value: false });
         send({ type: 'setPreserveDuration', value: true });
-        send({ type: 'setCrossfadeDurationMs', value: enabled ? 5 : 0 });
+        const { durationPreserver } = processor as typeof processor & {
+          durationPreserver: DurationPreserver;
+        };
+        durationPreserver.crossfadeDurationMs = enabled ? 5 : 0;
         send({ type: 'voice:start' });
         const params = makeParameters({ playbackRate: 2 });
         processor.process([], [[new Float32Array(1), new Float32Array(1)]], params);
         processor.playbackPosition = 4000;
-        (
-          processor as typeof processor & { durationPreserver: DurationPreserver }
-        ).durationPreserver.reset(1000);
+        durationPreserver.reset(1000);
         const output = [new Float32Array(300), new Float32Array(300)];
         processor.process([], [output], params);
         return { output, position: processor.playbackPosition };
