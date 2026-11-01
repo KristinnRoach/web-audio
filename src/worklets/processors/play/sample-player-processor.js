@@ -171,6 +171,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.isPlaying = true;
         this.triggerId = triggerId;
         this.loopCount = 0;
+        this.pendingLoopCycleTime = null;
         this.nextDriftGenerated = false; // roll fresh drift for this note
         this.driftUpdateCounter = 0; // and don't let the short-loop cadence skip it
         this.loopTurned = false;
@@ -270,6 +271,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.debugCounter = 0;
     this.loopCount = 0;
+    this.pendingLoopCycleTime = null;
     this.previousLoopRange = null;
 
     this.applyClickCompensation = false;
@@ -351,12 +353,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
-    this.port.postMessage({
-      type: 'loop:cycle',
-      loopSeconds: loopRange.loopDurationSamples / sampleRate,
-      time: cycleTime,
-      triggerId: this.triggerId,
-    });
+    this.pendingLoopCycleTime = cycleTime;
 
     // Reset drift flag to generate new drift for next loop iteration
     this.nextDriftGenerated = false;
@@ -1004,6 +1001,17 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         previousStart = loopStart;
         previousEnd = loopEnd;
         previousRate = rate;
+      }
+
+      // Report the incoming range after its drift is resolved, keeping the wrap time.
+      if (this.pendingLoopCycleTime !== null) {
+        this.port.postMessage({
+          type: 'loop:cycle',
+          loopSeconds: loopRange.loopDurationSamples / sampleRate,
+          time: this.pendingLoopCycleTime,
+          triggerId: this.triggerId,
+        });
+        this.pendingLoopCycleTime = null;
       }
 
       // An audio-rate loop's period is its pitch. The playhead is in buffer coordinates,
