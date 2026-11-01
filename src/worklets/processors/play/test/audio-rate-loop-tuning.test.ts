@@ -47,7 +47,6 @@ function makeParameters(
     loopEnd: new Float32Array([loopLengthSamples / TEST_SAMPLE_RATE]),
     startPoint: new Float32Array([0]),
     endPoint: new Float32Array([1]),
-    playbackPosition: new Float32Array([0]),
     loopDurationDriftAmount: new Float32Array([driftAmount]),
     maxLoopCount: new Float32Array([999_999]),
     tempo: new Float32Array([120]),
