@@ -1010,11 +1010,6 @@ export class SampleVoice {
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           if (type === 'loop:cycle') {
             this.#onLoopCycleStart(data.loopSeconds, data.time);
-          } else if (type === 'voice:position') {
-            this.getParam('playbackPosition')?.setValueAtTime(
-              data.position,
-              this.context.currentTime,
-            );
           }
           break;
         }
