@@ -59,6 +59,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
+        loopSync: true,
         shape: envelopePresets.amplitude(durationSeconds),
       };
     case 'pitch':
@@ -67,6 +68,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
+        loopSync: true,
         shape: flatPitchShape(durationSeconds),
       };
     case 'filter':
@@ -75,6 +77,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
+        loopSync: true,
         shape: envelopePresets.filter(durationSeconds),
       };
   }
@@ -96,15 +99,20 @@ export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
   return id === 'amp' ? 1 : 0;
 }
 
-/** Resolve sampler units and timing before handing a run to the generic scheduler. */
+/**
+ * Resolve sampler units and timing before handing a run to the generic scheduler.
+ * `loopTimeScale`, when present, includes playback rate and overrides playbackRateSync.
+ */
 export function resolveSampleEnvelopeTrigger(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,
   playbackRate: number,
+  loopTimeScale?: number,
 ): Pick<EnvelopeTriggerOptions, 'depth' | 'curve' | 'timeScale'> {
   const options = {
     depth: config.depth ?? 1,
-    timeScale: config.timeScale * (config.playbackRateSync ? playbackRate : 1),
+    timeScale:
+      config.timeScale * (loopTimeScale ?? (config.playbackRateSync ? Math.abs(playbackRate) : 1)),
   };
   if (id === 'amp') return options;
   // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.

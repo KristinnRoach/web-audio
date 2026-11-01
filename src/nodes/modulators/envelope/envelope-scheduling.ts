@@ -12,6 +12,7 @@ export type AutomatableParam = {
   linearRampToValueAtTime(value: number, endTime: number): unknown;
   exponentialRampToValueAtTime(value: number, endTime: number): unknown;
   cancelScheduledValues(cancelTime: number): unknown;
+  cancelAndHoldAtTime?(cancelTime: number): unknown;
 };
 
 /**
@@ -100,7 +101,33 @@ export function valueOf(
   return exponential ? floorOffZero(value, depth) : value;
 }
 
-/** Returns the time of the last point scheduled. */
+/** The point a range scheduled from `fromTime` opens on, and the param value there. */
+export function rangeOpening(
+  points: readonly EnvelopePoint[],
+  from: number,
+  to: number,
+  fromTime: number,
+  base: number,
+  depth: number,
+) {
+  const first = from;
+  while (from < to && points[from + 1].time <= fromTime) from++;
+  let value = valueOf(points, from, first, to, base, depth);
+  if (from < to && fromTime > points[from].time) {
+    const next = valueOf(points, from + 1, first, to, base, depth);
+    const curve = rampCurve(points[from].curve ?? 'linear', value, next);
+    const progress = (fromTime - points[from].time) / (points[from + 1].time - points[from].time);
+    if (curve === 'linear') value += (next - value) * progress;
+    else if (curve === 'exponential') value *= (next / value) ** progress;
+  }
+  return { index: from, value };
+}
+
+/**
+ * Schedules from a point or mid-segment `fromTime`; returns the last scheduled time.
+ * `rampIn` reaches the opening value with a linear ramp from the previous event
+ * instead of setting it at `startTime`.
+ */
 export function scheduleRange(
   param: AutomatableParam,
   envelope: EnvelopeShape,
@@ -110,22 +137,31 @@ export function scheduleRange(
   base: number,
   depth: number,
   timeScale: number,
+  fromTime = envelope.points[from].time,
+  rampIn = false,
 ) {
   const points = envelope.points;
-  let previous = valueOf(points, from, from, to, base, depth);
-  param.setValueAtTime(previous, startTime);
+  const first = from;
+  const opening = rangeOpening(points, from, to, fromTime, base, depth);
+  from = opening.index;
+  if (rampIn) param.linearRampToValueAtTime(opening.value, startTime);
+  else param.setValueAtTime(opening.value, startTime);
   let last = startTime;
 
   for (let index = from + 1; index <= to; index++) {
-    last = startTime + getDuration(points, { fromIndex: from, toIndex: index, timeScale });
-    const value = valueOf(points, index, from, to, base, depth);
+    last = startTime + (points[index].time - fromTime) / timeScale;
+    const value = valueOf(points, index, first, to, base, depth);
     schedulePoint(
       param,
       value,
       last,
-      rampCurve(points[index - 1].curve ?? 'linear', previous, value),
+      // A partial segment keeps its original curve, including signed linear fallbacks.
+      rampCurve(
+        points[index - 1].curve ?? 'linear',
+        valueOf(points, index - 1, first, to, base, depth),
+        value,
+      ),
     );
-    previous = value;
   }
 
   return last;

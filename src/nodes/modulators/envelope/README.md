@@ -84,7 +84,14 @@ new Envelope(clock, param, shape);
 
 `time` is an `AudioContext` time and defaults to now. `trigger`, `release`, and `stop` clamp
 past times to now. Stop also cancels an already-released tail, holding its scheduled value
-at the stop time.
+at the stop time. With `catchUp: true`, a past loop trigger resumes the phase implied
+by its original timestamp. Catch-up handovers are scheduled at least 10 ms ahead to
+avoid editing the render quantum already in flight; the preceding run continues until
+then. If the resumed phase's value differs from the held one, as when a retrigger
+changes the loop's length or phase, the handover ramps over 5 ms to where the new
+phase will be at the ramp's end instead of stepping. Ordinary triggers still start at
+point 0 now. Retriggering preserves the old ramp
+up to the handover before replacing future automation.
 
 A looping envelope keeps scheduling ahead on a timer until you call `release()` or `stop()`.
 
@@ -97,6 +104,7 @@ A looping envelope keeps scheduling ahead on a timer until you call `release()` 
 | `timeScale` | `1`          | Playback speed. `2` plays twice as fast.                                     |
 | `shape`     | stored shape | Plays a different shape for this run only.                                   |
 | `fromPoint` | `0`          | Loops only: start the first pass at this point index.                        |
+| `catchUp`   | `false`      | Loops only: resume elapsed phase when the trigger timestamp is past.         |
 | `curve`     | shape curves | Overrides ramp curves for the run, preserving steps.                         |
 
 The param follows `base + depth * pointValue`, so one shape can drive a gain (0 to 1), a

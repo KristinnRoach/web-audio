@@ -85,15 +85,19 @@ export class TrackedParam implements AutomatableParam {
    * future-dated hold keeps the param moving until then instead of freezing it now.
    * A ramp of the same type ending at a point on its own curve traces the same curve.
    *
-   * ponytail: pins rather than calling `cancelAndHoldAtTime`, which Firefox has not
-   * implemented (bugzil.la/1308431).
+   * Native holds are atomic: cancelling and restoring a ramp in separate calls can
+   * expose the cancelled ramp to a render quantum between calls. Fall back for params
+   * without `cancelAndHoldAtTime`.
    */
   holdAt(time: number): number {
     const value = this.valueAt(time);
     // The segment playing into `time` ends at the first event at or after it.
     const segmentEnd = this.#events.find((event) => event.time >= time);
 
-    this.cancelScheduledValues(time);
+    if (this.param.cancelAndHoldAtTime) {
+      this.param.cancelAndHoldAtTime(time);
+      this.#events = this.#events.filter((event) => event.time < time);
+    } else this.cancelScheduledValues(time);
     if (segmentEnd && segmentEnd.type !== 'set') {
       // An event exactly at `time` is restored as it was; a later one is cut to `value`.
       const end = segmentEnd.time === time ? segmentEnd.value : value;

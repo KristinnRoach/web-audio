@@ -71,3 +71,27 @@ it('clones signed depth without adding legacy fields', () => {
     curve: 'linear',
   });
 });
+
+it('validates loopSync and applies playback rate only once when a loop scale is supplied', () => {
+  expect(() => assertValidEnvelopeConfig({ ...config, loopSync: true })).not.toThrow();
+  expect(() =>
+    assertValidEnvelopeConfig({
+      ...config,
+      loopSync: 'yes' as unknown as boolean,
+    }),
+  ).toThrow('Invalid envelope settings');
+  for (const playbackRateSync of [false, true]) {
+    expect(
+      resolveSampleEnvelopeTrigger(
+        'amp',
+        {
+          ...config,
+          timeScale: 3,
+          playbackRateSync,
+        },
+        2,
+        4,
+      ).timeScale,
+    ).toBe(12);
+  }
+});
