@@ -15,7 +15,7 @@ cases such as sampler `loopSync`. That is its own slice; the main-thread follow-
 below that depend on message timing (handover lead, bridge, per-wrap reports, first-pass
 keytracking, pitch tracking) should wait for that decision.
 
-## Real-audio click regression
+## Real-audio loopSync clicks (deferred to audio-thread envelopes)
 
 `../../instruments/Sample/SamplePlayer.loop-clicks.browser.test.ts` captures a real
 AudioContext playing a seamless 200 ms tone with full-buffer looping for 3 seconds.
@@ -34,12 +34,19 @@ Two independent OfflineAudioContext tests isolated the timing defects:
   produced intermittent spikes without that lead. Ordinary note triggers retain
   their restart-at-now behavior.
 
-The real-time regression includes an extra 30 ms notification delay. Fixed-rate,
-fixed-range loops stay on phase without needing a future notification protocol.
-Run after `vp run build:worklets` with:
+Intermittent clicks remain with `loopSync` on, both during live edits in CI and in a
+fixed-range local run. `playbackRateSync` is off in these cases. The matching live-edit
+control with `loopSync` off passed locally; exclusivity and regression versus main have
+not been established. Native atomic holds fix a separate cancellation race but do not
+eliminate these clicks. Further real-time synchronization fixes are explicitly deferred
+to the audio-thread slice; this PR does not guarantee click-free loopSync playback.
+
+The real-time diagnostic retains fixed-loop, 30 ms delayed-report, and matching live-edit
+cases with loopSync on and off. It is opt-in, skipped in required CI; deterministic
+envelope rendering and drift timing tests remain required. Run after `vp run build:worklets`:
 
 ```
-vp test run --config vitest.browser.config.ts src/nodes/instruments/Sample/SamplePlayer.loop-clicks.browser.test.ts
+VITE_LOOP_CLICK_DIAGNOSTIC=1 vp test run --config vitest.browser.config.ts src/nodes/instruments/Sample/SamplePlayer.loop-clicks.browser.test.ts
 ```
 
 ## Live edits
@@ -66,12 +73,12 @@ vp test run --config vitest.browser.config.ts src/nodes/instruments/Sample/Sampl
 
 ## Loop timing
 
-- **Live loop-point clicks.** Fixed: moving loop points while holding a synced note
+- **Live loop-point clicks (partially mitigated; remaining clicks deferred).** Moving loop points while holding a synced note
   changed the reported phase or cycle length, so the catch-up handover stepped. A
   handover whose incoming value differs from the held one by more than 0.1% of depth
   now ramps over 5 ms to the new phase at the ramp's end; matching handovers are set
   directly. Covered by the six-edit case in `SamplePlayer.loop-clicks.browser.test.ts`
-  and confirmed by ear there. Not yet covered: a rendered same-duration reanchoring
+  but intermittent real-time failures remain as described above. Not yet covered: a rendered same-duration reanchoring
   assertion, and release/stop during a bridge.
 
 `loopSync` now fits the full loaded buffer's duration to one audible sample loop

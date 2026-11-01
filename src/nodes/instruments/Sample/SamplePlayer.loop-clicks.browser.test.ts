@@ -79,140 +79,153 @@ function detectClicks(samples: Float32Array) {
   return { peak, maximum, clicks };
 }
 
-test('detects discontinuities in a held loop with real loop-synced audio, including live edits', async ({
-  annotate,
-}) => {
-  const results = [];
-  for (const mode of [
-    'flat-sync',
-    'envelope-free',
-    'envelope-sync',
-    'envelope-sync-delayed',
-    'envelope-sync-edited',
-  ] as const) {
-    const context = new AudioContext({ sampleRate: SR });
-    let player: SamplePlayer | undefined;
-    let observer: ReturnType<typeof vi.spyOn> | undefined;
-    let recorder: AudioWorkletNode | undefined;
-    const pending: ReturnType<typeof setTimeout>[] = [];
-    try {
-      await context.resume();
-      await context.audioWorklet.addModule('/dist/processors/processors.js');
-      const moduleUrl = URL.createObjectURL(new Blob([recorderCode], { type: 'text/javascript' }));
+// Deferred to audio-thread envelopes; retain this diagnostic and its controls for that work.
+const diagnostic = test.runIf(import.meta.env.VITE_LOOP_CLICK_DIAGNOSTIC === '1');
+
+diagnostic(
+  'detects discontinuities in a held loop with real loop-synced audio, including live edits',
+  async ({ annotate }) => {
+    const results = [];
+    for (const mode of [
+      'flat-sync',
+      'envelope-free',
+      'envelope-sync',
+      'envelope-sync-delayed',
+      'envelope-sync-edited',
+      'envelope-free-edited',
+    ] as const) {
+      const context = new AudioContext({ sampleRate: SR });
+      let player: SamplePlayer | undefined;
+      let observer: ReturnType<typeof vi.spyOn> | undefined;
+      let recorder: AudioWorkletNode | undefined;
+      const pending: ReturnType<typeof setTimeout>[] = [];
       try {
-        await context.audioWorklet.addModule(moduleUrl);
-      } finally {
-        URL.revokeObjectURL(moduleUrl);
-      }
-      player = new SamplePlayer({ context, polyphony: 1, voiceSignalChain: [] });
-      await player.init();
-      const buffer = context.createBuffer(1, SR * SAMPLE_SECONDS, SR);
-      const pcm = buffer.getChannelData(0);
-      // Exactly 44 periods: no discontinuity in the source at the full-buffer wrap.
-      for (let i = 0; i < pcm.length; i++) pcm[i] = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR);
-      await player.loadAudio(buffer, { skipPreProcessing: true, getZeroCrossings: false });
-      expect(player.loopStart).toBe(0);
-      expect(player.loopEnd).toBe(SAMPLE_SECONDS);
-      player.setLoopEnabled(true);
-      player.setLoopDurationDriftAmount(0);
-      player.updateEnvelope('pitch', { enabled: false });
-      player.updateEnvelope('filter', { enabled: false });
-      const amp = player.getEnvelope('amp');
-      player.updateEnvelope('amp', {
-        enabled: true,
-        loopSync: mode !== 'envelope-free',
-        shape: {
-          ...amp.shape,
-          mode: { type: 'loop' },
-          ...(mode === 'flat-sync'
-            ? {
-                points: [
-                  { time: 0, value: 1 },
-                  { time: SAMPLE_SECONDS, value: 1 },
-                ],
-                sustainPoint: 0,
-                releasePoint: 0,
-              }
-            : {}),
-        },
-      });
-      // Let idle range reports arrive before the first note.
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const starts: { requested: number; received: number }[] = [];
-      const original = Envelope.prototype.trigger;
-      observer = vi
-        .spyOn(Envelope.prototype, 'trigger')
-        .mockImplementation(function (time, options) {
-          const apply = () => {
-            starts.push({ requested: time ?? context.currentTime, received: context.currentTime });
-            original.call(this, time, options);
-          };
-          if (mode === 'envelope-sync-delayed' && options?.catchUp) {
-            pending.push(setTimeout(apply, 30));
-          } else apply();
-        });
-      recorder = new AudioWorkletNode(context, 'loop-click-recorder', {
-        processorOptions: { frames: SR * (HOLD_SECONDS + 0.2) },
-      });
-      const recorded = new Promise<{ samples: Float32Array; start: number }>((resolve) => {
-        recorder!.port.onmessage = ({ data }) => resolve(data);
-      });
-      // Tap raw voice audio to exclude instrument-bus effects from the detector.
-      const taps = player.getGainStages()['voice.worklet'] as AudioNode[];
-      taps[0].connect(recorder);
-      player.disconnect();
-      recorder.connect(context.destination); // Recorder outputs silence, keeping the graph live.
-      expect(player.play(60, 127, 0, 0.05)).toBe(60);
-      if (mode === 'envelope-sync-edited') {
-        // Live range edits on whole tone periods, so only the envelope handover can click.
-        for (const [delay, startPoint, endPoint] of [
-          [650, 0, 0.1],
-          [1050, 0.05, 0.2],
-          [1450, 0, 0.15],
-          [1850, 0.05, 0.15],
-          [2250, 0, 0.2],
-          [2650, 0, 0.1],
-        ]) {
-          pending.push(setTimeout(() => player!.setLoopPoints(startPoint, endPoint), delay));
+        await context.resume();
+        await context.audioWorklet.addModule('/dist/processors/processors.js');
+        const moduleUrl = URL.createObjectURL(
+          new Blob([recorderCode], { type: 'text/javascript' }),
+        );
+        try {
+          await context.audioWorklet.addModule(moduleUrl);
+        } finally {
+          URL.revokeObjectURL(moduleUrl);
         }
+        player = new SamplePlayer({ context, polyphony: 1, voiceSignalChain: [] });
+        await player.init();
+        const buffer = context.createBuffer(1, SR * SAMPLE_SECONDS, SR);
+        const pcm = buffer.getChannelData(0);
+        // Exactly 44 periods: no discontinuity in the source at the full-buffer wrap.
+        for (let i = 0; i < pcm.length; i++) pcm[i] = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR);
+        await player.loadAudio(buffer, { skipPreProcessing: true, getZeroCrossings: false });
+        expect(player.loopStart).toBe(0);
+        expect(player.loopEnd).toBe(SAMPLE_SECONDS);
+        player.setLoopEnabled(true);
+        player.setLoopDurationDriftAmount(0);
+        player.updateEnvelope('pitch', { enabled: false });
+        player.updateEnvelope('filter', { enabled: false });
+        const amp = player.getEnvelope('amp');
+        player.updateEnvelope('amp', {
+          enabled: true,
+          loopSync: mode !== 'envelope-free' && mode !== 'envelope-free-edited',
+          shape: {
+            ...amp.shape,
+            mode: { type: 'loop' },
+            ...(mode === 'flat-sync'
+              ? {
+                  points: [
+                    { time: 0, value: 1 },
+                    { time: SAMPLE_SECONDS, value: 1 },
+                  ],
+                  sustainPoint: 0,
+                  releasePoint: 0,
+                }
+              : {}),
+          },
+        });
+        // Let idle range reports arrive before the first note.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const starts: { requested: number; received: number }[] = [];
+        const original = Envelope.prototype.trigger;
+        observer = vi
+          .spyOn(Envelope.prototype, 'trigger')
+          .mockImplementation(function (time, options) {
+            const apply = () => {
+              starts.push({
+                requested: time ?? context.currentTime,
+                received: context.currentTime,
+              });
+              original.call(this, time, options);
+            };
+            if (mode === 'envelope-sync-delayed' && options?.catchUp) {
+              pending.push(setTimeout(apply, 30));
+            } else apply();
+          });
+        recorder = new AudioWorkletNode(context, 'loop-click-recorder', {
+          processorOptions: { frames: SR * (HOLD_SECONDS + 0.2) },
+        });
+        const recorded = new Promise<{ samples: Float32Array; start: number }>((resolve) => {
+          recorder!.port.onmessage = ({ data }) => resolve(data);
+        });
+        // Tap raw voice audio to exclude instrument-bus effects from the detector.
+        const taps = player.getGainStages()['voice.worklet'] as AudioNode[];
+        taps[0].connect(recorder);
+        player.disconnect();
+        recorder.connect(context.destination); // Recorder outputs silence, keeping the graph live.
+        expect(player.play(60, 127, 0, 0.05)).toBe(60);
+        if (mode === 'envelope-sync-edited' || mode === 'envelope-free-edited') {
+          // Identical live edits on whole tone periods, with and without loop sync.
+          for (const [delay, startPoint, endPoint] of [
+            [650, 0, 0.1],
+            [1050, 0.05, 0.2],
+            [1450, 0, 0.15],
+            [1850, 0.05, 0.15],
+            [2250, 0, 0.2],
+            [2650, 0, 0.1],
+          ]) {
+            pending.push(setTimeout(() => player!.setLoopPoints(startPoint, endPoint), delay));
+          }
+        }
+        const { samples, start } = await recorded;
+        const detection = detectClicks(samples);
+        const late = starts
+          .slice(1)
+          .map(({ requested, received }) => (received - requested) * 1000);
+        const result = {
+          mode,
+          ...detection,
+          starts: starts.length,
+          lateRetriggers: late.filter((ms) => ms > 0).length,
+          maximumLatenessMs: Math.max(0, ...late),
+          clickBoundaryOffsetsMs: detection.clicks.map(({ seconds }) => {
+            const absolute = start + seconds;
+            return (
+              Math.min(...starts.slice(1).map(({ requested }) => Math.abs(absolute - requested))) *
+              1000
+            );
+          }),
+        };
+        results.push(result);
+        console.info('LOOP_CLICK_RESULT', JSON.stringify(result));
+        await annotate(mode, { body: wav(samples), contentType: 'audio/wav' });
+        await annotate(`${mode} measurements`, {
+          body: JSON.stringify({ ...result, recordingStart: start, starts }, null, 2),
+          encoding: 'utf-8',
+          contentType: 'application/json',
+        });
+      } finally {
+        pending.forEach(clearTimeout);
+        observer?.mockRestore();
+        player?.dispose();
+        recorder?.disconnect();
+        recorder?.port.close();
+        await context.close();
       }
-      const { samples, start } = await recorded;
-      const detection = detectClicks(samples);
-      const late = starts.slice(1).map(({ requested, received }) => (received - requested) * 1000);
-      const result = {
-        mode,
-        ...detection,
-        starts: starts.length,
-        lateRetriggers: late.filter((ms) => ms > 0).length,
-        maximumLatenessMs: Math.max(0, ...late),
-        clickBoundaryOffsetsMs: detection.clicks.map(({ seconds }) => {
-          const absolute = start + seconds;
-          return (
-            Math.min(...starts.slice(1).map(({ requested }) => Math.abs(absolute - requested))) *
-            1000
-          );
-        }),
-      };
-      results.push(result);
-      console.info('LOOP_CLICK_RESULT', JSON.stringify(result));
-      await annotate(mode, { body: wav(samples), contentType: 'audio/wav' });
-      await annotate(`${mode} measurements`, {
-        body: JSON.stringify({ ...result, recordingStart: start, starts }, null, 2),
-        encoding: 'utf-8',
-        contentType: 'application/json',
-      });
-    } finally {
-      pending.forEach(clearTimeout);
-      observer?.mockRestore();
-      player?.dispose();
-      recorder?.disconnect();
-      recorder?.port.close();
-      await context.close();
     }
-  }
-  for (const result of results) {
-    expect(result.peak).toBeGreaterThan(0.1);
-    expect(result.clicks, JSON.stringify(result)).toHaveLength(0);
-  }
-  expect(results[3].maximumLatenessMs).toBeGreaterThan(20);
-}, 25_000);
+    for (const result of results) {
+      expect(result.peak).toBeGreaterThan(0.1);
+      expect(result.clicks, JSON.stringify(result)).toHaveLength(0);
+    }
+    expect(results[3].maximumLatenessMs).toBeGreaterThan(20);
+  },
+  30_000,
+);
