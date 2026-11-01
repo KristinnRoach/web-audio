@@ -12,6 +12,7 @@ export type AutomatableParam = {
   linearRampToValueAtTime(value: number, endTime: number): unknown;
   exponentialRampToValueAtTime(value: number, endTime: number): unknown;
   cancelScheduledValues(cancelTime: number): unknown;
+  cancelAndHoldAtTime?(cancelTime: number): unknown;
 };
 
 /**
