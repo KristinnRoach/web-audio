@@ -410,6 +410,8 @@ export class SampleVoice {
     });
 
     // Trigger amp, filter and pitch envelopes if enabled
+
+    // Todo: On initial trigger, if loop does not start at right away, we should defer scaling envelopes to the loop until entering the loop range, or until the processor reports the first wrap or turn
     // Same keytrack scale as the processor's loop range.
     const loopSeconds =
       this.#processedLoopSeconds * (1 + this.#idleLoopKeytrack * (Math.abs(playbackRate) - 1));
@@ -467,6 +469,7 @@ export class SampleVoice {
       playbackRate,
       this.#loopTimeScale(config, env),
     );
+
     env.trigger(timestamp, { ...resolved, fromPoint, catchUp });
   }
 
