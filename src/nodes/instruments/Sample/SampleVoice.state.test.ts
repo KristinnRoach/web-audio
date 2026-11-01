@@ -511,6 +511,7 @@ describe('SampleVoice state', () => {
       voice.setEnvelopeConfig('pitch', {
         ...config,
         enabled: true,
+        loopSync: true,
         shape: { ...config.shape, mode: { type: 'loop' } },
         ...overrides,
       });

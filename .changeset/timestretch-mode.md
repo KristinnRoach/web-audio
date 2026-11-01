@@ -2,4 +2,4 @@
 '@kidlib/web-audio': minor
 ---
 
-Replace `setTimestretchEnabled(boolean)` with `setTimestretchMode('off' | 'splice')`
+Breaking: replace `setTimestretchEnabled(boolean)` with `setTimestretchMode('off' | 'splice')`.

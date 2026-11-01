@@ -59,7 +59,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
-        loopSync: true,
+        loopSync: false,
         shape: envelopePresets.amplitude(durationSeconds),
       };
     case 'pitch':
@@ -68,7 +68,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
-        loopSync: true,
+        loopSync: false,
         shape: flatPitchShape(durationSeconds),
       };
     case 'filter':
@@ -77,7 +77,7 @@ export function createDefaultSampleEnvelopeConfig(
         enabled: true,
         timeScale: 1,
         playbackRateSync: false,
-        loopSync: true,
+        loopSync: false,
         shape: envelopePresets.filter(durationSeconds),
       };
   }
