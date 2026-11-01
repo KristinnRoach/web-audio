@@ -75,6 +75,8 @@ export class SampleVoice {
   #midiNote: number | null = null;
   #startedTimestamp: number = -1;
   #triggerId = 0;
+  #positionRequests = new Map<number, (position: number | null) => void>();
+  #nextPositionRequestId = 0;
 
   #sampleDurationSeconds = 0;
   #loopEnabled = false;
@@ -984,6 +986,13 @@ export class SampleVoice {
           break;
         }
 
+        case 'voice:position:reply': {
+          const resolve = this.#positionRequests.get(data.requestId);
+          this.#positionRequests.delete(data.requestId);
+          resolve?.(data.triggerId === this.#triggerId ? data.position : null);
+          return;
+        }
+
         // Forwarded upstream by the tail call, nothing to do here.
         case 'loop:enabled':
         case 'loop:syncToTempo':
@@ -1006,6 +1015,16 @@ export class SampleVoice {
     const startPoint = this.getParam('startPoint')!.value;
     const endPoint = this.getParam('endPoint')!.value;
     return Math.abs(endPoint - startPoint);
+  }
+
+  /** Playhead (0..1 of the sample) at the last rendered block, or null if not playing. */
+  getPlaybackPosition(): Promise<number | null> {
+    if (this.#state === VoiceState.AVAILABLE) return Promise.resolve(null);
+    const requestId = this.#nextPositionRequestId++;
+    return new Promise((resolve) => {
+      this.#positionRequests.set(requestId, resolve);
+      this.sendToProcessor({ type: 'voice:getPosition', requestId });
+    });
   }
 
   get feedback() {
@@ -1196,6 +1215,8 @@ export class SampleVoice {
     this.#cleanupAmpModLFO();
     this.#envelopes.forEach((env) => env.stop());
     this.#playerWorklet.port.close();
+    this.#positionRequests.forEach((resolve) => resolve(null));
+    this.#positionRequests.clear();
     this.#clearTimeouts();
     unregisterNode(this.nodeId);
   }
