@@ -1,5 +1,31 @@
 # @kidlib/web-audio
 
+## 0.8.0
+
+### Minor Changes
+
+- 1a3fca6: - Add `SamplePlayer.transpose(semitones)` and `fineTune(cents)`, with `transpose` and `fineTune` params. Held notes retune too.
+  - Add `SamplePlayer.commitPitch()` to bake transpose and fineTune into the samples. Posts `pitch:committed` with `{ semitones }`.
+  - Add `SampleVoice.setPitchOffset(semitones)`.
+  - Preprocessor auto-tune and `commitPitch` resample with a band-limited sinc instead of linear interpolation: no aliasing, flat highs, slower on long samples.
+  - Breaking: remove `SamplePlayer.setRootNote`. Use `transpose(semitones)`.
+  - Breaking: transposition persists across sample loads.
+  - Breaking: rename `SamplePlayer.setScale` to `setLoopPitchQuantization`, remove `rootNote` and `tuningOffset` (shift `scale` intervals instead) and make all options optional.
+  - Breaking: remove the `SamplePlayer.transposeSemitones` setter.
+  - Breaking: remove `SampleVoice.setAllowedPeriods`, `setPlaybackRate`, `setStartPoint` and `setEndPoint`.
+  - Breaking: `setSampleStartPoint` and `setSampleEndPoint` no longer post `start-point:updated` and `end-point:updated`.
+  - Breaking: `note:off`, `voice:started` and `voice:stopped` report the played note, not the transposed one. `note:off` sends `{ midiNote }`.
+  - Breaking: noise LFO waveforms run at `rate / harmonics`, so `setFrequency` sets the fastest jitter and the pattern repeats every `harmonics / rate` seconds. SamplePlayer gain and pitch LFOs default to colored noise.
+- e19e3fe: Breaking: replace `setTimestretchEnabled(boolean)` with `setTimestretchMode('off' | 'splice')`.
+
+### Patch Changes
+
+- 74e4b9e: Add crossfades to timestretch correction jumps
+- 88f4d6f: Add opt-in `loopSync` to `EnvelopeConfig`. A loop-mode sampler envelope then follows the audible sample loop: at `timeScale: 1`, a shape spanning the loaded buffer's duration plays once per loop, including the note's playback rate (overriding `playbackRateSync`). It restarts at each loop boundary and has no effect unless both the envelope and the sample are looping. Known issue: intermittent clicks at loop boundaries.
+- c088436: Remove the unused `playbackPosition` AudioParam from sample voices. Use `enablePositionTracking(true)` and the `voice:position` message for the playhead.
+- fcc2330: Add `durationRatio` to `SamplePlayer.updateEnvelope`: `1` uses the loaded sample's full duration, `0.5` uses half, and values above `1` extend beyond it. Requires a loaded sample and cannot be combined with `duration`.
+- fcc2330: Reject invalid envelope scheduling inputs instead of interrupting a running envelope.
+
 ## 0.7.2
 
 ### Patch Changes
