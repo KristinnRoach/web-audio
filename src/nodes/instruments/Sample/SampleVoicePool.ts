@@ -117,7 +117,6 @@ export class SampleVoicePool implements LibNode {
         'voice:releasing',
         'voice:loaded',
         'loop:range',
-        'loop:cycle',
         'trim:range',
         'voice:position',
       ],

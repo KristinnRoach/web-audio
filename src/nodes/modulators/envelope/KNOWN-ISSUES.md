@@ -87,9 +87,8 @@ there is no hidden loop-snapping correction.
 - **Per-wrap message load.** The processor posts `loop:cycle` on every wrap, even
   without an enabled loop-synced envelope. At rate 1, a 5 ms loop produces about
   200 messages/s per voice; enabled loop-synced envelopes retrigger for each message.
-  `SampleVoicePool` forwards these too, but `SamplePlayer` already excludes them.
-  The consuming app currently listens to `loop:range`, not `loop:cycle`; direct pool
-  consumers may still observe cycles. Consider an explicit processor reporting flag
+  `SampleVoicePool` does not forward these internal synchronization events.
+  Consider an explicit processor reporting flag
   maintained across envelope enable/mode/sync edits and voice lifecycle, and a separate
   opt-in for upstream cycle observation. Do not simply throttle messages while every
   sample boundary still controls retriggering; that would change envelope playback.
