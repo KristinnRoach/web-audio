@@ -76,13 +76,6 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 9999,
     automationRate: 'k-rate',
   },
-  playbackPosition: {
-    name: 'playbackPosition',
-    defaultValue: 0,
-    minValue: 0,
-    maxValue: 99999,
-    automationRate: 'k-rate',
-  },
   loopDurationDriftAmount: {
     name: 'loopDurationDriftAmount',
     defaultValue: 0.07,

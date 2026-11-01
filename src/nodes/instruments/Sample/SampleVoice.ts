@@ -981,12 +981,6 @@ export class SampleVoice {
           }
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
-          if (type === 'voice:position') {
-            this.getParam('playbackPosition')?.setValueAtTime(
-              data.position,
-              this.context.currentTime,
-            );
-          }
           break;
         }
 
