@@ -243,3 +243,81 @@ for (const command of ['release', 'stop'] as const) {
     }
   });
 }
+
+// A translated loop range can change phase without changing duration. A linear
+// triangle gives an independent expected value for the bridge and its release.
+const triangleLoop: EnvelopeShape = {
+  points: [
+    { time: 0, value: 0 },
+    { time: 0.1, value: 1 },
+    { time: 0.2, value: 0 },
+  ],
+  mode: { type: 'loop' },
+  sustainPoint: 1,
+  releasePoint: 1,
+};
+const triangleAt = (time: number) => {
+  const phase = time % 0.2;
+  return phase < 0.1 ? phase * 10 : (0.2 - phase) * 10;
+};
+
+async function renderReanchoredLoop(command?: 'release' | 'stop') {
+  const context = new OfflineAudioContext(1, SAMPLE_RATE * 0.45, SAMPLE_RATE);
+  const source = new ConstantSourceNode(context, { offset: 0 });
+  source.connect(context.destination);
+  source.start();
+  const envelope = new Envelope(context, source.offset, triangleLoop);
+  envelope.trigger(0);
+  const paused = context.suspend(0.152);
+  const rendering = context.startRendering();
+  await paused;
+  const start = context.currentTime + 0.01;
+  const end = start + 0.005;
+  const cut = start + 0.0025;
+  envelope.trigger(0.15, { catchUp: true });
+  if (command) envelope[command](cut);
+  await context.resume();
+  const samples = (await rendering).getChannelData(0);
+  envelope.stop();
+  return { samples, start, end, cut };
+}
+
+test('same-duration reanchoring bridges continuously to the new phase and retains its grid', async () => {
+  const { samples, start, end } = await renderReanchoredLoop();
+  const held = triangleAt(start);
+  const target = triangleAt(end - 0.15);
+  expect(Math.abs(held - triangleAt(start - 0.15))).toBeGreaterThan(0.1);
+  for (const time of [start - 0.001, start, start + 0.0025, end, end + 0.02, 0.35, 0.4]) {
+    const expected =
+      time < start
+        ? triangleAt(time)
+        : time < end
+          ? held + ((target - held) * (time - start)) / (end - start)
+          : triangleAt(time - 0.15);
+    expect(samples[sampleAt(time)], `value at ${time}`).toBeCloseTo(expected, 4);
+  }
+  for (const time of [start, end]) {
+    const index = sampleAt(time);
+    expect(Math.abs(samples[index] - samples[index - 1])).toBeLessThan(0.001);
+  }
+});
+
+for (const command of ['release', 'stop'] as const) {
+  test(`${command} during a value-changing bridge preserves its ramp and cancels later cycles`, async () => {
+    const { samples, start, end, cut } = await renderReanchoredLoop(command);
+    const held = triangleAt(start);
+    const target = triangleAt(end - 0.15);
+    const cutValue = held + ((target - held) * (cut - start)) / (end - start);
+    expect(Math.abs(held - target)).toBeGreaterThan(0.1);
+    for (let index = sampleAt(start); index < samples.length; index++) {
+      const time = index / SAMPLE_RATE;
+      const expected =
+        time < cut
+          ? held + ((target - held) * (time - start)) / (end - start)
+          : command === 'stop'
+            ? cutValue
+            : cutValue * Math.max(0, 1 - (time - cut) / 0.1);
+      expect(samples[index], `value at ${time}`).toBeCloseTo(expected, 4);
+    }
+  });
+}

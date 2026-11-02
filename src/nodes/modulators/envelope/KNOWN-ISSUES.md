@@ -9,6 +9,10 @@ are fixed below. Other observations remain candidates, not confirmed audible def
 
 ## Audio-thread envelopes (open)
 
+First audit `src/worklets/processors/play/sample-player-processor.js` and its callers
+for redundant state, timing calculations and control paths. Identify necessary cleanup
+before choosing the audio-thread design; do not carry duplicate timing models forward.
+
 Audio-rate accuracy needs envelopes on the audio thread. Undecided: move this module's
 playback into a processor, or keep it and add a processor implementation only for
 cases such as sampler `loopSync`. That is its own slice; the main-thread follow-ups
@@ -60,12 +64,6 @@ VITE_LOOP_CLICK_DIAGNOSTIC=1 vp test run --config vitest.browser.config.ts src/n
   use the incoming run rather than the one still sounding. Repeated drag edits should
   continue targeting the same pending boundary. A boundary alone does not guarantee
   continuity if the new shape's opening value differs.
-- **Sustain glide.** `Envelope.setSustainValue` only responds after sustain is reached.
-  It changes the run's point immediately. Sustain-index and mid-attack
-  changes remain next-trigger edits. A release or edit during the glide holds the
-  glide's current value. Preserve the trigger snapshot for the release tail.
-  Rescheduling the rest of the attack from the current position was tried for
-  mid-attack edits and still stepped audibly.
 - **Pitch envelope and disabled pitch.** The pitch envelope drives the sample worklet's
   `detune` (cents), so glide and keytracking keep `playbackRate`. `disablePitch` resets
   `playbackRate` to 1 but leaves `detune` alone, so a pitch envelope still bends a voice
@@ -76,10 +74,12 @@ VITE_LOOP_CLICK_DIAGNOSTIC=1 vp test run --config vitest.browser.config.ts src/n
 - **Live loop-point clicks (partially mitigated; remaining clicks deferred).** Moving loop points while holding a synced note
   changed the reported phase or cycle length, so the catch-up handover stepped. A
   handover whose incoming value differs from the held one by more than 0.1% of depth
-  now ramps over 5 ms to the new phase at the ramp's end; matching handovers are set
-  directly. Covered by the six-edit case in `SamplePlayer.loop-clicks.browser.test.ts`
-  but intermittent real-time failures remain as described above. Not yet covered: a rendered same-duration reanchoring
-  assertion, and release/stop during a bridge.
+  now ramps over at most 5 ms (capped at half the loop duration) to the new phase
+  at the ramp's end; matching handovers are set directly. Covered by the six-edit case in
+  `SamplePlayer.loop-clicks.browser.test.ts`, but intermittent real-time failures remain
+  as described above. Deterministic renders in `test/Envelope.browser.test.ts` cover same-duration phase
+  reanchoring and release/stop partway through a value-changing bridge. These do not
+  establish click-free real-time playback.
 
 `loopSync` now fits the full loaded buffer's duration to one audible sample loop
 for loop-mode envelopes, including the note's playback rate regardless of
@@ -89,8 +89,10 @@ there is no hidden loop-snapping correction.
 - **Changing pitch while held.** Sync uses the stored note playback rate, not continuous
   glide or pitch-envelope modulation. Continuous phase lock remains unresolved.
 - **Boundary restart.** Synced envelopes restart at each sample loop boundary;
-  shapes that do not divide evenly into that interval are cut there. The cut is a
-  5 ms bridge at the handover, at least 10 ms after the boundary, not a step.
+  shapes that do not divide evenly into that interval are cut there. Catch-up handovers
+  run no earlier than 10 ms after receipt of a late report.
+  A value mismatch above the bridge tolerance gets a transition of at most 5 ms,
+  capped at half the loop duration; matching values are set directly.
 - **Per-wrap message load.** The processor posts `loop:cycle` on every wrap, even
   without an enabled loop-synced envelope. At rate 1, a 5 ms loop produces about
   200 messages/s per voice; enabled loop-synced envelopes retrigger for each message.
@@ -119,16 +121,9 @@ there is no hidden loop-snapping correction.
 
 ## Scheduling and lifecycle
 
-- **Writes outside the envelope.** Holds read `TrackedParam`, which only sees automation
-  scheduled through it. `SampleVoice` writes the same params directly while an envelope is
-  off (`#resetEnvTarget`, the amp gate); that is safe only because the envelope never reads
-  while it is not running. Keep it that way, or route those writes through the wrapper.
 - **Future commands.** Releasing or stopping a loop removes its refill callback
   immediately, even if the requested time is beyond the queued horizon. `stop(time)`
   pins the value the scheduled timeline has at that time.
-- **Validation.** Shape, time scale, base, depth, finite scheduling timestamps, integer loop
-  pickup indices, and sustain values/glides are checked before run mutation. Finite past
-  times and out-of-range integer pickup indices retain their existing clamping.
 - **Reported loop drift.** The cause remains unconfirmed. The existing 3,001-cycle
   grid check measured roughly 1e-12 seconds of error for a 7 ms loop, and drift heard
   after a few cycles is too fast for float error anyway. Two candidates:
@@ -145,20 +140,18 @@ there is no hidden loop-snapping correction.
 
   Listen in the consuming app before landing either fix.
 
-- **Accepted rounding guard.** Keep `Math.max(grid, cycleEnd)` in `Envelope.trigger`:
-  it prevents an opening event preceding the previous closing ramp. Its measured
-  accumulated error is tiny; do not remove it as an incidental simplification.
-
 ## Observation and callers
 
 - `position()` wraps loops and clamps sustain, but one-shots advance beyond their end.
   It becomes null as soon as release is requested, including future release, and does
   not describe the release tail. It is not a completion signal. No envelope-specific
   browser test currently verifies position against rendered automation. When adding
-  one (model on `../LFO/LFO.browser.test.ts`, run with `vp run test:browser`), assert
-  first that `base + depth * interpolateAtTime(points, points[0].time + position())`
-  matches `param.value` on a real `AudioContext`; every consumer inherits any
-  disagreement. Then check that position tracks the real clock and wraps at loop ends.
+  one (model on `../LFO/LFO.browser.test.ts`, run with `vp run test:browser`), compare
+  the value at the reported phase against rendered automation on a real
+  `AudioContext`, accounting for mapped endpoints, exponential floors and signed
+  linear fallbacks. Raw shape interpolation followed by base/depth mapping is not
+  a reliable oracle for those curves; the existing tracker/render comparison is
+  useful precedent. Then check that position tracks the real clock and wraps at loop ends.
 - Keep `nextCycleTime()` until a replacement handles future starts and pickup anchors;
   position alone does not provide those. `currentPoint()` currently returns null for loops.
 - `SamplePlayer` owns editable configs; `SampleVoice` still coordinates config storage,
@@ -170,3 +163,27 @@ there is no hidden loop-snapping correction.
   `{ ...shape, points }` creates a new shape identity. Revisit only if an editor needs it.
 - Observer callbacks and release-tail visualization are deferred; any future observer
   should remain separate from playback.
+
+## Established behavior and constraints to preserve
+
+These describe current guarantees or accepted limits, not requests to change sound.
+
+- **Sustain glide.** `Envelope.setSustainValue` only responds after sustain is reached.
+  It changes the run's point immediately. Sustain-index and mid-attack
+  changes remain next-trigger edits. A release or edit during the glide holds the
+  glide's current value. Preserve the trigger snapshot for the release tail.
+  Rescheduling the rest of the attack from the current position was tried for
+  mid-attack edits and still stepped audibly.
+
+- **Writes outside the envelope.** Holds read `TrackedParam`, which only sees automation
+  scheduled through it. `SampleVoice` writes the same params directly while an envelope is
+  off (`#resetEnvTarget`, the amp gate); that is safe only because the envelope never reads
+  while it is not running. Keep it that way, or route those writes through the wrapper.
+
+- **Validation.** Shape, time scale, base, depth, finite scheduling timestamps, integer loop
+  pickup indices, and sustain values/glides are checked before run mutation. Finite past
+  times and out-of-range integer pickup indices retain their existing clamping.
+
+- **Accepted rounding guard.** Keep `Math.max(grid, cycleEnd)` in `Envelope.trigger`:
+  it prevents an opening event preceding the previous closing ramp. Its measured
+  accumulated error is tiny; do not remove it as an incidental simplification.
