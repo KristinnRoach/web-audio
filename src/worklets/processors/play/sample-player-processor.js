@@ -286,6 +286,24 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.needsStartPosition = false;
   }
 
+  // Ease a loop wrap's step on one channel: from the last emitted source sample
+  // (0 in the silent tail) to the first of the next pass.
+  #smoothLoopWrap(sample, channel, tailGain, wrapped) {
+    const source = sample * tailGain;
+    if (wrapped) {
+      const discontinuity = (this.lastSourceSamples[channel] ?? source) - source;
+      if (Math.abs(discontinuity) > 0.01) this.loopWrapCorrections[channel] = discontinuity * 0.5;
+    }
+    this.lastSourceSamples[channel] = source;
+
+    const correction = this.loopWrapCorrections[channel];
+    if (!correction) return sample;
+    // Exponential decay, inaudible within ~50 samples
+    const next = correction * 0.9;
+    this.loopWrapCorrections[channel] = Math.abs(next) < 0.001 ? 0 : next;
+    return sample + correction;
+  }
+
   #smoothLoopMove(sample, channel, discontinuity) {
     // Correct only the relocation jump, allowing normal playback to advance.
     const correction = (this.loopMoveCorrections[channel] ?? 0) + discontinuity;
@@ -1122,24 +1140,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           moveDiscontinuity = outgoingSample - interpolatedSample;
         }
 
-        // Loop wrap: ease this channel's step from the last emitted source sample
-        // (0 in the silent tail) to the first of the next pass. A loop move this
-        // frame already compares against the old loop's continuation, so skip it.
-        const sourceSample = interpolatedSample * tailGain;
-        if (this.loopWrapPending && moveOutgoingPosition === null) {
-          const discontinuity = (this.lastSourceSamples[channel] ?? sourceSample) - sourceSample;
-          if (Math.abs(discontinuity) > 0.01) {
-            this.loopWrapCorrections[channel] = discontinuity * 0.5;
-          }
-        }
-        this.lastSourceSamples[channel] = sourceSample;
-        const wrapCorrection = this.loopWrapCorrections[channel];
-        if (wrapCorrection) {
-          interpolatedSample += wrapCorrection;
-          // Exponential decay, inaudible within ~50 samples
-          const next = wrapCorrection * 0.9;
-          this.loopWrapCorrections[channel] = Math.abs(next) < 0.001 ? 0 : next;
-        }
+        // A loop move this frame already compares against the old loop's
+        // continuation, so it takes over the wrap's step.
+        interpolatedSample = this.#smoothLoopWrap(
+          interpolatedSample,
+          channel,
+          tailGain,
+          this.loopWrapPending && moveOutgoingPosition === null,
+        );
 
         interpolatedSample = this.#smoothLoopMove(interpolatedSample, channel, moveDiscontinuity);
 
