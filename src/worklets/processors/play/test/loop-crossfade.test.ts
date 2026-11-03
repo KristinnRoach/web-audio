@@ -5,22 +5,33 @@ import { makeParameters, setupProcessorGlobals, startProcessor } from './range-t
 setupProcessorGlobals();
 
 describe('LoopCrossfade', () => {
-  it('fades over its length in source samples at any rate', () => {
+  it('fades each head over its length in source samples at any rate', () => {
     const fade = new LoopCrossfade();
-    fade.start(100, 8);
-    expect(fade.mix).toBe(0);
+    fade.start(100, 8, false);
+    expect(fade.head(0).mix).toBe(0);
     fade.advance(-2);
-    expect(fade.outgoingPosition).toBe(98);
-    expect(fade.mix).toBe(0.25);
+    expect(fade.head(0).position).toBe(98);
+    expect(fade.head(0).mix).toBe(0.25);
     fade.advance(-6);
-    expect(fade.outgoingPosition).toBeNull();
-    expect(fade.mix).toBe(1);
+    expect(fade.count).toBe(0);
   });
 
-  it('stays idle for fades shorter than a sample', () => {
+  it('keeps overlapping heads oldest first and drops finished ones', () => {
     const fade = new LoopCrossfade();
-    fade.start(100, 0.5);
-    expect(fade.outgoingPosition).toBeNull();
+    fade.start(100, 4, false);
+    fade.advance(1);
+    fade.start(200, 8, true);
+    expect(fade.count).toBe(2);
+    expect(fade.head(1).position).toBe(200);
+    fade.advance(3);
+    expect(fade.count).toBe(1);
+    expect(fade.head(0)).toMatchObject({ position: 203, fadesTail: true, mix: 3 / 8 });
+  });
+
+  it('ignores fades shorter than a sample', () => {
+    const fade = new LoopCrossfade();
+    fade.start(100, 0.5, false);
+    expect(fade.count).toBe(0);
   });
 });
 

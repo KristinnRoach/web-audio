@@ -196,12 +196,16 @@ describe('audio-rate loop movement smoothing', () => {
       const moved = render(0.1, 2);
       expect(moved[0][0]).toBe(before[0][31]);
       expect(moved[1][0]).toBe(before[1][31]);
-      expect(moved[0][1]).toBeCloseTo(-0.4 + 0.8 * 0.9);
-      expect(moved[1][1]).toBeCloseTo(0.3 - 0.5 * 0.9);
+      // Each channel fades from its old level toward its new one
+      expect(moved[0][1]).toBeLessThan(0.4);
+      expect(moved[0][1]).toBeGreaterThan(-0.4);
+      expect(moved[1][1]).toBeGreaterThan(-0.2);
+      expect(moved[1][1]).toBeLessThan(0.3);
 
+      // A second move fades on from the moved output without a step
       const movedAgain = render(0.2, 1);
-      expect(movedAgain[0][0]).toBeCloseTo(-0.4 + 0.8 * 0.9 ** 2);
-      expect(movedAgain[1][0]).toBeCloseTo(0.3 - 0.5 * 0.9 ** 2);
+      expect(Math.abs(movedAgain[0][0] - moved[0][1])).toBeLessThan(0.1);
+      expect(Math.abs(movedAgain[1][0] - moved[1][1])).toBeLessThan(0.1);
       const state = processor as typeof processor & {
         loopCount: number;
         previousLoopRange: { loopStartSamples: number; loopDurationSamples: number };
