@@ -17,7 +17,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  applyClickCompensation: boolean;
+  loopWrapCorrections: number[];
   loopCount: number;
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
@@ -108,7 +108,7 @@ describe('high-rate audio-loop click compensation', () => {
       playbackRate: 2,
     });
 
-    expect(processor.applyClickCompensation).toBe(false);
+    expect(processor.loopWrapCorrections.some(Boolean)).toBe(false);
   });
 
   it('does not arm compensation for a reverse high-rate audio loop', async () => {
@@ -118,7 +118,7 @@ describe('high-rate audio-loop click compensation', () => {
       playbackDirection: 'reverse',
     });
 
-    expect(processor.applyClickCompensation).toBe(false);
+    expect(processor.loopWrapCorrections.some(Boolean)).toBe(false);
   });
 
   it('keeps compensation at unity rate for an audio loop', async () => {
@@ -127,7 +127,7 @@ describe('high-rate audio-loop click compensation', () => {
       playbackRate: 1,
     });
 
-    expect(processor.applyClickCompensation).toBe(true);
+    expect(processor.loopWrapCorrections.some(Boolean)).toBe(true);
   });
 
   it('keeps compensation for a longer loop above unity rate', async () => {
@@ -136,6 +136,6 @@ describe('high-rate audio-loop click compensation', () => {
       playbackRate: 2,
     });
 
-    expect(processor.applyClickCompensation).toBe(true);
+    expect(processor.loopWrapCorrections.some(Boolean)).toBe(true);
   });
 });

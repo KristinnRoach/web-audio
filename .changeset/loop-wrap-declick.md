@@ -1,0 +1,5 @@
+---
+'@kidlib/web-audio': patch
+---
+
+Fix sampler loop-wrap de-click: corrects each output channel evenly, measures the step at any playback rate, and no longer carries into the next note.
