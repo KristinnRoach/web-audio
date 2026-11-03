@@ -9,7 +9,7 @@ import {
 setupProcessorGlobals();
 
 describe('audio-rate loop movement smoothing', () => {
-  it('does not read beyond the outgoing loop when a move coincides with a wrap', async () => {
+  it('matches the unmoved voice when a tiny move coincides with a wrap', async () => {
     const period = 187.5;
     const processors = await Promise.all(
       [0, 1].map(async () => {
@@ -50,9 +50,42 @@ describe('audio-rate loop movement smoothing', () => {
       );
       return result[0];
     });
-    expect(output[0]).toBeCloseTo(0, 5);
     expect(output[1]).toBeCloseTo(output[0], 5);
   });
+
+  it.each([
+    { frames: 2500, expected: 0 },
+    { frames: 2385, expected: 0.4 * (30 / 64) },
+  ])(
+    'retains the old tail gain when relocating after $frames frames',
+    async ({ frames, expected }) => {
+      const processor = await startProcessor();
+      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+      send({
+        type: 'voice:setBuffer',
+        buffer: [new Float32Array(4800).fill(0.4), new Float32Array(4800)],
+        durationSeconds: 0.1,
+      });
+      send({ type: 'setKeytrackLoopAmount', value: 1 });
+      send({ type: 'voice:start' });
+      processor.process(
+        [],
+        [[new Float32Array(frames), new Float32Array(frames)]],
+        makeParameters({ loopEnd: 0.1, playbackRate: 2 }),
+      );
+
+      const output = [new Float32Array(1), new Float32Array(1)];
+      processor.process(
+        [],
+        [output],
+        makeParameters({ loopStart: 0.05, loopEnd: 0.06, playbackRate: 2 }),
+      );
+      // The new short loop has no padded tail. Relocation must restore the old
+      // loop's audible continuation, including its silence or partial tail fade.
+      expect(output[0][0]).toBeCloseTo(expected, 6);
+      expect(output[1][0]).toBe(0);
+    },
+  );
 
   it('keeps the waveform advancing during continuous a-rate movement', async () => {
     const processor = await startProcessor([], [0.004, 0.008]);
@@ -163,12 +196,16 @@ describe('audio-rate loop movement smoothing', () => {
       const moved = render(0.1, 2);
       expect(moved[0][0]).toBe(before[0][31]);
       expect(moved[1][0]).toBe(before[1][31]);
-      expect(moved[0][1]).toBeCloseTo(-0.4 + 0.8 * 0.9);
-      expect(moved[1][1]).toBeCloseTo(0.3 - 0.5 * 0.9);
+      // Each channel fades from its old level toward its new one
+      expect(moved[0][1]).toBeLessThan(0.4);
+      expect(moved[0][1]).toBeGreaterThan(-0.4);
+      expect(moved[1][1]).toBeGreaterThan(-0.2);
+      expect(moved[1][1]).toBeLessThan(0.3);
 
+      // A second move fades on from the moved output without a step
       const movedAgain = render(0.2, 1);
-      expect(movedAgain[0][0]).toBeCloseTo(-0.4 + 0.8 * 0.9 ** 2);
-      expect(movedAgain[1][0]).toBeCloseTo(0.3 - 0.5 * 0.9 ** 2);
+      expect(Math.abs(movedAgain[0][0] - moved[0][1])).toBeLessThan(0.1);
+      expect(Math.abs(movedAgain[1][0] - moved[1][1])).toBeLessThan(0.1);
       const state = processor as typeof processor & {
         loopCount: number;
         previousLoopRange: { loopStartSamples: number; loopDurationSamples: number };
