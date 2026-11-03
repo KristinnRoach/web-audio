@@ -5,8 +5,13 @@ import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 import { LoopCrossfade } from './loop-crossfade.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
-// Loop jump and move crossfade length in source samples (~5 ms at 48 kHz).
+// Loop jump, turn and move crossfade length in source samples (~5 ms at 48 kHz).
 const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
+// U-turn crossfade: a ping-pong or backward-loop turn has no step, but its slope
+// reverses in one frame (a corner, audible at zero crossings). The crossfade
+// rounds it off, at the cost of a brief level dip. Not standard sampler practice;
+// false restores bare turns.
+const LOOP_TURN_CROSSFADE = true;
 const TAIL_FADE_SAMPLES = 64;
 // Beat divisors in the original lookup order (ties resolve to the earlier entry):
 // whole, half, quarter, eighth, sixteenth, thirty-second, then quarter/eighth/sixteenth triplets
@@ -308,12 +313,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       : wrapLoopPosition(this.playbackPosition, direction, loopStart, loopEnd);
     if (nextPosition === null) return;
 
-    if (turns) {
-      // The playhead keeps reading neighbouring samples, so there is no step to smooth
-      this.loopTurned = !this.loopTurned;
-    } else if (this.enableLoopSmoothing) {
+    if (turns) this.loopTurned = !this.loopTurned;
+    if (this.enableLoopSmoothing && (!turns || LOOP_TURN_CROSSFADE)) {
+      // The outgoing head carries on past the edge in the pre-turn direction
       const length = this.#crossfadeLength(loopRange);
-      this.loopCrossfade.start(this.playbackPosition, length, silencePadTail);
+      this.loopCrossfade.start(this.playbackPosition, direction, length, silencePadTail);
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
@@ -950,22 +954,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopPosition <= previous.loopEndSamples
       ) {
         if (this.enableLoopSmoothing) {
-          // What the old loop plays this frame. At its edge, a turn reflects the
-          // playhead, while a jump starts its crossfade from the unmoved playhead.
-          let moveOutgoingPosition = this.playbackPosition;
-          const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
-          if (turns && this.loopCount < parameters.maxLoopCount[0]) {
-            const direction = this.loopTurned ? -approachDirection : approachDirection;
-            moveOutgoingPosition =
-              reflectLoopPosition(
-                moveOutgoingPosition,
-                direction,
-                previous.loopStartSamples,
-                previous.loopEndSamples,
-              ) ?? moveOutgoingPosition;
-          }
+          // From the unmoved playhead, before any edge it passes this frame
           this.loopCrossfade.start(
-            moveOutgoingPosition,
+            this.playbackPosition,
+            this.loopTurned ? -approachDirection : approachDirection,
             this.#crossfadeLength(loopRange),
             previous.loopEndSamples > playbackRange.endSamples,
           );
@@ -1109,7 +1101,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           Math.min(1, isFinite(panAdjustedSample) ? panAdjustedSample : 0),
         );
       }
-      this.loopCrossfade.advance(playbackStep);
+      this.loopCrossfade.advance(Math.abs(playbackStep));
 
       // Remember the rendered position, before a fractional step can overshoot
       // the edge. The next sample must carry that overshoot with a moving loop.
