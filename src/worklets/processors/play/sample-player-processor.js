@@ -53,9 +53,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // getter below. Extra entries only contribute samples to the mix.
     this.audioData = [];
     this.audioDataGain = 1;
+    this.velocitySensitivity = 1.0; // full velocity = unity gain
+
     this.loopEnabled = false;
     this.reversePlayback = false;
     this.panDriftEnabled = true;
+    this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
     this.usePlaybackPosition = false;
     this.enableLoopSmoothing = true; // Crossfade between loop points
@@ -244,7 +247,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isPlaying = false;
     this.pendingStartFrame = 0;
     this.triggerId = 0;
-    this.velocitySensitivity = 1.0; // full velocity = unity gain
 
     this.previousApproachDirection = null;
     // True while cycling a loop against the approach direction (backward loops,
@@ -265,7 +267,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.driftUpdateCounter = 0;
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
-    this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
     this.nextDriftGenerated = false;
 
