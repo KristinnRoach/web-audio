@@ -67,4 +67,36 @@ describe('loop wrap compensation', () => {
     expect(output[0][0]).toBeCloseTo(0.2, 6);
     expect(output[1][0]).toBeCloseTo(0.2, 6);
   });
+
+  it.each([0.01, 512])(
+    'keeps wrap smoothing when moving by %s samples at the wrap',
+    async (shift) => {
+      const processor = await startProcessor([], [187.5 / 48_000]);
+      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+      const source = new Float32Array(48_000).fill(-0.4);
+      source.fill(0.2, 0, 188);
+      source[187] = 0.8;
+      send({
+        type: 'voice:setBuffer',
+        buffer: [source, new Float32Array(48_000)],
+        durationSeconds: 1,
+      });
+      send({ type: 'voice:start' });
+      const before = [new Float32Array(188), new Float32Array(188)];
+      processor.process([], [before], makeParameters({ loopEnd: 187.5 / 48_000 }));
+
+      const after = [new Float32Array(1), new Float32Array(1)];
+      processor.process(
+        [],
+        [after],
+        makeParameters({ loopStart: shift / 48_000, loopEnd: (187.5 + shift) / 48_000 }),
+      );
+
+      // Relocation restores the old loop's incoming 0.2; wrap smoothing eases
+      // the remaining 0.8 -> 0.2 step, without correcting relocation twice.
+      expect(before[0][187]).toBeCloseTo(0.8, 6);
+      expect(after[0][0]).toBeCloseTo(0.5, 5);
+      expect(after[1][0]).toBe(0);
+    },
+  );
 });

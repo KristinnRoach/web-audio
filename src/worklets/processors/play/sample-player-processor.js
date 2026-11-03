@@ -288,10 +288,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   // Ease a loop wrap's step on one channel: from the last emitted source sample
   // (0 in the silent tail) to the first of the next pass.
-  #smoothLoopWrap(sample, channel, tailGain, wrapped) {
+  #smoothLoopWrap(sample, channel, tailGain, wrapped, moveDiscontinuity) {
     const source = sample * tailGain;
     if (wrapped) {
-      const discontinuity = (this.lastSourceSamples[channel] ?? source) - source;
+      // Relocation separately restores the old loop's continuation. Measure
+      // only the remaining wrap step, so movement is not corrected twice.
+      const incoming = (sample + moveDiscontinuity) * tailGain;
+      const discontinuity = (this.lastSourceSamples[channel] ?? incoming) - incoming;
       if (Math.abs(discontinuity) > 0.01) this.loopWrapCorrections[channel] = discontinuity * 0.5;
     }
     this.lastSourceSamples[channel] = source;
@@ -1140,13 +1143,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           moveDiscontinuity = outgoingSample - interpolatedSample;
         }
 
-        // A loop move this frame already compares against the old loop's
-        // continuation, so it takes over the wrap's step.
         interpolatedSample = this.#smoothLoopWrap(
           interpolatedSample,
           channel,
           tailGain,
-          this.loopWrapPending && moveOutgoingPosition === null,
+          this.loopWrapPending,
+          moveDiscontinuity,
         );
 
         interpolatedSample = this.#smoothLoopMove(interpolatedSample, channel, moveDiscontinuity);
