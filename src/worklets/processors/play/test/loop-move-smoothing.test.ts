@@ -2,18 +2,18 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   makeParameters,
   setupProcessorGlobals,
-  startLegacyProcessor,
+  startProcessor,
   TEST_SAMPLE_RATE,
 } from './range-test-helpers';
 
 setupProcessorGlobals();
 
 describe('audio-rate loop movement smoothing', () => {
-  it('does not read beyond the outgoing loop when a move coincides with a wrap', async () => {
+  it('matches the unmoved voice when a tiny move coincides with a wrap', async () => {
     const period = 187.5;
     const processors = await Promise.all(
       [0, 1].map(async () => {
-        const processor = await startLegacyProcessor([], [period / TEST_SAMPLE_RATE]);
+        const processor = await startProcessor([], [period / TEST_SAMPLE_RATE]);
         processor.port.onmessage?.({
           data: {
             type: 'voice:setBuffer',
@@ -50,12 +50,45 @@ describe('audio-rate loop movement smoothing', () => {
       );
       return result[0];
     });
-    expect(output[0]).toBeCloseTo(0, 5);
     expect(output[1]).toBeCloseTo(output[0], 5);
   });
 
+  it.each([
+    { frames: 2500, expected: 0 },
+    { frames: 2385, expected: 0.4 * (30 / 64) },
+  ])(
+    'retains the old tail gain when relocating after $frames frames',
+    async ({ frames, expected }) => {
+      const processor = await startProcessor();
+      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+      send({
+        type: 'voice:setBuffer',
+        buffer: [new Float32Array(4800).fill(0.4), new Float32Array(4800)],
+        durationSeconds: 0.1,
+      });
+      send({ type: 'setKeytrackLoopAmount', value: 1 });
+      send({ type: 'voice:start' });
+      processor.process(
+        [],
+        [[new Float32Array(frames), new Float32Array(frames)]],
+        makeParameters({ loopEnd: 0.1, playbackRate: 2 }),
+      );
+
+      const output = [new Float32Array(1), new Float32Array(1)];
+      processor.process(
+        [],
+        [output],
+        makeParameters({ loopStart: 0.05, loopEnd: 0.06, playbackRate: 2 }),
+      );
+      // The new short loop has no padded tail. Relocation must restore the old
+      // loop's audible continuation, including its silence or partial tail fade.
+      expect(output[0][0]).toBeCloseTo(expected, 6);
+      expect(output[1][0]).toBe(0);
+    },
+  );
+
   it('keeps the waveform advancing during continuous a-rate movement', async () => {
-    const processor = await startLegacyProcessor([], [0.004, 0.008]);
+    const processor = await startProcessor([], [0.004, 0.008]);
     processor.port.onmessage?.({
       data: {
         type: 'voice:setBuffer',
@@ -86,7 +119,7 @@ describe('audio-rate loop movement smoothing', () => {
     async ({ mode, frames }) => {
       const processors = await Promise.all(
         [0, 1].map(async () => {
-          const processor = await startLegacyProcessor([], [1 / 512, 1 / 256]);
+          const processor = await startProcessor([], [1 / 512, 1 / 256]);
           processor.port.onmessage?.({
             data: {
               type: 'voice:setBuffer',
@@ -138,7 +171,7 @@ describe('audio-rate loop movement smoothing', () => {
   it.each([1, 2])(
     'smooths repeated stereo moves without changing phase at rate %s',
     async (rate) => {
-      const processor = await startLegacyProcessor([], [0.004, 0.008]);
+      const processor = await startProcessor([], [0.004, 0.008]);
       const left = Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) =>
         i < TEST_SAMPLE_RATE * 0.05 ? 0.4 : -0.4,
       );

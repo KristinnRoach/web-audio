@@ -6,7 +6,6 @@ import { LoopCrossfade } from './loop-crossfade.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
 // Closer to 1 extends smoothing. At 48 kHz, 0.9 decays by 99% in about 1 ms.
-const LOOP_WRAP_CORRECTION_DECAY = 0.9;
 const LOOP_MOVE_CORRECTION_DECAY = 0.9;
 // Loop-jump crossfade length in source samples (~5 ms at 48 kHz).
 const LOOP_CROSSFADE_SAMPLES = 256;
@@ -73,8 +72,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.usePlaybackPosition = false;
     this.enableLoopSmoothing = true; // Crossfade between loop points
-    // Prototype: crossfade loop jumps instead of the decaying de-click offset
-    this.loopCrossfadeEnabled = true;
     this.loopCrossfade = new LoopCrossfade();
     this.enableAdaptiveDrift = true; // Adaptive drift scaling based on loop duration
     this.syncLoopToTempo = false; // Todo: add controls for interactive testing
@@ -185,9 +182,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.loopGlideLogLength = null; // new notes start on the target length
         this.previousLoopRange = null;
         this.loopMoveCorrections = [];
-        this.loopWrapPending = false;
-        this.loopWrapCorrections = [];
-        this.lastSourceSamples = [];
         this.loopCrossfade.reset();
         this.postedRanges = {}; // each note posts its first resolved range
 
@@ -279,11 +273,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.previousLoopRange = null;
 
     this.loopMoveCorrections = [];
-    // Loop-wrap de-click, per output channel: armed at a wrap, measured and
-    // applied in the channel loop against the previous frame's source sample.
-    this.loopWrapPending = false;
-    this.loopWrapCorrections = [];
-    this.lastSourceSamples = [];
     this.loopCrossfade.reset();
 
     // Loop & Pan drift feature
@@ -303,26 +292,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.needsStartPosition = false;
   }
 
-  // Ease a loop wrap's step on one channel: from the last emitted source sample
-  // (0 in the silent tail) to the first of the next pass.
-  #smoothLoopWrap(sample, channel, wrapped, moveDiscontinuity) {
-    if (wrapped) {
-      // Relocation separately restores the old loop's continuation. Measure
-      // only the remaining wrap step, so movement is not corrected twice.
-      const incoming = sample + moveDiscontinuity;
-      const discontinuity = (this.lastSourceSamples[channel] ?? incoming) - incoming;
-      if (Math.abs(discontinuity) > 0.01) this.loopWrapCorrections[channel] = discontinuity * 0.5;
-    }
-    this.lastSourceSamples[channel] = sample;
-
-    const correction = this.loopWrapCorrections[channel];
-    if (!correction) return sample;
-    // Exponential decay; the absolute cutoff keeps very small corrections short.
-    const next = correction * LOOP_WRAP_CORRECTION_DECAY;
-    this.loopWrapCorrections[channel] = Math.abs(next) < 0.001 ? 0 : next;
-    return sample + correction;
-  }
-
   #smoothLoopMove(sample, channel, discontinuity) {
     // Correct only the relocation jump, allowing normal playback to advance.
     const correction = (this.loopMoveCorrections[channel] ?? 0) + discontinuity;
@@ -337,7 +306,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopMode, loopRange, playbackRate, cycleTime) {
+  #passLoopEdge(approachDirection, loopMode, loopRange, cycleTime) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { loopStartSamples: loopStart, loopEndSamples: loopEnd } = loopRange;
     const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
@@ -349,16 +318,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (turns) {
       // The playhead keeps reading neighbouring samples, so there is no step to smooth
       this.loopTurned = !this.loopTurned;
-    } else if (this.loopCrossfadeEnabled) {
+    } else if (this.enableLoopSmoothing) {
       // Capped to a fraction of the loop, so short loops get short fades
       const length = Math.min(LOOP_CROSSFADE_SAMPLES, loopRange.loopDurationSamples / 4);
-      if (this.enableLoopSmoothing) this.loopCrossfade.start(this.playbackPosition, length);
-    } else {
-      // Smooth the jump this frame, except for high-rate audio loops
-      const isHighRateAudioLoop =
-        loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
-        Math.abs(playbackRate) > 1;
-      this.loopWrapPending = this.enableLoopSmoothing && !isHighRateAudioLoop;
+      this.loopCrossfade.start(this.playbackPosition, length);
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
@@ -996,15 +959,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopPosition <= previous.loopEndSamples
       ) {
         if (this.enableLoopSmoothing) {
-          // Continue the old loop independently: a simultaneous length change
-          // can make the new range wrap/turn at a different source position.
+          // What the old loop plays this frame. At its edge, a turn reflects the
+          // playhead, while a jump starts its crossfade from the unmoved playhead.
           moveOutgoingPosition = this.playbackPosition;
-          if (this.loopCount < parameters.maxLoopCount[0]) {
+          const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
+          if (turns && this.loopCount < parameters.maxLoopCount[0]) {
             const direction = this.loopTurned ? -approachDirection : approachDirection;
-            const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
-            const mapEdge = turns ? reflectLoopPosition : wrapLoopPosition;
             moveOutgoingPosition =
-              mapEdge(
+              reflectLoopPosition(
                 moveOutgoingPosition,
                 direction,
                 previous.loopStartSamples,
@@ -1039,7 +1001,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           approachDirection,
           loopMode,
           loopRange,
-          rate,
           currentTime + sample / sampleRate,
         );
       }
@@ -1129,28 +1090,29 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           const outgoing = this.#sumAudioData(timestretchOutgoingPosition, channel, lastAudioIndex);
           interpolatedSample = outgoing + timestretchCrossfadeMix * (interpolatedSample - outgoing);
         }
-        // Measure and apply de-click corrections in the audible source domain,
-        // so the silent tail cannot mute a correction at a reverse wrap.
+        // Smooth in the audible source domain, so the silent tail cannot mute
+        // the outgoing side of a reverse wrap.
         interpolatedSample *= tailGain;
+        let crossfadeOutgoing = 0;
         if (crossfadePosition !== null) {
-          const outgoing =
+          crossfadeOutgoing =
             this.#sumAudioData(crossfadePosition, channel, lastAudioIndex) * crossfadeTailGain;
-          interpolatedSample = outgoing + crossfadeMix * (interpolatedSample - outgoing);
+          interpolatedSample =
+            crossfadeOutgoing + crossfadeMix * (interpolatedSample - crossfadeOutgoing);
         }
         // Compare the old loop's continuation with the relocated playhead.
         let moveDiscontinuity = 0;
         if (moveOutgoingPosition !== null) {
-          const outgoingSample = this.#sumAudioData(moveOutgoingPosition, channel, lastAudioIndex);
-          moveDiscontinuity = outgoingSample * outgoingTailGain - interpolatedSample;
+          let outgoingSample =
+            this.#sumAudioData(moveOutgoingPosition, channel, lastAudioIndex) * outgoingTailGain;
+          // A jump crossfade already under way is part of what the old loop plays.
+          // One starting this frame (mix 0) began at the move's own reference.
+          if (crossfadePosition !== null && crossfadeMix > 0) {
+            outgoingSample =
+              crossfadeOutgoing + crossfadeMix * (outgoingSample - crossfadeOutgoing);
+          }
+          moveDiscontinuity = outgoingSample - interpolatedSample;
         }
-
-        interpolatedSample = this.#smoothLoopWrap(
-          interpolatedSample,
-          channel,
-          this.loopWrapPending,
-          moveDiscontinuity,
-        );
-
         interpolatedSample = this.#smoothLoopMove(interpolatedSample, channel, moveDiscontinuity);
 
         const finalSample = interpolatedSample * velocityGain * envelopeGain * masterGain;
@@ -1173,7 +1135,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           Math.min(1, isFinite(panAdjustedSample) ? panAdjustedSample : 0),
         );
       }
-      this.loopWrapPending = false;
       this.loopCrossfade.advance(playbackStep);
 
       // Remember the rendered position, before a fractional step can overshoot
