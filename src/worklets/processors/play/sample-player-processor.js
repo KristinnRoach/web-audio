@@ -15,6 +15,12 @@ function interpolate(samples, position, lastIndex) {
   return a + weight * (b - a);
 }
 
+function tailGainAt(position, audioEndSamples, fadeSamples) {
+  const distance = audioEndSamples - position;
+  if (distance <= 0) return 0;
+  return fadeSamples > 0 ? Math.min(1, distance / fadeSamples) : 1;
+}
+
 /**
  * Resolves two raw points into an ordered range inside [lo, hi], at least
  * `minLength` long (or as long as the bounds allow). Points arrive raw from the
@@ -1105,12 +1111,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       }
 
       // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail
-      let tailGain = 1;
-      if (silencePadTail) {
-        const distToEnd = playbackRange.endSamples - this.playbackPosition;
-        if (distToEnd <= 0) tailGain = 0;
-        else if (distToEnd < this.tailFadeSamples) tailGain = distToEnd / this.tailFadeSamples;
-      }
+      const tailGain = silencePadTail
+        ? tailGainAt(this.playbackPosition, playbackRange.endSamples, this.tailFadeSamples)
+        : 1;
+      const outgoingTailGain =
+        moveOutgoingPosition !== null && previous.loopEndSamples > playbackRange.endSamples
+          ? tailGainAt(moveOutgoingPosition, playbackRange.endSamples, this.tailFadeSamples)
+          : 1;
 
       // Sample interpolation, direction-independent: between the sample at and
       // after the playhead. Indices clamp to the last audio sample: endSamples can
@@ -1143,7 +1150,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         let moveDiscontinuity = 0;
         if (moveOutgoingPosition !== null) {
           const outgoingSample = this.#sumAudioData(moveOutgoingPosition, channel, lastAudioIndex);
-          moveDiscontinuity = outgoingSample * tailGain - interpolatedSample;
+          moveDiscontinuity = outgoingSample * outgoingTailGain - interpolatedSample;
         }
 
         interpolatedSample = this.#smoothLoopWrap(

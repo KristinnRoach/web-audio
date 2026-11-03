@@ -32,6 +32,40 @@ function expectHalfwayAt(channel: Float32Array, wrapFrame: number, incoming: num
 
 describe('loop wrap compensation', () => {
   it.each([
+    { frames: 2500, expected: 0 },
+    { frames: 2385, expected: 0.4 * (30 / 64) },
+  ])(
+    'retains the old tail gain when relocating after $frames frames',
+    async ({ frames, expected }) => {
+      const processor = await startProcessor();
+      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+      send({
+        type: 'voice:setBuffer',
+        buffer: [new Float32Array(4800).fill(0.4), new Float32Array(4800)],
+        durationSeconds: 0.1,
+      });
+      send({ type: 'setKeytrackLoopAmount', value: 1 });
+      send({ type: 'voice:start' });
+      processor.process(
+        [],
+        [[new Float32Array(frames), new Float32Array(frames)]],
+        makeParameters({ loopEnd: 0.1, playbackRate: 2 }),
+      );
+
+      const output = [new Float32Array(1), new Float32Array(1)];
+      processor.process(
+        [],
+        [output],
+        makeParameters({ loopStart: 0.05, loopEnd: 0.06, playbackRate: 2 }),
+      );
+      // The new short loop has no padded tail. Relocation must restore the old
+      // loop's audible continuation, including its silence or partial tail fade.
+      expect(output[0][0]).toBeCloseTo(expected, 6);
+      expect(output[1][0]).toBe(0);
+    },
+  );
+
+  it.each([
     { direction: 'forward', wrapFrame: 4800, previous: 0, next: 0.22, settled: 0.4 },
     { direction: 'reverse', wrapFrame: 2400, previous: 0.4, next: 0.18, settled: 0 },
   ])(
