@@ -2,9 +2,12 @@ import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-pa
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
-import { getDeclickTiming } from './declick-timing.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
+// Closer to 1 extends smoothing. At 48 kHz, 0.9 decays by 99% in about 1 ms.
+const LOOP_WRAP_CORRECTION_DECAY = 0.9;
+const LOOP_MOVE_CORRECTION_DECAY = 0.9;
+const TAIL_FADE_SAMPLES = 64;
 
 // Linear interpolation of one channel's samples at a fractional position.
 function interpolate(samples, position, lastIndex) {
@@ -15,10 +18,8 @@ function interpolate(samples, position, lastIndex) {
   return a + weight * (b - a);
 }
 
-function tailGainAt(position, audioEndSamples, fadeSamples) {
-  const distance = audioEndSamples - position;
-  if (distance <= 0) return 0;
-  return fadeSamples > 0 ? Math.min(1, distance / fadeSamples) : 1;
+function tailGainAt(position, audioEndSamples) {
+  return Math.max(0, Math.min(1, (audioEndSamples - position) / TAIL_FADE_SAMPLES));
 }
 
 /**
@@ -65,6 +66,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
     this.usePlaybackPosition = false;
+    this.enableLoopSmoothing = true; // Crossfade between loop points
     this.enableAdaptiveDrift = true; // Adaptive drift scaling based on loop duration
     this.syncLoopToTempo = false; // Todo: add controls for interactive testing
     // Ping-pong turns around at both loop edges and overrides loop point order.
@@ -75,11 +77,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.keytrackLoopAmount = 0;
 
     this.timestretch = new SpliceStretcher(sampleRate);
-    const timing = getDeclickTiming(sampleRate);
-    this.loopWrapDecay = timing.wrapCorrectionDecay;
-    this.loopMoveDecay = timing.moveCorrectionDecay;
-    this.tailFadeSamples = timing.tailFadeSamples;
-    this.enableLoopSmoothing = true;
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
@@ -310,7 +307,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const correction = this.loopWrapCorrections[channel];
     if (!correction) return sample;
     // Exponential decay; the absolute cutoff keeps very small corrections short.
-    const next = correction * this.loopWrapDecay;
+    const next = correction * LOOP_WRAP_CORRECTION_DECAY;
     this.loopWrapCorrections[channel] = Math.abs(next) < 0.001 ? 0 : next;
     return sample + correction;
   }
@@ -319,7 +316,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Correct only the relocation jump, allowing normal playback to advance.
     const correction = (this.loopMoveCorrections[channel] ?? 0) + discontinuity;
     this.loopMoveCorrections[channel] =
-      Math.abs(correction) < 0.00001 ? 0 : correction * this.loopMoveDecay;
+      Math.abs(correction) < 0.00001 ? 0 : correction * LOOP_MOVE_CORRECTION_DECAY;
     return sample + correction;
   }
 
@@ -346,8 +343,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const isHighRateAudioLoop =
         loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
         Math.abs(playbackRate) > 1;
-      this.loopWrapPending =
-        this.enableLoopSmoothing && this.loopWrapDecay > 0 && !isHighRateAudioLoop;
+      this.loopWrapPending = this.enableLoopSmoothing && !isHighRateAudioLoop;
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
@@ -1015,7 +1011,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopPosition >= previous.loopStartSamples &&
         this.previousLoopPosition <= previous.loopEndSamples
       ) {
-        if (this.enableLoopSmoothing && this.loopMoveDecay > 0) {
+        if (this.enableLoopSmoothing) {
           // Continue the old loop independently: a simultaneous length change
           // can make the new range wrap/turn at a different source position.
           moveOutgoingPosition = this.playbackPosition;
@@ -1112,11 +1108,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail
       const tailGain = silencePadTail
-        ? tailGainAt(this.playbackPosition, playbackRange.endSamples, this.tailFadeSamples)
+        ? tailGainAt(this.playbackPosition, playbackRange.endSamples)
         : 1;
       const outgoingTailGain =
         moveOutgoingPosition !== null && previous.loopEndSamples > playbackRange.endSamples
-          ? tailGainAt(moveOutgoingPosition, playbackRange.endSamples, this.tailFadeSamples)
+          ? tailGainAt(moveOutgoingPosition, playbackRange.endSamples)
           : 1;
 
       // Sample interpolation, direction-independent: between the sample at and
