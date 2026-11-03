@@ -47,9 +47,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     super();
 
     // Only set properties that should persist across resets.
-    // audioData[0] is the authority: every buffer-derived range (duration, playback
-    // range, click compensation) reads it via the `buffer`
-    // getter below. Extra entries only contribute samples to the mix.
+    // audioData[0] defines duration and playback ranges via the `buffer` getter.
+    // All entries contribute to the mix used for rendering and de-click correction.
     this.audioData = [];
     this.audioDataGain = 1;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
@@ -71,9 +70,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     this.timestretch = new SpliceStretcher(sampleRate);
     const timing = getDeclickTiming(sampleRate);
-    this.loopCorrectionDecay = timing.correctionDecay;
+    this.loopWrapDecay = timing.wrapCorrectionDecay;
+    this.loopMoveDecay = timing.moveCorrectionDecay;
     this.tailFadeSamples = timing.tailFadeSamples;
-    this.enableLoopSmoothing = timing.tailFadeSamples > 0;
+    this.enableLoopSmoothing = true;
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
@@ -101,6 +101,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return Math.min(sampleRate / 523.25, this.loopQuantizePeriods?.[0] ?? Infinity);
   }
 
+  // Source-domain short-loop cutoff in samples, shared by musical loop policies.
   get pitchPreservationThreshold() {
     return (
       this.loopQuantizePeriods?.at(-1) ??
@@ -303,7 +304,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const correction = this.loopWrapCorrections[channel];
     if (!correction) return sample;
     // Exponential decay; the absolute cutoff keeps very small corrections short.
-    const next = correction * this.loopCorrectionDecay;
+    const next = correction * this.loopWrapDecay;
     this.loopWrapCorrections[channel] = Math.abs(next) < 0.001 ? 0 : next;
     return sample + correction;
   }
@@ -312,7 +313,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Correct only the relocation jump, allowing normal playback to advance.
     const correction = (this.loopMoveCorrections[channel] ?? 0) + discontinuity;
     this.loopMoveCorrections[channel] =
-      Math.abs(correction) < 0.00001 ? 0 : correction * this.loopCorrectionDecay;
+      Math.abs(correction) < 0.00001 ? 0 : correction * this.loopMoveDecay;
     return sample + correction;
   }
 
@@ -339,7 +340,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const isHighRateAudioLoop =
         loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
         Math.abs(playbackRate) > 1;
-      this.loopWrapPending = this.enableLoopSmoothing && !isHighRateAudioLoop;
+      this.loopWrapPending =
+        this.enableLoopSmoothing && this.loopWrapDecay > 0 && !isHighRateAudioLoop;
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
@@ -1007,7 +1009,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopPosition >= previous.loopStartSamples &&
         this.previousLoopPosition <= previous.loopEndSamples
       ) {
-        if (this.enableLoopSmoothing) {
+        if (this.enableLoopSmoothing && this.loopMoveDecay > 0) {
           // Continue the old loop independently: a simultaneous length change
           // can make the new range wrap/turn at a different source position.
           moveOutgoingPosition = this.playbackPosition;
