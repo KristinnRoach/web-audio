@@ -17,6 +17,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
+  loopCrossfadeEnabled: boolean;
   loopWrapCorrections: number[];
   loopCount: number;
   port: WorkletPort;
@@ -55,6 +56,7 @@ async function renderThroughFirstWrap({
 }): Promise<TestProcessor> {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
+  processor.loopCrossfadeEnabled = false;
   const channel = new Float32Array(loopLengthSamples);
   channel[0] = -0.25;
   channel[channel.length - 1] = 0.25;

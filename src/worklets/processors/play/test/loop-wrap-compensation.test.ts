@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { makeParameters, setupProcessorGlobals, startProcessor } from './range-test-helpers';
+import { makeParameters, setupProcessorGlobals, startLegacyProcessor } from './range-test-helpers';
 
 setupProcessorGlobals();
 
@@ -15,7 +15,7 @@ function spiked(level: number) {
 }
 
 async function play(buffer: Float32Array[], frames: number, playbackRate = 1) {
-  const processor = await startProcessor();
+  const processor = await startLegacyProcessor();
   const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
   send({ type: 'voice:setBuffer', buffer, durationSeconds: 1 });
   send({ type: 'voice:start', triggerId: 1 });
@@ -37,7 +37,7 @@ describe('loop wrap compensation', () => {
   ])(
     'retains the old tail gain when relocating after $frames frames',
     async ({ frames, expected }) => {
-      const processor = await startProcessor();
+      const processor = await startLegacyProcessor();
       const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
       send({
         type: 'voice:setBuffer',
@@ -71,7 +71,7 @@ describe('loop wrap compensation', () => {
   ])(
     'smooths a $direction keytracked wrap across the silent tail',
     async ({ direction, wrapFrame, previous, next, settled }) => {
-      const processor = await startProcessor();
+      const processor = await startLegacyProcessor();
       const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
       send({
         type: 'voice:setBuffer',
@@ -137,7 +137,7 @@ describe('loop wrap compensation', () => {
   it.each([0.01, 512])(
     'keeps wrap smoothing when moving by %s samples at the wrap',
     async (shift) => {
-      const processor = await startProcessor([], [187.5 / 48_000]);
+      const processor = await startLegacyProcessor([], [187.5 / 48_000]);
       const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
       const source = new Float32Array(48_000).fill(-0.4);
       source.fill(0.2, 0, 188);

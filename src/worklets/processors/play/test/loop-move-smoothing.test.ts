@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   makeParameters,
   setupProcessorGlobals,
-  startProcessor,
+  startLegacyProcessor,
   TEST_SAMPLE_RATE,
 } from './range-test-helpers';
 
@@ -13,7 +13,7 @@ describe('audio-rate loop movement smoothing', () => {
     const period = 187.5;
     const processors = await Promise.all(
       [0, 1].map(async () => {
-        const processor = await startProcessor([], [period / TEST_SAMPLE_RATE]);
+        const processor = await startLegacyProcessor([], [period / TEST_SAMPLE_RATE]);
         processor.port.onmessage?.({
           data: {
             type: 'voice:setBuffer',
@@ -55,7 +55,7 @@ describe('audio-rate loop movement smoothing', () => {
   });
 
   it('keeps the waveform advancing during continuous a-rate movement', async () => {
-    const processor = await startProcessor([], [0.004, 0.008]);
+    const processor = await startLegacyProcessor([], [0.004, 0.008]);
     processor.port.onmessage?.({
       data: {
         type: 'voice:setBuffer',
@@ -86,7 +86,7 @@ describe('audio-rate loop movement smoothing', () => {
     async ({ mode, frames }) => {
       const processors = await Promise.all(
         [0, 1].map(async () => {
-          const processor = await startProcessor([], [1 / 512, 1 / 256]);
+          const processor = await startLegacyProcessor([], [1 / 512, 1 / 256]);
           processor.port.onmessage?.({
             data: {
               type: 'voice:setBuffer',
@@ -138,7 +138,7 @@ describe('audio-rate loop movement smoothing', () => {
   it.each([1, 2])(
     'smooths repeated stereo moves without changing phase at rate %s',
     async (rate) => {
-      const processor = await startProcessor([], [0.004, 0.008]);
+      const processor = await startLegacyProcessor([], [0.004, 0.008]);
       const left = Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) =>
         i < TEST_SAMPLE_RATE * 0.05 ? 0.4 : -0.4,
       );

@@ -18,6 +18,7 @@ export type TestProcessor = {
   readonly pitchPreservationThreshold: number;
   playbackPosition: number;
   minRangeSamples: number;
+  loopCrossfadeEnabled: boolean;
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -96,4 +97,14 @@ export function setupProcessorGlobals() {
   afterAll(() => {
     vi.unstubAllGlobals();
   });
+}
+
+/** startProcessor on the legacy loop-wrap de-click path instead of the jump crossfade. */
+export async function startLegacyProcessor(
+  zeroCrossingSeconds: number[] = [],
+  quantizePeriodsSeconds?: number[],
+) {
+  const processor = await startProcessor(zeroCrossingSeconds, quantizePeriodsSeconds);
+  processor.loopCrossfadeEnabled = false;
+  return processor;
 }
