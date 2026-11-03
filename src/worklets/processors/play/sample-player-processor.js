@@ -2,10 +2,9 @@ import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-pa
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
+import { getDeclickTiming } from './declick-timing.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
-// Closer to 1 extends smoothing. At 48 kHz, 0.9 decays by 99% in about 1 ms.
-const LOOP_MOVE_CORRECTION_DECAY = 0.9;
 
 // Linear interpolation of one channel's samples at a fractional position.
 function interpolate(samples, position, lastIndex) {
@@ -61,7 +60,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
     this.usePlaybackPosition = false;
-    this.enableLoopSmoothing = true; // Crossfade between loop points
     this.enableAdaptiveDrift = true; // Adaptive drift scaling based on loop duration
     this.syncLoopToTempo = false; // Todo: add controls for interactive testing
     // Ping-pong turns around at both loop edges and overrides loop point order.
@@ -72,6 +70,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.keytrackLoopAmount = 0;
 
     this.timestretch = new SpliceStretcher(sampleRate);
+    const timing = getDeclickTiming(sampleRate);
+    this.loopCorrectionDecay = timing.correctionDecay;
+    this.tailFadeSamples = timing.tailFadeSamples;
+    this.enableLoopSmoothing = timing.tailFadeSamples > 0;
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
@@ -288,21 +290,20 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   // Ease a loop wrap's step on one channel: from the last emitted source sample
   // (0 in the silent tail) to the first of the next pass.
-  #smoothLoopWrap(sample, channel, tailGain, wrapped, moveDiscontinuity) {
-    const source = sample * tailGain;
+  #smoothLoopWrap(sample, channel, wrapped, moveDiscontinuity) {
     if (wrapped) {
       // Relocation separately restores the old loop's continuation. Measure
       // only the remaining wrap step, so movement is not corrected twice.
-      const incoming = (sample + moveDiscontinuity) * tailGain;
+      const incoming = sample + moveDiscontinuity;
       const discontinuity = (this.lastSourceSamples[channel] ?? incoming) - incoming;
       if (Math.abs(discontinuity) > 0.01) this.loopWrapCorrections[channel] = discontinuity * 0.5;
     }
-    this.lastSourceSamples[channel] = source;
+    this.lastSourceSamples[channel] = sample;
 
     const correction = this.loopWrapCorrections[channel];
     if (!correction) return sample;
-    // Exponential decay, inaudible within ~50 samples
-    const next = correction * 0.9;
+    // Exponential decay; the absolute cutoff keeps very small corrections short.
+    const next = correction * this.loopCorrectionDecay;
     this.loopWrapCorrections[channel] = Math.abs(next) < 0.001 ? 0 : next;
     return sample + correction;
   }
@@ -311,7 +312,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Correct only the relocation jump, allowing normal playback to advance.
     const correction = (this.loopMoveCorrections[channel] ?? 0) + discontinuity;
     this.loopMoveCorrections[channel] =
-      Math.abs(correction) < 0.00001 ? 0 : correction * LOOP_MOVE_CORRECTION_DECAY;
+      Math.abs(correction) < 0.00001 ? 0 : correction * this.loopCorrectionDecay;
     return sample + correction;
   }
 
@@ -897,8 +898,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     const isConstant = this.#getConstantFlags(parameters);
 
-    const TAIL_FADE_SAMPLES = 64;
-
     // ===== Init playback position =====
 
     // Last position on the unit-rate grid, even when minimum-length growth is fractional.
@@ -1107,9 +1106,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       let tailGain = 1;
       if (silencePadTail) {
         const distToEnd = playbackRange.endSamples - this.playbackPosition;
-        if (distToEnd < TAIL_FADE_SAMPLES) {
-          tailGain = Math.max(0, distToEnd / TAIL_FADE_SAMPLES);
-        }
+        if (distToEnd <= 0) tailGain = 0;
+        else if (distToEnd < this.tailFadeSamples) tailGain = distToEnd / this.tailFadeSamples;
       }
 
       // Sample interpolation, direction-independent: between the sample at and
@@ -1136,25 +1134,26 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           const outgoing = this.#sumAudioData(timestretchOutgoingPosition, channel, lastAudioIndex);
           interpolatedSample = outgoing + timestretchCrossfadeMix * (interpolatedSample - outgoing);
         }
+        // Measure and apply de-click corrections in the audible source domain,
+        // so the silent tail cannot mute a correction at a reverse wrap.
+        interpolatedSample *= tailGain;
         // Compare the old loop's continuation with the relocated playhead.
         let moveDiscontinuity = 0;
         if (moveOutgoingPosition !== null) {
           const outgoingSample = this.#sumAudioData(moveOutgoingPosition, channel, lastAudioIndex);
-          moveDiscontinuity = outgoingSample - interpolatedSample;
+          moveDiscontinuity = outgoingSample * tailGain - interpolatedSample;
         }
 
         interpolatedSample = this.#smoothLoopWrap(
           interpolatedSample,
           channel,
-          tailGain,
           this.loopWrapPending,
           moveDiscontinuity,
         );
 
         interpolatedSample = this.#smoothLoopMove(interpolatedSample, channel, moveDiscontinuity);
 
-        const finalSample =
-          interpolatedSample * velocityGain * envelopeGain * masterGain * tailGain;
+        const finalSample = interpolatedSample * velocityGain * envelopeGain * masterGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;

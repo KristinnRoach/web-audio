@@ -31,6 +31,38 @@ function expectHalfwayAt(channel: Float32Array, wrapFrame: number, incoming: num
 }
 
 describe('loop wrap compensation', () => {
+  it.each([
+    { direction: 'forward', wrapFrame: 4800, previous: 0, next: 0.22, settled: 0.4 },
+    { direction: 'reverse', wrapFrame: 2400, previous: 0.4, next: 0.18, settled: 0 },
+  ])(
+    'smooths a $direction keytracked wrap across the silent tail',
+    async ({ direction, wrapFrame, previous, next, settled }) => {
+      const processor = await startProcessor();
+      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+      send({
+        type: 'voice:setBuffer',
+        buffer: [new Float32Array(4800).fill(0.4), new Float32Array(4800)],
+        durationSeconds: 0.1,
+      });
+      send({ type: 'setKeytrackLoopAmount', value: 1 });
+      send({ type: 'voice:setPlaybackDirection', playbackDirection: direction });
+      send({ type: 'voice:start' });
+      const output = [new Float32Array(wrapFrame + 128), new Float32Array(wrapFrame + 128)];
+      // The correction must still pass through the musical envelope and master gain.
+      processor.process(
+        [],
+        [output],
+        makeParameters({ loopEnd: 0.1, playbackRate: 2, envGain: 0.5, masterGain: 0.5 }),
+      );
+
+      expect(output[0][wrapFrame - 1]).toBeCloseTo(previous * 0.25, 6);
+      expect(output[0][wrapFrame]).toBeCloseTo(0.2 * 0.25, 6);
+      expect(output[0][wrapFrame + 1]).toBeCloseTo(next * 0.25, 6);
+      expect(output[0][wrapFrame + 127]).toBeCloseTo(settled * 0.25, 6);
+      expect(output[1].every((value) => value === 0)).toBe(true);
+    },
+  );
+
   it('corrects both channels identically for a mono buffer', async () => {
     const { output } = await play([spiked(0.2)], 6100);
     const [left, right] = output;
