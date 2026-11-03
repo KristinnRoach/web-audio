@@ -8,6 +8,9 @@ const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
 const LOOP_WRAP_CORRECTION_DECAY = 0.9;
 const LOOP_MOVE_CORRECTION_DECAY = 0.9;
 const TAIL_FADE_SAMPLES = 64;
+// Beat divisors in the original lookup order (ties resolve to the earlier entry):
+// whole, half, quarter, eighth, sixteenth, thirty-second, then quarter/eighth/sixteenth triplets
+const TEMPO_SYNC_BEAT_DIVISORS = [0.25, 0.5, 1, 2, 4, 8, 1.5, 3, 6];
 
 // Linear interpolation of one channel's samples at a fractional position.
 function interpolate(samples, position, lastIndex) {
@@ -390,31 +393,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 
   /**
-   * Calculate musical note durations in samples for given tempo
-   * @param {number} tempo - BPM
-   * @returns {Object} - Musical note durations in samples
-   */
-  #getTempoSyncedDurations(tempo) {
-    const beatsPerSecond = tempo / 60;
-    const samplesPerBeat = sampleRate / beatsPerSecond;
-
-    return {
-      // Standard notes
-      whole: samplesPerBeat * 4,
-      half: samplesPerBeat * 2,
-      quarter: samplesPerBeat,
-      eighth: samplesPerBeat / 2,
-      sixteenth: samplesPerBeat / 4,
-      thirtySecond: samplesPerBeat / 8,
-
-      // Triplets (divide by 3/2 = multiply by 2/3)
-      quarterTriplet: (samplesPerBeat * 2) / 3,
-      eighthTriplet: ((samplesPerBeat / 2) * 2) / 3,
-      sixteenthTriplet: ((samplesPerBeat / 4) * 2) / 3,
-    };
-  }
-
-  /**
    * Sync loop duration to the nearest tempo-synced note duration (skips if below the shortest option)
    * @param {number} loopDurationSamples - Current loop duration in samples
    * @param {number} tempo - Current tempo in BPM
@@ -426,25 +404,19 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       return loopDurationSamples;
     }
 
-    const noteDurations = this.#getTempoSyncedDurations(tempo);
-
-    // Account for playback rate - faster playback means shorter effective duration
+    const beatsPerSecond = tempo / 60;
+    const samplesPerBeat = sampleRate / beatsPerSecond;
     const effectiveDuration = loopDurationSamples / Math.abs(playbackRate);
 
-    // Find the shortest option (32nd note)
-    const smallestInterval = noteDurations.thirtySecond;
-
-    // Skip syncing if the base duration is shorter than the shortest option
-    if (effectiveDuration < smallestInterval) {
+    // Skip syncing if shorter than a 32nd note
+    if (effectiveDuration < samplesPerBeat / 8) {
       return loopDurationSamples;
     }
 
-    // Find closest musical interval
-    const intervals = Object.values(noteDurations);
-    let closestInterval = intervals[0];
+    let closestInterval = samplesPerBeat / TEMPO_SYNC_BEAT_DIVISORS[0];
     let smallestDiff = Math.abs(effectiveDuration - closestInterval);
-
-    for (const interval of intervals) {
+    for (const divisor of TEMPO_SYNC_BEAT_DIVISORS) {
+      const interval = samplesPerBeat / divisor;
       const diff = Math.abs(effectiveDuration - interval);
       if (diff < smallestDiff) {
         smallestDiff = diff;
