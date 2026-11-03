@@ -564,8 +564,6 @@ export class SampleVoice {
     // A disabled amp env is a gate, so close it. ponytail: voice-side fade until #65 moves de-click fades into the processor.
     if (!this.#isEnvEnabled('amp')) envGain.setTargetAtTime(0, timestamp, AMP_GATE_SMOOTHING_SEC);
 
-    this.sendToProcessor({ type: 'voice:release', timestamp });
-
     const releaseDuration = this.releaseTime;
 
     this.#sendUpstreamMessage('voice:releasing', {

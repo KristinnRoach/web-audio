@@ -56,8 +56,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopEnabled = false;
     this.reversePlayback = false;
     this.panDriftEnabled = true;
-    this.minZeroCrossing = 0;
-    this.maxZeroCrossing = 0;
 
     this.usePlaybackPosition = false;
     this.enableLoopSmoothing = true; // Crossfade between loop points
@@ -139,8 +137,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // once and there is no partially-loaded window to get wrong.
         this.#resetState();
         this.zeroCrossings = [];
-        this.minZeroCrossing = 0;
-        this.maxZeroCrossing = 0;
 
         this.audioData = (audioData ?? (buffer ? [buffer] : [])).filter(Boolean);
         // ponytail: 1/N is correct for fully coherent entries (the same sample
@@ -158,16 +154,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'voice:setZeroCrossings':
         this.zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * sampleRate);
-
-        // Set min/max zero crossings for parameter constraints
-        if (this.zeroCrossings.length > 0) {
-          this.minZeroCrossing = this.zeroCrossings[0];
-          this.maxZeroCrossing = this.zeroCrossings[this.zeroCrossings.length - 1];
-        }
         break;
 
       case 'voice:start':
-        this.isReleasing = false;
         this.isPlaying = true;
         this.triggerId = triggerId;
         this.loopCount = 0;
@@ -187,10 +176,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // Frame this note should sound at. A timestamp that has already passed
         // by the time the message arrives starts the note now.
         this.pendingStartFrame = timestamp ? Math.round(timestamp * sampleRate) : 0;
-        break;
-
-      case 'voice:release':
-        this.isReleasing = true;
         break;
 
       case 'voice:stop':
@@ -257,7 +242,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   #resetState() {
     this.isPlaying = false;
-    this.isReleasing = false;
     this.pendingStartFrame = 0;
     this.triggerId = 0;
     this.velocitySensitivity = 1.0; // full velocity = unity gain
@@ -269,7 +253,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.playbackPosition = 0;
     this.needsStartPosition = false;
 
-    this.debugCounter = 0;
     this.loopCount = 0;
     this.pendingLoopCycleTime = null;
     this.previousLoopRange = null;
@@ -291,7 +274,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   #stop() {
     this.isPlaying = false;
-    this.isReleasing = false;
     this.pendingStartFrame = 0;
     this.playbackPosition = 0;
     this.needsStartPosition = false;
@@ -850,7 +832,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs, parameters) {
     const output = outputs[0];
-    this.debugCounter++;
 
     if (!output || !this.isPlaying || !this.buffer?.[0]?.length) {
       if (output && this.buffer?.[0]?.length) this.#postIdleLoopRange(parameters);
