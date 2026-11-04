@@ -5,7 +5,7 @@ import { VoiceState } from '../VoiceState';
 
 import { Message, MessageHandler, createMessageBus, MessageBus } from '@/events';
 
-import { assert, mapToRange, midiToPlaybackRate, getKeytrackedFilterHz } from '@/utils';
+import { assert, mapToRange, midiToPlaybackRate } from '@/utils';
 import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
 import {
   cancelAndPinParamValue,
@@ -37,7 +37,6 @@ const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feed
 const AMP_GATE_SMOOTHING_SEC = 0.002;
 
 export class SampleVoice {
-  // TODO: implements ILibAudioNode
   readonly nodeId: NodeID;
   readonly nodeType: NodeType = 'sample-voice';
   #messages: MessageBus<Message>;
@@ -90,15 +89,6 @@ export class SampleVoice {
   #hpfQ: number = DEFAULT.HPF_Q;
   #lpfHz: number = maxSafeHz();
   #lpfQ: number = DEFAULT.LPF_Q;
-  // Keytracking off by default: it fought the post-FX filter envelope by moving the
-  // cutoff the sweep starts from. Was 0.25 / 0.75, tuned by ear.
-  // TODO: Consider adding as params (#31)
-  #keytrackLPFAmount: number = 0;
-  #keytrackHPFAmount: number = 0;
-
-  // static getProcessorParamDescriptors() {
-  //   return SAMPLE_PLAYER_PARAM_DESCRIPTORS;
-  // }
 
   constructor(
     private context: AudioContext,
@@ -129,15 +119,13 @@ export class SampleVoice {
     if (this.#initPromise) return this.#initPromise;
     this.#initPromise = (async () => {
       try {
-        // ? Need to wait for worklet 'initialized' message ?
-
         // Create nodes
         this.#initInternalSignalChainNodes();
 
         // Connect nodes
         this.#connectAudioChain();
 
-        // Create Envelopes // Todo: follow async pattern to the end
+        // Create envelopes
         this.#createEnvelopes();
 
         // Setup message handling
@@ -284,32 +272,16 @@ export class SampleVoice {
     return true;
   }
 
-  /** Retunes a held note too: rate, keytracked filters and the AM LFO follow. */
+  /** Retunes a held note too: playback rate and the AM LFO follow. */
   setPitchOffset(semitones: number): this {
     if (this.#pitchOffset === semitones) return this;
     this.#pitchOffset = semitones;
     if (this.#midiNote === null) return this;
     if (!this.#pitchDisabled) {
       const rate = midiToPlaybackRate(this.#midiNote + semitones);
-      const glide = { glideTime: 0.01 };
-      this.setParam('playbackRate', rate, this.now, glide);
-      this.#updateHPFCutoffForPlaybackRate(rate, this.now, glide);
-      this.#updateLPFCutoffForPlaybackRate(rate, this.now, glide);
+      this.setParam('playbackRate', rate, this.now, { glideTime: 0.01 });
     }
     this.#am_lfo?.setMusicalNote(this.#midiNote + semitones + this.#am_lfo_semitone_offset);
-    return this;
-  }
-
-  freeze(freeze: boolean): this {
-    console.info(
-      `SampleVoice: freeze(${freeze}) called. 
-      Spectral freeze not implemented yet`,
-    );
-    // if (this.#isFrozen === freeze) return this; // idempotent
-    // this.#isFrozen = freeze;
-    // this.#spectralFreezeWorklet.port.postMessage(
-    //   freeze ? 'freeze' : 'unfreeze'
-    // );
     return this;
   }
 
@@ -353,14 +325,6 @@ export class SampleVoice {
       if (options.glide) {
         prevRate = midiToPlaybackRate(options.glide.prevMidiNote + this.#pitchOffset);
       }
-      this.#updateHPFCutoffForPlaybackRate(playbackRate, timestamp, {
-        glideTime: scaledGlideTime,
-        // cancelPrevious: !!options.glide, // ? cancel previous only if glide is requested ?
-      });
-      this.#updateLPFCutoffForPlaybackRate(playbackRate, timestamp, {
-        glideTime: scaledGlideTime,
-        // cancelPrevious: !!options.glide,
-      });
     }
 
     // Only apply glide if pitch is enabled and glide is requested
@@ -368,7 +332,7 @@ export class SampleVoice {
       const rateParam = this.getParam('playbackRate')!;
       if (prevRate > 0) rateParam.setValueAtTime(prevRate, timestamp);
 
-      this.getParam('playbackRate')!.setTargetAtTime(playbackRate, timestamp, scaledGlideTime);
+      rateParam.setTargetAtTime(playbackRate, timestamp, scaledGlideTime);
     } else {
       this.setParam('playbackRate', playbackRate, timestamp);
     }
@@ -463,20 +427,6 @@ export class SampleVoice {
   triggerEnvelopes(timestamp: number, playbackRate: number) {
     this.#envelopes.forEach((env, envType) => {
       this.#triggerEnvelope(envType, env, timestamp, playbackRate);
-    });
-
-    const envDurations = Object.fromEntries(
-      Array.from(this.#envelopes, ([envType, env]) => [envType, env.duration()]),
-    );
-    const loopEnabled = Object.fromEntries(
-      Array.from(this.#envelopes, ([envType, env]) => [envType, env.shape.mode.type === 'loop']),
-    );
-
-    this.#sendUpstreamMessage('sample-envelopes:trigger', {
-      voiceId: this.nodeId,
-      midiNote: this.#midiNote,
-      envDurations,
-      loopEnabled,
     });
   }
 
@@ -599,58 +549,6 @@ export class SampleVoice {
     return this;
   }
 
-  /**  Set HPF cutoff relative to playback rate */
-  #updateHPFCutoffForPlaybackRate(
-    playbackRate: number,
-    atTime: number = this.now,
-    options: {
-      glideTime?: number;
-      cancelPrevious?: boolean;
-    } = {},
-  ) {
-    if (this.#midiNote === null || !this.#hpf || this.#keytrackHPFAmount <= 0) {
-      return;
-    }
-
-    const freq = this.#hpf.frequency;
-    const { glideTime = 0, cancelPrevious = true } = options || {};
-    if (cancelPrevious) {
-      freq.cancelScheduledValues(atTime);
-    }
-
-    const keytrackedHz = getKeytrackedFilterHz(this.#hpfHz, playbackRate, this.#keytrackHPFAmount);
-    const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
-
-    const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
-    freq.setTargetAtTime(safeHz, atTime, timeConstant);
-  }
-
-  /**  Set LPF cutoff relative to playback rate */
-  #updateLPFCutoffForPlaybackRate(
-    playbackRate: number,
-    atTime: number = this.now,
-    options: {
-      glideTime?: number;
-      cancelPrevious?: boolean;
-    } = {},
-  ) {
-    if (this.#midiNote === null || !this.#lpf || this.#keytrackLPFAmount <= 0) {
-      return;
-    }
-
-    const freq = this.#lpf.frequency;
-    const { glideTime = 0, cancelPrevious = true } = options || {};
-    if (cancelPrevious) {
-      freq.cancelScheduledValues(atTime);
-    }
-
-    const keytrackedHz = getKeytrackedFilterHz(this.#lpfHz, playbackRate, this.#keytrackLPFAmount);
-    const safeHz = clampHz(keytrackedHz, this.context.sampleRate);
-
-    const timeConstant = durationToTimeConstant(glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
-    freq.setTargetAtTime(safeHz, atTime, timeConstant);
-  }
-
   // === LFOs ===
 
   /** Cleanup amplitude modulation LFO */
@@ -659,11 +557,6 @@ export class SampleVoice {
     this.#am_lfo.dispose();
     this.#am_lfo = null;
     return this;
-  }
-
-  /** @deprecated Use setModulationDepth. */
-  setModulationAmount(modType: 'AM' | 'FM', depth: number) {
-    return this.setModulationDepth(modType, depth);
   }
 
   setModulationDepth(modType: 'AM' | 'FM', depth: number) {
@@ -815,24 +708,6 @@ export class SampleVoice {
     return this;
   }
 
-  protected setParams(
-    paramsAndValues: Array<{ name: string; value: number }>,
-    atTime: number,
-    options: {
-      glideTime?: number;
-      cancelPrevious?: boolean;
-    } = {},
-  ): this {
-    const validParams = paramsAndValues.filter((pv) => this.getParam(pv.name) !== null);
-    if (validParams.length === 0) return this;
-
-    validParams.forEach(({ name, value }) => {
-      // Pass the absolute timestamp to ensure all parameters use the same timestamp
-      this.setParam(name, value, atTime, { ...options });
-    });
-    return this;
-  }
-
   setLoopLengthGlide(seconds: number): this {
     this.sendToProcessor({ type: 'setLoopLengthGlide', value: seconds });
     return this;
@@ -857,25 +732,13 @@ export class SampleVoice {
     const glideTime = 0.1;
 
     this.getParam('playbackRate')?.linearRampToValueAtTime(1, timestamp + glideTime);
-
-    this.#updateHPFCutoffForPlaybackRate(1, timestamp, { glideTime });
-    this.#updateLPFCutoffForPlaybackRate(1, timestamp, { glideTime });
   };
 
   enablePitch = () => {
     this.#pitchDisabled = false;
-    const timestamp = this.now;
-    const glideTime = 0.1;
-
     if (this.#midiNote !== null) {
       const rate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
       this.getParam('playbackRate')?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
-      this.#updateHPFCutoffForPlaybackRate(rate, timestamp, {
-        glideTime,
-      });
-      this.#updateLPFCutoffForPlaybackRate(rate, timestamp, {
-        glideTime,
-      });
     }
   };
 
@@ -998,12 +861,6 @@ export class SampleVoice {
 
   // Getters
 
-  getPlaybackDuration() {
-    const startPoint = this.getParam('startPoint')!.value;
-    const endPoint = this.getParam('endPoint')!.value;
-    return Math.abs(endPoint - startPoint);
-  }
-
   get feedback() {
     return this.#feedback;
   }
@@ -1105,8 +962,6 @@ export class SampleVoice {
       const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#hpf.frequency.cancelScheduledValues(atTime);
       this.#hpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
-      const currentRate = this.getParam('playbackRate')?.value ?? 1;
-      this.#updateHPFCutoffForPlaybackRate(currentRate, atTime, options);
     }
     return this;
   }
@@ -1132,8 +987,6 @@ export class SampleVoice {
       const timeConstant = durationToTimeConstant(options.glideTime, DEFAULT.CUTOFF_SMOOTHING_SEC);
       if (options.cancelPrevious ?? true) this.#lpf.frequency.cancelScheduledValues(atTime);
       this.#lpf.frequency.setTargetAtTime(safeHz, atTime, timeConstant);
-      const currentRate = this.getParam('playbackRate')?.value ?? 1;
-      this.#updateLPFCutoffForPlaybackRate(currentRate, atTime, options);
     }
     return this;
   }
@@ -1175,15 +1028,6 @@ export class SampleVoice {
     if (this.#am_lfo && this.#midiNote !== null) {
       this.#am_lfo.setMusicalNote(this.#midiNote + this.#pitchOffset + semitoneOffset);
     }
-  }
-
-  debugDuration() {
-    console.info(`
-      sample duration: ${this.sampleDurationSeconds}, 
-      startPoint: ${this.getParam('startPoint')!.value},
-      endPoint: ${this.getParam('endPoint')!.value},
-      playback duration: ${this.getPlaybackDuration()}
-      `);
   }
 
   dispose(): void {
