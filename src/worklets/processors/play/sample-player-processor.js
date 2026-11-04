@@ -26,6 +26,11 @@ function interpolate(samples, position, lastIndex) {
   return a + weight * (b - a);
 }
 
+// One-pole coefficient per sample; 1 = stepped.
+function glideCoefficient(seconds) {
+  return seconds > 0 ? -Math.expm1(-1 / sampleRate / seconds) : 1;
+}
+
 function tailGainAt(position, audioEndSamples) {
   return Math.max(0, Math.min(1, (audioEndSamples - position) / TAIL_FADE_SAMPLES));
 }
@@ -73,8 +78,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.panDriftEnabled = true;
     this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
 
-    this.usePlaybackPosition = false;
-    this.enableLoopSmoothing = true; // Crossfade between loop points
+    this.reportPlaybackPosition = false;
+    this.enableLoopCrossfade = true; // Crossfade between loop points
     this.loopCrossfade = new LoopCrossfade();
     this.enableAdaptiveDrift = true; // Adaptive drift scaling based on loop duration
     this.syncLoopToTempo = false; // Todo: add controls for interactive testing
@@ -89,15 +94,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
-    this.loopLengthGlide = 0.125;
-    this.loopLengthGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopLengthGlide);
-    this.loopLengthGlideLogLength = null;
-    this.loopPositionGlidePosition = null;
-    // Signed, unquantized loopEnd - loopStart in samples, from the last range calculation.
-    this.previousRequestedLoopDuration = null;
-    this.isLoopPositionGliding = false;
-    this.loopPositionGlide = 0;
-    this.loopPositionGlideCoefficient = 1;
+    this.loopLengthGlideCoefficient = glideCoefficient(0.125);
+    this.loopPositionGlideCoefficient = glideCoefficient(0);
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -185,12 +183,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.triggerId = triggerId;
         this.loopCount = 0;
         this.pendingLoopCycleTime = null;
-        this.nextDriftGenerated = false; // roll fresh drift for this note
+        this.loopDriftRolled = false; // roll fresh drift for this note
         this.driftUpdateCounter = 0; // and don't let the short-loop cadence skip it
         this.loopTurned = false;
-        this.loopLengthGlideLogLength = null; // new notes start on the target length
-        this.loopPositionGlidePosition = null;
-        this.previousRequestedLoopDuration = null;
+        this.#resetLoopGlides(); // new notes start on the target range
         this.previousLoopRange = null;
         this.loopCrossfade.reset();
         this.postedRanges = {}; // each note posts its first resolved range
@@ -236,8 +232,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
       }
 
-      case 'voice:usePlaybackPosition':
-        this.usePlaybackPosition = value;
+      case 'voice:reportPlaybackPosition':
+        this.reportPlaybackPosition = value;
         break;
 
       case 'syncLoopToTempo':
@@ -250,13 +246,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'setLoopLengthGlide':
-        this.loopLengthGlide = value;
-        this.loopLengthGlideCoefficient = -Math.expm1(-1 / sampleRate / value);
+        this.loopLengthGlideCoefficient = glideCoefficient(value);
         break;
 
       case 'setLoopPositionGlide':
-        this.loopPositionGlide = value;
-        this.loopPositionGlideCoefficient = value > 0 ? -Math.expm1(-1 / sampleRate / value) : 1;
+        this.loopPositionGlideCoefficient = glideCoefficient(value);
         break;
 
       case 'setKeytrackLoopAmount':
@@ -281,6 +275,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
     this.playbackPosition = 0;
+    this.previousPlaybackPosition = 0;
     this.needsStartPosition = false;
 
     this.loopCount = 0;
@@ -288,15 +283,25 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.previousLoopRange = null;
 
     this.loopCrossfade.reset();
+    this.#resetLoopGlides();
 
     // Loop & Pan drift feature
     this.driftUpdateCounter = 0;
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
 
-    this.nextDriftGenerated = false;
+    this.loopDriftRolled = false;
 
     this.timestretch.reset();
+  }
+
+  #resetLoopGlides() {
+    this.isLoopLengthGliding = false;
+    this.glidedLoopLogLength = null;
+    this.isLoopPositionGliding = false;
+    this.glidedLoopStart = null;
+    // Raw loop points in samples (start may pass end), from the last range calculation.
+    this.previousRequestedLoop = { start: null, end: null };
   }
 
   #stop() {
@@ -327,7 +332,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (nextPosition === null) return;
 
     if (turns) this.loopTurned = !this.loopTurned;
-    if (this.enableLoopSmoothing && (!turns || LOOP_TURN_CROSSFADE)) {
+    if (this.enableLoopCrossfade && (!turns || LOOP_TURN_CROSSFADE)) {
       // The outgoing head carries on past the edge in the pre-turn direction
       const length = this.#crossfadeLength(loopRange);
       this.loopCrossfade.start(this.playbackPosition, direction, length, silencePadTail);
@@ -337,7 +342,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.pendingLoopCycleTime = cycleTime;
 
     // Reset drift flag to generate new drift for next loop iteration
-    this.nextDriftGenerated = false;
+    this.loopDriftRolled = false;
   }
 
   // Sum every loaded buffer at one position. Mono entries feed every output
@@ -488,56 +493,53 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // Only inside the quantization range; outside it, or entering it, the length jumps.
   #glideLoopLength(target) {
     this.isLoopLengthGliding = false;
-    const periods = this.loopQuantizePeriods;
     if (!this.#isLoopLengthInQuantizationRange(target)) {
-      this.loopLengthGlideLogLength = null;
+      this.glidedLoopLogLength = null;
       return target;
     }
     const logTarget = Math.log(target);
-    if (this.loopLengthGlideLogLength === null || !(this.loopLengthGlide > 0)) {
-      this.loopLengthGlideLogLength = logTarget;
+    if (this.glidedLoopLogLength === null) {
+      this.glidedLoopLogLength = logTarget;
     } else {
-      this.loopLengthGlideLogLength +=
-        (logTarget - this.loopLengthGlideLogLength) * this.loopLengthGlideCoefficient;
-      this.isLoopLengthGliding = Math.abs(logTarget - this.loopLengthGlideLogLength) > 1e-12;
-      if (!this.isLoopLengthGliding) this.loopLengthGlideLogLength = logTarget;
+      this.glidedLoopLogLength +=
+        (logTarget - this.glidedLoopLogLength) * this.loopLengthGlideCoefficient;
+      this.isLoopLengthGliding = Math.abs(logTarget - this.glidedLoopLogLength) > 1e-12;
+      if (!this.isLoopLengthGliding) this.glidedLoopLogLength = logTarget;
     }
     // The log round trip can exceed the longest period by an ULP and bypass quantization.
-    return Math.min(Math.exp(this.loopLengthGlideLogLength), periods.at(-1));
+    return Math.min(Math.exp(this.glidedLoopLogLength), this.loopQuantizePeriods.at(-1));
   }
 
   // Move the source window gradually; the existing playhead carry follows it.
-  #glideLoopPosition(target, params, length) {
-    const requestedLoopDuration = params.loopEndSamples - params.loopStartSamples;
+  #glideLoopPosition(targetStart, params, length) {
+    const requestedSpan = params.loopEndSamples - params.loopStartSamples;
+    const previous = this.previousRequestedLoop;
     // Paired Float32 AudioParams lose precision when translated far into the buffer.
     const tolerance =
       Math.max(
-        Math.abs(target),
-        Math.abs(this.loopPositionGlidePosition ?? 0),
-        Math.abs(requestedLoopDuration),
+        Math.abs(targetStart),
+        Math.abs(this.glidedLoopStart ?? 0),
+        Math.abs(requestedSpan),
         1,
       ) *
       2 ** -22;
-    const lengthUnchanged =
-      Math.abs(requestedLoopDuration - this.previousRequestedLoopDuration) <= tolerance;
-    this.previousRequestedLoopDuration = requestedLoopDuration;
+    const lengthUnchanged = Math.abs(requestedSpan - (previous.end - previous.start)) <= tolerance;
     this.isLoopPositionGliding = false;
     if (
       !this.loopEnabled ||
       !lengthUnchanged ||
       !this.#isLoopLengthInQuantizationRange(length) ||
-      this.loopPositionGlidePosition === null ||
-      !(this.loopPositionGlide > 0)
+      this.glidedLoopStart === null ||
+      this.loopPositionGlideCoefficient === 1
     ) {
-      this.loopPositionGlidePosition = target;
-      return target;
+      this.glidedLoopStart = targetStart;
+      return targetStart;
     }
-    this.isLoopPositionGliding = Math.abs(target - this.loopPositionGlidePosition) > 1e-6;
-    this.loopPositionGlidePosition +=
-      (target - this.loopPositionGlidePosition) * this.loopPositionGlideCoefficient;
-    if (Math.abs(target - this.loopPositionGlidePosition) <= 1e-6)
-      this.loopPositionGlidePosition = target;
-    return this.loopPositionGlidePosition;
+    this.glidedLoopStart +=
+      (targetStart - this.glidedLoopStart) * this.loopPositionGlideCoefficient;
+    this.isLoopPositionGliding = Math.abs(targetStart - this.glidedLoopStart) > 1e-6;
+    if (!this.isLoopPositionGliding) this.glidedLoopStart = targetStart;
+    return this.glidedLoopStart;
   }
 
   /**
@@ -577,17 +579,17 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       const maxStart = rangeEnd - fittedLength;
       lpStart = Math.min(Math.max(lpStart, rangeStart), maxStart);
       // Trim or length can strand the glide outside the window; resolveRange would clip the loop.
-      if (this.loopPositionGlidePosition !== null) {
-        this.loopPositionGlidePosition = Math.min(
-          Math.max(this.loopPositionGlidePosition, rangeStart),
-          maxStart,
-        );
+      if (this.glidedLoopStart !== null) {
+        this.glidedLoopStart = Math.min(Math.max(this.glidedLoopStart, rangeStart), maxStart);
       }
       lpStart = this.#glideLoopPosition(lpStart, params, glidedLoopLength);
       lpEnd = lpStart + fittedLength;
     } else {
+      // Above the audio-rate range this only tracks the start and clears the glide.
       this.#glideLoopPosition(lpStart, params, glidedLoopLength);
     }
+    this.previousRequestedLoop.start = params.loopStartSamples;
+    this.previousRequestedLoop.end = params.loopEndSamples;
 
     // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
     // default) clamps to the full range.
@@ -650,7 +652,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // Apply drift to loop end position
     if (driftAmount > 0 && this.loopEnabled) {
       // Generate new drift only at the start of each loop iteration
-      if (!this.nextDriftGenerated) {
+      if (!this.loopDriftRolled) {
         // For short loops (audio-rate), update drift less frequently
         const updateInterval =
           baseDuration <= this.pitchPreservationThreshold
@@ -673,7 +675,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         }
 
         this.driftUpdateCounter++;
-        this.nextDriftGenerated = true;
+        this.loopDriftRolled = true;
       }
 
       // Apply drift to loop end, ensuring it stays within bounds
@@ -818,8 +820,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     const positionParams = this.#extractPositionParams(parameters);
     // A stopped note's glide must not leak in: the next note starts on the target length.
-    this.loopLengthGlideLogLength = null;
-    this.loopPositionGlidePosition = null;
+    this.#resetLoopGlides();
     const loopRange = this.#calculateLoopRange(
       positionParams,
       this.#calculatePlaybackRange(positionParams),
@@ -894,8 +895,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const tempo = parameters.tempo[0];
     const driftAmount = parameters.loopDurationDriftAmount[0];
     let loopRange;
-    let previousStart;
-    let previousEnd;
     let previousRate;
 
     const velocityGain =
@@ -969,14 +968,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // once per block, as k-rate did; per-sample zero-crossing snapping for
       // 16 voices overran the audio thread. The 2x margin keeps loops near the
       // audio-rate boundary (Float32 noise can lift them over it) per sample.
-      const pointsChanged =
-        loopStart !== previousStart || loopEnd !== previousEnd || rate !== previousRate;
+      const rangeInputsChanged =
+        positionParams.loopStartSamples !== this.previousRequestedLoop.start ||
+        positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
+        rate !== previousRate;
       const followsPointsPerSample =
         loopRange?.loopDurationSamples < 2 * this.pitchPreservationThreshold;
-      const driftPending = driftAmount > 0 && this.loopEnabled && !this.nextDriftGenerated;
+      const driftPending = driftAmount > 0 && this.loopEnabled && !this.loopDriftRolled;
       if (
         !loopRange ||
-        (pointsChanged && followsPointsPerSample) ||
+        (rangeInputsChanged && followsPointsPerSample) ||
         this.isLoopLengthGliding ||
         this.isLoopPositionGliding ||
         driftPending
@@ -988,8 +989,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           tempo,
           rate,
         );
-        previousStart = loopStart;
-        previousEnd = loopEnd;
         previousRate = rate;
       }
 
@@ -1013,10 +1012,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         loopRange.loopStartSamples !== previous.loopStartSamples &&
         this.loopEnabled &&
         loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
-        this.previousLoopPosition >= previous.loopStartSamples &&
-        this.previousLoopPosition <= previous.loopEndSamples
+        this.previousPlaybackPosition >= previous.loopStartSamples &&
+        this.previousPlaybackPosition <= previous.loopEndSamples
       ) {
-        if (this.enableLoopSmoothing && !this.isLoopPositionGliding) {
+        if (this.enableLoopCrossfade && !this.isLoopPositionGliding) {
           // From the unmoved playhead, before any edge it passes this frame
           this.loopCrossfade.start(
             this.playbackPosition,
@@ -1168,7 +1167,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       // Remember the rendered position, before a fractional step can overshoot
       // the edge. The next sample must carry that overshoot with a moving loop.
-      this.previousLoopPosition = this.playbackPosition;
+      this.previousPlaybackPosition = this.playbackPosition;
       this.playbackPosition = this.timestretch.advance(
         timestretchActive,
         this.playbackPosition,
@@ -1188,7 +1187,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     });
 
     // Playhead for display, ~60 Hz to match screen refresh.
-    if (this.usePlaybackPosition) {
+    if (this.reportPlaybackPosition) {
       this.#postRange(
         'voice:position',
         { position: Math.max(0, Math.min(1, this.#samplesToNormalized(this.playbackPosition))) },

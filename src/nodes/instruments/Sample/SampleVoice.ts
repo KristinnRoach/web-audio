@@ -864,7 +864,7 @@ export class SampleVoice {
     return this;
   }
 
-  setLoopLengthGlide(seconds: number) {
+  setLoopLengthGlide(seconds: number): this {
     this.sendToProcessor({ type: 'setLoopLengthGlide', value: seconds });
     return this;
   }
@@ -1104,7 +1104,7 @@ export class SampleVoice {
 
   enablePositionTracking(enabled: boolean) {
     this.sendToProcessor({
-      type: 'voice:usePlaybackPosition',
+      type: 'voice:reportPlaybackPosition',
       value: enabled,
     });
 

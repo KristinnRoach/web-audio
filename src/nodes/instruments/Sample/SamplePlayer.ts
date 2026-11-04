@@ -756,7 +756,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  // Glide time constant between quantized loop periods, applied in the processor. 0 = stepped.
+  /** Length glide time constant between quantized loop periods. 0 = stepped. */
   setLoopLengthGlide(seconds: number): this {
     this.#loopLengthGlide = seconds;
     this.#voicePool?.applyToAllVoices((voice) => voice.setLoopLengthGlide(seconds));
