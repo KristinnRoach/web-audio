@@ -25,7 +25,9 @@ describe('loop position glide timing', () => {
       ).previousLoopRange;
     };
     process(0, 0.004);
-    return { process };
+    const crossfadeCount = () =>
+      (processor as typeof processor & { loopCrossfade: { count: number } }).loopCrossfade.count;
+    return { process, crossfadeCount };
   }
 
   it.each([0, 0.125])(
@@ -66,5 +68,13 @@ describe('loop position glide timing', () => {
     process(0.1, 0.104, settleFrames || 1);
     const range = process(0.1, 0.104, 1, trim);
     expect(range.loopDurationSamples).toBeCloseTo(0.004 * TEST_SAMPLE_RATE, 3);
+  });
+
+  it('crossfades a trim-forced jump but not an ordinary glide step', async () => {
+    const { process, crossfadeCount } = await setup(0.02);
+    process(0.1, 0.104);
+    expect(crossfadeCount()).toBe(0);
+    process(0.1, 0.104, 1, { startPoint: 0.05 });
+    expect(crossfadeCount()).toBe(1);
   });
 });
