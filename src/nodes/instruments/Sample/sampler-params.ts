@@ -349,7 +349,7 @@ export const samplerParams = defineSamplerParams({
     max: 0.5,
     defaultValue: 0.125, // Keep equal to the processor's initial loopLengthGlide.
     step: 0.001,
-    format: positionPercent('loopLengthGlide'),
+    format: (v) => secondsOrMilliseconds(v, 1),
     apply: (p, v) => p.setLoopLengthGlide(v),
   },
   loopPositionGlide: {
@@ -358,7 +358,7 @@ export const samplerParams = defineSamplerParams({
     max: 0.5,
     defaultValue: 0, // Keep equal to the processor's initial loopPositionGlide.
     step: 0.001,
-    format: secondsOrMilliseconds,
+    format: (v) => secondsOrMilliseconds(v, 1),
     apply: (p, v) => p.setLoopPositionGlide(v),
   },
   loopDurationDrift: {
