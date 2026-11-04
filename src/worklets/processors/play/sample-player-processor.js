@@ -15,10 +15,6 @@ const LOOP_TURN_CROSSFADE = true;
 const TAIL_FADE_SAMPLES = 64;
 // Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
-// Beat divisors in the original lookup order (ties resolve to the earlier entry):
-// whole, half, quarter, eighth, sixteenth, thirty-second, then quarter/eighth/sixteenth triplets
-const TEMPO_SYNC_BEAT_DIVISORS = [0.25, 0.5, 1, 2, 4, 8, 1.5, 3, 6];
-
 // Linear interpolation of one channel's samples at a fractional position.
 function interpolate(samples, position, lastIndex) {
   const index = Math.floor(position);
@@ -69,10 +65,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     super();
 
     // Only set properties that should persist across resets.
-    // audioData[0] defines duration and playback ranges via the `buffer` getter.
-    // All entries contribute to the mix used for rendering and de-click correction.
-    this.audioData = [];
-    this.audioDataGain = 1;
+    this.buffer = null;
 
     this.loopEnabled = false;
     this.reversePlayback = false;
@@ -83,7 +76,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.reportPlaybackPosition = false;
     this.enableLoopCrossfade = true; // Crossfade between loop points
     this.loopCrossfade = new LoopCrossfade();
-    this.syncLoopToTempo = false; // Todo: add controls for interactive testing
     // Ping-pong turns around at both loop edges and overrides loop point order.
     this.loopPingPong = false;
     // Keytrack loop: 0 = loop length fixed in samples (loop time shortens as you play higher).
@@ -104,11 +96,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.#resetState();
     // Signal to node that processor is initialized
     this.port.postMessage({ type: 'initialized' });
-  }
-
-  /** Authority audio data. All range and duration math reads through this. */
-  get buffer() {
-    return this.audioData[0] ?? null;
   }
 
   // Shortest allowed playback range, can be inverted:
@@ -133,7 +120,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       type,
       value,
       buffer,
-      audioData,
       timestamp,
       durationSeconds,
       zeroCrossings,
@@ -154,18 +140,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'voice:reset' });
         break;
 
-      case 'voice:setBuffer':
-      case 'voice:setAudioData': {
-        // Both messages replace all audio data, so state resets exactly
-        // once and there is no partially-loaded window to get wrong.
+      case 'voice:setBuffer': {
         this.#resetState();
         this.zeroCrossings = [];
-
-        this.audioData = (audioData ?? (buffer ? [buffer] : [])).filter(Boolean);
-        // ponytail: 1/N is correct for fully coherent entries (the same sample
-        // stacked) and 3dB conservative otherwise. Add per-entry user gain
-        // when a UI needs it.
-        this.audioDataGain = this.audioData.length ? 1 / this.audioData.length : 1;
+        this.buffer = buffer ?? null;
 
         this.port.postMessage({
           type: 'voice:loaded',
@@ -237,15 +215,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'voice:reportPlaybackPosition':
         this.reportPlaybackPosition = value;
-        break;
-
-      case 'syncLoopToTempo':
-        this.syncLoopToTempo = value;
-
-        this.port.postMessage({
-          type: 'loop:syncToTempo',
-          enabled: value,
-        });
         break;
 
       case 'setLoopLengthGlide':
@@ -355,15 +324,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopDriftRolled = false;
   }
 
-  // Sum every loaded buffer at one position. Mono entries feed every output
-  // channel; shorter entries contribute silence after their end.
-  #sumAudioData(position, channel, lastAudioIndex) {
-    let sum = 0;
-    for (const data of this.audioData) {
-      const samples = data[Math.min(channel, data.length - 1)];
-      sum += interpolate(samples, position, lastAudioIndex) * this.audioDataGain;
-    }
-    return sum;
+  // Mono sources feed every output channel.
+  #readSample(position, channel, lastAudioIndex) {
+    return interpolate(
+      this.buffer[Math.min(channel, this.buffer.length - 1)],
+      position,
+      lastAudioIndex,
+    );
   }
 
   #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
@@ -389,42 +356,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    */
   #midiVelocityToGain(midiVelocity) {
     return Math.max(0, Math.min(1, midiVelocity / 127));
-  }
-
-  /**
-   * Sync loop duration to the nearest tempo-synced note duration (skips if below the shortest option)
-   * @param {number} loopDurationSamples - Current loop duration in samples
-   * @param {number} tempo - Current tempo in BPM
-   * @param {number} playbackRate - Current playback rate
-   * @returns {number} - Tempo-synced loop duration in samples
-   */
-  #syncLoopDurationToTempo(loopDurationSamples, tempo, playbackRate) {
-    if (!this.syncLoopToTempo) {
-      return loopDurationSamples;
-    }
-
-    const beatsPerSecond = tempo / 60;
-    const samplesPerBeat = sampleRate / beatsPerSecond;
-    const effectiveDuration = loopDurationSamples / Math.abs(playbackRate);
-
-    // Skip syncing if shorter than a 32nd note
-    if (effectiveDuration < samplesPerBeat / 8) {
-      return loopDurationSamples;
-    }
-
-    let closestInterval = samplesPerBeat / TEMPO_SYNC_BEAT_DIVISORS[0];
-    let smallestDiff = Math.abs(effectiveDuration - closestInterval);
-    for (const divisor of TEMPO_SYNC_BEAT_DIVISORS) {
-      const interval = samplesPerBeat / divisor;
-      const diff = Math.abs(effectiveDuration - interval);
-      if (diff < smallestDiff) {
-        smallestDiff = diff;
-        closestInterval = interval;
-      }
-    }
-
-    // Convert back to samples accounting for playback rate
-    return Math.floor(closestInterval * Math.abs(playbackRate));
   }
 
   /**
@@ -557,12 +488,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * @param {Object} params - Position parameters from #extractPositionParams
    * @param {Object} playbackRange - Range from #calculatePlaybackRange
    * @param {number} driftAmount - Loop duration drift amount (0-1)
-   * @param {number} tempo - Current tempo in BPM
    * @param {number} playbackRate - Current playback rate
    * @returns {Object} - Effective loop start and end positions with drift applied.
    *   A reused object, valid until the call after next; copy it to keep it longer.
    */
-  #calculateLoopRange(params, playbackRange, driftAmount = 0, tempo = 120, playbackRate = 1) {
+  #calculateLoopRange(params, playbackRange, driftAmount = 0, playbackRate = 1) {
     const { startSamples: rangeStart, endSamples: rangeEnd } = playbackRange;
     let lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
     let lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
@@ -616,25 +546,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
-    // Apply tempo sync if enabled
-    if (this.syncLoopToTempo) {
-      const syncedDuration = this.#syncLoopDurationToTempo(baseDuration, tempo, playbackRate);
-
-      calcLoopEnd = calcLoopStart + syncedDuration;
-      // Ensure we don't exceed playback range
-      calcLoopEnd = Math.min(calcLoopEnd, playbackRange.endSamples);
-    }
-
-    // Keytrack loop: scale sample-domain loop length by playbackRate so the real-time
-    // loop time stays constant across notes (amount=1); amount=0 leaves it fixed.
-    // Keytrack and tempo-sync both remap loop length as a function of playbackRate, in
-    // opposite directions (real-time vs. musical length). They are mutually exclusive:
-    // tempo-sync wins whenever it is enabled, even when syncing left the
-    // duration unchanged (already on-grid, or too short to sync).
+    // Keytrack loop length so amount=1 keeps its real-time duration across notes.
     const keytrackAmount =
-      baseDuration > this.pitchPreservationThreshold && !this.syncLoopToTempo
-        ? this.keytrackLoopAmount
-        : 0;
+      baseDuration > this.pitchPreservationThreshold ? this.keytrackLoopAmount : 0;
     if (keytrackAmount > 0) {
       const scale = 1 + keytrackAmount * (Math.abs(playbackRate) - 1);
       baseDuration = Math.max(1, Math.floor(baseDuration * scale));
@@ -644,9 +558,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       calcLoopEnd = calcLoopStart + baseDuration;
     }
 
-    // Both branches above adjust calcLoopEnd (tempo-sync clamps, keytrack may
-    // extend past the audio), so re-derive the actual duration before drift
-    // uses it to size its minimum loop length.
+    // Re-derive the duration after keytrack before drift sizes its minimum length.
     baseDuration = calcLoopEnd - calcLoopStart;
 
     const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
@@ -796,7 +708,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
    * at most every `interval` seconds; a change skipped by the throttle is sent on a
    * later block, since the key only updates when a report is posted. No drift and unit
    * rate: drift is rolled per note, and the voice only uses this for the steady loop length.
-   * ponytail: tempo sync resolves at tempo 120 here; the first loop:cycle corrects it.
    */
   #postIdleLoopRange(parameters, interval = 1 / 30) {
     if (currentTime - (this.idleLoopPostTime ?? -1) < interval) return;
@@ -809,7 +720,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.buffer,
       this.zeroCrossings,
       this.loopQuantizePeriods,
-      this.syncLoopToTempo,
       this.keytrackLoopAmount,
     ];
     if (inputs.every((value, i) => value === key[i])) return;
@@ -890,7 +800,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // playhead reads the same source position in either direction, so a
     // direction change needs no position correction.
     const approachDirection = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
-    const tempo = parameters.tempo[0];
     const driftAmount = parameters.loopDurationDriftAmount[0];
     let loopRange;
     let previousRate;
@@ -978,13 +887,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.isLoopPositionGliding ||
         driftPending
       ) {
-        loopRange = this.#calculateLoopRange(
-          positionParams,
-          playbackRange,
-          driftAmount,
-          tempo,
-          rate,
-        );
+        loopRange = this.#calculateLoopRange(positionParams, playbackRange, driftAmount, rate);
         previousRate = rate;
       }
 
@@ -1118,9 +1021,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // Safety check: ensure output channel exists
         if (!outputChannels[channel]) continue;
 
-        let interpolatedSample = this.#sumAudioData(this.playbackPosition, channel, lastAudioIndex);
+        let interpolatedSample = this.#readSample(this.playbackPosition, channel, lastAudioIndex);
         if (timestretchOutgoingPosition !== null) {
-          const outgoing = this.#sumAudioData(timestretchOutgoingPosition, channel, lastAudioIndex);
+          const outgoing = this.#readSample(timestretchOutgoingPosition, channel, lastAudioIndex);
           interpolatedSample = outgoing + timestretchCrossfadeMix * (interpolatedSample - outgoing);
         }
         // Smooth in the audible source domain, so the silent tail cannot mute
@@ -1130,7 +1033,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         for (let i = crossfade.count - 1; i >= 0; i--) {
           const { position, fadesTail, audioEnd, mix } = crossfade.head(i);
           const gain = fadesTail ? tailGainAt(position, audioEnd) : 1;
-          const outgoing = this.#sumAudioData(position, channel, Math.ceil(audioEnd) - 1) * gain;
+          const outgoing = this.#readSample(position, channel, Math.ceil(audioEnd) - 1) * gain;
           interpolatedSample = outgoing + mix * (interpolatedSample - outgoing);
         }
 

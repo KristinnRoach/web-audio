@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('skips later resampling failures, rejects sample 0 failures, and permits retry', async () => {
+it('loads one buffer, preserves it on failure, and permits retry', async () => {
   vi.stubGlobal('window', {});
   vi.stubGlobal('AudioContext', class {});
   vi.stubGlobal('AudioWorkletNode', class {});
@@ -52,7 +52,6 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     if (buffer === later) throw failure;
     return buffer;
   });
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   let loaded = () => {};
   const publish = vi.fn(() => loaded());
   const setLoopEnabled = vi.fn();
@@ -62,7 +61,7 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
       loaded = callback;
       return () => {};
     },
-    setAudioData: publish,
+    setBuffer: publish,
     applyToAllVoices: vi.fn(),
     dispose: vi.fn(),
   } as unknown as Partial<SampleVoicePool>);
@@ -74,9 +73,9 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     player.setLoopEnabled(true);
     setLoopEnabled.mockClear();
     loopChanged.mockClear();
-    await expect(player.loadAudio([firstBuffer, later])).resolves.toEqual([firstBuffer]);
-    expect(publish).toHaveBeenCalledWith([firstBuffer], []);
-    expect(player.samples).toEqual([firstBuffer]);
+    await expect(player.loadAudio(firstBuffer)).resolves.toBe(firstBuffer);
+    expect(publish).toHaveBeenCalledWith(firstBuffer, []);
+    expect(player.audiobuffer).toBe(firstBuffer);
     player.setLoopEnabled(true);
     expect(setLoopEnabled).toHaveBeenCalledWith(true);
     expect(loopChanged).not.toHaveBeenCalled();
@@ -86,13 +85,12 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     expect(setLoopEnabled).not.toHaveBeenCalled();
     expect(player.loopEnabled).toBe(true);
     expect(loopChanged).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith('Failed to resample sample 1; skipping', failure);
 
     publish.mockClear();
-    await expect(player.loadAudio([later, firstBuffer])).rejects.toThrow(failure);
+    await expect(player.loadAudio(later)).rejects.toThrow(failure);
     expect(publish).not.toHaveBeenCalled();
-    expect(player.samples).toEqual([firstBuffer]);
-    await expect(player.loadAudio(firstBuffer)).resolves.toEqual([firstBuffer]);
+    expect(player.audiobuffer).toBe(firstBuffer);
+    await expect(player.loadAudio(firstBuffer)).resolves.toBe(firstBuffer);
 
     // Scrolling preserves the signed length and keeps both points inside the sample.
     for (const [start, end, requested, expectedStart, expectedEnd] of [
@@ -121,29 +119,26 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
       } as unknown as AudioBuffer;
     };
     Object.assign(context, { createBuffer });
-    const originals = [480, 120, 48].map((length) => {
-      const buffer = createBuffer(1, length, 48000);
-      buffer.getChannelData(0).fill(0.5);
-      if (length === 480) buffer.getChannelData(0)[400] = 1;
-      return buffer;
-    });
+    const original = createBuffer(1, 480, 48000);
+    original.getChannelData(0).fill(0.5);
+    original.getChannelData(0)[400] = 1;
     vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
-    await player.loadAudio(originals);
-    // Ratios use sample 0's authoritative duration, even with shorter companion samples.
+    await player.loadAudio(original);
+    // Ratios follow the loaded sample's duration.
     player.updateEnvelope('amp', { duration: 0.3 });
     player.updateEnvelope('amp', { durationRatio: 1 });
-    expect(player.getEnvelopeDuration('amp')).toBe(originals[0].duration);
-    expect(player.getEnvelope('amp').shape.points.at(-1)?.time).toBe(originals[0].duration);
+    expect(player.getEnvelopeDuration('amp')).toBe(original.duration);
+    expect(player.getEnvelope('amp').shape.points.at(-1)?.time).toBe(original.duration);
     // commitPitch bakes the summed offset and zeroes it
     const committed = vi.fn();
     player.onMessage('pitch:committed', committed);
     await expect(player.commitPitch()).resolves.toBeNull();
     player.transpose(-12);
     await player.commitPitch();
-    expect(player.samples.map((buffer) => buffer.length)).toEqual([960, 240, 96]);
+    expect(player.audiobuffer?.length).toBe(960);
     // The sinc filter slightly attenuates a one-frame marker, but keeps its position.
-    expect(player.samples[0].getChannelData(0)[800]).toBeGreaterThan(0.9);
-    expect(player.samples[0].getChannelData(0)[700]).toBeCloseTo(0.5, 4);
+    expect(player.audiobuffer!.getChannelData(0)[800]).toBeGreaterThan(0.9);
+    expect(player.audiobuffer!.getChannelData(0)[700]).toBeCloseTo(0.5, 4);
     expect(player.transposedBySemitones).toBe(0);
     expect(committed).toHaveBeenCalledTimes(1);
     // A transpose during the reload survives as a delta on the baked audio
@@ -153,19 +148,20 @@ it('skips later resampling failures, rejects sample 0 failures, and permits retr
     await pending;
     expect(player.transposedBySemitones).toBe(2);
     player.transpose(0);
-    expect(player.samples.map((buffer) => buffer.length)).toEqual([480, 120, 48]);
+    expect(player.audiobuffer?.length).toBe(480);
     // Band-limited resampling isn't bit-exact over a round trip; crop the originals.
-    await player.loadAudio(originals);
+    await player.loadAudio(original);
     // Inverted points crop the same 0.002..0.006 region
     const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });
-    expect(cropped).toBe(player.samples[0]);
-    expect(player.samples.map((buffer) => buffer.length)).toEqual([192, 192, 192]);
-    expect(Array.from(player.samples[0].getChannelData(0))).toEqual(Array(192).fill(0.5));
-    expect(Array.from(player.samples[1].getChannelData(0))).toEqual([
-      ...Array(24).fill(0.5),
-      ...Array(168).fill(0),
-    ]);
-    expect(Array.from(player.samples[2].getChannelData(0))).toEqual(Array(192).fill(0));
+    expect(cropped).toBe(player.audiobuffer!);
+    expect(player.audiobuffer?.length).toBe(192);
+    expect(Array.from(player.audiobuffer!.getChannelData(0))).toEqual(Array(192).fill(0.5));
+    // A silent crop is still a valid reload.
+    original.getChannelData(0).fill(0, 0, 300);
+    await player.loadAudio(original);
+    await player.cropSample(0, 0.004, { in: 0, out: 0 });
+    expect(player.audiobuffer?.length).toBe(192);
+    expect(player.audiobuffer?.getChannelData(0).every((sample) => sample === 0)).toBe(true);
   } finally {
     player.dispose();
   }

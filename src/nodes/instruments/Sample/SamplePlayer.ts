@@ -48,7 +48,7 @@ import {
 export type SamplePlayerOptions = {
   context: AudioContext;
   polyphony?: number;
-  audio?: AudioInput | AudioInput[];
+  audio?: AudioInput;
   voiceSignalChain?: readonly SampleVoiceChainNode[];
 };
 
@@ -64,13 +64,12 @@ export class SamplePlayer implements ILibInstrumentNode {
   private readonly envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
   #polyphony: number;
   #voiceSignalChain?: readonly SampleVoiceChainNode[];
-  #initialAudio: AudioInput | AudioInput[] | null = null;
+  #initialAudio: AudioInput | null = null;
 
   #connections = new Set<NodeID>();
   #incoming = new Set<NodeID>();
 
-  #audioData: AudioBuffer[] = [];
-  static readonly MAX_SAMPLES = 4;
+  #buffer: AudioBuffer | null = null;
   #bufferDuration: number = 0;
 
   #loopEnabled = false;
@@ -89,7 +88,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   #transposeSemitones = 0;
   #fineTuneCents = 0;
 
-  #tempo = 120;
   #glideTime: number = samplerParams.glide.defaultValue;
   #loopLengthGlide: number = samplerParams.loopLengthGlide.defaultValue;
   #loopPositionGlide: number = samplerParams.loopPositionGlide.defaultValue;
@@ -97,8 +95,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
-  #MAX_TEMPO = 300;
-  #MIN_TEMPO = 20;
 
   #syncGainLFOToMidiNote = false;
   #syncPitchLFOToMidiNote = false;
@@ -391,92 +387,44 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #isLoading = false;
 
-  /**
-   * Replace the whole sample set with one sample or several. Samples are
-   * summed inside the voice worklet at one shared playhead, so they play in
-   * unison and sample 0 is the authority for duration, loop points, start/end
-   * and zero crossings. Samples shorter than sample 0 fall silent at their own
-   * end; longer ones are truncated. Every sample is converted to the context's
-   * sample rate: encoded input by decodeAudioData, AudioBuffers by
-   * resampleAudioBuffer. Always resolves to an array, even for one sample.
-   */
+  /** Replace the sample, converting it to the context's sample rate before preprocessing. */
   async loadAudio(
-    audio: AudioInput | AudioInput[],
+    audio: AudioInput,
     preprocessOptions?: Partial<PreProcessOptions>,
-  ): Promise<AudioBuffer[] | null> {
+  ): Promise<AudioBuffer | null> {
     return this.#loadAudio(audio, preprocessOptions);
   }
 
   async #loadAudio(
-    audio: AudioInput | AudioInput[],
+    audio: AudioInput,
     preprocessOptions?: Partial<PreProcessOptions>,
     validatedCrop = false,
-  ): Promise<AudioBuffer[] | null> {
+  ): Promise<AudioBuffer | null> {
     if (this.#isLoading) {
       throw new Error('A sample load is already in progress');
     }
     this.#isLoading = true;
     let unsubscribe: (() => void) | undefined;
-    let buffers = Array.isArray(audio) ? audio : [audio];
-
     try {
-      if (buffers.length > SamplePlayer.MAX_SAMPLES) {
-        console.warn(`Ignoring samples past ${SamplePlayer.MAX_SAMPLES}; got ${buffers.length}`);
-        buffers = buffers.slice(0, SamplePlayer.MAX_SAMPLES);
+      let buffer = audio;
+      if (buffer instanceof ArrayBuffer) {
+        // decodeAudioData detaches its input; keep callers' encoded data reusable.
+        buffer = await this.context.decodeAudioData(buffer.slice(0));
       }
-
-      const decoded: AudioBuffer[] = [];
-      for (const [index, input] of buffers.entries()) {
-        let buffer = input;
-
-        if (buffer instanceof ArrayBuffer) {
-          // decodeAudioData detaches its input; copy so callers can safely
-          // reuse/re-pass the same ArrayBuffer (e.g. re-selecting a cached sample).
-          try {
-            buffer = await this.context.decodeAudioData(buffer.slice(0));
-          } catch (error) {
-            if (index === 0) throw error;
-            console.warn(`Failed to decode sample ${index}; skipping`, error);
-            continue;
-          }
-        }
-
-        if (!validatedCrop && !isValidAudioBuffer(buffer)) {
-          console.error(`Invalid AudioBuffer provided for sample ${index}`);
-          if (index === 0) return null;
-          continue;
-        }
-
-        // The voice worklet plays buffers at the context's rate.
-        try {
-          decoded.push(await resampleAudioBuffer(buffer, this.context.sampleRate));
-        } catch (error) {
-          if (index === 0) throw error;
-          console.warn(`Failed to resample sample ${index}; skipping`, error);
-        }
+      if (!validatedCrop && !isValidAudioBuffer(buffer)) {
+        console.error('Invalid AudioBuffer provided');
+        return null;
       }
-
-      if (!decoded.length) return null;
-
-      const audioData: AudioBuffer[] = [];
+      buffer = await resampleAudioBuffer(buffer, this.context.sampleRate);
       let newZeroCrossings: number[] = [];
-
-      for (const [index, buffer] of decoded.entries()) {
-        if (!this.#preprocessAudio) {
-          audioData.push(buffer);
-          continue;
-        }
-
-        // Preprocess each sample (re-pitch, trim, normalize, etc.).
-        // Zero crossings are only used for the authority (index 0).
+      if (this.#preprocessAudio) {
         const processed: PreProcessResults = await preProcessAudioBuffer(
           this.context,
           buffer,
           preprocessOptions,
         );
-        audioData.push(processed.audiobuffer);
-
-        if (index === 0 && this.#useZeroCrossings && processed.zeroCrossings) {
+        buffer = processed.audiobuffer;
+        if (this.#useZeroCrossings && processed.zeroCrossings) {
           newZeroCrossings = processed.zeroCrossings;
         }
       }
@@ -484,8 +432,8 @@ export class SamplePlayer implements ILibInstrumentNode {
       // Clear and release only if all preprocessing succeeds.
       this.releaseAll();
       this.#isLoaded = false;
-      this.#audioData = audioData;
-      this.#bufferDuration = audioData[0].duration;
+      this.#buffer = buffer;
+      this.#bufferDuration = buffer.duration;
 
       const loadedPromise = new Promise<void>((resolve) => {
         unsubscribe = this.#voicePool.onMessage('sample:loaded', () => {
@@ -493,7 +441,7 @@ export class SamplePlayer implements ILibInstrumentNode {
         });
       });
 
-      this.#voicePool.setAudioData(audioData, newZeroCrossings);
+      this.#voicePool.setBuffer(buffer, newZeroCrossings);
 
       this.#resetLoopPoints();
       // Trim points are seconds: one left from the previous sample (or set while
@@ -502,7 +450,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.setSampleEndPoint(this.#bufferDuration);
 
       await loadedPromise;
-      return [...audioData];
+      return buffer;
     } finally {
       unsubscribe?.();
       this.#isLoading = false;
@@ -515,7 +463,6 @@ export class SamplePlayer implements ILibInstrumentNode {
    *
    * Points may be in either order. Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
-   * Crops all samples to sample 0's frame range, zero-padding shorter samples.
    */
   async cropSample(
     startSeconds = this.getStartPoint(),
@@ -536,14 +483,9 @@ export class SamplePlayer implements ILibInstrumentNode {
 
     if (endSample <= startSample) return null;
 
-    const cropped = this.#audioData.map((sample) =>
-      trimAudioBuffer(this.context, sample, startSample, endSample, fadeMs),
-    );
-
-    // A valid crop can leave an extra sample entirely silent; retain it so
-    // the sample count (and therefore the worklet's mix gain) stays unchanged.
-    const loaded = await this.#loadAudio(cropped, { skipPreProcessing: true }, true);
-    return loaded?.[0] ?? null;
+    const cropped = trimAudioBuffer(this.context, buffer, startSample, endSample, fadeMs);
+    // Valid crops may be silent; skip the non-silent input check when reloading.
+    return this.#loadAudio(cropped, { skipPreProcessing: true }, true);
   }
 
   /* === PLAYBACK === */
@@ -650,10 +592,8 @@ export class SamplePlayer implements ILibInstrumentNode {
     const transpose = this.#transposeSemitones;
     const fineTune = this.#fineTuneCents;
     const semitones = this.#pitchOffset;
-    if (!this.#audioData.length || semitones === 0) return null;
-    const pitched = this.#audioData.map((sample) =>
-      resampleForPitch(this.context, sample, semitones),
-    );
+    if (!this.#buffer || semitones === 0) return null;
+    const pitched = resampleForPitch(this.context, this.#buffer, semitones);
     const loaded = await this.#loadAudio(pitched, { skipPreProcessing: true }, true);
     if (!loaded) return null;
     // Subtract what was baked rather than zeroing, so a transpose() or
@@ -662,7 +602,7 @@ export class SamplePlayer implements ILibInstrumentNode {
     this.#fineTuneCents -= fineTune;
     this.#applyPitchOffset();
     this.#sendUpstreamMessage('pitch:committed', { semitones });
-    return loaded[0];
+    return loaded;
   }
 
   get transposedBySemitones() {
@@ -894,21 +834,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   setLoopDuration = (seconds: number) =>
     this.#setLoopPoint('end', this.loopStart, this.loopStart + seconds);
 
-  setTempo(bpm: number) {
-    if (bpm < this.#MIN_TEMPO || bpm > this.#MAX_TEMPO) return;
-    this.#tempo = bpm;
-
-    this.#voicePool.applyToAllVoices((voice) => voice.setTempo(bpm));
-
-    this.#sendUpstreamMessage('tempo:updated', { bpm });
-    return this;
-  }
-
-  syncLoopToTempo(enabled: boolean) {
-    this.#voicePool.applyToAllVoices((voice) => voice.syncLoopToTempo(enabled));
-    return this;
-  }
-
   // Keytrack loop length to the played note (0 = fixed samples, 1 = constant loop time)
   setKeytrackLoopAmount(amount: number) {
     const clamped = Math.max(0, Math.min(1, amount));
@@ -918,10 +843,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   getKeytrackLoopAmount = () => this.#keytrackLoopAmount;
-
-  get tempo() {
-    return this.#tempo;
-  }
 
   #setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.
@@ -1401,12 +1322,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   get audiobuffer() {
-    return this.#audioData[0] ?? null;
-  }
-
-  /** All loaded samples. Index 0 is the authority sample (=== `audiobuffer`). */
-  get samples(): readonly AudioBuffer[] {
-    return [...this.#audioData];
+    return this.#buffer;
   }
 
   /* === CLEANUP === */
@@ -1436,7 +1352,7 @@ export class SamplePlayer implements ILibInstrumentNode {
 
       // Reset state variables
       this.#bufferDuration = 0;
-      this.#audioData = [];
+      this.#buffer = null;
       this.#initialized = false;
       this.#isLoaded = false;
       this.#useZeroCrossings = false;

@@ -52,7 +52,7 @@ export type GainStages = Record<string, AudioNode | AudioNode[]>;
 export type AudioInput = ArrayBuffer | AudioBuffer;
 
 export interface SampleLoader {
-  loadAudio(audio: AudioInput | AudioInput[]): Promise<AudioBuffer[] | null>;
+  loadAudio(audio: AudioInput): Promise<AudioBuffer | null>;
 }
 
 // Base interface for all nodes

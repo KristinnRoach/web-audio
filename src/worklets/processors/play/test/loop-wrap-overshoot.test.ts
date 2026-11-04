@@ -51,7 +51,6 @@ function makeParameters(
     playbackPosition: new Float32Array([0]),
     loopDurationDriftAmount: new Float32Array([0]),
     maxLoopCount: new Float32Array([999_999]),
-    tempo: new Float32Array([120]),
   };
 }
 

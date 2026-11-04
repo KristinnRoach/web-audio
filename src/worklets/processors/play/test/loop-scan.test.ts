@@ -87,11 +87,11 @@ describe('trim end moving under an outgoing crossfade head', () => {
 
   async function moveTrimEnd(loopStart: number, offset: number, poke = false) {
     const processor = (await startProcessor([], [0.002, 0.004, 0.008])) as TestProcessor & {
-      audioData: Float32Array[][];
+      buffer: Float32Array[];
       previousLoopRange: { loopStartSamples: number };
       previousPlaybackPosition: number;
     };
-    const data = processor.audioData[0][0];
+    const data = processor.buffer[0];
     data.fill(LEVEL);
     const block = (trim = {}) => {
       const output = new Float32Array(128);

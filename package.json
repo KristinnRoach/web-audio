@@ -44,7 +44,8 @@
     "test:coverage": "vp test run --coverage",
     "test:watch": "vp test",
     "test:all": "vp check --fix && pnpm build && vp run test && vp run test:browser",
-    "prepare": "vp config"
+    "prepare": "vp config",
+    "test:sample-timing": "SAMPLE_PLAYER_TIMING=1 vp test run src/worklets/processors/play/test/voice-timing.test.ts --disableConsoleIntercept"
   },
   "dependencies": {
     "webmidi": "^3.1.16"
