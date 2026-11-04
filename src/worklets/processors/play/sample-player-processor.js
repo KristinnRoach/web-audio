@@ -134,6 +134,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       zeroCrossings,
       playbackDirection,
       triggerId,
+      requestId,
     } = event.data;
 
     switch (type) {
@@ -230,6 +231,19 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'voice:usePlaybackPosition':
         this.usePlaybackPosition = value;
+        break;
+
+      // One-off playhead read: null until the first audible block sets the start.
+      case 'voice:getPosition':
+        this.port.postMessage({
+          type: 'voice:position:reply',
+          requestId,
+          triggerId: this.triggerId,
+          position:
+            this.isPlaying && !this.needsStartPosition
+              ? Math.max(0, Math.min(1, this.#samplesToNormalized(this.playbackPosition)))
+              : null,
+        });
         break;
 
       case 'syncLoopToTempo':

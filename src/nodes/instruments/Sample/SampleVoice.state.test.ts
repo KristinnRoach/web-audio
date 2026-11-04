@@ -599,4 +599,25 @@ describe('SampleVoice state', () => {
       expect.objectContaining({ voiceId: voice.nodeId, midiNote: 60, position: 0.2 }),
     ]);
   });
+
+  it('resolves a position request only for the current note', async () => {
+    const voice = await loadedVoice();
+    const reply = (triggerId: number) => {
+      const { requestId } = audio.posted.at(-1);
+      audio.port.onmessage({
+        data: { type: 'voice:position:reply', requestId, triggerId, position: 0.4 },
+      });
+    };
+
+    expect(await voice.getPlaybackPosition()).toBeNull();
+
+    trigger(voice, 60);
+    const current = voice.getPlaybackPosition();
+    reply(1);
+    expect(await current).toBe(0.4);
+
+    const stale = voice.getPlaybackPosition();
+    reply(0);
+    expect(await stale).toBeNull();
+  });
 });
