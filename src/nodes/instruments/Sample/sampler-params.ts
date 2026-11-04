@@ -343,14 +343,23 @@ export const samplerParams = defineSamplerParams({
     format: secondsOrMilliseconds,
     apply: (p, v) => p.setLoopDuration(v * p.sampleDuration),
   },
-  loopRampDuration: {
-    label: 'Loop Ramp',
+  loopLengthSmoothing: {
+    label: 'Loop Length Smoothing',
     min: 0,
     max: 0.5,
-    defaultValue: 0.125, // Keep equal to the processor's initial loopRampDuration.
+    defaultValue: 0.125, // Keep equal to the processor's initial loopLengthSmoothing.
     step: 0.001,
-    format: positionPercent('loopRampDuration'),
-    apply: (p, v) => p.setLoopRampDuration(v),
+    format: positionPercent('loopLengthSmoothing'),
+    apply: (p, v) => p.setLoopLengthSmoothing(v),
+  },
+  loopPositionSmoothing: {
+    label: 'Loop Position Smoothing',
+    min: 0,
+    max: 0.5,
+    defaultValue: 0, // Keep equal to the processor's initial loopPositionSmoothing.
+    step: 0.001,
+    format: secondsOrMilliseconds,
+    apply: (p, v) => p.setLoopPositionSmoothing(v),
   },
   loopDurationDrift: {
     label: 'Loop Drift',

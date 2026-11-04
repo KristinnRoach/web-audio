@@ -17,7 +17,7 @@ describe('loop pitch quantization and voice reuse', () => {
       const longest = periods.at(-1)!;
       const processor = await startProcessor([], periods);
       processor.port.onmessage?.({
-        data: { type: 'setLoopRampDuration', value: ramp },
+        data: { type: 'setLoopLengthSmoothing', value: ramp },
       } as MessageEvent);
       render(processor, makeParameters({ loopStart: 0.5, loopEnd: 0.5 + 0.9 * longest }), 1);
       const loop = processor.port.postMessage.mock.calls

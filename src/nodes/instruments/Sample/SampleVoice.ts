@@ -29,7 +29,6 @@ import {
 
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
 export type TimestretchMode = 'off' | 'splice';
-export type LoopScrollMode = 'instant' | 'pitchGlide';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 
@@ -865,13 +864,13 @@ export class SampleVoice {
     return this;
   }
 
-  setLoopRampDuration(seconds: number) {
-    this.sendToProcessor({ type: 'setLoopRampDuration', value: seconds });
+  setLoopLengthSmoothing(seconds: number) {
+    this.sendToProcessor({ type: 'setLoopLengthSmoothing', value: seconds });
     return this;
   }
 
-  setLoopScrollMode(mode: LoopScrollMode): this {
-    this.sendToProcessor({ type: 'setLoopScrollMode', value: mode });
+  setLoopPositionSmoothing(seconds: number): this {
+    this.sendToProcessor({ type: 'setLoopPositionSmoothing', value: seconds });
     return this;
   }
 

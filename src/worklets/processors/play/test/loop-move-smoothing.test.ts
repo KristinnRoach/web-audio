@@ -130,7 +130,7 @@ describe('audio-rate loop movement smoothing', () => {
             },
           } as MessageEvent);
           processor.port.onmessage?.({
-            data: { type: 'setLoopRampDuration', value: 0 },
+            data: { type: 'setLoopLengthSmoothing', value: 0 },
           } as MessageEvent);
           processor.port.onmessage?.({
             data: { type: 'setLoopEnabled', value: true },

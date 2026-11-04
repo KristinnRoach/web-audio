@@ -38,7 +38,7 @@ import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { createSampleVoicePool } from './createSampleVoicePool';
-import type { SampleVoiceChainNode, TimestretchMode, LoopScrollMode } from './SampleVoice';
+import type { SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
 import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeConfig,
@@ -91,8 +91,8 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #tempo = 120;
   #glideTime: number = samplerParams.glide.defaultValue;
-  #loopRampDuration: number = samplerParams.loopRampDuration.defaultValue;
-  #loopScrollMode: LoopScrollMode = 'instant';
+  #loopLengthSmoothing: number = samplerParams.loopLengthSmoothing.defaultValue;
+  #loopPositionSmoothing: number = samplerParams.loopPositionSmoothing.defaultValue;
   #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
@@ -287,9 +287,11 @@ export class SamplePlayer implements ILibInstrumentNode {
         this.#voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
       });
       this.#voicePool.applyToAllVoices((voice) =>
-        voice.setLoopRampDuration(this.#loopRampDuration),
+        voice.setLoopLengthSmoothing(this.#loopLengthSmoothing),
       );
-      this.#voicePool.applyToAllVoices((voice) => voice.setLoopScrollMode(this.#loopScrollMode));
+      this.#voicePool.applyToAllVoices((voice) =>
+        voice.setLoopPositionSmoothing(this.#loopPositionSmoothing),
+      );
       this.#voicePool.applyToAllVoices((voice) =>
         voice.enablePositionTracking(this.#positionTracking),
       );
@@ -757,16 +759,16 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   // Glide time constant between quantized loop periods, applied in the processor. 0 = stepped.
-  setLoopRampDuration(seconds: number): this {
-    this.#loopRampDuration = seconds;
-    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
+  setLoopLengthSmoothing(seconds: number): this {
+    this.#loopLengthSmoothing = seconds;
+    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopLengthSmoothing(seconds));
     return this;
   }
 
-  /** Gradual scrolling of quantized audio-rate loops; timing uses loopRampDuration. */
-  setLoopScrollMode(mode: LoopScrollMode): this {
-    this.#loopScrollMode = mode;
-    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopScrollMode(mode));
+  /** Scan time constant for quantized audio-rate loops. 0 = instant. */
+  setLoopPositionSmoothing(seconds: number): this {
+    this.#loopPositionSmoothing = seconds;
+    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopPositionSmoothing(seconds));
     return this;
   }
 
@@ -998,8 +1000,11 @@ export class SamplePlayer implements ILibInstrumentNode {
       case 'loopEnd':
         this.setLoopEnd(value);
         break;
-      case 'loopRampDuration':
-        this.setLoopRampDuration(value);
+      case 'loopLengthSmoothing':
+        this.setLoopLengthSmoothing(value);
+        break;
+      case 'loopPositionSmoothing':
+        this.setLoopPositionSmoothing(value);
         break;
       default:
         console.warn(`Unknown parameter: ${name}`);
@@ -1036,8 +1041,12 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#voicePool?.allVoices[0]?.endPoint ?? this.sampleDuration;
   }
 
-  getLoopRampDuration(): number {
-    return this.#loopRampDuration;
+  getLoopLengthSmoothing(): number {
+    return this.#loopLengthSmoothing;
+  }
+
+  getLoopPositionSmoothing(): number {
+    return this.#loopPositionSmoothing;
   }
 
   getGlideTime(): number {
@@ -1053,8 +1062,10 @@ export class SamplePlayer implements ILibInstrumentNode {
         return this.loopStart;
       case 'loopEnd':
         return this.loopEnd;
-      case 'loopRampDuration':
-        return this.getLoopRampDuration();
+      case 'loopLengthSmoothing':
+        return this.getLoopLengthSmoothing();
+      case 'loopPositionSmoothing':
+        return this.getLoopPositionSmoothing();
       case 'startPoint':
         return this.getStartPoint();
       case 'endPoint':

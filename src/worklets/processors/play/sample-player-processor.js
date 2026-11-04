@@ -88,14 +88,15 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.timestretch = new SpliceStretcher(sampleRate);
 
     // Glide time constant between quantized loop periods, not an arrival time
-    // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopRampDuration.
-    this.loopRampDuration = 0.125;
-    this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
+    // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthSmoothing.
+    this.loopLengthSmoothing = 0.125;
+    this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopLengthSmoothing);
     this.loopGlideLogLength = null;
     this.loopGlideStart = null;
     this.loopScrollLength = null;
     this.loopStartGliding = false;
-    this.loopScrollMode = 'instant';
+    this.loopPositionSmoothing = 0;
+    this.loopScrollCoefficient = 1;
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -247,13 +248,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         });
         break;
 
-      case 'setLoopRampDuration':
-        this.loopRampDuration = value;
+      case 'setLoopLengthSmoothing':
+        this.loopLengthSmoothing = value;
         this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / value);
         break;
 
-      case 'setLoopScrollMode':
-        this.loopScrollMode = value;
+      case 'setLoopPositionSmoothing':
+        this.loopPositionSmoothing = value;
+        this.loopScrollCoefficient = value > 0 ? -Math.expm1(-1 / sampleRate / value) : 1;
         break;
 
       case 'setKeytrackLoopAmount':
@@ -491,7 +493,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       return target;
     }
     const logTarget = Math.log(target);
-    if (this.loopGlideLogLength === null || !(this.loopRampDuration > 0)) {
+    if (this.loopGlideLogLength === null || !(this.loopLengthSmoothing > 0)) {
       this.loopGlideLogLength = logTarget;
     } else {
       this.loopGlideLogLength += (logTarget - this.loopGlideLogLength) * this.loopGlideCoefficient;
@@ -513,21 +515,18 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopScrollLength = length;
     this.loopStartGliding = false;
     if (
-      this.loopScrollMode !== 'pitchGlide' ||
       !this.loopEnabled ||
       !scrolled ||
-      this.loopGlideLogLength === null ||
-      period > this.pitchPreservationThreshold ||
+      !this.#canQuantizeLoopPeriod(period) ||
       this.loopGlideStart === null ||
-      !(this.loopRampDuration > 0)
+      !(this.loopPositionSmoothing > 0)
     ) {
       this.loopGlideStart = target;
       return target;
     }
-    this.loopStartGliding = true;
-    this.loopGlideStart += (target - this.loopGlideStart) * this.loopGlideCoefficient;
-    if (Math.abs(target - this.loopGlideStart) > 1e-6) this.loopGliding = true;
-    else this.loopGlideStart = target;
+    this.loopStartGliding = Math.abs(target - this.loopGlideStart) > 1e-6;
+    this.loopGlideStart += (target - this.loopGlideStart) * this.loopScrollCoefficient;
+    if (Math.abs(target - this.loopGlideStart) <= 1e-6) this.loopGlideStart = target;
     return this.loopGlideStart;
   }
 
@@ -959,6 +958,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         !loopRange ||
         (pointsChanged && followsPointsPerSample) ||
         this.loopGliding ||
+        this.loopStartGliding ||
         driftPending
       ) {
         loopRange = this.#calculateLoopRange(
