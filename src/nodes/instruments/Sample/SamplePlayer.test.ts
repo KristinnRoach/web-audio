@@ -1,4 +1,4 @@
-import { initTestPlayer } from './test/initTestPlayer';
+import { initTestPlayer, getTestLFOs } from './test/initTestPlayer';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
 import type { SampleVoicePool } from './SampleVoicePool';
@@ -125,7 +125,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   }
 });
 
-it('connects pitch LFO to every voice detune and maps normalized depth to cents', async () => {
+it('keeps LFO routing and parameter mappings behind player controls', async () => {
   vi.stubGlobal('window', {});
   vi.stubGlobal('AudioContext', class {});
   vi.stubGlobal('AudioWorkletNode', class {});
@@ -153,13 +153,19 @@ it('connects pitch LFO to every voice detune and maps normalized depth to cents'
           } as never),
         ),
     });
-    expect(player.pitchLFO!.connect).toHaveBeenCalledTimes(2);
-    detunes.forEach((detune) => expect(player.pitchLFO!.connect).toHaveBeenCalledWith(detune));
+    const [gainLFO, pitchLFO] = getTestLFOs().slice(-2);
+    expect(pitchLFO.connect).toHaveBeenCalledTimes(2);
+    detunes.forEach((detune) => expect(pitchLFO.connect).toHaveBeenCalledWith(detune));
+
+    player.applyParams({ gainLFORate: 0.5, gainLFODepth: 0.75, pitchLFORate: 0.25 });
+    expect(gainLFO.setFrequency).toHaveBeenLastCalledWith(50.1);
+    expect(gainLFO.setDepth).toHaveBeenLastCalledWith(0.75);
+    expect(pitchLFO.setFrequency).toHaveBeenLastCalledWith(25.1);
 
     player.applyParams({ pitchLFODepth: 1 });
-    expect(player.pitchLFO!.setDepth).toHaveBeenLastCalledWith(200);
+    expect(pitchLFO.setDepth).toHaveBeenLastCalledWith(200);
     player.applyParams({ pitchLFODepth: 0 });
-    expect(player.pitchLFO!.setDepth).toHaveBeenLastCalledWith(0);
+    expect(pitchLFO.setDepth).toHaveBeenLastCalledWith(0);
   } finally {
     player.dispose();
     vi.unstubAllGlobals();
