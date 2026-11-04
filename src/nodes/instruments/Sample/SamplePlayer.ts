@@ -33,7 +33,7 @@ import {
   cloneEnvelopeConfig,
   type EnvelopeConfig,
 } from './envelope-config';
-import { ILibInstrumentNode } from '@/nodes/LibAudioNode';
+import type { AudioDestination } from '@/nodes/LibAudioNode';
 import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
@@ -195,23 +195,23 @@ export class SamplePlayer {
 
   // === CONNECTIONS ===
 
-  public connect(destination: SamplePlayer | ILibInstrumentNode | AudioNode): void {
+  public connect(destination: AudioDestination): void {
     const target = 'input' in destination && destination.input ? destination.input : destination;
 
     this.#masterOut.connect(target as AudioNode);
 
     // Track the connection by NodeID if possible
-    if ('nodeId' in destination) {
+    if ('nodeId' in destination && typeof destination.nodeId === 'string') {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
   }
 
-  public disconnect(destination?: SamplePlayer | ILibInstrumentNode | AudioNode): void {
+  public disconnect(destination?: AudioDestination): void {
     if (destination) {
       const target = 'input' in destination ? destination.input : destination;
       this.#masterOut.disconnect(target as AudioNode);
-      if ('nodeId' in destination) {
+      if ('nodeId' in destination && typeof destination.nodeId === 'string') {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }

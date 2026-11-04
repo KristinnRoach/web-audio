@@ -1,6 +1,7 @@
 import { initTestPlayer, getTestLFOs } from './test/initTestPlayer';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
+import type { AudioDestination, ILibAudioNode } from '../../LibAudioNode';
 import type { SampleVoicePool } from './SampleVoicePool';
 import type { EnvelopeConfig } from './envelope-config';
 import { createDefaultSampleEnvelopeConfig } from './sample-envelope-policy';
@@ -167,6 +168,58 @@ it('keeps LFO routing and parameter mappings behind player controls', async () =
     player.applyParams({ pitchLFODepth: 0 });
     expect(pitchLFO.setDepth).toHaveBeenLastCalledWith(0);
   } finally {
+    player.dispose();
+    vi.unstubAllGlobals();
+  }
+});
+
+it('routes library nodes to players, input wrappers, and native nodes', async () => {
+  vi.stubGlobal('window', {});
+  vi.stubGlobal('AudioContext', class {});
+  vi.stubGlobal('AudioWorkletNode', class {});
+  vi.stubGlobal(
+    'GainNode',
+    class {
+      connect = vi.fn();
+      disconnect = vi.fn();
+    },
+  );
+  const { SamplePlayer } = await import('./SamplePlayer');
+  const { LibAudioNode } = await import('../../LibAudioNode');
+  const context = Object.assign(new EventTarget(), { currentTime: 0 }) as AudioContext;
+  const connect = vi.fn();
+  const disconnect = vi.fn();
+  const source: ILibAudioNode = new LibAudioNode(
+    { connect, disconnect, context } as unknown as AudioNode,
+    context,
+    'GainNode',
+  );
+  const player = new SamplePlayer({ context });
+
+  try {
+    await initTestPlayer(player, {});
+    const input = {} as AudioNode;
+    const playerConnect = vi.spyOn(player.output, 'connect');
+    const playerDisconnect = vi.spyOn(player.output, 'disconnect');
+    const destinations: AudioDestination[] = [player, { input }, input];
+    for (const destination of destinations) {
+      const target = 'input' in destination ? destination.input : destination;
+      source.connect(destination);
+      expect(connect).toHaveBeenLastCalledWith(target);
+      expect(source.connections.outgoing).toEqual(destination === player ? [player.nodeId] : []);
+      source.disconnect(destination);
+      expect(disconnect).toHaveBeenLastCalledWith(target);
+      expect(source.connections.outgoing).toEqual([]);
+    }
+    for (const destination of [source, { input }, input]) {
+      const target = 'input' in destination ? destination.input : destination;
+      player.connect(destination);
+      expect(playerConnect).toHaveBeenLastCalledWith(target);
+      player.disconnect(destination);
+      expect(playerDisconnect).toHaveBeenLastCalledWith(target);
+    }
+  } finally {
+    source.dispose();
     player.dispose();
     vi.unstubAllGlobals();
   }

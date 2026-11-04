@@ -1,6 +1,6 @@
 // InstrumentMasterBus.ts
 
-import { ILibAudioNode, LibAudioNode } from '@/nodes/LibAudioNode';
+import { type AudioDestination, ILibAudioNode, LibAudioNode } from '@/nodes/LibAudioNode';
 import { registerNode, NodeID, unregisterNode } from '@/nodes/node-store';
 import { GainStages } from '@/nodes/LibNode';
 
@@ -547,19 +547,19 @@ export class InstrumentBus implements ILibAudioNode {
     return this;
   }
 
-  connect(destination: ILibAudioNode | AudioNode): void {
+  connect(destination: AudioDestination): void {
     this.getNode('output').connect(destination);
 
-    if ('nodeId' in destination) {
+    if ('nodeId' in destination && typeof destination.nodeId === 'string') {
       this.#outgoingConnections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
   }
 
-  disconnect(destination?: ILibAudioNode | AudioNode): void {
+  disconnect(destination?: AudioDestination): void {
     this.getNode('output').disconnect(destination);
 
-    if (destination && 'nodeId' in destination) {
+    if (destination && 'nodeId' in destination && typeof destination.nodeId === 'string') {
       this.#outgoingConnections.delete(destination.nodeId);
       (destination as any).removeIncoming?.(this.nodeId);
     } else if (!destination) {

@@ -1,4 +1,4 @@
-import { ILibAudioNode } from '../LibAudioNode';
+import { type AudioDestination, ILibAudioNode } from '../LibAudioNode';
 import { NodeType } from '@/nodes/LibNode';
 import { registerNode, NodeID, unregisterNode } from '@/nodes/node-store';
 
@@ -101,21 +101,21 @@ export class DattorroReverb implements ILibAudioNode {
     this.setAmountMacro(0.01);
   }
 
-  connect(destination: ILibAudioNode | AudioNode): void {
+  connect(destination: AudioDestination): void {
     const target = 'input' in destination ? destination.input : destination;
     this.#reverb.connect(target as AudioNode);
 
-    if ('nodeId' in destination) {
+    if ('nodeId' in destination && typeof destination.nodeId === 'string') {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
   }
 
-  disconnect(destination?: ILibAudioNode | AudioNode): void {
+  disconnect(destination?: AudioDestination): void {
     if (destination) {
       const target = 'input' in destination ? destination.input : destination;
       this.#reverb.disconnect(target as AudioNode);
-      if ('nodeId' in destination) {
+      if ('nodeId' in destination && typeof destination.nodeId === 'string') {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }
