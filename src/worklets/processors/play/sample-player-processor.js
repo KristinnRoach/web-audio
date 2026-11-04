@@ -13,6 +13,8 @@ const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
 // false restores bare turns.
 const LOOP_TURN_CROSSFADE = true;
 const TAIL_FADE_SAMPLES = 64;
+// Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
+const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
 // Beat divisors in the original lookup order (ties resolve to the earlier entry):
 // whole, half, quarter, eighth, sixteenth, thirty-second, then quarter/eighth/sixteenth triplets
 const TEMPO_SYNC_BEAT_DIVISORS = [0.25, 0.5, 1, 2, 4, 8, 1.5, 3, 6];
@@ -71,17 +73,16 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     // All entries contribute to the mix used for rendering and de-click correction.
     this.audioData = [];
     this.audioDataGain = 1;
-    this.velocitySensitivity = 1.0; // full velocity = unity gain
 
     this.loopEnabled = false;
     this.reversePlayback = false;
     this.panDriftEnabled = true;
-    this.PAN_DRIFT_DEPTH = 1.0; // Max pan offset at full loop drift; tune by ear
+    this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS);
+    this.smoothedPanDrift = 0;
 
     this.reportPlaybackPosition = false;
     this.enableLoopCrossfade = true; // Crossfade between loop points
     this.loopCrossfade = new LoopCrossfade();
-    this.enableAdaptiveDrift = true; // Adaptive drift scaling based on loop duration
     this.syncLoopToTempo = false; // Todo: add controls for interactive testing
     // Ping-pong turns around at both loop edges and overrides loop point order.
     this.loopPingPong = false;
@@ -184,6 +185,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.loopCount = 0;
         this.pendingLoopCycleTime = null;
         this.loopDriftRolled = false; // roll fresh drift for this note
+        this.smoothedPanDrift = 0;
         this.driftUpdateCounter = 0; // and don't let the short-loop cadence skip it
         this.loopTurned = false;
         this.#resetLoopGlides(); // new notes start on the target range
@@ -219,6 +221,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'setPanDriftEnabled':
         this.panDriftEnabled = value;
+        if (!value) this.currentPanDrift = 0;
         break;
 
       case 'voice:setPlaybackDirection': {
@@ -285,10 +288,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopCrossfade.reset();
     this.#resetLoopGlides();
 
-    // Loop & Pan drift feature
     this.driftUpdateCounter = 0;
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
+    this.smoothedPanDrift = 0;
 
     this.loopDriftRolled = false;
 
@@ -659,48 +662,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // Apply drift to loop end position
-    if (driftAmount > 0 && this.loopEnabled) {
-      // Generate new drift only at the start of each loop iteration
-      if (!this.loopDriftRolled) {
-        // For short loops (audio-rate), update drift less frequently
-        const updateInterval =
-          baseDuration <= this.pitchPreservationThreshold
-            ? Math.max(1, Math.floor(this.pitchPreservationThreshold / baseDuration))
-            : 1;
-
-        const shouldUpdateDrift = this.driftUpdateCounter % updateInterval === 0;
-
-        if (shouldUpdateDrift) {
-          this.currentLoopDrift = this.#generateLoopDrift(driftAmount, baseDuration);
-
-          if (!isAudioRate && this.panDriftEnabled && driftAmount > 0 && this.loopCount > 0) {
-            // Track the relative loop stretch, not its absolute sample count:
-            // scaling raw samples made pan depend on loop length, so long loops
-            // saturated to hard-panned while audio-rate loops got nothing.
-            this.currentPanDrift = (this.currentLoopDrift / baseDuration) * this.PAN_DRIFT_DEPTH;
-          } else {
-            this.currentPanDrift = 0;
-          }
-        }
-
-        this.driftUpdateCounter++;
-        this.loopDriftRolled = true;
-      }
-
-      // Apply drift to loop end, ensuring it stays within bounds
-      const driftedLoopEnd = calcLoopEnd + this.currentLoopDrift;
-
-      // Clamp to stay within playback range and ensure minimum loop duration
-      const minLoopDuration = Math.max(1, Math.floor(baseDuration * 0.1)); // At least 10% of original duration
-      // Ceiling is the keytracked end when it already reaches past the audio,
-      // otherwise drift would pull the silence-padded tail back in.
-      const maxLoopEnd = Math.max(playbackRange.endSamples, calcLoopEnd);
-      calcLoopEnd = Math.max(calcLoopStart + minLoopDuration, Math.min(maxLoopEnd, driftedLoopEnd));
-    } else {
-      // Ensure pan drift is set to zero if no loopDrift applied
-      this.currentPanDrift = 0;
-    }
+    calcLoopEnd = this.#applyLoopDrift(
+      calcLoopStart,
+      calcLoopEnd,
+      baseDuration,
+      driftAmount,
+      playbackRange.endSamples,
+    );
 
     // Snap the end last: drift moves the wrap point, so snapping before drift
     // leaves the actual loop end off a zero crossing -> discontinuity click.
@@ -747,45 +715,64 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   }
 
   /**
-   * Generate a new drift amount for the current loop iteration
-   * @param {number} driftAmount - Maximum drift amount (0-1)
-   * @param {number} baseDuration - Base loop duration in samples
-   * @returns {number} - Drift amount in samples
+   * Moves the loop end by the current iteration's drift, rolling it if needed.
+   * @param {number} baseDuration - Loop duration in samples, before zero-crossing snaps
+   * @returns {number} - Drifted loop end in samples
    */
-  #generateLoopDrift(driftAmount, baseDuration) {
-    if (driftAmount <= 0) return 0;
-
-    // Generate random value between -1 and 1
-    const randomFactor = (Math.random() - 0.5) * 2;
-
-    // EXPERIMENTAL: Adaptive scaling based on loop duration
-    let effectiveDriftAmount = driftAmount;
-
-    if (this.enableAdaptiveDrift) {
-      // Scale drift based on loop duration
-      // Short loops (< 1024 samples ~= 23ms @ 44.1kHz) get much less drift
-      // Long loops (> 8192 samples ~= 186ms @ 44.1kHz) get full drift
-      const shortThreshold = 1024;
-      const longThreshold = 8192;
-
-      if (baseDuration < shortThreshold) {
-        // Very short loops: reduce drift to 10% to preserve pitch
-        effectiveDriftAmount *= 0.1;
-      } else if (baseDuration < longThreshold) {
-        // Medium loops: linear scaling from 10% to 100%
-        const scaleFactor =
-          0.1 + (0.9 * (baseDuration - shortThreshold)) / (longThreshold - shortThreshold);
-        effectiveDriftAmount *= scaleFactor;
-      }
-      // Long loops: use full drift amount (no scaling)
+  #applyLoopDrift(loopStart, loopEnd, baseDuration, driftAmount, playbackEnd) {
+    if (driftAmount <= 0 || !this.loopEnabled) {
+      this.currentPanDrift = 0;
+      return loopEnd;
     }
 
-    // Scale by effective drift amount and base duration
-    const maxDriftSamples = effectiveDriftAmount * baseDuration;
+    if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration);
+
+    const minDuration = Math.max(1, Math.floor(baseDuration * 0.1));
+    // Ceiling is the keytracked end when it already reaches past the audio,
+    // otherwise drift would pull the silence-padded tail back in.
+    const maxEnd = Math.max(playbackEnd, loopEnd);
+    return Math.max(loopStart + minDuration, Math.min(maxEnd, loopEnd + this.currentLoopDrift));
+  }
+
+  /** Runs once per loop iteration. Audio-rate loops re-roll less often. */
+  #rollLoopDrift(driftAmount, baseDuration) {
+    const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
+    const updateInterval = isAudioRate
+      ? Math.max(1, Math.floor(this.pitchPreservationThreshold / baseDuration))
+      : 1;
+
+    if (this.driftUpdateCounter % updateInterval === 0) {
+      this.currentLoopDrift = this.#generateLoopDrift(driftAmount, baseDuration);
+      // Audio-rate drift is scaled down and rounded to whole samples, often to nothing,
+      // so pan rolls its own value there.
+      const panDrift = isAudioRate
+        ? (Math.random() - 0.5) * 2 * driftAmount
+        : this.currentLoopDrift / baseDuration;
+      this.currentPanDrift = this.panDriftEnabled && this.loopCount > 0 ? panDrift : 0;
+    }
+
+    this.driftUpdateCounter++;
+    this.loopDriftRolled = true;
+  }
+
+  /**
+   * @param {number} driftAmount - Maximum drift as a fraction of the loop (0-1)
+   * @param {number} baseDuration - Loop duration in samples
+   * @returns {number} - Random whole-sample drift, positive or negative
+   */
+  #generateLoopDrift(driftAmount, baseDuration) {
+    // Scale from 10% at 1024 samples (~23ms at 44.1kHz) to 100% at 8192 (~186ms),
+    // so short loops keep their pitch.
+    const shortThreshold = 1024;
+    const longThreshold = 8192;
+    const position = (baseDuration - shortThreshold) / (longThreshold - shortThreshold);
+    const durationScale = 0.1 + 0.9 * Math.max(0, Math.min(1, position));
+
+    const randomFactor = (Math.random() - 0.5) * 2;
 
     // Round to the nearest source sample: floor turns even tiny negative drift
     // into a full-sample shortening of the loop.
-    return Math.round(randomFactor * maxDriftSamples);
+    return Math.round(randomFactor * driftAmount * durationScale * baseDuration);
   }
 
   /**
@@ -908,10 +895,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     let loopRange;
     let previousRate;
 
-    const velocityGain =
-      this.#midiVelocityToGain(parameters.velocity[0]) * this.velocitySensitivity;
+    const velocityGain = this.#midiVelocityToGain(parameters.velocity[0]);
 
-    // EXPERIMENTAL: Apply pan drift if enabled
     const basePan = parameters.pan[0];
     const numChannels = outputChannels.length; // Always process all output channels
 
@@ -1040,9 +1025,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       }
       this.previousLoopRange = loopRange;
 
-      const effectivePan = this.panDriftEnabled
-        ? Math.max(-1, Math.min(1, basePan + this.currentPanDrift))
-        : basePan;
+      this.smoothedPanDrift +=
+        (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
+      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift));
 
       // The stretcher still has no independent turn state for backward/ping-pong.
       const timestretchActive =
@@ -1131,13 +1116,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
-        if (!outputChannels[channel]) {
-          console.warn(
-            `Output channel ${channel} does not exist. Available channels:`,
-            outputChannels.length,
-          );
-          continue;
-        }
+        if (!outputChannels[channel]) continue;
 
         let interpolatedSample = this.#sumAudioData(this.playbackPosition, channel, lastAudioIndex);
         if (timestretchOutgoingPosition !== null) {
