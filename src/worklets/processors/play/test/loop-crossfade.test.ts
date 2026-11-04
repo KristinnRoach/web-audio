@@ -52,6 +52,30 @@ describe('loop jump crossfade', () => {
     // After the fade, playback reads the loop start again
     expect(output[6000 + 300]).toBeCloseTo(300 / 48_000, 4);
   });
+
+  it.each([
+    {
+      name: 'reverse wrap',
+      message: { type: 'voice:setPlaybackDirection', playbackDirection: 'reverse' },
+    },
+    { name: 'ping-pong turn', message: { type: 'setLoopPingPong', value: true } },
+  ])('holds the first sample when reading before the buffer on a $name', async ({ message }) => {
+    const source = new Float32Array(48_000).fill(1);
+    const processor = await startProcessor();
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
+    send(message);
+    send({ type: 'voice:start', triggerId: 1 });
+    const output = new Float32Array(6000);
+    processor.process(
+      [],
+      [[output]],
+      makeParameters({ endPoint: 2000 / 48_000, loopEnd: 2000 / 48_000 }),
+    );
+
+    // A constant source stays constant through the crossfade
+    expect(Math.min(...output)).toBeCloseTo(1, 4);
+  });
 });
 
 // Covers LOOP_TURN_CROSSFADE; expected to fail with it off.

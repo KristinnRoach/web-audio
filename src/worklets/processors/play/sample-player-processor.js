@@ -21,8 +21,8 @@ const TEMPO_SYNC_BEAT_DIVISORS = [0.25, 0.5, 1, 2, 4, 8, 1.5, 3, 6];
 function interpolate(samples, position, lastIndex) {
   const index = Math.floor(position);
   const weight = position - index;
-  const a = samples[Math.min(index, lastIndex)] || 0;
-  const b = samples[Math.min(index + 1, lastIndex)] || 0;
+  const a = samples[Math.max(0, Math.min(index, lastIndex))] || 0;
+  const b = samples[Math.max(0, Math.min(index + 1, lastIndex))] || 0;
   return a + weight * (b - a);
 }
 
