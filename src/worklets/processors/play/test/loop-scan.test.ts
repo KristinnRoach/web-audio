@@ -15,8 +15,8 @@ describe('loop position glide timing', () => {
       processor.port.onmessage?.({ data: { type, value } } as MessageEvent);
     send('setLoopLengthGlide', lengthGlideSeconds);
     if (positionGlideSeconds !== undefined) send('setLoopPositionGlide', positionGlideSeconds);
-    const process = (start: number, end: number, frames = 1) => {
-      const params = makeParameters({ loopStart: start, loopEnd: end });
+    const process = (start: number, end: number, frames = 1, trim = {}) => {
+      const params = makeParameters({ loopStart: start, loopEnd: end, ...trim });
       processor.process([], [[new Float32Array(frames)]], params);
       return (
         processor as typeof processor & {
@@ -56,5 +56,15 @@ describe('loop position glide timing', () => {
       new Float32Array([0.0001])[0] * TEST_SAMPLE_RATE,
       7,
     );
+  });
+
+  it.each([
+    ['start', { startPoint: 0.05 }, 0],
+    ['end', { endPoint: 0.05 }, 4800],
+  ])('keeps the loop length when trim %s moves past the glide', async (_, trim, settleFrames) => {
+    const { process } = await setup(0.02);
+    process(0.1, 0.104, settleFrames || 1);
+    const range = process(0.1, 0.104, 1, trim);
+    expect(range.loopDurationSamples).toBeCloseTo(0.004 * TEST_SAMPLE_RATE, 3);
   });
 });

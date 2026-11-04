@@ -574,7 +574,15 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (glidedLoopLength >= 1 && glidedLoopLength <= this.pitchPreservationThreshold) {
       // Preserve the length when it fits; otherwise fill trim without changing the target.
       const fittedLength = Math.min(glidedLoopLength, playbackRange.durationSamples);
-      lpStart = Math.min(Math.max(lpStart, rangeStart), rangeEnd - fittedLength);
+      const maxStart = rangeEnd - fittedLength;
+      lpStart = Math.min(Math.max(lpStart, rangeStart), maxStart);
+      // Trim or length can strand the glide outside the window; resolveRange would clip the loop.
+      if (this.loopPositionGlidePosition !== null) {
+        this.loopPositionGlidePosition = Math.min(
+          Math.max(this.loopPositionGlidePosition, rangeStart),
+          maxStart,
+        );
+      }
       lpStart = this.#glideLoopPosition(lpStart, params, glidedLoopLength);
       lpEnd = lpStart + fittedLength;
     } else {
