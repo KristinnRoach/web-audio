@@ -299,7 +299,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.isLoopLengthGliding = false;
     this.glidedLoopLogLength = null;
     this.isLoopPositionGliding = false;
-    this.isLoopStartForcedByTrim = false;
+    this.isLoopStartClamped = false;
     this.glidedLoopStart = null;
     // Raw loop points in samples (start may pass end), from the last range calculation.
     this.previousRequestedLoop = { start: null, end: null };
@@ -582,8 +582,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       // Trim or length can strand the glide outside the window; resolveRange would clip the loop.
       if (this.glidedLoopStart !== null) {
         const clampedStart = Math.min(Math.max(this.glidedLoopStart, rangeStart), maxStart);
-        // Over a sample is a jump to crossfade; a length glide nudges the start by less.
-        this.isLoopStartForcedByTrim = Math.abs(clampedStart - this.glidedLoopStart) > 1;
+        // Trim or a length glide can move the bound; over a sample counts as a jump to crossfade.
+        this.isLoopStartClamped = Math.abs(clampedStart - this.glidedLoopStart) > 1;
         this.glidedLoopStart = clampedStart;
       }
       lpStart = this.#glideLoopPosition(lpStart, params, glidedLoopLength);
@@ -1019,10 +1019,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousPlaybackPosition >= previous.loopStartSamples &&
         this.previousPlaybackPosition <= previous.loopEndSamples
       ) {
-        if (
-          this.enableLoopCrossfade &&
-          (!this.isLoopPositionGliding || this.isLoopStartForcedByTrim)
-        ) {
+        if (this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped)) {
           // From the unmoved playhead, before any edge it passes this frame
           this.loopCrossfade.start(
             this.playbackPosition,
