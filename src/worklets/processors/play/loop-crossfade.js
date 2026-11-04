@@ -13,6 +13,7 @@ export class LoopCrossfade {
     position: 0,
     direction: 1,
     fadesTail: false,
+    audioEnd: 0,
     mix: 0,
     length: 0,
     progress: 0,
@@ -38,8 +39,10 @@ export class LoopCrossfade {
    *   playhead's only for a turn).
    * @param {number} length Fade length in source samples.
    * @param {boolean} fadesTail Whether that position's loop has a silent tail.
+   * @param {number} audioEnd That position's trim end. Trim can move during the fade;
+   *   the head keeps reading what was audible.
    */
-  start(position, direction, length, fadesTail) {
+  start(position, direction, length, fadesTail, audioEnd) {
     if (length < 1) return;
     // ponytail: drops the oldest head at the cap, a small step if it was still fading
     if (this.#count === MAX_HEADS) this.#remove(0);
@@ -47,6 +50,7 @@ export class LoopCrossfade {
     head.position = position;
     head.direction = direction;
     head.fadesTail = fadesTail;
+    head.audioEnd = audioEnd;
     head.mix = 0;
     head.length = length;
     head.progress = 0;

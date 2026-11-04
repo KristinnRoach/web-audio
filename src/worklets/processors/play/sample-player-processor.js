@@ -336,7 +336,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     if (this.enableLoopCrossfade && (!turns || LOOP_TURN_CROSSFADE)) {
       // The outgoing head carries on past the edge in the pre-turn direction
       const length = this.#crossfadeLength(loopRange);
-      this.loopCrossfade.start(this.playbackPosition, direction, length, silencePadTail);
+      this.loopCrossfade.start(
+        this.playbackPosition,
+        direction,
+        length,
+        silencePadTail,
+        loopRange.audioEndSamples,
+      );
     }
     this.playbackPosition = nextPosition;
     this.loopCount++;
@@ -718,6 +724,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
     range.keytrackAmount = keytrackAmount;
+    range.audioEndSamples = rangeEnd;
     return range;
   }
 
@@ -1025,7 +1032,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
             this.playbackPosition,
             this.loopTurned ? -approachDirection : approachDirection,
             this.#crossfadeLength(loopRange),
-            previous.loopEndSamples > playbackRange.endSamples,
+            previous.loopEndSamples > previous.audioEndSamples,
+            previous.audioEndSamples,
           );
         }
         this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
@@ -1141,9 +1149,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         interpolatedSample *= tailGain;
         // Newest head innermost: each fades from what was audible when it started.
         for (let i = crossfade.count - 1; i >= 0; i--) {
-          const { position, fadesTail, mix } = crossfade.head(i);
-          const gain = fadesTail ? tailGainAt(position, playbackRange.endSamples) : 1;
-          const outgoing = this.#sumAudioData(position, channel, lastAudioIndex) * gain;
+          const { position, fadesTail, audioEnd, mix } = crossfade.head(i);
+          const gain = fadesTail ? tailGainAt(position, audioEnd) : 1;
+          const outgoing = this.#sumAudioData(position, channel, Math.ceil(audioEnd) - 1) * gain;
           interpolatedSample = outgoing + mix * (interpolatedSample - outgoing);
         }
 
