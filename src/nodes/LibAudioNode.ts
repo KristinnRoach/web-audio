@@ -2,11 +2,14 @@ import { LibNode, NodeType } from './LibNode';
 import { registerNode, unregisterNode, NodeID } from './node-store';
 import { MessageBus, MessageHandler, Message, createMessageBus } from '@/events';
 
+/** A native audio node or a wrapper exposing an audio input. */
+export type AudioDestination = AudioNode | { readonly input: AudioNode };
+
 /** Adapter interface for web native and Audiolib's custom audio nodes */
 export interface ILibAudioNode<T extends AudioNode | AudioWorkletNode = AudioNode> extends LibNode {
   // Connection interface
-  connect(destination: ILibAudioNode | AudioNode): void;
-  disconnect(destination?: ILibAudioNode | AudioNode): void;
+  connect(destination: AudioDestination): void;
+  disconnect(destination?: AudioDestination): void;
 
   // Parameter interface
   setParam(name: string, value: number, time?: number): void;
@@ -96,23 +99,23 @@ export class LibAudioNode<
 
   // === CONNECTIONS ===
 
-  connect(destination: ILibAudioNode | AudioNode): void {
+  connect(destination: AudioDestination): void {
     const target = 'input' in destination ? destination.input : destination;
-    this.#outputNode.connect(target as AudioNode);
+    this.#outputNode.connect(target);
 
     // Track by NodeID if it's a LibAudioNode
-    if ('nodeId' in destination) {
+    if ('nodeId' in destination && typeof destination.nodeId === 'string') {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
   }
 
-  disconnect(destination?: ILibAudioNode | AudioNode): void {
+  disconnect(destination?: AudioDestination): void {
     if (destination) {
       const target = 'input' in destination ? destination.input : destination;
-      this.#outputNode.disconnect(target as AudioNode);
+      this.#outputNode.disconnect(target);
 
-      if ('nodeId' in destination) {
+      if ('nodeId' in destination && typeof destination.nodeId === 'string') {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }

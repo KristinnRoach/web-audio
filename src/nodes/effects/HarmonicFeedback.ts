@@ -1,6 +1,6 @@
-import { ILibAudioNode } from '../LibAudioNode';
+import { type AudioDestination, ILibAudioNode } from '../LibAudioNode';
 import { NodeType } from '@/nodes/LibNode';
-import { registerNode, unregisterNode } from '@/nodes/node-store';
+import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { clamp, interpolate, mapToRange } from '@/utils';
 import { createFeedbackDelay } from '@/worklets/worklet-factory';
 import { FbDelayWorklet } from '@/worklets/worklet-types';
@@ -207,21 +207,21 @@ export class HarmonicFeedback implements ILibAudioNode {
 
   // === CONNECTIONS ===
 
-  connect(destination: ILibAudioNode | AudioNode): void {
+  connect(destination: AudioDestination): void {
     const target = 'input' in destination ? destination.input : destination;
     this.#postGain.connect(target as AudioNode);
 
-    if ('nodeId' in destination) {
+    if ('nodeId' in destination && typeof destination.nodeId === 'string') {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
   }
 
-  disconnect(destination?: ILibAudioNode | AudioNode): void {
+  disconnect(destination?: AudioDestination): void {
     if (destination) {
       const target = 'input' in destination ? destination.input : destination;
       this.#postGain.disconnect(target as AudioNode);
-      if ('nodeId' in destination) {
+      if ('nodeId' in destination && typeof destination.nodeId === 'string') {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }
@@ -231,12 +231,12 @@ export class HarmonicFeedback implements ILibAudioNode {
     }
   }
 
-  addIncoming(source: ILibAudioNode): void {
-    this.#incoming.add(source.nodeId);
+  addIncoming(sourceId: NodeID): void {
+    this.#incoming.add(sourceId);
   }
 
-  removeIncoming(source: ILibAudioNode): void {
-    this.#incoming.delete(source.nodeId);
+  removeIncoming(sourceId: NodeID): void {
+    this.#incoming.delete(sourceId);
   }
 
   // === ILibAudioNode interface ===

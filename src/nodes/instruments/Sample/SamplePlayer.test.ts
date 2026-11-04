@@ -1,6 +1,7 @@
-import { initTestPlayer } from './test/initTestPlayer';
+import { initTestPlayer, getTestLFOs } from './test/initTestPlayer';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { SamplePlayer } from './SamplePlayer';
+import type { AudioDestination, ILibAudioNode } from '../../LibAudioNode';
 import type { SampleVoicePool } from './SampleVoicePool';
 import type { EnvelopeConfig } from './envelope-config';
 import { createDefaultSampleEnvelopeConfig } from './sample-envelope-policy';
@@ -125,7 +126,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   }
 });
 
-it('connects pitch LFO to every voice detune and maps normalized depth to cents', async () => {
+it('keeps LFO routing and parameter mappings behind player controls', async () => {
   vi.stubGlobal('window', {});
   vi.stubGlobal('AudioContext', class {});
   vi.stubGlobal('AudioWorkletNode', class {});
@@ -153,14 +154,72 @@ it('connects pitch LFO to every voice detune and maps normalized depth to cents'
           } as never),
         ),
     });
-    expect(player.pitchLFO!.connect).toHaveBeenCalledTimes(2);
-    detunes.forEach((detune) => expect(player.pitchLFO!.connect).toHaveBeenCalledWith(detune));
+    const [gainLFO, pitchLFO] = getTestLFOs().slice(-2);
+    expect(pitchLFO.connect).toHaveBeenCalledTimes(2);
+    detunes.forEach((detune) => expect(pitchLFO.connect).toHaveBeenCalledWith(detune));
+
+    player.applyParams({ gainLFORate: 0.5, gainLFODepth: 0.75, pitchLFORate: 0.25 });
+    expect(gainLFO.setFrequency).toHaveBeenLastCalledWith(50.1);
+    expect(gainLFO.setDepth).toHaveBeenLastCalledWith(0.75);
+    expect(pitchLFO.setFrequency).toHaveBeenLastCalledWith(25.1);
 
     player.applyParams({ pitchLFODepth: 1 });
-    expect(player.pitchLFO!.setDepth).toHaveBeenLastCalledWith(200);
+    expect(pitchLFO.setDepth).toHaveBeenLastCalledWith(200);
     player.applyParams({ pitchLFODepth: 0 });
-    expect(player.pitchLFO!.setDepth).toHaveBeenLastCalledWith(0);
+    expect(pitchLFO.setDepth).toHaveBeenLastCalledWith(0);
   } finally {
+    player.dispose();
+    vi.unstubAllGlobals();
+  }
+});
+
+it('routes library nodes to players, input wrappers, and native nodes', async () => {
+  vi.stubGlobal('window', {});
+  vi.stubGlobal('AudioContext', class {});
+  vi.stubGlobal('AudioWorkletNode', class {});
+  vi.stubGlobal(
+    'GainNode',
+    class {
+      connect = vi.fn();
+      disconnect = vi.fn();
+    },
+  );
+  const { SamplePlayer } = await import('./SamplePlayer');
+  const { LibAudioNode } = await import('../../LibAudioNode');
+  const context = Object.assign(new EventTarget(), { currentTime: 0 }) as AudioContext;
+  const connect = vi.fn();
+  const disconnect = vi.fn();
+  const source: ILibAudioNode = new LibAudioNode(
+    { connect, disconnect, context } as unknown as AudioNode,
+    context,
+    'GainNode',
+  );
+  const player = new SamplePlayer({ context });
+
+  try {
+    await initTestPlayer(player, {});
+    const input = {} as AudioNode;
+    const playerConnect = vi.spyOn(player.output, 'connect');
+    const playerDisconnect = vi.spyOn(player.output, 'disconnect');
+    const destinations: AudioDestination[] = [player, { input }, input];
+    for (const destination of destinations) {
+      const target = 'input' in destination ? destination.input : destination;
+      source.connect(destination);
+      expect(connect).toHaveBeenLastCalledWith(target);
+      expect(source.connections.outgoing).toEqual(destination === player ? [player.nodeId] : []);
+      source.disconnect(destination);
+      expect(disconnect).toHaveBeenLastCalledWith(target);
+      expect(source.connections.outgoing).toEqual([]);
+    }
+    for (const destination of [source, { input }, input]) {
+      const target = 'input' in destination ? destination.input : destination;
+      player.connect(destination);
+      expect(playerConnect).toHaveBeenLastCalledWith(target);
+      player.disconnect(destination);
+      expect(playerDisconnect).toHaveBeenLastCalledWith(target);
+    }
+  } finally {
+    source.dispose();
     player.dispose();
     vi.unstubAllGlobals();
   }

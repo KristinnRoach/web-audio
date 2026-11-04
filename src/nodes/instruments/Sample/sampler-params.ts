@@ -255,7 +255,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0.03,
     curve: 5,
     format: (v) => hzOrKhz(v * 100 + 0.1),
-    apply: (p, v) => p.gainLFO?.setFrequency(v * 100 + 0.1),
+    apply: (p, v) => p.setGainLFOFrequency(v * 100 + 0.1),
   },
   gainLFODepth: {
     label: 'Amp LFO Depth',
@@ -264,7 +264,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0,
     curve: 1.5,
     format: positionPercent('gainLFODepth'),
-    apply: (p, v) => p.gainLFO?.setDepth(v),
+    apply: (p, v) => p.setGainLFODepth(v),
   },
   pitchLFORate: {
     label: 'Pitch LFO Rate',
@@ -273,7 +273,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0.015,
     curve: 5,
     format: (v) => hzOrKhz(v * 100 + 0.1),
-    apply: (p, v) => p.pitchLFO?.setFrequency(v * 100 + 0.1),
+    apply: (p, v) => p.setPitchLFOFrequency(v * 100 + 0.1),
   },
   pitchLFODepth: {
     label: 'Pitch LFO Depth',
@@ -282,7 +282,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0,
     curve: 2,
     format: (v) => `${(v * PITCH_LFO_MAX_CENTS).toFixed(0)} cents`,
-    apply: (p, v) => p.pitchLFO?.setDepth(v * PITCH_LFO_MAX_CENTS),
+    apply: (p, v) => p.setPitchLFODepth(v * PITCH_LFO_MAX_CENTS),
   },
 
   // Trim / loop. Fractions of the loaded sample's duration (loop length is signed):

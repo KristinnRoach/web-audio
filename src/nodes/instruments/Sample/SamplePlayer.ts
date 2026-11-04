@@ -33,7 +33,7 @@ import {
   cloneEnvelopeConfig,
   type EnvelopeConfig,
 } from './envelope-config';
-import { ILibInstrumentNode } from '@/nodes/LibAudioNode';
+import type { AudioDestination } from '@/nodes/LibAudioNode';
 import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
@@ -52,7 +52,7 @@ export type SamplePlayerOptions = {
   voiceSignalChain?: readonly SampleVoiceChainNode[];
 };
 
-export class SamplePlayer implements ILibInstrumentNode {
+export class SamplePlayer {
   public readonly nodeId: NodeID;
   readonly nodeType = 'sample-player' as const;
   readonly context: AudioContext;
@@ -195,23 +195,23 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   // === CONNECTIONS ===
 
-  public connect(destination: ILibInstrumentNode | AudioNode): void {
+  public connect(destination: AudioDestination): void {
     const target = 'input' in destination && destination.input ? destination.input : destination;
 
     this.#masterOut.connect(target as AudioNode);
 
     // Track the connection by NodeID if possible
-    if ('nodeId' in destination) {
+    if ('nodeId' in destination && typeof destination.nodeId === 'string') {
       this.#connections.add(destination.nodeId);
       (destination as any).addIncoming?.(this.nodeId);
     }
   }
 
-  public disconnect(destination?: ILibInstrumentNode | AudioNode): void {
+  public disconnect(destination?: AudioDestination): void {
     if (destination) {
       const target = 'input' in destination ? destination.input : destination;
       this.#masterOut.disconnect(target as AudioNode);
-      if ('nodeId' in destination) {
+      if ('nodeId' in destination && typeof destination.nodeId === 'string') {
         this.#connections.delete(destination.nodeId);
         (destination as any).removeIncoming?.(this.nodeId);
       }
@@ -222,15 +222,15 @@ export class SamplePlayer implements ILibInstrumentNode {
     }
   }
 
-  addIncoming(source: ILibInstrumentNode): void {
-    this.#incoming.add(source.nodeId);
+  private addIncoming(sourceId: NodeID): void {
+    this.#incoming.add(sourceId);
   }
 
-  removeIncoming(source: ILibInstrumentNode): void {
-    this.#incoming.delete(source.nodeId);
+  private removeIncoming(sourceId: NodeID): void {
+    this.#incoming.delete(sourceId);
   }
 
-  get connections() {
+  private get connections() {
     return {
       outgoing: Array.from(this.#connections),
       incoming: Array.from(this.#incoming),
@@ -238,10 +238,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   // === CONVENIENCE GETTERS ===
-
-  get audioNode() {
-    return this.#masterOut;
-  }
 
   get input() {
     return this.#outBus.input;
@@ -323,9 +319,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   setModulationDepth = (modType: 'AM' | 'FM', depth: number) =>
     this.#voicePool.applyToAllVoices((v) => v.setModulationDepth(modType, depth));
-
-  /** @deprecated Use setModulationDepth. */
-  setModulationAmount = this.setModulationDepth;
 
   setAMModOctaveOffset = (offset: number) =>
     this.#voicePool.applyToAllVoices((v) => v.setAMModOctaveOffset(offset));
@@ -902,35 +895,6 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.setLoopPoints(loopStart, loopStart + loopDuration);
   }
 
-  setParam(name: string, value: number): this {
-    switch (name) {
-      case 'startPoint':
-        this.setSampleStartPoint(value);
-        break;
-      case 'endPoint':
-        this.setSampleEndPoint(value);
-        break;
-      case 'glideTime':
-        this.setGlideTime(value);
-        break;
-      case 'loopStart':
-        this.setLoopStart(value);
-        break;
-      case 'loopEnd':
-        this.setLoopEnd(value);
-        break;
-      case 'loopLengthGlide':
-        this.setLoopLengthGlide(value);
-        break;
-      case 'loopPositionGlide':
-        this.setLoopPositionGlide(value);
-        break;
-      default:
-        console.warn(`Unknown parameter: ${name}`);
-    }
-    return this;
-  }
-
   applyParams(params: SamplerParams): this {
     Object.entries(params).forEach(([key, value]) => {
       const descriptor = samplerParams[key as SamplerParamKey] as
@@ -945,11 +909,6 @@ export class SamplePlayer implements ILibInstrumentNode {
   }
 
   /** PARAM GETTERS  */
-
-  // Loop controls now belong to individual voices; there is no shared AudioParam.
-  getAudioParam(_name: string): AudioParam | null {
-    return null;
-  }
 
   // TODO: Consider moving source of truth from SampleVoice to SamplePlayer, or convert to MacroParams, symmetrical with the loop start/end points
   getStartPoint(): number {
@@ -974,32 +933,6 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   getHpfCutoff = () => this.#hpfCutoff;
   getLpfCutoff = () => this.#lpfCutoff;
-
-  getParameterValue(name: string): number | undefined {
-    switch (name) {
-      case 'loopStart':
-        return this.loopStart;
-      case 'loopEnd':
-        return this.loopEnd;
-      case 'loopLengthGlide':
-        return this.getLoopLengthGlide();
-      case 'loopPositionGlide':
-        return this.getLoopPositionGlide();
-      case 'startPoint':
-        return this.getStartPoint();
-      case 'endPoint':
-        return this.getEndPoint();
-      case 'glideTime':
-        return this.getGlideTime();
-      case 'hpfCutoff':
-        return this.getHpfCutoff();
-      case 'lpfCutoff':
-        return this.getLpfCutoff();
-      default:
-        console.warn(`Unknown parameter: ${name}`);
-        return undefined;
-    }
-  }
 
   /* === ENVELOPES === */
 
@@ -1300,13 +1233,23 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#holdEnabled;
   }
 
-  get gainLFO() {
-    return this.#gainLFO;
+  /** Set the amplitude LFO rate in Hz. */
+  setGainLFOFrequency(hz: number): void {
+    this.#gainLFO?.setFrequency(hz);
   }
 
-  /** Modulates voice `detune`; `setDepth()` takes cents. */
-  get pitchLFO() {
-    return this.#pitchLFO;
+  setGainLFODepth(depth: number): void {
+    this.#gainLFO?.setDepth(depth);
+  }
+
+  /** Set the pitch LFO rate in Hz. */
+  setPitchLFOFrequency(hz: number): void {
+    this.#pitchLFO?.setFrequency(hz);
+  }
+
+  /** Modulates voice detune; depth is in cents. */
+  setPitchLFODepth(cents: number): void {
+    this.#pitchLFO?.setDepth(cents);
   }
 
   get loopStart(): number {
