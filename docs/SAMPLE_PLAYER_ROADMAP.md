@@ -20,19 +20,8 @@ Features that need the source buffer or playhead live in the voice engine; audio
 
 Each step is one or more small PRs with no audible change, unless noted.
 
-### 1. Safety net
-
-- Add render tests through `process()` output, only where behavior isn't already pinned: moving quantized loops, ping-pong, stretch.
-- Add a simple 16-voice timing baseline. None exists today, and the code already records one audio-thread overrun.
-
-### 2. Cleanup
-
-Remove these first, since each one makes the later steps smaller. Tag before removing anything you may want back.
-
-| Item                   | Action                           | Reason                                                                                                                                                                 |
-| ---------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Multiple audio buffers | Remove, down through `loadAudio` | Half-built: zero crossings and the stretcher only read `audioData[0]`. Consumers can layer two voices, each with its own controls, at the cost of twice the voice CPU. |
-| Tempo sync             | Remove and tag                   | Unused so far. Returns as one pure length stage. Check other `setTempo` users first.                                                                                   |
+1. **Safety net — complete:** Added render tests for moving quantized loops, ping-pong and stretch, plus a 16-voice timing baseline.
+2. **Cleanup — complete:** Removed multiple-buffer playback and tempo sync; preserved both in `sample-player-before-cleanup`.
 
 ### 3. Needs research
 
