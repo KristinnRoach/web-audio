@@ -1,6 +1,6 @@
 import { type AudioDestination, ILibAudioNode } from '../LibAudioNode';
 import { NodeType } from '@/nodes/LibNode';
-import { registerNode, unregisterNode } from '@/nodes/node-store';
+import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { clamp, interpolate, mapToRange } from '@/utils';
 import { createFeedbackDelay } from '@/worklets/worklet-factory';
 import { FbDelayWorklet } from '@/worklets/worklet-types';
@@ -231,12 +231,12 @@ export class HarmonicFeedback implements ILibAudioNode {
     }
   }
 
-  addIncoming(source: ILibAudioNode): void {
-    this.#incoming.add(source.nodeId);
+  addIncoming(sourceId: NodeID): void {
+    this.#incoming.add(sourceId);
   }
 
-  removeIncoming(source: ILibAudioNode): void {
-    this.#incoming.delete(source.nodeId);
+  removeIncoming(sourceId: NodeID): void {
+    this.#incoming.delete(sourceId);
   }
 
   // === ILibAudioNode interface ===

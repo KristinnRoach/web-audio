@@ -126,12 +126,12 @@ export class DattorroReverb implements ILibAudioNode {
     }
   }
 
-  addIncoming(source: ILibAudioNode): void {
-    this.#incoming.add(source.nodeId);
+  addIncoming(sourceId: NodeID): void {
+    this.#incoming.add(sourceId);
   }
 
-  removeIncoming(source: ILibAudioNode): void {
-    this.#incoming.delete(source.nodeId);
+  removeIncoming(sourceId: NodeID): void {
+    this.#incoming.delete(sourceId);
   }
 
   // === SETTERS ===
