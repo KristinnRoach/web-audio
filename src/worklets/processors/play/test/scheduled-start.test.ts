@@ -19,7 +19,7 @@ class MockAudioWorkletProcessor {
 type TestProcessor = {
   driftUpdateCounter: number;
   isPlaying: boolean;
-  nextDriftGenerated: boolean;
+  loopDriftRolled: boolean;
   pendingStartFrame: number;
   playbackPosition: number;
   port: WorkletPort;
@@ -109,7 +109,7 @@ describe('scheduled sample start', () => {
     expect(output.every((sample) => sample === 0)).toBe(true);
     expect(processor.playbackPosition).toBe(0);
     expect(processor.driftUpdateCounter).toBe(0);
-    expect(processor.nextDriftGenerated).toBe(false);
+    expect(processor.loopDriftRolled).toBe(false);
     expect(random).not.toHaveBeenCalled();
     expect(processor.pendingStartFrame).toBe(BLOCK_SIZE * 2);
   });

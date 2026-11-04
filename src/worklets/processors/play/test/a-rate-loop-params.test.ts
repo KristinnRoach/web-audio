@@ -11,7 +11,7 @@ setupProcessorGlobals();
 
 async function makeProcessor() {
   const processor = await startProcessor([], [0.002, 0.004, 0.008]);
-  Object.assign(processor, { enableLoopSmoothing: false });
+  Object.assign(processor, { enableLoopCrossfade: false });
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
@@ -33,17 +33,17 @@ describe('a-rate loop points and duration glide', () => {
   });
 
   it.each(
-    [0, 0.01].flatMap((ramp) =>
-      ['forward', 'reverse', 'backward', 'pingPong'].map((mode) => ({ mode, ramp })),
+    [0, 0.01].flatMap((lengthGlideSeconds) =>
+      ['forward', 'reverse', 'backward', 'pingPong'].map((mode) => ({ mode, lengthGlideSeconds })),
     ),
   )(
-    'renders the same moving $mode loop in blocks and samples with ramp $ramp',
-    async ({ mode, ramp }) => {
+    'renders the same moving $mode loop in blocks and samples with length glide $lengthGlideSeconds',
+    async ({ mode, lengthGlideSeconds }) => {
       const block = await makeProcessor();
       const singles = await makeProcessor();
       for (const processor of [block, singles]) {
         processor.port.onmessage?.({
-          data: { type: 'setLoopRampDuration', value: ramp },
+          data: { type: 'setLoopLengthGlide', value: lengthGlideSeconds },
         } as MessageEvent);
         if (mode === 'reverse') {
           processor.port.onmessage?.({
@@ -105,7 +105,9 @@ describe('a-rate loop points and duration glide', () => {
 
   it('keeps an existing backward turn when endpoints cross before the next edge', async () => {
     const processor = await makeProcessor();
-    processor.port.onmessage?.({ data: { type: 'setLoopRampDuration', value: 0 } } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'setLoopLengthGlide', value: 0 },
+    } as MessageEvent);
     const params = makeParameters({ loopStart: 0.002, loopEnd: 0 });
     processor.process([], [[new Float32Array(98)]], params);
     const state = processor as typeof processor & { loopTurned: boolean; loopCount: number };
@@ -144,39 +146,43 @@ describe('a-rate loop points and duration glide', () => {
     expect(state.currentLoopDrift).not.toBe(12345);
   });
 
-  it.each([0, 0.01])('advances quantized glide by audible frames with ramp %f', async (ramp) => {
-    const processor = await makeProcessor();
-    processor.port.onmessage?.({
-      data: { type: 'setLoopRampDuration', value: ramp },
-    } as MessageEvent);
-    processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
-    processor.process([], [[new Float32Array(37)]], makeParameters({ loopEnd: 0.0075 }));
-    const state = processor as typeof processor & {
-      previousLoopRange: { loopDurationSamples: number };
-    };
-    const expected =
-      ramp === 0
-        ? 0.008
-        : Math.exp(
-            Math.log(0.008) +
-              (Math.log(0.002) - Math.log(0.008)) * Math.exp(-37 / TEST_SAMPLE_RATE / ramp),
-          );
-    expect(state.previousLoopRange.loopDurationSamples / TEST_SAMPLE_RATE).toBeCloseTo(
-      expected,
-      10,
-    );
-  });
+  it.each([0, 0.01])(
+    'advances quantized glide by audible frames with length glide %f',
+    async (lengthGlideSeconds) => {
+      const processor = await makeProcessor();
+      processor.port.onmessage?.({
+        data: { type: 'setLoopLengthGlide', value: lengthGlideSeconds },
+      } as MessageEvent);
+      processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
+      processor.process([], [[new Float32Array(37)]], makeParameters({ loopEnd: 0.0075 }));
+      const state = processor as typeof processor & {
+        previousLoopRange: { loopDurationSamples: number };
+      };
+      const expected =
+        lengthGlideSeconds === 0
+          ? 0.008
+          : Math.exp(
+              Math.log(0.008) +
+                (Math.log(0.002) - Math.log(0.008)) *
+                  Math.exp(-37 / TEST_SAMPLE_RATE / lengthGlideSeconds),
+            );
+      expect(state.previousLoopRange.loopDurationSamples / TEST_SAMPLE_RATE).toBeCloseTo(
+        expected,
+        10,
+      );
+    },
+  );
 
-  it('applies a new ramp duration during an active glide', async () => {
+  it('applies a new length glide time constant during an active glide', async () => {
     const processor = await makeProcessor();
     processor.port.onmessage?.({
-      data: { type: 'setLoopRampDuration', value: 0.01 },
+      data: { type: 'setLoopLengthGlide', value: 0.01 },
     } as MessageEvent);
     processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
     const target = makeParameters({ loopEnd: 0.0075 });
     processor.process([], [[new Float32Array(37)]], target);
     processor.port.onmessage?.({
-      data: { type: 'setLoopRampDuration', value: 0.02 },
+      data: { type: 'setLoopLengthGlide', value: 0.02 },
     } as MessageEvent);
     processor.process([], [[new Float32Array(19)]], target);
     const state = processor as typeof processor & {
@@ -193,9 +199,11 @@ describe('a-rate loop points and duration glide', () => {
     );
   });
 
-  it('contains every modulated range inside trim without rounding fractional periods', async () => {
+  it('contains every modulated range inside trim without rounding fractional lengths', async () => {
     const processor = await startProcessor([], [100.5 / TEST_SAMPLE_RATE]);
-    processor.port.onmessage?.({ data: { type: 'setLoopRampDuration', value: 0 } } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'setLoopLengthGlide', value: 0 },
+    } as MessageEvent);
     const params = makeParameters({ startPoint: 0.001, endPoint: 0.01 });
     params.loopStart = Float32Array.from({ length: 128 }, (_, i) => i / 1000);
     params.loopEnd = Float32Array.from(

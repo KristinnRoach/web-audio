@@ -11,13 +11,13 @@ import {
 describe('loop pitch quantization and voice reuse', () => {
   setupProcessorGlobals();
 
-  describe.each([0, 0.125])('with glide time constant %f', (ramp) => {
+  describe.each([0, 0.125])('with glide time constant %f', (lengthGlideSeconds) => {
     it.each(['E', 'A', 'B'] as const)('quantizes upward to the longest %s period', async (root) => {
       const periods = createScale(root, [0], 1, 5).periodsInSec.sort((a, b) => a - b);
       const longest = periods.at(-1)!;
       const processor = await startProcessor([], periods);
       processor.port.onmessage?.({
-        data: { type: 'setLoopRampDuration', value: ramp },
+        data: { type: 'setLoopLengthGlide', value: lengthGlideSeconds },
       } as MessageEvent);
       render(processor, makeParameters({ loopStart: 0.5, loopEnd: 0.5 + 0.9 * longest }), 1);
       const loop = processor.port.postMessage.mock.calls

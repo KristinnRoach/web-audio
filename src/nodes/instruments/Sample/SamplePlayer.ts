@@ -91,7 +91,8 @@ export class SamplePlayer implements ILibInstrumentNode {
 
   #tempo = 120;
   #glideTime: number = samplerParams.glide.defaultValue;
-  #loopRampDuration: number = samplerParams.loopRampDuration.defaultValue;
+  #loopLengthGlide: number = samplerParams.loopLengthGlide.defaultValue;
+  #loopPositionGlide: number = samplerParams.loopPositionGlide.defaultValue;
   #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
@@ -285,8 +286,9 @@ export class SamplePlayer implements ILibInstrumentNode {
         const config = this.getEnvelope(id);
         this.#voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
       });
+      this.#voicePool.applyToAllVoices((voice) => voice.setLoopLengthGlide(this.#loopLengthGlide));
       this.#voicePool.applyToAllVoices((voice) =>
-        voice.setLoopRampDuration(this.#loopRampDuration),
+        voice.setLoopPositionGlide(this.#loopPositionGlide),
       );
       this.#voicePool.applyToAllVoices((voice) =>
         voice.enablePositionTracking(this.#positionTracking),
@@ -754,10 +756,17 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this;
   }
 
-  // Glide time constant between quantized loop periods, applied in the processor. 0 = stepped.
-  setLoopRampDuration(seconds: number): this {
-    this.#loopRampDuration = seconds;
-    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
+  /** Length glide time constant between quantized loop periods. 0 = stepped. */
+  setLoopLengthGlide(seconds: number): this {
+    this.#loopLengthGlide = seconds;
+    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopLengthGlide(seconds));
+    return this;
+  }
+
+  /** Position glide time constant for quantized audio-rate loops. 0 = instant. */
+  setLoopPositionGlide(seconds: number): this {
+    this.#loopPositionGlide = seconds;
+    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopPositionGlide(seconds));
     return this;
   }
 
@@ -989,8 +998,11 @@ export class SamplePlayer implements ILibInstrumentNode {
       case 'loopEnd':
         this.setLoopEnd(value);
         break;
-      case 'loopRampDuration':
-        this.setLoopRampDuration(value);
+      case 'loopLengthGlide':
+        this.setLoopLengthGlide(value);
+        break;
+      case 'loopPositionGlide':
+        this.setLoopPositionGlide(value);
         break;
       default:
         console.warn(`Unknown parameter: ${name}`);
@@ -1027,8 +1039,12 @@ export class SamplePlayer implements ILibInstrumentNode {
     return this.#voicePool?.allVoices[0]?.endPoint ?? this.sampleDuration;
   }
 
-  getLoopRampDuration(): number {
-    return this.#loopRampDuration;
+  getLoopLengthGlide(): number {
+    return this.#loopLengthGlide;
+  }
+
+  getLoopPositionGlide(): number {
+    return this.#loopPositionGlide;
   }
 
   getGlideTime(): number {
@@ -1044,8 +1060,10 @@ export class SamplePlayer implements ILibInstrumentNode {
         return this.loopStart;
       case 'loopEnd':
         return this.loopEnd;
-      case 'loopRampDuration':
-        return this.getLoopRampDuration();
+      case 'loopLengthGlide':
+        return this.getLoopLengthGlide();
+      case 'loopPositionGlide':
+        return this.getLoopPositionGlide();
       case 'startPoint':
         return this.getStartPoint();
       case 'endPoint':

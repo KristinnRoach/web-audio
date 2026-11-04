@@ -864,8 +864,13 @@ export class SampleVoice {
     return this;
   }
 
-  setLoopRampDuration(seconds: number) {
-    this.sendToProcessor({ type: 'setLoopRampDuration', value: seconds });
+  setLoopLengthGlide(seconds: number): this {
+    this.sendToProcessor({ type: 'setLoopLengthGlide', value: seconds });
+    return this;
+  }
+
+  setLoopPositionGlide(seconds: number): this {
+    this.sendToProcessor({ type: 'setLoopPositionGlide', value: seconds });
     return this;
   }
 
@@ -1099,7 +1104,7 @@ export class SampleVoice {
 
   enablePositionTracking(enabled: boolean) {
     this.sendToProcessor({
-      type: 'voice:usePlaybackPosition',
+      type: 'voice:reportPlaybackPosition',
       value: enabled,
     });
 

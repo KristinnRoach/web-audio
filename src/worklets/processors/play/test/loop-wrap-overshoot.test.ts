@@ -19,7 +19,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  enableLoopSmoothing: boolean;
+  enableLoopCrossfade: boolean;
   loopCount: number;
   playbackPosition: number;
   port: WorkletPort;
@@ -59,7 +59,7 @@ async function startProcessor(playbackDirection: 'forward' | 'reverse') {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
-  processor.enableLoopSmoothing = false;
+  processor.enableLoopCrossfade = false;
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
