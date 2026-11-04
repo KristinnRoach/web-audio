@@ -38,7 +38,6 @@ it('applies a loop-end step within a real render quantum', async () => {
     };
     // Processor state that resets only by message; voice:setBuffer doesn't touch it.
     node.port.postMessage({ type: 'setKeytrackLoopAmount', value: 0 });
-    node.port.postMessage({ type: 'syncLoopToTempo', value: false });
     node.port.postMessage({ type: 'setLoopPingPong', value: false });
     node.port.postMessage({ type: 'setTimestretchMode', value: 'off' });
     node.port.postMessage({ type: 'voice:start' });

@@ -58,7 +58,7 @@ export class SampleVoice {
   #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
 
-  // Set once `voice:setAudioData` is on the wire rather than on the processor's
+  // Set once `voice:setBuffer` is on the wire rather than on the processor's
   // `voice:loaded` ack: the port preserves order, so a `voice:start` posted in
   // the round trip still arrives after the audio data is in place.
   #hasLoadedAudio = false;
@@ -252,38 +252,15 @@ export class SampleVoice {
   }
 
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
-    return this.loadAudioData([buffer], zeroCrossings);
-  }
-
-  /**
-   * Replace all loaded audio data. Entries are summed at one shared playhead,
-   * so index 0 is the authority for duration and all range math; the rest only
-   * add samples. An entry at the wrong sample rate is dropped on its own,
-   * leaving the others playable, except index 0: losing it fails the load.
-   */
-  async loadAudioData(buffers: AudioBuffer[], zeroCrossings?: number[]): Promise<boolean> {
-    const usable = buffers.filter((buffer) => {
-      if (buffer.sampleRate !== this.context.sampleRate) {
-        console.warn(
-          `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
-        );
-        return false;
-      }
-      return true;
-    });
-
-    // Index 0 is the authority for duration and loop range, so if it was
-    // dropped the remaining entries would silently play to the wrong ranges.
-    if (!usable.length || usable[0] !== buffers[0]) {
-      console.error(
-        'SampleVoice.loadAudioData: audio data 0 is unusable, nothing loaded. Index 0 sets duration and loop range for all entries.',
+    if (buffer.sampleRate !== this.context.sampleRate) {
+      console.warn(
+        `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
       );
       return false;
     }
-
-    // postMessage structured-clones each channel, so no local copy needed
-    const audioData = usable.map((buffer) =>
-      Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)),
+    // postMessage structured-clones each channel, so no local copy needed.
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
+      buffer.getChannelData(i),
     );
 
     // The processor drops isPlaying when it swaps audio data and never echoes a
@@ -291,9 +268,9 @@ export class SampleVoice {
     this.stop();
 
     this.sendToProcessor({
-      type: 'voice:setAudioData',
-      audioData,
-      durationSeconds: usable[0].duration,
+      type: 'voice:setBuffer',
+      buffer: channels,
+      durationSeconds: buffer.duration,
     });
     this.#hasLoadedAudio = true;
 
@@ -856,14 +833,6 @@ export class SampleVoice {
     return this;
   }
 
-  syncLoopToTempo(enabled: boolean) {
-    this.sendToProcessor({
-      type: 'syncLoopToTempo',
-      value: enabled,
-    });
-    return this;
-  }
-
   setLoopLengthGlide(seconds: number): this {
     this.sendToProcessor({ type: 'setLoopLengthGlide', value: seconds });
     return this;
@@ -879,11 +848,6 @@ export class SampleVoice {
       type: 'setKeytrackLoopAmount',
       value: amount,
     });
-    return this;
-  }
-
-  setTempo(bpm: number) {
-    this.setParam('tempo', bpm, this.now);
     return this;
   }
 
@@ -1019,7 +983,6 @@ export class SampleVoice {
 
         // Forwarded upstream by the tail call, nothing to do here.
         case 'loop:enabled':
-        case 'loop:syncToTempo':
         case 'voice:reset':
         case 'voice:playbackDirectionChange':
           break;

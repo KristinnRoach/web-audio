@@ -112,12 +112,12 @@ there is no hidden loop-snapping correction.
   scale to the pre-snap length with integer floor/minimum, then snaps boundaries and
   applies drift; these operations do not commute. Idle reports already include base
   quantization and minimum lengths, but cannot predict every post-scale result;
-  idle tempo sync also resolves at 120. Voice starts reset processor glide to target,
+  voice starts reset processor glide to target,
   so target-versus-glide mismatch is not established for a fresh start here.
   Live reports update the length after the first wrap, but keep using the stored note
   rate (see changing pitch above). A shared multiplier alone will not make the first
   pass exact. Prefer authoritative processor timing with enough lead time; test
-  non-integer rates, snapping, glide and tempo sync before changing this path.
+  non-integer rates, snapping and glide before changing this path.
 
 ## Scheduling and lifecycle
 

@@ -99,15 +99,6 @@ export const samplerParams = defineSamplerParams({
     format: (v) => v.toFixed(3),
     apply: (p, v) => p.setGlideTime(v),
   },
-  tempo: {
-    label: 'Tempo',
-    min: 20,
-    max: 300,
-    defaultValue: 120,
-    step: 1,
-    format: (v) => `${v.toFixed(0)}BPM`,
-    apply: (p, v) => p.setTempo(v),
-  },
 
   // Filters
   lowpassFilter: {

@@ -28,7 +28,6 @@ function makeParameters(overrides: Record<string, number>): Parameters {
     playbackPosition: 0,
     loopDurationDriftAmount: 0,
     maxLoopCount: 999_999,
-    tempo: 120,
     ...overrides,
   };
   return Object.fromEntries(

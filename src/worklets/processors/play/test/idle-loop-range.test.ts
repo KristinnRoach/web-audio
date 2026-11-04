@@ -73,12 +73,10 @@ describe('idle loop range', () => {
     const processor = await idleProcessor();
     send(processor, { type: 'setKeytrackLoopAmount', value: 0.5 });
     render(processor, parameters, 1);
-    send(processor, { type: 'syncLoopToTempo', value: true });
+    expect(idleReports(processor)[0].keytrackAmount).toBe(0.5);
+    send(processor, { type: 'setKeytrackLoopAmount', value: 1 });
     vi.stubGlobal('currentTime', 1);
     render(processor, parameters, 1);
-
-    const [keytracked, tempoSynced] = idleReports(processor);
-    expect(keytracked.keytrackAmount).toBe(0.5);
-    expect(tempoSynced.keytrackAmount).toBe(0); // tempo sync overrides keytrack
+    expect(idleReports(processor)[1].keytrackAmount).toBe(1);
   });
 });

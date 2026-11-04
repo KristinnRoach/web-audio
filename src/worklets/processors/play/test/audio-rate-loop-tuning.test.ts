@@ -49,7 +49,6 @@ function makeParameters(
     endPoint: new Float32Array([1]),
     loopDurationDriftAmount: new Float32Array([driftAmount]),
     maxLoopCount: new Float32Array([999_999]),
-    tempo: new Float32Array([120]),
   };
 }
 

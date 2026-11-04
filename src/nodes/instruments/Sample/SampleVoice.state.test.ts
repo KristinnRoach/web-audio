@@ -86,7 +86,7 @@ function newVoice(withFilter = false) {
 async function loadedVoice(withFilter = false) {
   const voice = newVoice(withFilter);
   await voice.init();
-  await voice.loadAudioData([fakeBuffer()]);
+  await voice.loadBuffer(fakeBuffer());
   audio.port.onmessage({ data: { type: 'voice:loaded', durationSeconds: 1 } });
   audio.posted = [];
   return voice;
@@ -423,7 +423,7 @@ describe('SampleVoice state', () => {
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(60);
 
-    await voice.loadAudioData([fakeBuffer()]);
+    await voice.loadBuffer(fakeBuffer());
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 

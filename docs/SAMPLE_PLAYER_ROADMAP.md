@@ -2,6 +2,8 @@
 
 Goal: a small, stable sampler core that morphing, granular and anti-aliasing can build on, and that can later serve as a starting point for hardware, native apps and plugins (VST, CLAP). The web-audio library must keep working throughout.
 
+Steps 1 and 2 completed on 2026-11-04; see [the render reference, timing baseline and API migration](SAMPLE_PLAYER_BASELINE.md). The recovery tag is `sample-player-before-cleanup`.
+
 ## Core model
 
 Three ideas should make most of the current branching go away. Step 4 tests whether they hold.

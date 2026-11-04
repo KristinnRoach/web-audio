@@ -90,13 +90,6 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 999999,
     automationRate: 'k-rate',
   },
-  tempo: {
-    name: 'tempo',
-    defaultValue: 120,
-    minValue: 20,
-    maxValue: 300,
-    automationRate: 'k-rate',
-  },
 } as const satisfies Record<string, AudioParamDescriptor>;
 
 export const SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS = Object.values(
