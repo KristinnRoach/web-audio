@@ -864,13 +864,13 @@ export class SampleVoice {
     return this;
   }
 
-  setLoopLengthSmoothing(seconds: number) {
-    this.sendToProcessor({ type: 'setLoopLengthSmoothing', value: seconds });
+  setLoopLengthGlide(seconds: number) {
+    this.sendToProcessor({ type: 'setLoopLengthGlide', value: seconds });
     return this;
   }
 
-  setLoopPositionSmoothing(seconds: number): this {
-    this.sendToProcessor({ type: 'setLoopPositionSmoothing', value: seconds });
+  setLoopPositionGlide(seconds: number): this {
+    this.sendToProcessor({ type: 'setLoopPositionGlide', value: seconds });
     return this;
   }
 
