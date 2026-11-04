@@ -38,7 +38,7 @@ import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { createSampleVoicePool } from './createSampleVoicePool';
-import type { SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
+import type { SampleVoiceChainNode, TimestretchMode, LoopScrollMode } from './SampleVoice';
 import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeConfig,
@@ -92,6 +92,7 @@ export class SamplePlayer implements ILibInstrumentNode {
   #tempo = 120;
   #glideTime: number = samplerParams.glide.defaultValue;
   #loopRampDuration: number = samplerParams.loopRampDuration.defaultValue;
+  #loopScrollMode: LoopScrollMode = 'instant';
   #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
@@ -288,6 +289,7 @@ export class SamplePlayer implements ILibInstrumentNode {
       this.#voicePool.applyToAllVoices((voice) =>
         voice.setLoopRampDuration(this.#loopRampDuration),
       );
+      this.#voicePool.applyToAllVoices((voice) => voice.setLoopScrollMode(this.#loopScrollMode));
       this.#voicePool.applyToAllVoices((voice) =>
         voice.enablePositionTracking(this.#positionTracking),
       );
@@ -758,6 +760,13 @@ export class SamplePlayer implements ILibInstrumentNode {
   setLoopRampDuration(seconds: number): this {
     this.#loopRampDuration = seconds;
     this.#voicePool?.applyToAllVoices((voice) => voice.setLoopRampDuration(seconds));
+    return this;
+  }
+
+  /** Gradual scrolling of quantized audio-rate loops; timing uses loopRampDuration. */
+  setLoopScrollMode(mode: LoopScrollMode): this {
+    this.#loopScrollMode = mode;
+    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopScrollMode(mode));
     return this;
   }
 

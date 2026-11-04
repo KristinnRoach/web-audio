@@ -93,6 +93,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     this.loopGlideCoefficient = -Math.expm1(-1 / sampleRate / this.loopRampDuration);
     this.loopGlideLogLength = null;
     this.loopGlideStart = null;
+    this.loopScrollLength = null;
+    this.loopStartGliding = false;
     this.loopScrollMode = 'instant';
 
     this.port.onmessage = this.#handleMessage.bind(this);
@@ -186,6 +188,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.loopTurned = false;
         this.loopGlideLogLength = null; // new notes start on the target length
         this.loopGlideStart = null;
+        this.loopScrollLength = null;
         this.previousLoopRange = null;
         this.loopCrossfade.reset();
         this.postedRanges = {}; // each note posts its first resolved range
@@ -499,23 +502,29 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     return Math.min(Math.exp(this.loopGlideLogLength), periods.at(-1));
   }
 
-  // Scroll (both points moved at constant length) in 'pitchGlide' mode: the start
-  // glides with the length glide's coefficient and gate. The playhead is carried with
-  // the start, so the start's velocity adds to the read speed: a pitch swoop that
-  // settles back. A length change steps the start, so single-point moves are unchanged.
-  #glideLoopStart(target, targetLength) {
-    const scrolled = targetLength === this.loopScrollLength;
-    this.loopScrollLength = targetLength;
+  // Move the source window gradually; the existing playhead carry follows it.
+  #glideLoopStart(target, params, period) {
+    const length = params.loopEndSamples - params.loopStartSamples;
+    // Paired Float32 AudioParams lose precision when translated far into the buffer.
+    const tolerance =
+      Math.max(Math.abs(target), Math.abs(this.loopGlideStart ?? 0), Math.abs(length), 1) *
+      2 ** -22;
+    const scrolled = Math.abs(length - this.loopScrollLength) <= tolerance;
+    this.loopScrollLength = length;
+    this.loopStartGliding = false;
     if (
       this.loopScrollMode !== 'pitchGlide' ||
+      !this.loopEnabled ||
       !scrolled ||
       this.loopGlideLogLength === null ||
+      period > this.pitchPreservationThreshold ||
       this.loopGlideStart === null ||
       !(this.loopRampDuration > 0)
     ) {
       this.loopGlideStart = target;
       return target;
     }
+    this.loopStartGliding = true;
     this.loopGlideStart += (target - this.loopGlideStart) * this.loopGlideCoefficient;
     if (Math.abs(target - this.loopGlideStart) > 1e-6) this.loopGliding = true;
     else this.loopGlideStart = target;
@@ -551,12 +560,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         targetPeriod;
     }
     const loopPeriod = this.#glideLoopLength(targetPeriod);
-    lpStart = this.#glideLoopStart(lpStart, targetPeriod);
     if (loopPeriod >= 1 && loopPeriod <= this.pitchPreservationThreshold) {
       // Preserve the period when it fits; otherwise fill trim without changing the target.
       const fittedLength = Math.min(loopPeriod, playbackRange.durationSamples);
       lpStart = Math.min(Math.max(lpStart, rangeStart), rangeEnd - fittedLength);
+      lpStart = this.#glideLoopStart(lpStart, params, loopPeriod);
       lpEnd = lpStart + fittedLength;
+    } else {
+      this.#glideLoopStart(lpStart, params, loopPeriod);
     }
 
     // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
@@ -789,6 +800,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const positionParams = this.#extractPositionParams(parameters);
     // A stopped note's glide must not leak in: the next note starts on the target length.
     this.loopGlideLogLength = null;
+    this.loopGlideStart = null;
     const loopRange = this.#calculateLoopRange(
       positionParams,
       this.#calculatePlaybackRange(positionParams),
@@ -984,7 +996,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         this.previousLoopPosition >= previous.loopStartSamples &&
         this.previousLoopPosition <= previous.loopEndSamples
       ) {
-        if (this.enableLoopSmoothing) {
+        if (this.enableLoopSmoothing && !this.loopStartGliding) {
           // From the unmoved playhead, before any edge it passes this frame
           this.loopCrossfade.start(
             this.playbackPosition,
