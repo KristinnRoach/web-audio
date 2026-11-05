@@ -30,7 +30,11 @@ export function getTestLFOs() {
 }
 
 /** Initialize through the real player lifecycle, supplying fake audio components. */
-export async function initTestPlayer(player: SamplePlayer, overrides: Partial<SampleVoicePool>) {
+export async function initTestPlayer(
+  player: SamplePlayer,
+  overrides: Partial<SampleVoicePool>,
+  busOverrides: Partial<InstrumentBus> = {},
+) {
   const pool = {
     allVoices: [],
     connect() {},
@@ -48,6 +52,7 @@ export async function initTestPlayer(player: SamplePlayer, overrides: Partial<Sa
     connect() {},
     releaseAll() {},
     dispose() {},
+    ...busOverrides,
   } as unknown as InstrumentBus);
   try {
     await player.init();

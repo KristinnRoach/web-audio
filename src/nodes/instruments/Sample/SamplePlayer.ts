@@ -556,7 +556,11 @@ export class SamplePlayer {
   #applyPitchOffset(): this {
     const offset = this.#pitchOffset;
     this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(offset));
-    if (this.#lastPlayedNote !== null) this.#syncLFOsToNote(this.#lastPlayedNote + offset);
+    if (this.#lastPlayedNote !== null) {
+      const soundingNote = this.#lastPlayedNote + offset;
+      this.#syncLFOsToNote(soundingNote);
+      this.#outBus.getFeedback()?.setPitch(soundingNote, 0, this.now, 0.01);
+    }
     return this;
   }
 

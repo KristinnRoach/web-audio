@@ -49,17 +49,23 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   expect(() => player.setLoopEnabled(false)).not.toThrow();
   const sendToProcessor = vi.fn();
   const setPitchOffset = vi.fn();
-  await initTestPlayer(player, {
-    applyToAllVoices: (apply) =>
-      apply({
-        sendToProcessor,
-        setPitchOffset,
-        getParam: () => null,
-        setParam() {},
-        setLoopPoints() {},
-      } as never),
-    dispose() {},
-  });
+  const setBusFeedbackPitch = vi.fn();
+  await initTestPlayer(
+    player,
+    {
+      applyToAllVoices: (apply) =>
+        apply({
+          sendToProcessor,
+          setPitchOffset,
+          getParam: () => null,
+          setParam() {},
+          setLoopPoints() {},
+        } as never),
+      noteOn: () => 60,
+      dispose() {},
+    },
+    { noteOn() {}, getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
+  );
   // init() sets the default quantization once; sample loads no longer resend it.
   expect(sendToProcessor).toHaveBeenCalledWith(
     expect.objectContaining({ type: 'setLoopQuantizePeriods' }),
@@ -89,6 +95,12 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     expect(setPitchOffset).toHaveBeenLastCalledWith(1.5);
     player.transpose(-1);
     expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5);
+
+    // Bus feedback retunes from the last played note; before any note it has nothing to follow.
+    expect(setBusFeedbackPitch).not.toHaveBeenCalled();
+    player.play(60);
+    player.transpose(2);
+    expect(setBusFeedbackPitch.mock.lastCall?.[0]).toBe(61.5);
 
     player.setLoopPitchQuantization({
       scale: [2],

@@ -68,6 +68,15 @@ const audio = vi.hoisted(() => {
   return latest;
 });
 
+vi.mock('@/nodes/effects/HarmonicFeedback', () => ({
+  HarmonicFeedback: class {
+    input = { connect() {} };
+    output = { connect() {} };
+    setPitch = vi.fn();
+    trigger() {}
+  },
+}));
+
 const fakeBuffer = () =>
   ({
     sampleRate: SAMPLE_RATE,
@@ -112,6 +121,22 @@ describe('SampleVoice state', () => {
     voice.setPitchOffset(-12);
     expect(glide.mock.calls.at(-1)?.[0]).toBe(0.5);
     expect(voice.midiNote).toBe(60);
+  });
+
+  it('retunes the feedback of a held note with the pitch offset', async () => {
+    const context = { currentTime: 0, sampleRate: SAMPLE_RATE } as unknown as AudioContext;
+    const voice = new SampleVoice(context, { internalSignalChain: ['feedback'] });
+    await voice.init();
+    await voice.loadBuffer(fakeBuffer());
+    audio.port.onmessage({ data: { type: 'voice:loaded', durationSeconds: 1 } });
+    const { setPitch } = voice.feedback!;
+
+    voice.setPitchOffset(2);
+    expect(setPitch).not.toHaveBeenCalled();
+
+    trigger(voice, 60);
+    voice.setPitchOffset(-3);
+    expect(vi.mocked(setPitch).mock.calls.at(-1)?.[0]).toBe(57);
   });
 
   it('schedules both loop points together even if the audio clock advances', async () => {

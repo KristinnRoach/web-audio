@@ -272,7 +272,7 @@ export class SampleVoice {
     return true;
   }
 
-  /** Retunes a held note too: playback rate and the AM LFO follow. */
+  /** Retunes a held note too: playback rate, feedback and the AM LFO follow. */
   setPitchOffset(semitones: number): this {
     if (this.#pitchOffset === semitones) return this;
     this.#pitchOffset = semitones;
@@ -281,6 +281,7 @@ export class SampleVoice {
       const rate = midiToPlaybackRate(this.#midiNote + semitones);
       this.setParam('playbackRate', rate, this.now, { glideTime: 0.01 });
     }
+    this.#feedback?.setPitch(this.#midiNote + semitones, 0, this.now, 0.01);
     this.#am_lfo?.setMusicalNote(this.#midiNote + semitones + this.#am_lfo_semitone_offset);
     return this;
   }
