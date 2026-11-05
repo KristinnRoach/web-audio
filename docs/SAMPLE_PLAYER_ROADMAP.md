@@ -29,7 +29,7 @@ Answer in this order, since each answer can change or cancel the ones below it. 
 
 | #   | Question                                                                                                                                                                                 | Depends on | Blocks           |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------- |
-| 1   | How should web and native share DSP? One native core compiled to WASM, separate JS and native engines checked against shared renders, or a DSP language such as Faust or Cmajor.         | None       | Everything below |
+| 1   | How should web and native share DSP? One native core compiled to WASM, separate JS and native engines checked against shared renders.                                                    | None       | Everything below |
 | 2   | Is keeping the JS engine beneficial after a port? Weigh fast prototyping, fallback and reference output against maintaining two engines.                                                 | 1          | 6, steps 6 and 7 |
 | 3   | If there is a native core, Rust or C++? Compare WASM, plugin and hardware tooling.                                                                                                       | 1          | 5, step 7        |
 | 4   | Where does sample memory live, and is `SharedArrayBuffer` needed? Compare per-voice copies, one shared store and shared memory, including the cross-origin isolation cost for consumers. | 1          | 5, step 4.4      |
