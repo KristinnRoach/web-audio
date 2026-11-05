@@ -11,7 +11,7 @@ setupProcessorGlobals();
 
 async function makeProcessor() {
   const processor = await startProcessor([], [0.002, 0.004, 0.008]);
-  Object.assign(processor, { enableLoopCrossfade: false });
+  Object.assign(processor.engine, { enableLoopCrossfade: false });
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
