@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { reflectLoopPosition, wrapLoopPosition } from '../loop-edges.js';
+import { reflectLoopPosition, wrapLoopPosition } from '../engine/loop-edges.js';
 
 describe('wrapLoopPosition', () => {
   it('is null inside [loopStart, loopEnd) in both directions', () => {

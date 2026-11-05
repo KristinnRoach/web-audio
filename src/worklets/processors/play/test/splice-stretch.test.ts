@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { SpliceStretcher, MAX_DRIFT_MS } from '../splice-stretch.js';
+import { SpliceStretcher, MAX_DRIFT_MS } from '../engine/splice-stretch.js';
 
 function samplesWithSlopes(slopes: Record<number, 'rising' | 'falling'>) {
   const samples = new Float32Array(32);
