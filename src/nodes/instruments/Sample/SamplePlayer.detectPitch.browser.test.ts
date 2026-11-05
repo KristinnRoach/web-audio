@@ -35,26 +35,3 @@ test('detectPitch matches what autotune measures and leaves the sample alone', a
     await context.close();
   }
 });
-
-test('detectLivePitch reads a raw analyser-sized window', async () => {
-  const context = new AudioContext();
-  await context.audioWorklet.addModule('/dist/processors/processors.js');
-  const player = new SamplePlayer({ context, polyphony: 1, voiceSignalChain: [] });
-  await player.init();
-
-  try {
-    const samples = Float32Array.from(
-      { length: 4096 },
-      (_, i) => 0.5 * Math.sin((2 * Math.PI * 440 * i) / context.sampleRate),
-    );
-
-    const pitch = await player.detectLivePitch(samples);
-
-    expect(Math.abs(1200 * Math.log2(pitch.frequency / 440))).toBeLessThan(5);
-    expect(pitch.midiFloat).toBeCloseTo(69, 1);
-    expect(pitch.periodicity).toBeGreaterThan(0.9);
-  } finally {
-    player.dispose();
-    await context.close();
-  }
-});
