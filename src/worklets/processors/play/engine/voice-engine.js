@@ -3,9 +3,9 @@
 // `post`, synchronously, in the order they occur.
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
-import { SpliceStretcher } from '../splice-stretch.js';
-import { reflectLoopPosition, wrapLoopPosition } from '../loop-edges.js';
-import { LoopCrossfade } from '../loop-crossfade.js';
+import { SpliceStretcher } from './splice-stretch.js';
+import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
+import { LoopCrossfade } from './loop-crossfade.js';
 import {
   driftLoopEnd,
   driftRollInterval,

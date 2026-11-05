@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { SpliceStretcher } from '../splice-stretch.js';
+import { SpliceStretcher } from '../engine/splice-stretch.js';
 import {
   makeParameters,
   setupProcessorGlobals,

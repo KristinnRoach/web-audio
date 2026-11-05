@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { LoopCrossfade } from '../loop-crossfade.js';
+import { LoopCrossfade } from '../engine/loop-crossfade.js';
 import { makeParameters, setupProcessorGlobals, startProcessor } from './range-test-helpers';
 
 setupProcessorGlobals();
