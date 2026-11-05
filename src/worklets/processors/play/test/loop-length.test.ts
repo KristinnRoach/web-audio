@@ -6,6 +6,7 @@ import {
   isInQuantizationRange,
   keytrackLoopDuration,
   loopDriftSamples,
+  longestPeriodWithin,
   quantizeLoopLength,
 } from '../engine/loop-length.js';
 
@@ -17,6 +18,14 @@ describe('loop length stages', () => {
     expect(quantizeLoopLength(401, periods)).toBe(401);
     expect(quantizeLoopLength(140, undefined)).toBe(140);
     expect(isInQuantizationRange(0.5, periods)).toBe(false);
+  });
+
+  it('finds the longest period that fits', () => {
+    const periods = [100, 200, 400];
+    expect(longestPeriodWithin(399, periods)).toBe(200);
+    expect(longestPeriodWithin(400, periods)).toBe(400);
+    expect(longestPeriodWithin(99, periods)).toBeUndefined();
+    expect(longestPeriodWithin(100, undefined)).toBeUndefined();
   });
 
   it('glides and lands exactly on the target', () => {

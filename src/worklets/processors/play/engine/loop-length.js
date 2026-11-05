@@ -32,7 +32,7 @@ export function quantizeLoopLength(length, periods) {
   return best;
 }
 
-// Longest period no longer than `length`, or undefined if none fits.
+// Longest period no longer than `length`, or undefined if none fits. `periods` is ascending.
 export function longestPeriodWithin(length, periods) {
   for (let i = (periods?.length ?? 0) - 1; i >= 0; i--) {
     if (periods[i] <= length) return periods[i];
