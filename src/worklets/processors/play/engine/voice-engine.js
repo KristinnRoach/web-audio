@@ -514,6 +514,7 @@ export class VoiceEngine {
       calcLoopStart,
       calcLoopEnd,
       baseDuration,
+      isAudioRate,
       driftAmount,
       playbackRange.endSamples,
     );
@@ -567,20 +568,19 @@ export class VoiceEngine {
    * @param {number} baseDuration - Loop duration in samples, before zero-crossing snaps
    * @returns {number} - Drifted loop end in samples
    */
-  #applyLoopDrift(loopStart, loopEnd, baseDuration, driftAmount, playbackEnd) {
+  #applyLoopDrift(loopStart, loopEnd, baseDuration, isAudioRate, driftAmount, playbackEnd) {
     if (driftAmount <= 0 || !this.loopEnabled) {
       this.currentPanDrift = 0;
       return loopEnd;
     }
 
-    if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration);
+    if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration, isAudioRate);
 
     return driftLoopEnd(loopStart, loopEnd, baseDuration, this.currentLoopDrift, playbackEnd);
   }
 
   /** Runs once per loop iteration. Audio-rate loops re-roll less often. */
-  #rollLoopDrift(driftAmount, baseDuration) {
-    const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
+  #rollLoopDrift(driftAmount, baseDuration, isAudioRate) {
     const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
 
     if (this.driftUpdateCounter % updateInterval === 0) {
