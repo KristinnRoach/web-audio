@@ -41,7 +41,7 @@ Answer in this order, since each answer can change or cancel the ones below it. 
 Items 1 to 3 do not wait for the research in step 3; item 4 does.
 
 1. **Shell and engine — complete:** the processor keeps registration, messages, descriptors and `process()`; `engine/voice-engine.js` gets `sampleRate`, time and random values passed in, with no AudioWorklet globals ([#145](https://github.com/KristinnRoach/web-audio/pull/145)). It still reads the `parameters` arrays directly, since flattening them means choosing the engine boundary.
-2. **Pure stages:** pull out quantize, glide, keytrack and drift as small functions.
+2. **Pure stages — complete:** quantize, glide, keytrack and drift are small functions in `engine/loop-length.js` ([#146](https://github.com/KristinnRoach/web-audio/pull/146)).
 3. **Core model:** apply the three ideas above and collapse the heads into one list.
 4. **Playhead as an offset from the window start (oscillator regime):** try this here. Window moves would no longer need the carry logic, and morphing needs a shared phase anyway. Drop it if it doesn't simplify things.
 
