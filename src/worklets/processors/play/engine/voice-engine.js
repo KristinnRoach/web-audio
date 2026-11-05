@@ -6,6 +6,16 @@ import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZero
 import { SpliceStretcher } from '../splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from '../loop-edges.js';
 import { LoopCrossfade } from '../loop-crossfade.js';
+import {
+  driftLoopEnd,
+  driftRollInterval,
+  glideCoefficient,
+  glideToward,
+  isInQuantizationRange,
+  keytrackLoopDuration,
+  loopDriftSamples,
+  quantizeLoopLength,
+} from './loop-length.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
 // Loop jump, turn and move crossfade length in source samples (~5 ms at 48 kHz).
@@ -25,11 +35,6 @@ function interpolate(samples, position, lastIndex) {
   const a = samples[Math.max(0, Math.min(index, lastIndex))] || 0;
   const b = samples[Math.max(0, Math.min(index + 1, lastIndex))] || 0;
   return a + weight * (b - a);
-}
-
-// One-pole coefficient per sample; 1 = stepped.
-function glideCoefficient(seconds, sampleRate) {
-  return seconds > 0 ? -Math.expm1(-1 / sampleRate / seconds) : 1;
 }
 
 function tailGainAt(position, audioEndSamples) {
@@ -355,32 +360,11 @@ export class VoiceEngine {
     };
   }
 
-  #isLoopLengthInQuantizationRange(length) {
-    const periods = this.loopQuantizePeriods;
-    return !!periods?.length && length >= 1 && length <= periods.at(-1);
-  }
-
-  // Select the nearest period target; glide is applied separately.
-  #quantizeLoopLength(length) {
-    if (!this.#isLoopLengthInQuantizationRange(length)) return length;
-    const periods = this.loopQuantizePeriods;
-    let best = periods[0];
-    let distance = Math.abs(best - length);
-    for (let i = 1; i < periods.length; i++) {
-      const candidateDistance = Math.abs(periods[i] - length);
-      if (candidateDistance < distance) {
-        best = periods[i];
-        distance = candidateDistance;
-      }
-    }
-    return best;
-  }
-
   // One-pole glide in the log domain (even pitch glide), once per audible sample.
   // Only inside the quantization range; outside it, or entering it, the length jumps.
   #glideLoopLength(target) {
     this.isLoopLengthGliding = false;
-    if (!this.#isLoopLengthInQuantizationRange(target)) {
+    if (!isInQuantizationRange(target, this.loopQuantizePeriods)) {
       this.glidedLoopLogLength = null;
       return target;
     }
@@ -388,10 +372,13 @@ export class VoiceEngine {
     if (this.glidedLoopLogLength === null) {
       this.glidedLoopLogLength = logTarget;
     } else {
-      this.glidedLoopLogLength +=
-        (logTarget - this.glidedLoopLogLength) * this.loopLengthGlideCoefficient;
-      this.isLoopLengthGliding = Math.abs(logTarget - this.glidedLoopLogLength) > 1e-12;
-      if (!this.isLoopLengthGliding) this.glidedLoopLogLength = logTarget;
+      this.glidedLoopLogLength = glideToward(
+        this.glidedLoopLogLength,
+        logTarget,
+        this.loopLengthGlideCoefficient,
+        1e-12,
+      );
+      this.isLoopLengthGliding = this.glidedLoopLogLength !== logTarget;
     }
     // The log round trip can exceed the longest period by an ULP and bypass quantization.
     return Math.min(Math.exp(this.glidedLoopLogLength), this.loopQuantizePeriods.at(-1));
@@ -415,17 +402,20 @@ export class VoiceEngine {
     if (
       !this.loopEnabled ||
       !lengthUnchanged ||
-      !this.#isLoopLengthInQuantizationRange(length) ||
+      !isInQuantizationRange(length, this.loopQuantizePeriods) ||
       this.glidedLoopStart === null ||
       this.loopPositionGlideCoefficient === 1
     ) {
       this.glidedLoopStart = targetStart;
       return targetStart;
     }
-    this.glidedLoopStart +=
-      (targetStart - this.glidedLoopStart) * this.loopPositionGlideCoefficient;
-    this.isLoopPositionGliding = Math.abs(targetStart - this.glidedLoopStart) > 1e-6;
-    if (!this.isLoopPositionGliding) this.glidedLoopStart = targetStart;
+    this.glidedLoopStart = glideToward(
+      this.glidedLoopStart,
+      targetStart,
+      this.loopPositionGlideCoefficient,
+      1e-6,
+    );
+    this.isLoopPositionGliding = this.glidedLoopStart !== targetStart;
     return this.glidedLoopStart;
   }
 
@@ -447,8 +437,9 @@ export class VoiceEngine {
     // to preserve its length when possible; longer loops clamp below.
     // A zero-length loop (end dragged onto start) floors at minRangeSamples,
     // which quantization lifts to the shortest period when a scale is set.
-    let targetLoopLength = this.#quantizeLoopLength(
+    let targetLoopLength = quantizeLoopLength(
       Math.max(this.minRangeSamples, lpEnd - lpStart),
+      this.loopQuantizePeriods,
     );
     if (
       targetLoopLength > playbackRange.durationSamples &&
@@ -496,8 +487,7 @@ export class VoiceEngine {
     const keytrackAmount =
       baseDuration > this.pitchPreservationThreshold ? this.keytrackLoopAmount : 0;
     if (keytrackAmount > 0) {
-      const scale = 1 + keytrackAmount * (Math.abs(playbackRate) - 1);
-      baseDuration = Math.max(1, Math.floor(baseDuration * scale));
+      baseDuration = keytrackLoopDuration(baseDuration, keytrackAmount, playbackRate);
       // Deliberately unclamped: above the loop's root note the loop duration is longer than
       // the available audio. The tail is padded with silence in render() so the
       // real-time duration stays constant instead of collapsing to the buffer end.
@@ -585,22 +575,16 @@ export class VoiceEngine {
 
     if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration);
 
-    const minDuration = Math.max(1, Math.floor(baseDuration * 0.1));
-    // Ceiling is the keytracked end when it already reaches past the audio,
-    // otherwise drift would pull the silence-padded tail back in.
-    const maxEnd = Math.max(playbackEnd, loopEnd);
-    return Math.max(loopStart + minDuration, Math.min(maxEnd, loopEnd + this.currentLoopDrift));
+    return driftLoopEnd(loopStart, loopEnd, baseDuration, this.currentLoopDrift, playbackEnd);
   }
 
   /** Runs once per loop iteration. Audio-rate loops re-roll less often. */
   #rollLoopDrift(driftAmount, baseDuration) {
     const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
-    const updateInterval = isAudioRate
-      ? Math.max(1, Math.floor(this.pitchPreservationThreshold / baseDuration))
-      : 1;
+    const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
 
     if (this.driftUpdateCounter % updateInterval === 0) {
-      this.currentLoopDrift = this.#generateLoopDrift(driftAmount, baseDuration);
+      this.currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
       // Audio-rate drift is scaled down and rounded to whole samples, often to nothing,
       // so pan rolls its own value there.
       const panDrift = isAudioRate
@@ -611,26 +595,6 @@ export class VoiceEngine {
 
     this.driftUpdateCounter++;
     this.loopDriftRolled = true;
-  }
-
-  /**
-   * @param {number} driftAmount - Maximum drift as a fraction of the loop (0-1)
-   * @param {number} baseDuration - Loop duration in samples
-   * @returns {number} - Random whole-sample drift, positive or negative
-   */
-  #generateLoopDrift(driftAmount, baseDuration) {
-    // Scale from 10% at 1024 samples (~23ms at 44.1kHz) to 100% at 8192 (~186ms),
-    // so short loops keep their pitch.
-    const shortThreshold = 1024;
-    const longThreshold = 8192;
-    const position = (baseDuration - shortThreshold) / (longThreshold - shortThreshold);
-    const durationScale = 0.1 + 0.9 * Math.max(0, Math.min(1, position));
-
-    const randomFactor = (this.random() - 0.5) * 2;
-
-    // Round to the nearest source sample: floor turns even tiny negative drift
-    // into a full-sample shortening of the loop.
-    return Math.round(randomFactor * driftAmount * durationScale * baseDuration);
   }
 
   /**
