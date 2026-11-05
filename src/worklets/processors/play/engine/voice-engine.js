@@ -5,7 +5,7 @@
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
-import { LoopCrossfade } from './loop-crossfade.js';
+import { LoopCrossfade, MAX_HEADS } from './loop-crossfade.js';
 import {
   driftLoopEnd,
   driftRollInterval,
@@ -120,6 +120,15 @@ export class VoiceEngine {
     this.trimMessage = { type: 'trim:range', startPoint: 0, endPoint: 0, inverted: false };
     this.loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
     this.positionMessage = { type: 'voice:position', position: 0 };
+    // Everything sounding this sample: the playhead, the stretcher's outgoing head
+    // and the crossfade heads.
+    this.readHeads = Array.from({ length: MAX_HEADS + 2 }, () => ({
+      position: 0,
+      gain: 1,
+      mix: 0,
+      lastIndex: 0,
+    }));
+    this.readHeadCount = 0;
     this.idleLoopInputs = [];
     this.idleLoopKey = [];
 
@@ -307,6 +316,53 @@ export class VoiceEngine {
       position,
       lastAudioIndex,
     );
+  }
+
+  #addReadHead(position, gain, mix, lastIndex) {
+    const head = this.readHeads[this.readHeadCount++];
+    head.position = position;
+    head.gain = gain;
+    head.mix = mix;
+    head.lastIndex = lastIndex;
+  }
+
+  // Innermost first. The stretcher's head stays inside the crossfade heads even when
+  // it started later; among those, the newest is innermost, since each fades from
+  // what was audible when it started. They keep their own tail gain, so the silent
+  // tail can't mute the outgoing side of a reverse wrap.
+  #collectReadHeads(tailGain, lastAudioIndex) {
+    this.readHeadCount = 0;
+    this.#addReadHead(this.playbackPosition, tailGain, 0, lastAudioIndex);
+    if (this.timestretch.outgoingPosition !== null) {
+      this.#addReadHead(
+        this.timestretch.outgoingPosition,
+        tailGain,
+        this.timestretch.crossfadeMix,
+        lastAudioIndex,
+      );
+    }
+    const crossfade = this.loopCrossfade;
+    for (let i = crossfade.count - 1; i >= 0; i--) {
+      const { position, fadesTail, audioEnd, mix } = crossfade.head(i);
+      this.#addReadHead(
+        position,
+        fadesTail ? tailGainAt(position, audioEnd) : 1,
+        mix,
+        Math.ceil(audioEnd) - 1,
+      );
+    }
+  }
+
+  // Each head's `mix` is the weight of the heads inside it. The innermost has
+  // nothing inside it, so its 0 leaves it at full level.
+  #mixReadHeads(channel) {
+    let mixed = 0;
+    for (let i = 0; i < this.readHeadCount; i++) {
+      const head = this.readHeads[i];
+      const value = this.#readSample(head.position, channel, head.lastIndex) * head.gain;
+      mixed = value + head.mix * (mixed - value);
+    }
+    return mixed;
   }
 
   #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
@@ -930,33 +986,13 @@ export class VoiceEngine {
       // after the playhead. Indices clamp to the last audio sample: endSamples can
       // be fractional (minimum-length growth), and a ping-pong turn at the audio
       // end reads exactly at endSamples. Past it, the silent tail gain is 0.
-      const lastAudioIndex = Math.ceil(playbackRange.endSamples) - 1;
-      const timestretchOutgoingPosition = this.timestretch.outgoingPosition;
-      const timestretchCrossfadeMix =
-        timestretchOutgoingPosition === null ? 1 : this.timestretch.crossfadeMix;
-      const crossfade = this.loopCrossfade;
+      this.#collectReadHeads(tailGain, Math.ceil(playbackRange.endSamples) - 1);
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
         if (!outputChannels[channel]) continue;
 
-        let interpolatedSample = this.#readSample(this.playbackPosition, channel, lastAudioIndex);
-        if (timestretchOutgoingPosition !== null) {
-          const outgoing = this.#readSample(timestretchOutgoingPosition, channel, lastAudioIndex);
-          interpolatedSample = outgoing + timestretchCrossfadeMix * (interpolatedSample - outgoing);
-        }
-        // Smooth in the audible source domain, so the silent tail cannot mute
-        // the outgoing side of a reverse wrap.
-        interpolatedSample *= tailGain;
-        // Newest head innermost: each fades from what was audible when it started.
-        for (let i = crossfade.count - 1; i >= 0; i--) {
-          const { position, fadesTail, audioEnd, mix } = crossfade.head(i);
-          const gain = fadesTail ? tailGainAt(position, audioEnd) : 1;
-          const outgoing = this.#readSample(position, channel, Math.ceil(audioEnd) - 1) * gain;
-          interpolatedSample = outgoing + mix * (interpolatedSample - outgoing);
-        }
-
-        const finalSample = interpolatedSample * velocityGain * envelopeGain * masterGain;
+        const finalSample = this.#mixReadHeads(channel) * velocityGain * envelopeGain * masterGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;

@@ -5,7 +5,7 @@
 // included, so overlapping discontinuities stay continuous. Length and progress are in source samples, so a fade covers
 // the same stretch of audio at any playback rate.
 
-const MAX_HEADS = 4; // reasonable: 2-16
+export const MAX_HEADS = 4; // reasonable: 2-16
 
 export class LoopCrossfade {
   // Oldest first. Preallocated and reused: this runs on the audio thread.
