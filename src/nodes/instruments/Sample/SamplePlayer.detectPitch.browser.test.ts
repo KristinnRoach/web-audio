@@ -2,7 +2,7 @@ import { expect, test } from 'vite-plus/test';
 import { preProcessAudioBuffer } from '@/nodes/preprocessor/Preprocessor';
 import { SamplePlayer } from './SamplePlayer';
 
-test('detectPitch matches what autotune measures and leaves the sample alone', async () => {
+test('detectPitch agrees with autotune within a cent and leaves the sample alone', async () => {
   const context = new AudioContext();
   await context.audioWorklet.addModule('/dist/processors/processors.js');
   const player = new SamplePlayer({ context, polyphony: 1, voiceSignalChain: [] });
@@ -23,8 +23,11 @@ test('detectPitch matches what autotune measures and leaves the sample alone', a
     const pitch = await player.detectPitch();
     const autotune = await preProcessAudioBuffer(context, buffer);
 
-    expect(pitch!.frequency).toBe(autotune.detectedPitch!.fundamentalHz);
-    expect(pitch!.periodicity).toBe(autotune.detectedPitch!.periodicity);
+    // Not exact: detectPitch uses a fixed 30 Hz highpass, autotune the auto one.
+    expect(
+      Math.abs(1200 * Math.log2(pitch!.frequency / autotune.detectedPitch!.fundamentalHz)),
+    ).toBeLessThan(1);
+    expect(pitch!.periodicity).toBeCloseTo(autotune.detectedPitch!.periodicity, 2);
     expect(Math.abs(1200 * Math.log2(pitch!.frequency / hz))).toBeLessThan(5);
     expect(pitch!.midiFloat).toBeCloseTo(58.3, 1);
     expect(pitch!.periodicity).toBeGreaterThan(0.9);

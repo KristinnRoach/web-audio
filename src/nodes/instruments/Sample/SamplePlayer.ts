@@ -603,8 +603,9 @@ export class SamplePlayer {
   }
 
   /**
-   * Detects the loaded sample's pitch the way autotune does, on throwaway copies:
-   * nothing is resampled, and the result ignores transpose() and fineTune().
+   * Detects the loaded sample's pitch with autotune's detector on throwaway copies,
+   * using a fixed 30 Hz highpass instead of autotune's auto one: nothing is
+   * resampled, and the result ignores transpose() and fineTune().
    * Silence and noise still return a frequency, so gate on `periodicity`.
    * Returns null if there is no sample.
    */
@@ -617,6 +618,7 @@ export class SamplePlayer {
     const { detectedPitch } = await preProcessAudioBuffer(this.context, this.#buffer, {
       normalize: { enabled: false },
       tune: { detectPitch: true, autotune: false },
+      hpf: { cutoff: 30 },
       getZeroCrossings: false,
     });
     if (!detectedPitch) return null;
