@@ -19,9 +19,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  enableLoopCrossfade: boolean;
-  loopCount: number;
-  playbackPosition: number;
+  engine: { enableLoopCrossfade: boolean; loopCount: number; playbackPosition: number };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -58,7 +56,7 @@ async function startProcessor(playbackDirection: 'forward' | 'reverse') {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
-  processor.enableLoopCrossfade = false;
+  processor.engine.enableLoopCrossfade = false;
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
@@ -105,13 +103,13 @@ describe('loop wrap with an overshoot larger than the loop', () => {
 
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES);
     render(processor, wide, WIDE_LOOP_SAMPLES - 99);
-    expect(processor.playbackPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
+    expect(processor.engine.playbackPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
 
     // loopEnd jumps back behind the playhead: overshoot is ~18x the new loop length.
     const narrow = makeParameters(0, NARROW_LOOP_SAMPLES);
     render(processor, narrow, 1);
 
-    expect(processor.playbackPosition).toBeCloseTo(1);
+    expect(processor.engine.playbackPosition).toBeCloseTo(1);
   });
 
   it('keeps the playhead inside the loop when loopStart moves past it in reverse', async () => {
@@ -122,7 +120,7 @@ describe('loop wrap with an overshoot larger than the loop', () => {
     const endPoint = WIDE_LOOP_SAMPLES / TEST_SAMPLE_RATE;
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES, endPoint);
     render(processor, wide, WIDE_LOOP_SAMPLES - 100);
-    expect(processor.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES);
+    expect(processor.engine.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES);
 
     // loopStart jumps forward past the playhead, leaving a 100-sample loop at the top.
     const narrow = makeParameters(
@@ -134,9 +132,9 @@ describe('loop wrap with an overshoot larger than the loop', () => {
 
     // The playhead travels with the loop start, so it lands near the top of the
     // narrow loop rather than exactly one sample below its end.
-    expect(processor.playbackPosition).toBeGreaterThanOrEqual(
+    expect(processor.engine.playbackPosition).toBeGreaterThanOrEqual(
       WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES,
     );
-    expect(processor.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES);
+    expect(processor.engine.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES);
   });
 });

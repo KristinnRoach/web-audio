@@ -8,7 +8,7 @@ class MockAudioWorkletProcessor {
 
 type Parameters = Record<string, Float32Array>;
 type TestProcessor = {
-  playbackPosition: number;
+  engine: { playbackPosition: number };
   port: { onmessage: ((event: MessageEvent) => void) | null };
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -86,13 +86,13 @@ describe('loop period', () => {
     // One frame per call, so a wrap is timed to the sample rather than the quantum.
     const wraps: number[] = [];
     const output = [new Float32Array(1), new Float32Array(1)];
-    let previous = processor.playbackPosition;
+    let previous = processor.engine.playbackPosition;
 
     for (let frame = 0; frame < SR * 4; frame++) {
       vi.stubGlobal('currentFrame', frame);
       processor.process([], [output], parameters);
-      if (processor.playbackPosition < previous && previous > 0) wraps.push(frame / SR);
-      previous = processor.playbackPosition;
+      if (processor.engine.playbackPosition < previous && previous > 0) wraps.push(frame / SR);
+      previous = processor.engine.playbackPosition;
     }
 
     const period = (loopEnd - loopStart) / effective;

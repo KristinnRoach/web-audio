@@ -34,8 +34,8 @@ describe('loop range clamping', () => {
 
     render(processor, parameters, TEST_SAMPLE_RATE / 4 + 100);
 
-    expect(processor.playbackPosition).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
-    expect(processor.playbackPosition).toBeLessThan(TEST_SAMPLE_RATE / 2 + 200);
+    expect(processor.engine.playbackPosition).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
+    expect(processor.engine.playbackPosition).toBeLessThan(TEST_SAMPLE_RATE / 2 + 200);
   });
 
   // The playback start snaps forward to a zero crossing, past a loop sitting on
@@ -60,7 +60,7 @@ describe('loop range clamping', () => {
       const positions: number[] = [];
       for (let frame = 0; frame < loopLength * 4; frame++) {
         processor.process([], [[new Float32Array(1)]], parameters);
-        positions.push(processor.playbackPosition);
+        positions.push(processor.engine.playbackPosition);
       }
 
       // Distance between consecutive wraps is the loop length.
@@ -84,7 +84,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE / 4 + loopLength * 3; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -104,7 +104,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 1.3; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     // Jumps from the loop start back up to the loop end, one per backward pass
@@ -133,7 +133,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < length * 3; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     expect(positions[1] < positions[0]).toBe(backward);
@@ -155,7 +155,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.03; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE * 0.55 - 1);
@@ -167,13 +167,13 @@ describe('loop range clamping', () => {
   it('keeps a long loop with no zero crossing inside it at its length', async () => {
     const processor = await startProcessor([0.3, 0.5, 0.7]);
     // Straddle the 0.5 crossing so either snap would leave 0.6x the threshold.
-    const half = (0.6 * processor.pitchPreservationThreshold) / TEST_SAMPLE_RATE;
+    const half = (0.6 * processor.engine.pitchPreservationThreshold) / TEST_SAMPLE_RATE;
     const parameters = makeParameters({ endPoint: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
 
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.8; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -189,7 +189,9 @@ describe('loop range clamping', () => {
     'keeps a moving audio-rate loop at its length (%f s per block)',
     async (perBlock) => {
       const loopLength = 96;
-      const processor = (await startProcessor()) as TestProcessor & { loopCount: number };
+      const processor = (await startProcessor()) as TestProcessor & {
+        engine: { loopCount: number };
+      };
       const at = (d: number) =>
         makeParameters({
           startPoint: 0.2 + d,
@@ -204,7 +206,7 @@ describe('loop range clamping', () => {
         const parameters = at(Math.max(0, k - 300) * perBlock);
         for (let i = 0; i < block; i++) {
           processor.process([], [[new Float32Array(1)]], parameters);
-          counts.push(processor.loopCount);
+          counts.push(processor.engine.loopCount);
         }
       }
 
@@ -223,7 +225,7 @@ describe('loop range clamping', () => {
       processor.port.postMessage.mock.calls
         .map(([msg]) => msg)
         .filter((msg) => msg.type === 'loop:range');
-    const min = processor.minRangeSamples / TEST_SAMPLE_RATE;
+    const min = processor.engine.minRangeSamples / TEST_SAMPLE_RATE;
 
     // Zero-length loop lifts to the minimum range.
     render(processor, makeParameters({ endPoint: 1, loopStart: 0.5, loopEnd: 0.5 }), 1);
@@ -293,7 +295,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.6; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     expect(Math.max(...positions)).toBeGreaterThan(TEST_SAMPLE_RATE * 0.74);

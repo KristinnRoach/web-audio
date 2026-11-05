@@ -20,14 +20,15 @@ describe('loop position glide timing', () => {
       const params = makeParameters({ loopStart: start, loopEnd: end, ...trim });
       processor.process([], [[new Float32Array(frames)]], params);
       return (
-        processor as typeof processor & {
+        processor.engine as typeof processor.engine & {
           previousLoopRange: { loopStartSamples: number; loopDurationSamples: number };
         }
       ).previousLoopRange;
     };
     process(0, 0.004);
     const crossfadeCount = () =>
-      (processor as typeof processor & { loopCrossfade: { count: number } }).loopCrossfade.count;
+      (processor.engine as typeof processor.engine & { loopCrossfade: { count: number } })
+        .loopCrossfade.count;
     return { process, crossfadeCount };
   }
 
@@ -87,11 +88,13 @@ describe('trim end moving under an outgoing crossfade head', () => {
 
   async function moveTrimEnd(loopStart: number, offset: number, poke = false) {
     const processor = (await startProcessor([], [0.002, 0.004, 0.008])) as TestProcessor & {
-      buffer: Float32Array[];
-      previousLoopRange: { loopStartSamples: number };
-      previousPlaybackPosition: number;
+      engine: {
+        buffer: Float32Array[];
+        previousLoopRange: { loopStartSamples: number };
+        previousPlaybackPosition: number;
+      };
     };
-    const data = processor.buffer[0];
+    const data = processor.engine.buffer[0];
     data.fill(LEVEL);
     const block = (trim = {}) => {
       const output = new Float32Array(128);
@@ -101,9 +104,9 @@ describe('trim end moving under an outgoing crossfade head', () => {
     };
     block(); // settle on the loop, so the only crossfade below is the trim-forced one
     block();
-    const position = processor.previousLoopRange.loopStartSamples + PLAYHEAD_OFFSET;
-    processor.playbackPosition = position;
-    processor.previousPlaybackPosition = position - 1;
+    const position = processor.engine.previousLoopRange.loopStartSamples + PLAYHEAD_OFFSET;
+    processor.engine.playbackPosition = position;
+    processor.engine.previousPlaybackPosition = position - 1;
     const trimEnd = position + offset;
     // Marks where a head would stick if it read up to the new trim end
     if (poke) data.fill(0, Math.floor(trimEnd) - 3, Math.ceil(trimEnd) + 2);

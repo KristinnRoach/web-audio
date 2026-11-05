@@ -17,11 +17,13 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  driftUpdateCounter: number;
-  isPlaying: boolean;
-  loopDriftRolled: boolean;
-  pendingStartFrame: number;
-  playbackPosition: number;
+  engine: {
+    driftUpdateCounter: number;
+    isPlaying: boolean;
+    loopDriftRolled: boolean;
+    pendingStartFrame: number;
+    playbackPosition: number;
+  };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -106,11 +108,11 @@ describe('scheduled sample start', () => {
     processor.process([], [[output]], makeParameters(0.2));
 
     expect(output.every((sample) => sample === 0)).toBe(true);
-    expect(processor.playbackPosition).toBe(0);
-    expect(processor.driftUpdateCounter).toBe(0);
-    expect(processor.loopDriftRolled).toBe(false);
+    expect(processor.engine.playbackPosition).toBe(0);
+    expect(processor.engine.driftUpdateCounter).toBe(0);
+    expect(processor.engine.loopDriftRolled).toBe(false);
     expect(random).not.toHaveBeenCalled();
-    expect(processor.pendingStartFrame).toBe(BLOCK_SIZE * 2);
+    expect(processor.engine.pendingStartFrame).toBe(BLOCK_SIZE * 2);
   });
 
   it('starts at the scheduled sample within a render block', async () => {
@@ -125,8 +127,8 @@ describe('scheduled sample start', () => {
     );
     expect(output[startOffset]).toBeGreaterThan(0);
     expect(output[BLOCK_SIZE - 1]).toBeGreaterThan(0);
-    expect(processor.playbackPosition).toBe(BLOCK_SIZE - startOffset);
-    expect(processor.pendingStartFrame).toBe(0);
+    expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE - startOffset);
+    expect(processor.engine.pendingStartFrame).toBe(0);
   });
 
   it('starts immediately when the scheduled frame has already passed', async () => {
@@ -137,8 +139,8 @@ describe('scheduled sample start', () => {
     processor.process([], [[output]], makeParameters());
 
     expect(output[0]).toBeGreaterThan(0);
-    expect(processor.playbackPosition).toBe(BLOCK_SIZE);
-    expect(processor.pendingStartFrame).toBe(0);
+    expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE);
+    expect(processor.engine.pendingStartFrame).toBe(0);
   });
 
   it.each(['voice:reset', 'voice:stop'])('clears a pending start on %s', async (type) => {
@@ -146,7 +148,7 @@ describe('scheduled sample start', () => {
 
     processor.port.onmessage?.({ data: { type } } as MessageEvent);
 
-    expect(processor.pendingStartFrame).toBe(0);
+    expect(processor.engine.pendingStartFrame).toBe(0);
   });
 
   it('does not acknowledge a host-requested stop', async () => {
@@ -155,7 +157,7 @@ describe('scheduled sample start', () => {
 
     processor.port.onmessage?.({ data: { type: 'voice:stop' } } as MessageEvent);
 
-    expect(processor.isPlaying).toBe(false);
+    expect(processor.engine.isPlaying).toBe(false);
     expect(processor.port.postMessage).not.toHaveBeenCalled();
   });
 
@@ -166,7 +168,7 @@ describe('scheduled sample start', () => {
 
     processor.process([], [[new Float32Array(BLOCK_SIZE)]], makeParameters());
 
-    expect(processor.isPlaying).toBe(false);
+    expect(processor.engine.isPlaying).toBe(false);
     expect(processor.port.postMessage).toHaveBeenCalledWith({
       type: 'voice:ended',
       triggerId: TEST_TRIGGER_ID,

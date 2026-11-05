@@ -206,16 +206,15 @@ describe('audio-rate loop movement smoothing', () => {
       const movedAgain = render(0.2, 1);
       expect(Math.abs(movedAgain[0][0] - moved[0][1])).toBeLessThan(0.1);
       expect(Math.abs(movedAgain[1][0] - moved[1][1])).toBeLessThan(0.1);
-      const state = processor as typeof processor & {
+      const state = processor.engine as typeof processor.engine & {
         loopCount: number;
         previousLoopRange: { loopStartSamples: number; loopDurationSamples: number };
       };
       expect(state.loopCount).toBe(0);
       expect(state.previousLoopRange.loopDurationSamples).toBeCloseTo(192);
-      expect(processor.playbackPosition - state.previousLoopRange.loopStartSamples).toBeCloseTo(
-        35 * rate,
-        4,
-      );
+      expect(
+        processor.engine.playbackPosition - state.previousLoopRange.loopStartSamples,
+      ).toBeCloseTo(35 * rate, 4);
 
       const settled = render(0.2, 128);
       expect(settled[0][127]).toBeCloseTo(-0.4, 4);

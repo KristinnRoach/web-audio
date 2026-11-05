@@ -9,7 +9,7 @@ are fixed below. Other observations remain candidates, not confirmed audible def
 
 ## Audio-thread envelopes (open)
 
-First audit `src/worklets/processors/play/sample-player-processor.js` and its callers
+First audit `src/worklets/processors/play/engine/voice-engine.js` and its callers
 for redundant state, timing calculations and control paths. Identify necessary cleanup
 before choosing the audio-thread design; do not carry duplicate timing models forward.
 

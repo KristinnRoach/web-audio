@@ -38,7 +38,7 @@ describe('loop pitch quantization and voice reuse', () => {
     render(processor, parameters, 1);
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
     render(processor, parameters, 1);
-    expect(processor.playbackPosition).toBe(1);
+    expect(processor.engine.playbackPosition).toBe(1);
   });
 
   it('posts each note’s first range with its trigger id, even if already posted', async () => {
