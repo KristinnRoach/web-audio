@@ -14,6 +14,7 @@ import {
   isInQuantizationRange,
   keytrackLoopDuration,
   loopDriftSamples,
+  longestPeriodWithin,
   quantizeLoopLength,
 } from './loop-length.js';
 
@@ -61,6 +62,14 @@ function resolveRange(a, b, lo, hi, minLength) {
   return resolvedRange;
 }
 
+// Whether `other` has the same value for every field of `fields`.
+function hasSameValues(fields, other) {
+  for (const key in fields) {
+    if (fields[key] !== other[key]) return false;
+  }
+  return true;
+}
+
 export class VoiceEngine {
   /**
    * @param {Object} options
@@ -98,6 +107,21 @@ export class VoiceEngine {
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
     this.loopLengthGlideCoefficient = glideCoefficient(0.125, sampleRate);
     this.loopPositionGlideCoefficient = glideCoefficient(0, sampleRate);
+
+    // Reused per block and per sample, so rendering doesn't allocate.
+    this.positionParams = {
+      startPointSamples: 0,
+      endPointSamples: 0,
+      loopStartSamples: 0,
+      loopEndSamples: 0,
+    };
+    this.playbackRange = { startSamples: 0, endSamples: 0, durationSamples: 0, inverted: false };
+    this.previousRequestedLoop = { start: null, end: null };
+    this.trimMessage = { type: 'trim:range', startPoint: 0, endPoint: 0, inverted: false };
+    this.loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
+    this.positionMessage = { type: 'voice:position', position: 0 };
+    this.idleLoopInputs = [];
+    this.idleLoopKey = [];
 
     // Initialize all playback state
     this.reset();
@@ -225,7 +249,8 @@ export class VoiceEngine {
     this.isLoopStartClamped = false;
     this.glidedLoopStart = null;
     // Raw loop points in samples (start may pass end), from the last range calculation.
-    this.previousRequestedLoop = { start: null, end: null };
+    this.previousRequestedLoop.start = null;
+    this.previousRequestedLoop.end = null;
   }
 
   stop() {
@@ -312,26 +337,25 @@ export class VoiceEngine {
   /**
    * Extract and convert all position parameters from seconds to samples
    * @param {Object} parameters - AudioWorkletProcessor parameters
-   * @returns {Object} - Converted parameters in samples
+   * @returns {Object} - Converted parameters in samples, a reused object
    */
   #extractPositionParams(parameters) {
-    const samples = {
-      startPointSamples: Math.floor(parameters.startPoint[0] * this.sampleRate),
-      endPointSamples: Math.floor(parameters.endPoint[0] * this.sampleRate),
-      // Keep loop points fractional: the loop length sets the pitch of an audio-rate
-      // loop, and flooring rounded it to whole source samples (~5 cents at a
-      // C5-length loop). Playback position and interpolation are already
-      // fractional; every consumer that needs an index floors locally.
-      loopStartSamples: parameters.loopStart[0] * this.sampleRate,
-      loopEndSamples: parameters.loopEnd[0] * this.sampleRate,
-    };
+    const samples = this.positionParams;
+    samples.startPointSamples = Math.floor(parameters.startPoint[0] * this.sampleRate);
+    samples.endPointSamples = Math.floor(parameters.endPoint[0] * this.sampleRate);
+    // Keep loop points fractional: the loop length sets the pitch of an audio-rate
+    // loop, and flooring rounded it to whole source samples (~5 cents at a
+    // C5-length loop). Playback position and interpolation are already
+    // fractional; every consumer that needs an index floors locally.
+    samples.loopStartSamples = parameters.loopStart[0] * this.sampleRate;
+    samples.loopEndSamples = parameters.loopEnd[0] * this.sampleRate;
     return samples;
   }
 
   /**
    * Calculate effective playback range in samples
    * @param {Object} params - Position parameters from #extractPositionParams
-   * @returns {Object} - Effective start and end positions
+   * @returns {Object} - Effective start and end positions, a reused object
    */
   #calculatePlaybackRange(params) {
     const bufferLength = this.buffer?.[0]?.length || 0;
@@ -344,7 +368,7 @@ export class VoiceEngine {
     const snapStart = this.#findNearestZeroCrossing(lo, 'right');
     const snapEnd = this.#findNearestZeroCrossing(hi, 'left');
     const inward = lo <= snapStart && snapStart < snapEnd && snapEnd <= hi;
-    const [startSamples, endSamples] = resolveRange(
+    const resolved = resolveRange(
       inward ? snapStart : lo,
       inward ? snapEnd : hi,
       0,
@@ -352,12 +376,12 @@ export class VoiceEngine {
       this.minRangeSamples,
     );
 
-    return {
-      startSamples,
-      endSamples,
-      durationSamples: endSamples - startSamples,
-      inverted: a > b, // start past end plays the range backward
-    };
+    const range = this.playbackRange;
+    range.startSamples = resolved[0];
+    range.endSamples = resolved[1];
+    range.durationSamples = resolved[1] - resolved[0];
+    range.inverted = a > b; // start past end plays the range backward
+    return range;
   }
 
   // One-pole glide in the log domain (even pitch glide), once per audible sample.
@@ -446,7 +470,7 @@ export class VoiceEngine {
       playbackRange.durationSamples <= this.pitchPreservationThreshold
     ) {
       targetLoopLength =
-        this.loopQuantizePeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
+        longestPeriodWithin(playbackRange.durationSamples, this.loopQuantizePeriods) ??
         targetLoopLength;
     }
     const glidedLoopLength = this.#glideLoopLength(targetLoopLength);
@@ -473,13 +497,9 @@ export class VoiceEngine {
 
     // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
     // default) clamps to the full range.
-    let [calcLoopStart, calcLoopEnd] = resolveRange(
-      lpStart,
-      lpEnd,
-      rangeStart,
-      rangeEnd,
-      this.minRangeSamples,
-    );
+    const resolved = resolveRange(lpStart, lpEnd, rangeStart, rangeEnd, this.minRangeSamples);
+    let calcLoopStart = resolved[0];
+    let calcLoopEnd = resolved[1];
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
@@ -601,15 +621,17 @@ export class VoiceEngine {
    * Posts display state (`loop:range`, `trim:range`, `voice:position`), tagged
    * with the current `triggerId`. Compared against the last posted message of
    * that type for this note, so a change skipped by the throttle (`interval`
-   * seconds, ~30 Hz by default) is sent on a later block.
+   * seconds, ~30 Hz by default) is sent on a later block. Only a message actually
+   * posted allocates; `fields` is reused by the caller.
    */
-  #postRange(type, range, blockTime, interval = 1 / 30) {
+  #postRange(fields, blockTime, interval = 1 / 30) {
     this.postedRanges ??= {};
-    const posted = this.postedRanges[type];
-    if (posted && Object.keys(range).every((key) => range[key] === posted.range[key])) return;
+    const posted = this.postedRanges[fields.type];
+    if (posted && hasSameValues(fields, posted.message)) return;
     if (blockTime - (posted?.time ?? -1) < interval) return;
-    this.postedRanges[type] = { range, time: blockTime };
-    this.post({ type, ...range, triggerId: this.triggerId });
+    const message = { ...fields, triggerId: this.triggerId };
+    this.postedRanges[fields.type] = { message, time: blockTime };
+    this.post(message);
   }
 
   /**
@@ -622,19 +644,24 @@ export class VoiceEngine {
   reportIdle(parameters, blockTime, interval = 1 / 30) {
     if (!this.buffer?.[0]?.length) return;
     if (blockTime - (this.idleLoopPostTime ?? -1) < interval) return;
-    const key = this.idleLoopKey ?? [];
-    const inputs = [
-      parameters.loopStart[0],
-      parameters.loopEnd[0],
-      parameters.startPoint[0],
-      parameters.endPoint[0],
-      this.buffer,
-      this.zeroCrossings,
-      this.loopQuantizePeriods,
-      this.keytrackLoopAmount,
-    ];
-    if (inputs.every((value, i) => value === key[i])) return;
+    const key = this.idleLoopKey;
+    const inputs = this.idleLoopInputs;
+    inputs[0] = parameters.loopStart[0];
+    inputs[1] = parameters.loopEnd[0];
+    inputs[2] = parameters.startPoint[0];
+    inputs[3] = parameters.endPoint[0];
+    inputs[4] = this.buffer;
+    inputs[5] = this.zeroCrossings;
+    inputs[6] = this.loopQuantizePeriods;
+    inputs[7] = this.keytrackLoopAmount;
+    let changed = false;
+    for (let i = 0; i < inputs.length; i++) {
+      if (inputs[i] !== key[i]) changed = true;
+    }
+    if (!changed) return;
+    // The inputs become the key; the old key is the next call's scratch.
     this.idleLoopKey = inputs;
+    this.idleLoopInputs = key;
     this.idleLoopPostTime = blockTime;
 
     const positionParams = this.#extractPositionParams(parameters);
@@ -731,15 +758,10 @@ export class VoiceEngine {
     }
     this.previousApproachDirection = approachDirection;
 
-    this.#postRange(
-      'trim:range',
-      {
-        startPoint: playbackRange.startSamples / sampleRate,
-        endPoint: playbackRange.endSamples / sampleRate,
-        inverted: playbackRange.inverted,
-      },
-      blockTime,
-    );
+    this.trimMessage.startPoint = playbackRange.startSamples / sampleRate;
+    this.trimMessage.endPoint = playbackRange.endSamples / sampleRate;
+    this.trimMessage.inverted = playbackRange.inverted;
+    this.#postRange(this.trimMessage, blockTime);
 
     // ===== AUDIO PROCESSING =====
 
@@ -971,24 +993,18 @@ export class VoiceEngine {
     }
 
     // Effective range at the last audible sample, still throttled per voice.
-    this.#postRange(
-      'loop:range',
-      {
-        loopStart: loopRange.loopStartSamples / sampleRate,
-        loopEnd: loopRange.loopEndSamples / sampleRate,
-        loopMode,
-      },
-      blockTime,
-    );
+    this.loopMessage.loopStart = loopRange.loopStartSamples / sampleRate;
+    this.loopMessage.loopEnd = loopRange.loopEndSamples / sampleRate;
+    this.loopMessage.loopMode = loopMode;
+    this.#postRange(this.loopMessage, blockTime);
 
     // Playhead for display, ~60 Hz to match screen refresh.
     if (this.reportPlaybackPosition) {
-      this.#postRange(
-        'voice:position',
-        { position: Math.max(0, Math.min(1, this.#samplesToNormalized(this.playbackPosition))) },
-        blockTime,
-        1 / 60,
+      this.positionMessage.position = Math.max(
+        0,
+        Math.min(1, this.#samplesToNormalized(this.playbackPosition)),
       );
+      this.#postRange(this.positionMessage, blockTime, 1 / 60);
     }
   }
 }

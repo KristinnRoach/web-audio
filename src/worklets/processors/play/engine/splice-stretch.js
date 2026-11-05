@@ -26,6 +26,7 @@ export class SpliceStretcher {
   #fadeIndex = 0;
   #fadeLength = 0;
   #fadeDirection = 1;
+  #correction = { outgoingPosition: 0, resetTarget: 0 };
 
   /** @param {number} contextSampleRate Audio-context sample rate in Hz. */
   constructor(contextSampleRate) {
@@ -98,6 +99,7 @@ export class SpliceStretcher {
   /**
    * Prepares a correction before the current output sample is rendered.
    * When non-null, render `outgoingPosition` now and pass `resetTarget` to `advance`.
+   * The result is a reused object, valid until the next call.
    * @param {boolean} active Result of `isActive` for the current render quantum.
    * @param {number} playbackPosition Current caller-owned playback position in samples.
    * @param {number} playbackRate Signed source-sample advance per output sample.
@@ -182,7 +184,9 @@ export class SpliceStretcher {
     }
 
     this.#resetPending = false;
-    return { outgoingPosition, resetTarget };
+    this.#correction.outgoingPosition = outgoingPosition;
+    this.#correction.resetTarget = resetTarget;
+    return this.#correction;
   }
 
   /**

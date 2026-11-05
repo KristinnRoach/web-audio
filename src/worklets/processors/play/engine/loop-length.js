@@ -32,6 +32,14 @@ export function quantizeLoopLength(length, periods) {
   return best;
 }
 
+// Longest period no longer than `length`, or undefined if none fits.
+export function longestPeriodWithin(length, periods) {
+  for (let i = (periods?.length ?? 0) - 1; i >= 0; i--) {
+    if (periods[i] <= length) return periods[i];
+  }
+  return undefined;
+}
+
 // amount = 1 keeps the loop's real-time duration across notes.
 export function keytrackLoopDuration(duration, amount, playbackRate) {
   const scale = 1 + amount * (Math.abs(playbackRate) - 1);
