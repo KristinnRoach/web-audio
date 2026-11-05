@@ -34,7 +34,7 @@ export type PreProcessOptions = {
 };
 
 export const DEFAULT_PRE_PROCESS_OPTIONS: PreProcessOptions = {
-  normalize: { enabled: true, maxAmplitudePeak: 0.99 }, // amplitude range [-1, 1]
+  normalize: { enabled: true, maxAmplitudePeak: 0.98 }, // amplitude range [-1, 1]
   compress: { enabled: false }, // TODO: Remove or replace with proper compression (e.g. offline audiocontext native node)
   trimSilence: { enabled: true, threshold: 0.005 },
   fadeMs: { in: 'default', out: 'default' },
@@ -111,7 +111,9 @@ export async function preProcessAudioBuffer(
   // rings longest weighs on the autocorrelation rather than just the loudest hit.
   // Built after trimming, and rebuilt after the HPF below, so detection sees the
   // same cleanup the pipeline computes instead of the raw input.
+  const prePitchDetectionPeak = 0.9;
   let prePitchDetection = compressAudioBuffer(ctx, processed, 0.5, 2, 1.0);
+  prePitchDetection = normalizeAudioBuffer(ctx, prePitchDetection, prePitchDetectionPeak);
 
   // Apply HPF first (before normalization) to avoid filter-induced clipping
   if (hpf) {
@@ -132,6 +134,7 @@ export async function preProcessAudioBuffer(
     // DC and rumble bias the autocorrelation toward long lags, so re-derive the
     // detection copy now that they are filtered out
     prePitchDetection = compressAudioBuffer(ctx, processed, 0.5, 2, 1.0);
+    prePitchDetection = normalizeAudioBuffer(ctx, prePitchDetection, prePitchDetectionPeak);
   }
 
   if (normalize?.enabled) {
