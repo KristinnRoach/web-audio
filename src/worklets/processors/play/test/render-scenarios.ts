@@ -1,6 +1,12 @@
 import { makeParameters, startProcessor, TEST_SAMPLE_RATE } from './range-test-helpers';
 
-export const renderScenarios = ['moving quantized loop', 'ping-pong', 'stretch'] as const;
+export const renderScenarios = [
+  'moving quantized loop',
+  'ping-pong',
+  'stretch',
+  // The stretcher's fades overlap the loop crossfade, which pins the read head order.
+  'looped stretch',
+] as const;
 export type RenderScenario = (typeof renderScenarios)[number];
 export const QUANTUM = 128;
 
@@ -15,7 +21,7 @@ export async function createRenderScenario(scenario: RenderScenario, voice = 0) 
   send({ type: 'setLoopEnabled', value: scenario !== 'stretch' });
   send({ type: 'setLoopPingPong', value: scenario === 'ping-pong' });
   send({ type: 'setPanDriftEnabled', value: false });
-  if (scenario === 'stretch') {
+  if (scenario === 'stretch' || scenario === 'looped stretch') {
     send({
       type: 'voice:setZeroCrossings',
       zeroCrossings: Array.from({ length: 501 }, (_, i) => (i * 96) / TEST_SAMPLE_RATE),
@@ -24,8 +30,8 @@ export async function createRenderScenario(scenario: RenderScenario, voice = 0) 
   }
   send({ type: 'voice:start', triggerId: voice });
   const parameters = makeParameters({
-    playbackRate: scenario === 'stretch' ? 2 : 1.5,
-    loopEnd: 180 / TEST_SAMPLE_RATE,
+    playbackRate: scenario === 'stretch' ? 2 : scenario === 'looped stretch' ? 1.7 : 1.5,
+    loopEnd: (scenario === 'looped stretch' ? 5000 : 180) / TEST_SAMPLE_RATE,
   });
   if (scenario === 'moving quantized loop') {
     parameters.loopStart = new Float32Array(QUANTUM);

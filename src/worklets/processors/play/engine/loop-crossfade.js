@@ -5,11 +5,11 @@
 // included, so overlapping discontinuities stay continuous. Length and progress are in source samples, so a fade covers
 // the same stretch of audio at any playback rate.
 
-export const MAX_HEADS = 4; // reasonable: 2-16
+export const MAX_OUTGOING_HEADS = 4; // reasonable: 2-16
 
 export class LoopCrossfade {
   // Oldest first. Preallocated and reused: this runs on the audio thread.
-  #heads = Array.from({ length: MAX_HEADS }, () => ({
+  #heads = Array.from({ length: MAX_OUTGOING_HEADS }, () => ({
     position: 0,
     direction: 1,
     fadesTail: false,
@@ -45,7 +45,7 @@ export class LoopCrossfade {
   start(position, direction, length, fadesTail, audioEnd) {
     if (length < 1) return;
     // ponytail: drops the oldest head at the cap, a small step if it was still fading
-    if (this.#count === MAX_HEADS) this.#remove(0);
+    if (this.#count === MAX_OUTGOING_HEADS) this.#remove(0);
     const head = this.#heads[this.#count++];
     head.position = position;
     head.direction = direction;

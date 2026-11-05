@@ -5,7 +5,7 @@
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
-import { LoopCrossfade, MAX_HEADS } from './loop-crossfade.js';
+import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import {
   driftLoopEnd,
   driftRollInterval,
@@ -47,7 +47,7 @@ function tailGainAt(position, audioEndSamples) {
  * `minLength` long (or as long as the bounds allow). Points arrive raw from the
  * main thread, so either may be set first and they may be equal.
  */
-// Reused result: callers destructure it immediately, and this runs per sample.
+// Reused result: callers read it immediately, and this runs per sample.
 const resolvedRange = [0, 0];
 function resolveRange(a, b, lo, hi, minLength) {
   let start = Math.min(Math.max(Math.min(a, b), lo), hi);
@@ -122,7 +122,7 @@ export class VoiceEngine {
     this.positionMessage = { type: 'voice:position', position: 0 };
     // Everything sounding this sample: the playhead, the stretcher's outgoing head
     // and the crossfade heads.
-    this.readHeads = Array.from({ length: MAX_HEADS + 2 }, () => ({
+    this.readHeads = Array.from({ length: MAX_OUTGOING_HEADS + 2 }, () => ({
       position: 0,
       gain: 1,
       mix: 0,
