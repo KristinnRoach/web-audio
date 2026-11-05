@@ -13,6 +13,7 @@ import {
 } from '@/nodes/preprocessor/Preprocessor';
 
 import { frequencyToMidi, isValidAudioBuffer, isMidiValue } from '@/utils';
+import { detectSinglePitchAC } from '@/utils/audiodata/pitchDetection';
 import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
@@ -621,6 +622,23 @@ export class SamplePlayer {
     });
     if (!detectedPitch) return null;
     const { fundamentalHz: frequency, periodicity } = detectedPitch;
+    return { midiFloat: frequencyToMidi(frequency, 'none'), frequency, periodicity };
+  }
+
+  /**
+   * Detects the pitch of one window of live mono samples, for example from
+   * AnalyserNode.getFloatTimeDomainData, with autotune's detector. Experimental:
+   * low content such as hum can read near 1000 Hz at high periodicity.
+   */
+  async detectLivePitch(samples: Float32Array): Promise<{
+    midiFloat: number;
+    frequency: number;
+    periodicity: number;
+  }> {
+    // ponytail: skips trim, compression and HPF, which don't apply to a short live window
+    const buffer = this.context.createBuffer(1, samples.length, this.context.sampleRate);
+    buffer.copyToChannel(samples as Float32Array<ArrayBuffer>, 0);
+    const { frequency, periodicity } = await detectSinglePitchAC(buffer);
     return { midiFloat: frequencyToMidi(frequency, 'none'), frequency, periodicity };
   }
 
