@@ -7,8 +7,7 @@ const RAMP = Float32Array.from({ length: 1000 }, (_, i) => i / TEST_SAMPLE_RATE)
 const toSeconds = (samples: number) => samples / TEST_SAMPLE_RATE;
 
 type DirectionProcessor = {
-  enableLoopCrossfade: boolean;
-  isPlaying: boolean;
+  engine: { enableLoopCrossfade: boolean; isPlaying: boolean };
   port: { onmessage: ((event: MessageEvent) => void) | null };
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: unknown): boolean;
 };
@@ -16,7 +15,7 @@ type DirectionProcessor = {
 async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPong = false) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as DirectionProcessor;
-  processor.enableLoopCrossfade = false;
+  processor.engine.enableLoopCrossfade = false;
   const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
 
   send({
@@ -34,10 +33,11 @@ async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPon
 /** Read positions, one per rendered sample, until the voice ends or `frames` run out. */
 function trace(processor: DirectionProcessor, parameters: unknown, frames: number) {
   const positions: number[] = [];
-  for (let frame = 0; frame < frames && processor.isPlaying; frame++) {
+  for (let frame = 0; frame < frames && processor.engine.isPlaying; frame++) {
     const out = new Float32Array(1);
     processor.process([], [[out]], parameters);
-    if (processor.isPlaying) positions.push(Math.round(out[0] * TEST_SAMPLE_RATE * 1000) / 1000);
+    if (processor.engine.isPlaying)
+      positions.push(Math.round(out[0] * TEST_SAMPLE_RATE * 1000) / 1000);
   }
   return positions;
 }
@@ -111,7 +111,7 @@ describe('playback direction', () => {
     const positions = trace(processor, params, 200);
 
     expect(positions.slice(-3)).toEqual([2, 1, 0]);
-    expect(processor.isPlaying).toBe(false);
+    expect(processor.engine.isPlaying).toBe(false);
   });
 
   it('a reverse loop cycles through the same positions as a forward loop', async () => {
@@ -190,7 +190,7 @@ describe('loop types', () => {
 
     expect(indexOfRun(positions, [376, 375, 749, 750, 751])).toBeGreaterThan(0);
     expect(positions.at(-1)).toBe(999);
-    expect(processor.isPlaying).toBe(false);
+    expect(processor.engine.isPlaying).toBe(false);
   });
 
   it('a loop type change takes effect at the next loop edge', async () => {

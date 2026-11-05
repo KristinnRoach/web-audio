@@ -1,0 +1,1030 @@
+// One voice's playback state and rendering, free of AudioWorklet globals. The caller
+// passes in the sample rate, block position and random source; messages go out through
+// `post`, synchronously, in the order they occur.
+
+import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
+import { SpliceStretcher } from '../splice-stretch.js';
+import { reflectLoopPosition, wrapLoopPosition } from '../loop-edges.js';
+import { LoopCrossfade } from '../loop-crossfade.js';
+
+const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
+// Loop jump, turn and move crossfade length in source samples (~5 ms at 48 kHz).
+const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
+// U-turn crossfade: a ping-pong or backward-loop turn has no step, but its slope
+// reverses in one frame (a corner, audible at zero crossings). The crossfade
+// rounds it off, at the cost of a brief level dip. Not standard sampler practice;
+// false restores bare turns.
+const LOOP_TURN_CROSSFADE = true;
+const TAIL_FADE_SAMPLES = 64;
+// Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
+const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
+// Linear interpolation of one channel's samples at a fractional position.
+function interpolate(samples, position, lastIndex) {
+  const index = Math.floor(position);
+  const weight = position - index;
+  const a = samples[Math.max(0, Math.min(index, lastIndex))] || 0;
+  const b = samples[Math.max(0, Math.min(index + 1, lastIndex))] || 0;
+  return a + weight * (b - a);
+}
+
+// One-pole coefficient per sample; 1 = stepped.
+function glideCoefficient(seconds, sampleRate) {
+  return seconds > 0 ? -Math.expm1(-1 / sampleRate / seconds) : 1;
+}
+
+function tailGainAt(position, audioEndSamples) {
+  return Math.max(0, Math.min(1, (audioEndSamples - position) / TAIL_FADE_SAMPLES));
+}
+
+/**
+ * Resolves two raw points into an ordered range inside [lo, hi], at least
+ * `minLength` long (or as long as the bounds allow). Points arrive raw from the
+ * main thread, so either may be set first and they may be equal.
+ */
+// Reused result: callers destructure it immediately, and this runs per sample.
+const resolvedRange = [0, 0];
+function resolveRange(a, b, lo, hi, minLength) {
+  let start = Math.min(Math.max(Math.min(a, b), lo), hi);
+  let end = Math.min(Math.max(Math.max(a, b), lo), hi);
+  if (end - start < minLength) {
+    // Grow the end, then pull the start back if the end hit the upper bound
+    end = Math.min(start + minLength, hi);
+    start = Math.max(lo, end - minLength);
+  }
+  resolvedRange[0] = start;
+  resolvedRange[1] = end;
+  return resolvedRange;
+}
+
+export class VoiceEngine {
+  /**
+   * @param {Object} options
+   * @param {number} options.sampleRate - Context sample rate
+   * @param {() => number} options.random - Random values in [0, 1)
+   * @param {(message: Object) => void} options.post - Receives outgoing messages
+   */
+  constructor({ sampleRate, random, post }) {
+    this.sampleRate = sampleRate;
+    this.random = random;
+    this.post = post;
+
+    // Only set properties that should persist across resets.
+    this.buffer = null;
+
+    this.loopEnabled = false;
+    this.reversePlayback = false;
+    this.panDriftEnabled = true;
+    this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
+    this.smoothedPanDrift = 0;
+
+    this.reportPlaybackPosition = false;
+    this.enableLoopCrossfade = true; // Crossfade between loop points
+    this.loopCrossfade = new LoopCrossfade();
+    // Ping-pong turns around at both loop edges and overrides loop point order.
+    this.loopPingPong = false;
+    // Keytrack loop: 0 = loop length fixed in samples (loop time shortens as you play higher).
+    // 1 = loop length scales with playbackRate so real-time loop duration stays constant across notes.
+    // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
+    this.keytrackLoopAmount = 0;
+
+    this.timestretch = new SpliceStretcher(sampleRate);
+
+    // Glide time constant between quantized loop periods, not an arrival time
+    // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
+    this.loopLengthGlideCoefficient = glideCoefficient(0.125, sampleRate);
+    this.loopPositionGlideCoefficient = glideCoefficient(0, sampleRate);
+
+    // Initialize all playback state
+    this.reset();
+  }
+
+  // Shortest allowed playback range, can be inverted:
+  // Math.abs(end - start) >= minRangeSamples
+  // C5's wavelength, lowered to the shortest quantized target period so scales above C5 keep their pitch.
+  get minRangeSamples() {
+    return Math.min(this.sampleRate / 523.25, this.loopQuantizePeriods?.[0] ?? Infinity);
+  }
+
+  // Source-domain short-loop cutoff in samples, shared by musical loop policies.
+  get pitchPreservationThreshold() {
+    return (
+      this.loopQuantizePeriods?.at(-1) ??
+      Math.floor(this.sampleRate * DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS)
+    );
+  }
+
+  // Rendering needs a note and a source; otherwise the voice is idle.
+  get canRender() {
+    return this.isPlaying && !!this.buffer?.[0]?.length;
+  }
+
+  // ===== CONTROLS =====
+
+  setLoopQuantizePeriods(seconds) {
+    // Seconds to samples, ascending: [0] is the shortest, at(-1) the longest.
+    this.loopQuantizePeriods = seconds
+      .map((value) => value * this.sampleRate)
+      .sort((a, b) => a - b);
+  }
+
+  setBuffer(buffer) {
+    this.reset();
+    this.zeroCrossings = [];
+    this.buffer = buffer ?? null;
+  }
+
+  setZeroCrossings(zeroCrossings) {
+    this.zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * this.sampleRate);
+  }
+
+  start(triggerId, timestamp) {
+    this.isPlaying = true;
+    this.triggerId = triggerId;
+    this.loopCount = 0;
+    this.pendingLoopCycleTime = null;
+    this.loopDriftRolled = false; // roll fresh drift for this note
+    this.smoothedPanDrift = 0;
+    this.driftUpdateCounter = 0; // and don't let the short-loop cadence skip it
+    this.loopTurned = false;
+    this.#resetLoopGlides(); // new notes start on the target range
+    this.previousLoopRange = null;
+    this.loopCrossfade.reset();
+    this.postedRanges = {}; // each note posts its first resolved range
+
+    // Set from the trim range on the first audible block
+    this.playbackPosition = 0;
+    this.needsStartPosition = true;
+
+    // Frame this note should sound at. A timestamp that has already passed
+    // by the time the message arrives starts the note now.
+    this.pendingStartFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
+  }
+
+  setPanDriftEnabled(enabled) {
+    this.panDriftEnabled = enabled;
+    if (!enabled) this.currentPanDrift = 0;
+  }
+
+  setLoopLengthGlide(seconds) {
+    this.loopLengthGlideCoefficient = glideCoefficient(seconds, this.sampleRate);
+  }
+
+  setLoopPositionGlide(seconds) {
+    this.loopPositionGlideCoefficient = glideCoefficient(seconds, this.sampleRate);
+  }
+
+  setKeytrackLoopAmount(amount) {
+    this.keytrackLoopAmount = Math.max(0, Math.min(1, amount));
+  }
+
+  setTimestretchEnabled(enabled) {
+    this.timestretch.setEnabled(enabled, this.playbackPosition);
+  }
+
+  // ===== METHODS =====
+
+  reset() {
+    this.isPlaying = false;
+    this.pendingStartFrame = 0;
+    this.triggerId = 0;
+
+    this.previousApproachDirection = null;
+    // True while cycling a loop against the approach direction (backward loops,
+    // or the return half of a ping-pong). Direction = approach, negated when turned.
+    this.loopTurned = false;
+    this.playbackPosition = 0;
+    this.previousPlaybackPosition = 0;
+    this.needsStartPosition = false;
+
+    this.loopCount = 0;
+    this.pendingLoopCycleTime = null;
+    this.previousLoopRange = null;
+
+    this.loopCrossfade.reset();
+    this.#resetLoopGlides();
+
+    this.driftUpdateCounter = 0;
+    this.currentLoopDrift = 0;
+    this.currentPanDrift = 0;
+    this.smoothedPanDrift = 0;
+
+    this.loopDriftRolled = false;
+
+    this.timestretch.reset();
+  }
+
+  #resetLoopGlides() {
+    this.isLoopLengthGliding = false;
+    this.glidedLoopLogLength = null;
+    this.isLoopPositionGliding = false;
+    this.isLoopStartClamped = false;
+    this.glidedLoopStart = null;
+    // Raw loop points in samples (start may pass end), from the last range calculation.
+    this.previousRequestedLoop = { start: null, end: null };
+  }
+
+  stop() {
+    this.isPlaying = false;
+    this.pendingStartFrame = 0;
+    this.playbackPosition = 0;
+    this.needsStartPosition = false;
+  }
+
+  // Capped to a fraction of the loop, so short loops get short fades
+  #crossfadeLength(loopRange) {
+    return Math.min(LOOP_CROSSFADE_SAMPLES, loopRange.loopDurationSamples / 4);
+  }
+
+  /**
+   * Moves the playhead past the loop edge it has reached, if any: jumps to the
+   * other edge, or turns around. Turning is what makes a loop backward (turn
+   * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
+   * change takes effect at the next edge, so direction never flips mid-loop.
+   */
+  #passLoopEdge(approachDirection, loopMode, loopRange, silencePadTail, cycleTime) {
+    const direction = this.loopTurned ? -approachDirection : approachDirection;
+    const { loopStartSamples: loopStart, loopEndSamples: loopEnd } = loopRange;
+    const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
+    const nextPosition = turns
+      ? reflectLoopPosition(this.playbackPosition, direction, loopStart, loopEnd)
+      : wrapLoopPosition(this.playbackPosition, direction, loopStart, loopEnd);
+    if (nextPosition === null) return;
+
+    if (turns) this.loopTurned = !this.loopTurned;
+    if (this.enableLoopCrossfade && (!turns || LOOP_TURN_CROSSFADE)) {
+      // The outgoing head carries on past the edge in the pre-turn direction
+      const length = this.#crossfadeLength(loopRange);
+      this.loopCrossfade.start(
+        this.playbackPosition,
+        direction,
+        length,
+        silencePadTail,
+        loopRange.audioEndSamples,
+      );
+    }
+    this.playbackPosition = nextPosition;
+    this.loopCount++;
+    this.pendingLoopCycleTime = cycleTime;
+
+    // Reset drift flag to generate new drift for next loop iteration
+    this.loopDriftRolled = false;
+  }
+
+  // Mono sources feed every output channel.
+  #readSample(position, channel, lastAudioIndex) {
+    return interpolate(
+      this.buffer[Math.min(channel, this.buffer.length - 1)],
+      position,
+      lastAudioIndex,
+    );
+  }
+
+  #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
+    return findNearestZeroCrossing(this.zeroCrossings, position, direction, maxDistance);
+  }
+
+  // ===== CONVERSION UTILITIES =====
+
+  /**
+   * Convert sample index to normalized position (0-1)
+   * @param {number} sampleIndex - Sample index
+   * @returns {number} - Normalized position 0-1
+   */
+  #samplesToNormalized(sampleIndex) {
+    if (!this.buffer || !this.buffer[0]) return 0;
+    return sampleIndex / this.buffer[0].length;
+  }
+
+  /**
+   * Convert MIDI velocity (0-127) to gain multiplier (0-1)
+   * @param {number} midiVelocity - MIDI velocity 0-127
+   * @returns {number} - Gain multiplier 0-1
+   */
+  #midiVelocityToGain(midiVelocity) {
+    return Math.max(0, Math.min(1, midiVelocity / 127));
+  }
+
+  /**
+   * Extract and convert all position parameters from seconds to samples
+   * @param {Object} parameters - AudioWorkletProcessor parameters
+   * @returns {Object} - Converted parameters in samples
+   */
+  #extractPositionParams(parameters) {
+    const samples = {
+      startPointSamples: Math.floor(parameters.startPoint[0] * this.sampleRate),
+      endPointSamples: Math.floor(parameters.endPoint[0] * this.sampleRate),
+      // Keep loop points fractional: the loop length sets the pitch of an audio-rate
+      // loop, and flooring rounded it to whole source samples (~5 cents at a
+      // C5-length loop). Playback position and interpolation are already
+      // fractional; every consumer that needs an index floors locally.
+      loopStartSamples: parameters.loopStart[0] * this.sampleRate,
+      loopEndSamples: parameters.loopEnd[0] * this.sampleRate,
+    };
+    return samples;
+  }
+
+  /**
+   * Calculate effective playback range in samples
+   * @param {Object} params - Position parameters from #extractPositionParams
+   * @returns {Object} - Effective start and end positions
+   */
+  #calculatePlaybackRange(params) {
+    const bufferLength = this.buffer?.[0]?.length || 0;
+    const { startPointSamples: a, endPointSamples: b } = params;
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+
+    // Snap inward to zero crossings, then resolve like the loop points. Directional
+    // snaps clamp to the outermost crossing, so keep them only if they stay inside.
+    const snapStart = this.#findNearestZeroCrossing(lo, 'right');
+    const snapEnd = this.#findNearestZeroCrossing(hi, 'left');
+    const inward = lo <= snapStart && snapStart < snapEnd && snapEnd <= hi;
+    const [startSamples, endSamples] = resolveRange(
+      inward ? snapStart : lo,
+      inward ? snapEnd : hi,
+      0,
+      bufferLength,
+      this.minRangeSamples,
+    );
+
+    return {
+      startSamples,
+      endSamples,
+      durationSamples: endSamples - startSamples,
+      inverted: a > b, // start past end plays the range backward
+    };
+  }
+
+  #isLoopLengthInQuantizationRange(length) {
+    const periods = this.loopQuantizePeriods;
+    return !!periods?.length && length >= 1 && length <= periods.at(-1);
+  }
+
+  // Select the nearest period target; glide is applied separately.
+  #quantizeLoopLength(length) {
+    if (!this.#isLoopLengthInQuantizationRange(length)) return length;
+    const periods = this.loopQuantizePeriods;
+    let best = periods[0];
+    let distance = Math.abs(best - length);
+    for (let i = 1; i < periods.length; i++) {
+      const candidateDistance = Math.abs(periods[i] - length);
+      if (candidateDistance < distance) {
+        best = periods[i];
+        distance = candidateDistance;
+      }
+    }
+    return best;
+  }
+
+  // One-pole glide in the log domain (even pitch glide), once per audible sample.
+  // Only inside the quantization range; outside it, or entering it, the length jumps.
+  #glideLoopLength(target) {
+    this.isLoopLengthGliding = false;
+    if (!this.#isLoopLengthInQuantizationRange(target)) {
+      this.glidedLoopLogLength = null;
+      return target;
+    }
+    const logTarget = Math.log(target);
+    if (this.glidedLoopLogLength === null) {
+      this.glidedLoopLogLength = logTarget;
+    } else {
+      this.glidedLoopLogLength +=
+        (logTarget - this.glidedLoopLogLength) * this.loopLengthGlideCoefficient;
+      this.isLoopLengthGliding = Math.abs(logTarget - this.glidedLoopLogLength) > 1e-12;
+      if (!this.isLoopLengthGliding) this.glidedLoopLogLength = logTarget;
+    }
+    // The log round trip can exceed the longest period by an ULP and bypass quantization.
+    return Math.min(Math.exp(this.glidedLoopLogLength), this.loopQuantizePeriods.at(-1));
+  }
+
+  // Move the source window gradually; the existing playhead carry follows it.
+  #glideLoopPosition(targetStart, params, length) {
+    const requestedSpan = params.loopEndSamples - params.loopStartSamples;
+    const previous = this.previousRequestedLoop;
+    // Paired Float32 AudioParams lose precision when translated far into the buffer.
+    const tolerance =
+      Math.max(
+        Math.abs(targetStart),
+        Math.abs(this.glidedLoopStart ?? 0),
+        Math.abs(requestedSpan),
+        1,
+      ) *
+      2 ** -22;
+    const lengthUnchanged = Math.abs(requestedSpan - (previous.end - previous.start)) <= tolerance;
+    this.isLoopPositionGliding = false;
+    if (
+      !this.loopEnabled ||
+      !lengthUnchanged ||
+      !this.#isLoopLengthInQuantizationRange(length) ||
+      this.glidedLoopStart === null ||
+      this.loopPositionGlideCoefficient === 1
+    ) {
+      this.glidedLoopStart = targetStart;
+      return targetStart;
+    }
+    this.glidedLoopStart +=
+      (targetStart - this.glidedLoopStart) * this.loopPositionGlideCoefficient;
+    this.isLoopPositionGliding = Math.abs(targetStart - this.glidedLoopStart) > 1e-6;
+    if (!this.isLoopPositionGliding) this.glidedLoopStart = targetStart;
+    return this.glidedLoopStart;
+  }
+
+  /**
+   * Calculate effective loop range in samples with optional drift
+   * @param {Object} params - Position parameters from #extractPositionParams
+   * @param {Object} playbackRange - Range from #calculatePlaybackRange
+   * @param {number} driftAmount - Loop duration drift amount (0-1)
+   * @param {number} playbackRate - Current playback rate
+   * @returns {Object} - Effective loop start and end positions with drift applied.
+   *   A reused object, valid until the call after next; copy it to keep it longer.
+   */
+  #calculateLoopRange(params, playbackRange, driftAmount = 0, playbackRate = 1) {
+    const { startSamples: rangeStart, endSamples: rangeEnd } = playbackRange;
+    let lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
+    let lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
+
+    // An audio-rate loop's length is its pitch. Shift it inside effective trim
+    // to preserve its length when possible; longer loops clamp below.
+    // A zero-length loop (end dragged onto start) floors at minRangeSamples,
+    // which quantization lifts to the shortest period when a scale is set.
+    let targetLoopLength = this.#quantizeLoopLength(
+      Math.max(this.minRangeSamples, lpEnd - lpStart),
+    );
+    if (
+      targetLoopLength > playbackRange.durationSamples &&
+      playbackRange.durationSamples <= this.pitchPreservationThreshold
+    ) {
+      targetLoopLength =
+        this.loopQuantizePeriods?.findLast((period) => period <= playbackRange.durationSamples) ??
+        targetLoopLength;
+    }
+    const glidedLoopLength = this.#glideLoopLength(targetLoopLength);
+    if (glidedLoopLength >= 1 && glidedLoopLength <= this.pitchPreservationThreshold) {
+      // Preserve the length when it fits; otherwise fill trim without changing the target.
+      const fittedLength = Math.min(glidedLoopLength, playbackRange.durationSamples);
+      const maxStart = rangeEnd - fittedLength;
+      lpStart = Math.min(Math.max(lpStart, rangeStart), maxStart);
+      // Trim or length can strand the glide outside the window; resolveRange would clip the loop.
+      if (this.glidedLoopStart !== null) {
+        const clampedStart = Math.min(Math.max(this.glidedLoopStart, rangeStart), maxStart);
+        // Trim or a length glide can move the bound; over a sample counts as a jump to crossfade.
+        this.isLoopStartClamped = Math.abs(clampedStart - this.glidedLoopStart) > 1;
+        this.glidedLoopStart = clampedStart;
+      }
+      lpStart = this.#glideLoopPosition(lpStart, params, glidedLoopLength);
+      lpEnd = lpStart + fittedLength;
+    } else {
+      // Above the audio-rate range this only tracks the start and clears the glide.
+      this.#glideLoopPosition(lpStart, params, glidedLoopLength);
+    }
+    this.previousRequestedLoop.start = params.loopStartSamples;
+    this.previousRequestedLoop.end = params.loopEndSamples;
+
+    // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
+    // default) clamps to the full range.
+    let [calcLoopStart, calcLoopEnd] = resolveRange(
+      lpStart,
+      lpEnd,
+      rangeStart,
+      rangeEnd,
+      this.minRangeSamples,
+    );
+
+    let baseDuration = calcLoopEnd - calcLoopStart;
+
+    // Keytrack loop length so amount=1 keeps its real-time duration across notes.
+    const keytrackAmount =
+      baseDuration > this.pitchPreservationThreshold ? this.keytrackLoopAmount : 0;
+    if (keytrackAmount > 0) {
+      const scale = 1 + keytrackAmount * (Math.abs(playbackRate) - 1);
+      baseDuration = Math.max(1, Math.floor(baseDuration * scale));
+      // Deliberately unclamped: above the loop's root note the loop duration is longer than
+      // the available audio. The tail is padded with silence in render() so the
+      // real-time duration stays constant instead of collapsing to the buffer end.
+      calcLoopEnd = calcLoopStart + baseDuration;
+    }
+
+    // Re-derive the duration after keytrack before drift sizes its minimum length.
+    baseDuration = calcLoopEnd - calcLoopStart;
+
+    const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
+    const minZeroCrossingLength = Math.max(this.pitchPreservationThreshold, this.minRangeSamples);
+
+    // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration).
+    // Snaps move both ends inward, so each is kept only if the loop stays above the
+    // audio-rate threshold and minimum: without an interior crossing, both could coincide.
+    if (!isAudioRate) {
+      const snappedStart = this.#findNearestZeroCrossing(calcLoopStart, 'right');
+      if (calcLoopEnd - snappedStart > minZeroCrossingLength) {
+        calcLoopStart = snappedStart;
+      }
+    }
+
+    calcLoopEnd = this.#applyLoopDrift(
+      calcLoopStart,
+      calcLoopEnd,
+      baseDuration,
+      driftAmount,
+      playbackRange.endSamples,
+    );
+
+    // Snap the end last: drift moves the wrap point, so snapping before drift
+    // leaves the actual loop end off a zero crossing -> discontinuity click.
+    // Skip the snap when the end sits in the silent tail: zero crossings only exist
+    // inside the buffer, so snapping there would erase the padding.
+    if (!isAudioRate && calcLoopEnd <= playbackRange.endSamples) {
+      const snappedEnd = this.#findNearestZeroCrossing(calcLoopEnd, 'left');
+      if (snappedEnd - calcLoopStart > minZeroCrossingLength) {
+        calcLoopEnd = snappedEnd;
+      }
+    }
+
+    // Two reused slots instead of a new object per sample: render() compares
+    // against previousLoopRange, so write into whichever slot that isn't.
+    this.loopRangeSlots ??= [{}, {}];
+    const range =
+      this.loopRangeSlots[0] === this.previousLoopRange
+        ? this.loopRangeSlots[1]
+        : this.loopRangeSlots[0];
+    range.loopStartSamples = calcLoopStart;
+    range.loopEndSamples = calcLoopEnd;
+    range.loopDurationSamples = calcLoopEnd - calcLoopStart;
+    range.keytrackAmount = keytrackAmount;
+    range.audioEndSamples = rangeEnd;
+    return range;
+  }
+
+  #getSafeParam(paramArray, index, isConstant) {
+    return isConstant ? paramArray[0] : paramArray[Math.min(index, paramArray.length - 1)];
+  }
+
+  #getConstantFlags(parameters) {
+    this.constantFlags ??= {
+      envGain: true,
+      playbackRate: true,
+      detune: true,
+    };
+
+    this.constantFlags.envGain = parameters.envGain.length === 1;
+    this.constantFlags.playbackRate = parameters.playbackRate.length === 1;
+    this.constantFlags.detune = parameters.detune.length === 1;
+
+    return this.constantFlags;
+  }
+
+  /**
+   * Moves the loop end by the current iteration's drift, rolling it if needed.
+   * @param {number} baseDuration - Loop duration in samples, before zero-crossing snaps
+   * @returns {number} - Drifted loop end in samples
+   */
+  #applyLoopDrift(loopStart, loopEnd, baseDuration, driftAmount, playbackEnd) {
+    if (driftAmount <= 0 || !this.loopEnabled) {
+      this.currentPanDrift = 0;
+      return loopEnd;
+    }
+
+    if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration);
+
+    const minDuration = Math.max(1, Math.floor(baseDuration * 0.1));
+    // Ceiling is the keytracked end when it already reaches past the audio,
+    // otherwise drift would pull the silence-padded tail back in.
+    const maxEnd = Math.max(playbackEnd, loopEnd);
+    return Math.max(loopStart + minDuration, Math.min(maxEnd, loopEnd + this.currentLoopDrift));
+  }
+
+  /** Runs once per loop iteration. Audio-rate loops re-roll less often. */
+  #rollLoopDrift(driftAmount, baseDuration) {
+    const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
+    const updateInterval = isAudioRate
+      ? Math.max(1, Math.floor(this.pitchPreservationThreshold / baseDuration))
+      : 1;
+
+    if (this.driftUpdateCounter % updateInterval === 0) {
+      this.currentLoopDrift = this.#generateLoopDrift(driftAmount, baseDuration);
+      // Audio-rate drift is scaled down and rounded to whole samples, often to nothing,
+      // so pan rolls its own value there.
+      const panDrift = isAudioRate
+        ? (this.random() - 0.5) * 2 * driftAmount
+        : this.currentLoopDrift / baseDuration;
+      this.currentPanDrift = this.panDriftEnabled && this.loopCount > 0 ? panDrift : 0;
+    }
+
+    this.driftUpdateCounter++;
+    this.loopDriftRolled = true;
+  }
+
+  /**
+   * @param {number} driftAmount - Maximum drift as a fraction of the loop (0-1)
+   * @param {number} baseDuration - Loop duration in samples
+   * @returns {number} - Random whole-sample drift, positive or negative
+   */
+  #generateLoopDrift(driftAmount, baseDuration) {
+    // Scale from 10% at 1024 samples (~23ms at 44.1kHz) to 100% at 8192 (~186ms),
+    // so short loops keep their pitch.
+    const shortThreshold = 1024;
+    const longThreshold = 8192;
+    const position = (baseDuration - shortThreshold) / (longThreshold - shortThreshold);
+    const durationScale = 0.1 + 0.9 * Math.max(0, Math.min(1, position));
+
+    const randomFactor = (this.random() - 0.5) * 2;
+
+    // Round to the nearest source sample: floor turns even tiny negative drift
+    // into a full-sample shortening of the loop.
+    return Math.round(randomFactor * driftAmount * durationScale * baseDuration);
+  }
+
+  /**
+   * Posts display state (`loop:range`, `trim:range`, `voice:position`), tagged
+   * with the current `triggerId`. Compared against the last posted message of
+   * that type for this note, so a change skipped by the throttle (`interval`
+   * seconds, ~30 Hz by default) is sent on a later block.
+   */
+  #postRange(type, range, blockTime, interval = 1 / 30) {
+    this.postedRanges ??= {};
+    const posted = this.postedRanges[type];
+    if (posted && Object.keys(range).every((key) => range[key] === posted.range[key])) return;
+    if (blockTime - (posted?.time ?? -1) < interval) return;
+    this.postedRanges[type] = { range, time: blockTime };
+    this.post({ type, ...range, triggerId: this.triggerId });
+  }
+
+  /**
+   * Resolves the loop range while idle, so the voice knows the snapped loop length
+   * before the next note triggers its envelopes. Recomputed only when an input changed,
+   * at most every `interval` seconds; a change skipped by the throttle is sent on a
+   * later block, since the key only updates when a report is posted. No drift and unit
+   * rate: drift is rolled per note, and the voice only uses this for the steady loop length.
+   */
+  reportIdle(parameters, blockTime, interval = 1 / 30) {
+    if (!this.buffer?.[0]?.length) return;
+    if (blockTime - (this.idleLoopPostTime ?? -1) < interval) return;
+    const key = this.idleLoopKey ?? [];
+    const inputs = [
+      parameters.loopStart[0],
+      parameters.loopEnd[0],
+      parameters.startPoint[0],
+      parameters.endPoint[0],
+      this.buffer,
+      this.zeroCrossings,
+      this.loopQuantizePeriods,
+      this.keytrackLoopAmount,
+    ];
+    if (inputs.every((value, i) => value === key[i])) return;
+    this.idleLoopKey = inputs;
+    this.idleLoopPostTime = blockTime;
+
+    const positionParams = this.#extractPositionParams(parameters);
+    // A stopped note's glide must not leak in: the next note starts on the target length.
+    this.#resetLoopGlides();
+    const loopRange = this.#calculateLoopRange(
+      positionParams,
+      this.#calculatePlaybackRange(positionParams),
+    );
+    // Posted directly, not through #postRange: its dedup compares against ranges
+    // posted before a buffer reload, while the voice has cleared its copy. The key
+    // check already limits this to real changes.
+    this.post({
+      type: 'loop:range',
+      loopStart: loopRange.loopStartSamples / this.sampleRate,
+      loopEnd: loopRange.loopEndSamples / this.sampleRate,
+      // Resolved at rate 1: the voice rescales the length by the note's rate.
+      keytrackAmount: loopRange.keytrackAmount,
+      idle: true,
+      triggerId: this.triggerId,
+    });
+  }
+
+  // ===== RENDER =====
+
+  /**
+   * Renders one block into `outputChannels` (Float32Arrays cleared to zero), from
+   * `blockFrame`/`blockTime`. Check `canRender` first; while it is false, call
+   * `reportIdle()` instead.
+   */
+  render(outputChannels, parameters, blockFrame, blockTime) {
+    const { sampleRate } = this;
+
+    // ===== Scheduled start =====
+
+    // Gate playback before any stateful preparation, such as loop-drift
+    // generation, so silent lookahead blocks cannot change the first audible
+    // block. Worklet output buffers start each render quantum cleared to zero.
+    let startOffset = 0;
+    if (this.pendingStartFrame > blockFrame) {
+      startOffset = this.pendingStartFrame - blockFrame;
+      // Whole quantum is before the note: stay silent, leave all state untouched.
+      if (startOffset >= outputChannels[0].length) return;
+    }
+    this.pendingStartFrame = 0;
+
+    // ===== GET PARAM VALUES =====
+
+    const masterGain = parameters.masterGain[0];
+
+    const positionParams = this.#extractPositionParams(parameters);
+
+    const playbackRange = this.#calculatePlaybackRange(positionParams);
+
+    // Direction the voice travels outside a loop: 1 forward, -1 reverse. The
+    // playhead reads the same source position in either direction, so a
+    // direction change needs no position correction.
+    const approachDirection = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
+    const driftAmount = parameters.loopDurationDriftAmount[0];
+    let loopRange;
+    let previousRate;
+
+    const velocityGain = this.#midiVelocityToGain(parameters.velocity[0]);
+
+    const basePan = parameters.pan[0];
+    const numChannels = outputChannels.length; // Always process all output channels
+
+    const isConstant = this.#getConstantFlags(parameters);
+
+    // ===== Init playback position =====
+
+    // Last position on the unit-rate grid, even when minimum-length growth is fractional.
+    const lastPosition = playbackRange.startSamples + Math.ceil(playbackRange.durationSamples) - 1;
+
+    // Both directions play the source samples [startSamples, endSamples).
+    if (this.needsStartPosition) {
+      this.needsStartPosition = false;
+      this.playbackPosition = approachDirection < 0 ? lastPosition : playbackRange.startSamples;
+      this.timestretch.reset(this.playbackPosition);
+    }
+
+    // A turn can happen after the preceding block advanced past a trim edge.
+    if (
+      this.previousApproachDirection !== null &&
+      this.previousApproachDirection !== approachDirection
+    ) {
+      if (this.playbackPosition >= playbackRange.endSamples) {
+        this.playbackPosition = lastPosition;
+        this.timestretch.reset(this.playbackPosition);
+      } else if (this.playbackPosition < playbackRange.startSamples) {
+        this.playbackPosition = playbackRange.startSamples;
+        this.timestretch.reset(this.playbackPosition);
+      }
+    }
+    this.previousApproachDirection = approachDirection;
+
+    this.#postRange(
+      'trim:range',
+      {
+        startPoint: playbackRange.startSamples / sampleRate,
+        endPoint: playbackRange.endSamples / sampleRate,
+        inverted: playbackRange.inverted,
+      },
+      blockTime,
+    );
+
+    // ===== AUDIO PROCESSING =====
+
+    let loopMode = 'forward';
+    for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
+      // Use getSafeParam for a-rate params
+      const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
+      const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
+      const detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
+      const rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
+
+      const loopStart = this.#getSafeParam(
+        parameters.loopStart,
+        sample,
+        parameters.loopStart.length === 1,
+      );
+      const loopEnd = this.#getSafeParam(
+        parameters.loopEnd,
+        sample,
+        parameters.loopEnd.length === 1,
+      );
+      positionParams.loopStartSamples = loopStart * sampleRate;
+      positionParams.loopEndSamples = loopEnd * sampleRate;
+      loopMode = this.loopPingPong ? 'pingPong' : loopStart > loopEnd ? 'backward' : 'forward';
+
+      // Recalculate the range only when something moved. Short loops follow
+      // their points per sample: their length is pitch. Long loops follow them
+      // once per block, as k-rate did; per-sample zero-crossing snapping for
+      // 16 voices overran the audio thread. The 2x margin keeps loops near the
+      // audio-rate boundary (Float32 noise can lift them over it) per sample.
+      const rangeInputsChanged =
+        positionParams.loopStartSamples !== this.previousRequestedLoop.start ||
+        positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
+        rate !== previousRate;
+      const followsPointsPerSample =
+        loopRange?.loopDurationSamples < 2 * this.pitchPreservationThreshold;
+      const driftPending = driftAmount > 0 && this.loopEnabled && !this.loopDriftRolled;
+      if (
+        !loopRange ||
+        (rangeInputsChanged && followsPointsPerSample) ||
+        this.isLoopLengthGliding ||
+        this.isLoopPositionGliding ||
+        driftPending
+      ) {
+        loopRange = this.#calculateLoopRange(positionParams, playbackRange, driftAmount, rate);
+        previousRate = rate;
+      }
+
+      // Report the incoming range after its drift is resolved, keeping the wrap time.
+      if (this.pendingLoopCycleTime !== null) {
+        this.post({
+          type: 'loop:cycle',
+          loopSeconds: loopRange.loopDurationSamples / sampleRate,
+          time: this.pendingLoopCycleTime,
+          triggerId: this.triggerId,
+        });
+        this.pendingLoopCycleTime = null;
+      }
+
+      // An audio-rate loop's length determines its pitch. The playhead is in buffer coordinates,
+      // so a moving loop would shift its phase every sample and shorten or stretch the
+      // cycles while it moves. Carry the playhead with the loop start instead.
+      const previous = this.previousLoopRange;
+      if (
+        previous &&
+        loopRange.loopStartSamples !== previous.loopStartSamples &&
+        this.loopEnabled &&
+        loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
+        this.previousPlaybackPosition >= previous.loopStartSamples &&
+        this.previousPlaybackPosition <= previous.loopEndSamples
+      ) {
+        if (this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped)) {
+          // From the unmoved playhead, before any edge it passes this frame
+          this.loopCrossfade.start(
+            this.playbackPosition,
+            this.loopTurned ? -approachDirection : approachDirection,
+            this.#crossfadeLength(loopRange),
+            previous.loopEndSamples > previous.audioEndSamples,
+            previous.audioEndSamples,
+          );
+        }
+        this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
+      }
+      this.previousLoopRange = loopRange;
+
+      this.smoothedPanDrift +=
+        (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
+      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift));
+
+      // The stretcher still has no independent turn state for backward/ping-pong.
+      const timestretchActive =
+        (!this.loopEnabled || (loopMode === 'forward' && !this.loopTurned)) &&
+        this.timestretch.isActive(
+          this.zeroCrossings,
+          this.loopEnabled,
+          loopRange.loopDurationSamples,
+          this.pitchPreservationThreshold,
+        );
+      const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
+
+      // Handle looping
+      const maxLoopCount = parameters.maxLoopCount[0];
+      const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
+      if (canWrapLoop) {
+        this.#passLoopEdge(
+          approachDirection,
+          loopMode,
+          loopRange,
+          silencePadTail,
+          blockTime + sample / sampleRate,
+        );
+      }
+      // Out of loop passes (the edge just passed may have been the last), or
+      // loop off: play out in the approach direction
+      if (!this.loopEnabled || this.loopCount >= maxLoopCount) this.loopTurned = false;
+      const direction = this.loopTurned ? -approachDirection : approachDirection;
+      const playbackStep = direction * Math.abs(rate);
+
+      const timestretchCorrection = this.timestretch.prepareCorrection(
+        timestretchActive,
+        this.playbackPosition,
+        playbackStep,
+        this.zeroCrossings,
+        this.buffer[0],
+        canWrapLoop
+          ? Math.max(playbackRange.startSamples, loopRange.loopStartSamples)
+          : playbackRange.startSamples,
+        canWrapLoop
+          ? Math.min(playbackRange.endSamples, loopRange.loopEndSamples)
+          : playbackRange.endSamples,
+      );
+      const timestretchResetTarget = timestretchCorrection?.resetTarget ?? null;
+      if (timestretchCorrection) this.playbackPosition = timestretchCorrection.outgoingPosition;
+
+      // End of playback: the playhead (or the stretcher's unit-rate timeline)
+      // has left [startSamples, endSamples) in its direction of travel.
+      // Don't stop if we're looping and within the playback range.
+      const transportPosition = timestretchActive
+        ? this.timestretch.timelinePosition
+        : this.playbackPosition;
+      const leftPlaybackRange =
+        direction > 0
+          ? transportPosition >= playbackRange.endSamples
+          : transportPosition < playbackRange.startSamples;
+      const isWithinLoop =
+        this.loopEnabled &&
+        this.playbackPosition >= loopRange.loopStartSamples &&
+        this.playbackPosition <= loopRange.loopEndSamples;
+
+      if (leftPlaybackRange && !isWithinLoop) {
+        const endedTriggerId = this.triggerId;
+        this.stop();
+        this.post({
+          type: 'voice:ended',
+          triggerId: endedTriggerId,
+        });
+        return;
+      }
+
+      // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail
+      const tailGain = silencePadTail
+        ? tailGainAt(this.playbackPosition, playbackRange.endSamples)
+        : 1;
+
+      // Sample interpolation, direction-independent: between the sample at and
+      // after the playhead. Indices clamp to the last audio sample: endSamples can
+      // be fractional (minimum-length growth), and a ping-pong turn at the audio
+      // end reads exactly at endSamples. Past it, the silent tail gain is 0.
+      const lastAudioIndex = Math.ceil(playbackRange.endSamples) - 1;
+      const timestretchOutgoingPosition = this.timestretch.outgoingPosition;
+      const timestretchCrossfadeMix =
+        timestretchOutgoingPosition === null ? 1 : this.timestretch.crossfadeMix;
+      const crossfade = this.loopCrossfade;
+      // Generate output for each channel
+      for (let channel = 0; channel < numChannels; channel++) {
+        // Safety check: ensure output channel exists
+        if (!outputChannels[channel]) continue;
+
+        let interpolatedSample = this.#readSample(this.playbackPosition, channel, lastAudioIndex);
+        if (timestretchOutgoingPosition !== null) {
+          const outgoing = this.#readSample(timestretchOutgoingPosition, channel, lastAudioIndex);
+          interpolatedSample = outgoing + timestretchCrossfadeMix * (interpolatedSample - outgoing);
+        }
+        // Smooth in the audible source domain, so the silent tail cannot mute
+        // the outgoing side of a reverse wrap.
+        interpolatedSample *= tailGain;
+        // Newest head innermost: each fades from what was audible when it started.
+        for (let i = crossfade.count - 1; i >= 0; i--) {
+          const { position, fadesTail, audioEnd, mix } = crossfade.head(i);
+          const gain = fadesTail ? tailGainAt(position, audioEnd) : 1;
+          const outgoing = this.#readSample(position, channel, Math.ceil(audioEnd) - 1) * gain;
+          interpolatedSample = outgoing + mix * (interpolatedSample - outgoing);
+        }
+
+        const finalSample = interpolatedSample * velocityGain * envelopeGain * masterGain;
+
+        // Apply pan (only affects stereo output)
+        let panAdjustedSample = finalSample;
+        if (outputChannels.length === 2) {
+          if (channel === 0) {
+            // Left channel: reduce gain when panned right (positive pan)
+            panAdjustedSample = finalSample * (1 - Math.max(0, effectivePan));
+          } else if (channel === 1) {
+            // Right channel: reduce gain when panned left (negative pan)
+            panAdjustedSample = finalSample * (1 - Math.max(0, -effectivePan));
+          }
+        }
+
+        // Basic hard limiting
+        outputChannels[channel][sample] = Math.max(
+          -1,
+          Math.min(1, isFinite(panAdjustedSample) ? panAdjustedSample : 0),
+        );
+      }
+      this.loopCrossfade.advance(Math.abs(playbackStep));
+
+      // Remember the rendered position, before a fractional step can overshoot
+      // the edge. The next sample must carry that overshoot with a moving loop.
+      this.previousPlaybackPosition = this.playbackPosition;
+      this.playbackPosition = this.timestretch.advance(
+        timestretchActive,
+        this.playbackPosition,
+        playbackStep,
+        timestretchResetTarget,
+        canWrapLoop,
+        loopRange.loopStartSamples,
+        loopRange.loopEndSamples,
+      );
+    }
+
+    // Effective range at the last audible sample, still throttled per voice.
+    this.#postRange(
+      'loop:range',
+      {
+        loopStart: loopRange.loopStartSamples / sampleRate,
+        loopEnd: loopRange.loopEndSamples / sampleRate,
+        loopMode,
+      },
+      blockTime,
+    );
+
+    // Playhead for display, ~60 Hz to match screen refresh.
+    if (this.reportPlaybackPosition) {
+      this.#postRange(
+        'voice:position',
+        { position: Math.max(0, Math.min(1, this.#samplesToNormalized(this.playbackPosition))) },
+        blockTime,
+        1 / 60,
+      );
+    }
+  }
+}

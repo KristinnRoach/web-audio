@@ -11,7 +11,7 @@ setupProcessorGlobals();
 
 async function makeProcessor() {
   const processor = await startProcessor([], [0.002, 0.004, 0.008]);
-  Object.assign(processor, { enableLoopCrossfade: false });
+  Object.assign(processor.engine, { enableLoopCrossfade: false });
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
@@ -76,7 +76,7 @@ describe('a-rate loop points and duration glide', () => {
         }
         expect(output.some((value) => value !== 0)).toBe(true);
         expect(output).toEqual(expected);
-        expect(block.playbackPosition).toBe(singles.playbackPosition);
+        expect(block.engine.playbackPosition).toBe(singles.engine.playbackPosition);
       }
     },
   );
@@ -95,11 +95,14 @@ describe('a-rate loop points and duration glide', () => {
       });
       moving.process([], [[new Float32Array(1)]], movingParams);
       const actualStart = (
-        moving as typeof moving & {
+        moving.engine as typeof moving.engine & {
           previousLoopRange: { loopStartSamples: number };
         }
       ).previousLoopRange.loopStartSamples;
-      expect(moving.playbackPosition - actualStart).toBeCloseTo(fixed.playbackPosition, 5);
+      expect(moving.engine.playbackPosition - actualStart).toBeCloseTo(
+        fixed.engine.playbackPosition,
+        5,
+      );
     }
   });
 
@@ -110,7 +113,10 @@ describe('a-rate loop points and duration glide', () => {
     } as MessageEvent);
     const params = makeParameters({ loopStart: 0.002, loopEnd: 0 });
     processor.process([], [[new Float32Array(98)]], params);
-    const state = processor as typeof processor & { loopTurned: boolean; loopCount: number };
+    const state = processor.engine as typeof processor.engine & {
+      loopTurned: boolean;
+      loopCount: number;
+    };
     expect(state.loopTurned).toBe(true);
     expect(state.loopCount).toBe(1);
     params.loopStart = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0.002 : 0));
@@ -127,7 +133,8 @@ describe('a-rate loop points and duration glide', () => {
     params.loopEnd = Float32Array.from(params.loopStart, (start) => start + 0.004);
     processor.process([], [[new Float32Array(32)]], params);
     expect(
-      (processor as typeof processor & { driftUpdateCounter: number }).driftUpdateCounter,
+      (processor.engine as typeof processor.engine & { driftUpdateCounter: number })
+        .driftUpdateCounter,
     ).toBe(1);
   });
 
@@ -136,7 +143,7 @@ describe('a-rate loop points and duration glide', () => {
     const params = makeParameters({ loopDurationDriftAmount: 0.01 });
     processor.process([], [[new Float32Array(1)]], params);
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
-    const state = processor as typeof processor & {
+    const state = processor.engine as typeof processor.engine & {
       currentLoopDrift: number;
       driftUpdateCounter: number;
     };
@@ -155,7 +162,7 @@ describe('a-rate loop points and duration glide', () => {
       } as MessageEvent);
       processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
       processor.process([], [[new Float32Array(37)]], makeParameters({ loopEnd: 0.0075 }));
-      const state = processor as typeof processor & {
+      const state = processor.engine as typeof processor.engine & {
         previousLoopRange: { loopDurationSamples: number };
       };
       const expected =
@@ -185,7 +192,7 @@ describe('a-rate loop points and duration glide', () => {
       data: { type: 'setLoopLengthGlide', value: 0.02 },
     } as MessageEvent);
     processor.process([], [[new Float32Array(19)]], target);
-    const state = processor as typeof processor & {
+    const state = processor.engine as typeof processor.engine & {
       previousLoopRange: { loopDurationSamples: number };
     };
     const expected = Math.exp(
@@ -212,7 +219,7 @@ describe('a-rate loop points and duration glide', () => {
     );
     processor.process([], [[new Float32Array(128)]], params);
     const range = (
-      processor as typeof processor & {
+      processor.engine as typeof processor.engine & {
         previousLoopRange: {
           loopStartSamples: number;
           loopEndSamples: number;

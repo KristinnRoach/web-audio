@@ -29,18 +29,18 @@ describe('timestretch correction crossfade', () => {
         send({ type: 'setLoopEnabled', value: false });
         send({ type: 'setPanDriftEnabled', value: false });
         send({ type: 'setTimestretchMode', value: 'splice' });
-        const { timestretch } = processor as typeof processor & {
+        const { timestretch } = processor.engine as typeof processor.engine & {
           timestretch: SpliceStretcher;
         };
         timestretch.crossfadeDurationMs = enabled ? 5 : 0;
         send({ type: 'voice:start' });
         const params = makeParameters({ playbackRate: 2 });
         processor.process([], [[new Float32Array(1), new Float32Array(1)]], params);
-        processor.playbackPosition = 4000;
+        processor.engine.playbackPosition = 4000;
         timestretch.reset(1000);
         const output = [new Float32Array(300), new Float32Array(300)];
         processor.process([], [output], params);
-        return { output, position: processor.playbackPosition };
+        return { output, position: processor.engine.playbackPosition };
       }),
     );
 

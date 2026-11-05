@@ -9,6 +9,6 @@ Duration becomes `originalDuration / ratio`. Bounds, zero crossings, position
 reporting, smoothing and timestretch must all use compatible coordinates.
 Live ratio changes still need a continuity policy (retrigger or crossfade).
 
-References: [current sample reads](./sample-player-processor.js),
+References: [current sample reads](./engine/voice-engine.js),
 [splice timestretch](./splice-stretch.js),
 [existing baked resampling (option A)](../../../nodes/preprocessor/Preprocessor.ts).

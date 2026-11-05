@@ -12,17 +12,17 @@ describe('trim and loop minimum lengths', () => {
 
   it('derives the crossover from periods and restores the default when cleared', async () => {
     const processor = await startProcessor();
-    const defaultThreshold = processor.pitchPreservationThreshold;
+    const defaultThreshold = processor.engine.pitchPreservationThreshold;
 
     processor.port.onmessage?.({
       data: { type: 'setLoopQuantizePeriods', value: [0.004, 0.01] },
     } as MessageEvent);
-    expect(processor.pitchPreservationThreshold).toBe(0.01 * TEST_SAMPLE_RATE);
+    expect(processor.engine.pitchPreservationThreshold).toBe(0.01 * TEST_SAMPLE_RATE);
 
     processor.port.onmessage?.({
       data: { type: 'setLoopQuantizePeriods', value: [] },
     } as MessageEvent);
-    expect(processor.pitchPreservationThreshold).toBe(defaultThreshold);
+    expect(processor.engine.pitchPreservationThreshold).toBe(defaultThreshold);
   });
 
   it.each([
@@ -42,7 +42,7 @@ describe('trim and loop minimum lengths', () => {
         .map(([message]) => message)
         .find((message) => message.type === 'loop:range');
       expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
-        processor.minRangeSamples - 1e-8,
+        processor.engine.minRangeSamples - 1e-8,
       );
     },
   );
@@ -68,7 +68,7 @@ describe('trim and loop minimum lengths', () => {
       expect(loop.loopStart).toBeGreaterThanOrEqual(trim.startPoint);
       expect(loop.loopEnd).toBeLessThanOrEqual(trim.endPoint);
       expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
-        processor.minRangeSamples - 1e-8,
+        processor.engine.minRangeSamples - 1e-8,
       );
     });
   });
@@ -95,7 +95,7 @@ describe('trim and loop minimum lengths', () => {
           .filter((message) => message.type === 'loop:range')
           .at(-1);
         expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
-          processor.minRangeSamples - 1e-8,
+          processor.engine.minRangeSamples - 1e-8,
         );
       }
     } finally {
@@ -123,7 +123,7 @@ describe('trim and loop minimum lengths', () => {
       const trim = messages.find((message) => message.type === 'trim:range');
       const expectedLength = Math.max(
         (endPoint - 0.5) * TEST_SAMPLE_RATE,
-        processor.minRangeSamples,
+        processor.engine.minRangeSamples,
       );
 
       expect(loop.loopStart).toBe(trim.startPoint);
@@ -140,13 +140,13 @@ describe('trim and loop minimum lengths', () => {
     'resolves trim points %f..%f to the minimum range',
     async (startPoint, endPoint) => {
       const processor = await startProcessor();
-      const length = processor.minRangeSamples;
+      const length = processor.engine.minRangeSamples;
       const parameters = makeParameters({ startPoint, endPoint });
 
       const positions: number[] = [];
       for (let frame = 0; frame < length * 3; frame++) {
         processor.process([], [[new Float32Array(1)]], parameters);
-        positions.push(processor.playbackPosition);
+        positions.push(processor.engine.playbackPosition);
       }
 
       const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -161,7 +161,7 @@ describe('trim and loop minimum lengths', () => {
   it('lifts a 1-sample loop to the minimum range without quantize periods', async () => {
     const start = TEST_SAMPLE_RATE / 2;
     const processor = await startProcessor();
-    const minLength = processor.minRangeSamples;
+    const minLength = processor.engine.minRangeSamples;
     const parameters = makeParameters({
       endPoint: 1,
       loopStart: start / TEST_SAMPLE_RATE,
@@ -171,7 +171,7 @@ describe('trim and loop minimum lengths', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < start + minLength * 4; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -193,7 +193,7 @@ describe('trim and loop minimum lengths', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE / 2 + shortestPeriod * 4; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.playbackPosition);
+      positions.push(processor.engine.playbackPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
