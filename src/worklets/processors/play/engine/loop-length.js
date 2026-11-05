@@ -40,9 +40,7 @@ export function keytrackLoopDuration(duration, amount, playbackRate) {
 
 // Loop iterations between drift rolls. Audio-rate loops re-roll less often.
 export function driftRollInterval(duration, pitchPreservationThreshold) {
-  return duration <= pitchPreservationThreshold
-    ? Math.max(1, Math.floor(pitchPreservationThreshold / duration))
-    : 1;
+  return Math.max(1, Math.floor(pitchPreservationThreshold / duration));
 }
 
 /**
