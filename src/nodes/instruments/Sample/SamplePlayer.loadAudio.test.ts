@@ -166,3 +166,66 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
     player.dispose();
   }
 });
+
+it('sends pitch periods once per load, only in period mode', async () => {
+  vi.stubGlobal('window', {});
+  vi.stubGlobal('AudioContext', class {});
+  vi.stubGlobal('AudioWorkletNode', class {});
+  vi.stubGlobal(
+    'GainNode',
+    class {
+      connect() {}
+      disconnect() {}
+    },
+  );
+  const { SamplePlayer } = await import('./SamplePlayer');
+  const { resampleAudioBuffer } =
+    await import('../../../utils/audiodata/convert/resampleAudioBuffer');
+  vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => buffer);
+  const context = Object.assign(new EventTarget(), { sampleRate: 48000, currentTime: 0 });
+  const player = new SamplePlayer({ context: context as unknown as AudioContext });
+  const buffer = {
+    duration: 1,
+    numberOfChannels: 1,
+    sampleRate: 48000,
+    getChannelData: () => new Float32Array(48000).fill(0.5),
+  } as unknown as AudioBuffer;
+  let loaded = () => {};
+  const setPitchPeriods = vi.fn();
+  // Init and load configure voices in other ways too; only this call matters here.
+  const voice = new Proxy({ setPitchPeriods } as Record<string | symbol, unknown>, {
+    get: (target, key) => target[key] ?? (() => {}),
+  });
+  await initTestPlayer(player, {
+    allVoices: [],
+    onMessage: (_type: string, callback: () => void) => {
+      loaded = callback;
+      return () => {};
+    },
+    setBuffer: vi.fn(() => loaded()),
+    applyToAllVoices: (fn: (voice: never) => void) => fn(voice as never),
+    dispose: vi.fn(),
+  } as unknown as Partial<SampleVoicePool>);
+  vi.spyOn(player, 'releaseAll').mockReturnValue(player);
+
+  // Choosing the mode before any audio has nothing to detect yet.
+  player.setTimestretchMode('period');
+  expect(setPitchPeriods).not.toHaveBeenCalled();
+  await player.loadAudio(buffer);
+  expect(setPitchPeriods).toHaveBeenCalledTimes(1);
+
+  // Switching back to the mode reuses what the voices already hold.
+  player.setTimestretchMode('splice');
+  player.setTimestretchMode('period');
+  expect(setPitchPeriods).toHaveBeenCalledTimes(1);
+
+  // Voices clear periods on every load, even of the same buffer.
+  await player.loadAudio(buffer);
+  expect(setPitchPeriods).toHaveBeenCalledTimes(2);
+
+  player.setTimestretchMode('off');
+  await player.loadAudio(buffer);
+  expect(setPitchPeriods).toHaveBeenCalledTimes(2);
+  player.setTimestretchMode('period');
+  expect(setPitchPeriods).toHaveBeenCalledTimes(3);
+});
