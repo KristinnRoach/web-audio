@@ -3,6 +3,7 @@
 // `post`, synchronously, in the order they occur.
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
+import { PeriodLockStretcher } from './period-lock-stretch.js';
 import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
@@ -101,7 +102,9 @@ export class VoiceEngine {
     // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
 
-    this.timestretch = new SpliceStretcher(sampleRate);
+    this.spliceStretcher = new SpliceStretcher(sampleRate);
+    this.periodLockStretcher = new PeriodLockStretcher(sampleRate);
+    this.timestretch = this.spliceStretcher;
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
@@ -168,11 +171,16 @@ export class VoiceEngine {
   setBuffer(buffer) {
     this.reset();
     this.zeroCrossings = [];
+    this.periodLockStretcher.setPeriods(null, 1);
     this.buffer = buffer ?? null;
   }
 
   setZeroCrossings(zeroCrossings) {
     this.zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * this.sampleRate);
+  }
+
+  setPitchPeriods(periods, hopSamples) {
+    this.periodLockStretcher.setPeriods(periods, hopSamples);
   }
 
   start(triggerId, timestamp) {
@@ -215,8 +223,10 @@ export class VoiceEngine {
     this.keytrackLoopAmount = Math.max(0, Math.min(1, amount));
   }
 
-  setTimestretchEnabled(enabled) {
-    this.timestretch.setEnabled(enabled, this.playbackPosition);
+  setTimestretchMode(mode) {
+    this.timestretch.setEnabled(false, this.playbackPosition);
+    this.timestretch = mode === 'period' ? this.periodLockStretcher : this.spliceStretcher;
+    this.timestretch.setEnabled(mode !== 'off', this.playbackPosition);
   }
 
   // ===== METHODS =====
