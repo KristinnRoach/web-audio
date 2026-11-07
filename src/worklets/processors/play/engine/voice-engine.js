@@ -931,12 +931,19 @@ export class VoiceEngine {
           isBeforeLoop(this.timestretch.timelinePosition, approachDirection, loopRange));
       const inLoop = this.loopEnabled && !approachingLoop;
 
-      const timestretchActive = this.timestretch.isActive(
-        this.zeroCrossings,
-        inLoop,
-        loopRange.loopDurationSamples,
-        this.pitchPreservationThreshold,
-      );
+      // Splice jumps to its timeline, which wraps at a loop edge and would pull the head off a turn.
+      const spliceTimestretchAllowed =
+        this.timestretch !== this.spliceStretcher ||
+        !inLoop ||
+        (loopMode === 'forward' && !this.loopTurned);
+      const timestretchActive =
+        spliceTimestretchAllowed &&
+        this.timestretch.isActive(
+          this.zeroCrossings,
+          inLoop,
+          loopRange.loopDurationSamples,
+          this.pitchPreservationThreshold,
+        );
       const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping

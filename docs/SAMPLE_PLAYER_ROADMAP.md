@@ -56,6 +56,7 @@ Prototype each on a branch against the stable core. Order is a suggestion.
 - **A. Morphing:** in the oscillator regime, crossfade between window positions at the same phase. Start from the ideas in `proto/loop-move-latch`.
 - **C. Anti-aliasing:** add a seam for how heads read the source, then choose between band-limited copies per octave and a filtered kernel. Start from `prototype/rate-8-loop-prefilter`. Done after A because the two interact: moving between band-limited tables at audio rate [can add sidebands](https://www.kvraudio.com/forum/viewtopic.php?p=8105138) (forum source, verify when we get there).
 - **B. Granular:** more heads with window envelopes, for stretch modes and simple creative effects, detune and widening. Could replace `SpliceStretcher` and `PeriodLockStretcher` if it sounds better.
+- **Splice stretch:** it doesn't stretch inside backward and ping-pong loops, and period mode already sounds better. Improve it, or remove `'splice'` from the public API before the next release.
 - **D. Audio-rate modulation:** move envelopes and selected modulators to the audio thread where audio-rate operation is needed, which may also remove the need for idle range reports used for envelope timing.
 
 ### 7. Port

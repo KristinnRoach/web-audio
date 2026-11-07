@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { PeriodLockStretcher } from '../engine/period-lock-stretch.js';
+import { SpliceStretcher } from '../engine/splice-stretch.js';
 import {
   makeParameters,
   setupProcessorGlobals,
@@ -90,6 +91,7 @@ describe('period timestretch through the processor', () => {
     loop = false,
     loopPoints: { loopStart?: number; loopEnd?: number } = {},
     pingPong = false,
+    mode: 'period' | 'splice' = 'period',
   ) {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
@@ -106,7 +108,11 @@ describe('period timestretch through the processor', () => {
       periods: new Float32Array(101).fill(PERIOD),
       hopSamples: 480,
     });
-    send({ type: 'setTimestretchMode', value: 'period' });
+    send({
+      type: 'voice:setZeroCrossings',
+      zeroCrossings: Array.from({ length: FRAMES / PERIOD }, (_, i) => (i * PERIOD) / FRAMES),
+    });
+    send({ type: 'setTimestretchMode', value: mode });
     send({ type: 'voice:start', triggerId: 0 });
 
     const parameters = makeParameters({
@@ -179,6 +185,29 @@ describe('period timestretch through the processor', () => {
     const { rendered, jumps } = await renderRecordingJumps(rate, true, points, pingPong);
     expect(jumps.length).toBeGreaterThan(20);
     expectNoClicks(rendered, rate, 12_000, 20_000);
+  });
+
+  describe.each(['period', 'splice'] as const)('turns in %s mode', (mode) => {
+    it.each([
+      ['ping-pong', 0.5, 2],
+      ['ping-pong', 2, 2],
+      ['backward', 0.5, 1],
+      ['backward', 2, 1],
+    ] as const)('in a %s loop at rate %s', async (kind, rate, minTurns) => {
+      const pingPong = kind === 'ping-pong';
+      const [low, high] = [2000 / TEST_SAMPLE_RATE, 7000 / TEST_SAMPLE_RATE];
+      const points = pingPong
+        ? { loopStart: low, loopEnd: high }
+        : { loopStart: high, loopEnd: low };
+      const stretcher = mode === 'period' ? PeriodLockStretcher : SpliceStretcher;
+      const spy = vi.spyOn(stretcher.prototype, 'prepareCorrection');
+      const rendered = await renderSine(rate, true, points, pingPong, mode);
+      const steps = spy.mock.calls.map(([, , playbackRate]) => playbackRate);
+      spy.mockRestore();
+      const turns = steps.filter((step, i) => i > 0 && step !== steps[i - 1]).length;
+      expect(turns).toBeGreaterThanOrEqual(minTurns);
+      expectNoClicks(rendered, rate, 12_000, 20_000);
+    });
   });
 
   it('stretches on the way into a loop that starts later', async () => {
