@@ -33,6 +33,8 @@
     "changeset": "vp exec changeset",
     "bump": "vp run test:all && vp exec changeset version",
     "release": "npm login && vp exec changeset publish",
+    "check": "vp check --fix",
+    "last": "vpr --last-details",
     "build:worklets": "node build-processors.js",
     "build": "vp run clean && vp build",
     "prepack": "vp run build",
