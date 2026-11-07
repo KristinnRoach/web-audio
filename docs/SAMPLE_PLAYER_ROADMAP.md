@@ -55,14 +55,12 @@ Prototype each on a branch against the stable core. Order is a suggestion.
 
 - **A. Morphing:** in the oscillator regime, crossfade between window positions at the same phase. Start from the ideas in `proto/loop-move-latch`.
 - **C. Anti-aliasing:** add a seam for how heads read the source, then choose between band-limited copies per octave and a filtered kernel. Start from `prototype/rate-8-loop-prefilter`. Done after A because the two interact: moving between band-limited tables at audio rate [can add sidebands](https://www.kvraudio.com/forum/viewtopic.php?p=8105138) (forum source, verify when we get there).
-- **B. Granular:** more heads with window envelopes, for stretch modes and simple creative effects, detune and widening. Could replace `PeriodLockStretcher` if it sounds better.
+- **B. Granular:** more heads with window envelopes, for timestretch modes and simple creative effects, detune and widening.
 - **D. Audio-rate modulation:** move envelopes and selected modulators to the audio thread where audio-rate operation is needed, which may also remove the need for idle range reports used for envelope timing.
 
 ### 7. Port
 
 Scope and order come from step 3. The render tests provide the reference output.
-
-`detectPitchPeriods` blocks the main thread, which only short samples can afford. Move it to background analysis before period mode has to support long recordings.
 
 ### Port-ready rules from step 4 on
 
@@ -101,4 +99,5 @@ Not needed until we reach them:
 - Morph frame spacing and whether it snaps to the quantized period
 - Anti-aliasing method and memory budget
 - Grain count and envelope
+- If `detectPitchPeriods` is kept and needs to support long recordings, consider moving to background analysis.
 - Hardware board
