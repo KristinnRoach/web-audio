@@ -291,13 +291,22 @@ export class VoiceEngine {
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopMode, loopRange, silencePadTail, cycleTime) {
+  #passLoopEdge(
+    approachDirection,
+    loopMode,
+    loopRange,
+    silencePadTail,
+    cycleTime,
+    timestretchActive,
+  ) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { loopStartSamples: loopStart, loopEndSamples: loopEnd } = loopRange;
     const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
+    // Stretch changes the read rate, while loop duration follows the unit-rate transport.
+    const position = timestretchActive ? this.timestretch.timelinePosition : this.playbackPosition;
     const nextPosition = turns
-      ? reflectLoopPosition(this.playbackPosition, direction, loopStart, loopEnd)
-      : wrapLoopPosition(this.playbackPosition, direction, loopStart, loopEnd);
+      ? reflectLoopPosition(position, direction, loopStart, loopEnd)
+      : wrapLoopPosition(position, direction, loopStart, loopEnd);
     if (nextPosition === null) return;
 
     if (turns) this.loopTurned = !this.loopTurned;
@@ -313,6 +322,7 @@ export class VoiceEngine {
       );
     }
     this.playbackPosition = nextPosition;
+    if (timestretchActive) this.timestretch.reset(nextPosition);
     this.loopCount++;
     this.pendingLoopCycleTime = cycleTime;
 
@@ -943,6 +953,7 @@ export class VoiceEngine {
           loopRange,
           silencePadTail,
           blockTime + sample / sampleRate,
+          timestretchActive,
         );
       }
       // Out of loop passes (the edge just passed may have been the last), or
@@ -1033,9 +1044,6 @@ export class VoiceEngine {
         this.playbackPosition,
         playbackStep,
         timestretchJumpTarget,
-        canWrapLoop,
-        loopRange.loopStartSamples,
-        loopRange.loopEndSamples,
       );
     }
 

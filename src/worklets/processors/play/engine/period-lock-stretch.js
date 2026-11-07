@@ -1,5 +1,3 @@
-import { wrapLoopPosition } from './loop-edges.js';
-
 // Where no pitch is clear, jumps fall back to short splices of this length.
 const UNCLEAR_PITCH_PERIOD_MS = 10;
 
@@ -19,7 +17,6 @@ export class PeriodLockStretcher {
   #fadeIndex = 0;
   #fadeLength = 0;
   #fadeDirection = 1;
-  #loopLength = 0;
 
   /** @param {number} contextSampleRate Audio-context sample rate in Hz. */
   constructor(contextSampleRate) {
@@ -90,11 +87,7 @@ export class PeriodLockStretcher {
     if (!active) return null;
 
     const period = this.#periodAt(this.#timelinePosition);
-    let drift = playbackPosition - this.#timelinePosition;
-    // Head and timeline wrap at different moments. The gap across the seam is the real drift.
-    if (this.#loopLength > 0 && Math.abs(drift) > this.#loopLength / 2) {
-      drift -= Math.sign(drift) * this.#loopLength;
-    }
+    const drift = playbackPosition - this.#timelinePosition;
     if (Math.abs(drift) <= period) return null;
 
     // The head lands where it would be next sample, less whole periods, so the phase carries over.
@@ -125,19 +118,10 @@ export class PeriodLockStretcher {
   /**
    * Advances the timeline after one output sample and returns the next playhead position.
    */
-  advance(
-    active,
-    playbackPosition,
-    playbackRate,
-    jumpTarget,
-    canWrapLoop,
-    loopStartSamples,
-    loopEndSamples,
-  ) {
+  advance(active, playbackPosition, playbackRate, jumpTarget) {
     const nextPosition = jumpTarget ?? playbackPosition + playbackRate;
 
     if (!active) {
-      this.#loopLength = 0;
       this.reset(nextPosition);
       return nextPosition;
     }
@@ -149,15 +133,6 @@ export class PeriodLockStretcher {
 
     const direction = playbackRate < 0 ? -1 : 1;
     this.#timelinePosition += direction;
-    const wrappedTimeline = canWrapLoop
-      ? wrapLoopPosition(this.#timelinePosition, direction, loopStartSamples, loopEndSamples)
-      : null;
-    if (wrappedTimeline !== null) this.#timelinePosition = wrappedTimeline;
-    // No seam to measure across until the timeline is inside the loop.
-    const timelineInLoop =
-      this.#timelinePosition >= loopStartSamples && this.#timelinePosition < loopEndSamples;
-    this.#loopLength = canWrapLoop && timelineInLoop ? loopEndSamples - loopStartSamples : 0;
-
     return nextPosition;
   }
 

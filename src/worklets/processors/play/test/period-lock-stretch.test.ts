@@ -40,14 +40,6 @@ describe('PeriodLockStretcher', () => {
     expect(prepare(stretcher(), PERIOD + 1, 1.5, 1)).toBeNull();
   });
 
-  it('measures drift across the loop seam, not across the whole loop', () => {
-    const stretch = stretcher();
-    stretch.reset(990);
-    // Sets the loop; the timeline stays just before the seam the head has passed.
-    stretch.advance(true, 0, 1.5, null, true, 0, 1000);
-    expect(prepare(stretch, 10, 1.5, 1000)).toBeNull();
-  });
-
   it('uses short splices where no pitch is clear', () => {
     const stretch = stretcher(0);
     expect(prepare(stretch, 10, 2)).toBeNull();
@@ -82,7 +74,7 @@ describe('PeriodLockStretcher', () => {
     prepare(stretch, PERIOD + 1, rate);
     let frames = 0;
     while (stretch.outgoingPosition !== null) {
-      stretch.advance(true, 0, rate, null, false, 0, END);
+      stretch.advance(true, 0, rate, null);
       frames++;
     }
     expect(frames).toBe(expected);
@@ -97,6 +89,7 @@ describe('period timestretch through the processor', () => {
     loop = false,
     loopPoints: { loopStart?: number; loopEnd?: number } = {},
     pingPong = false,
+    onFrame?: (engine: VoiceEngine, frame: number) => void,
   ) {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
@@ -121,17 +114,19 @@ describe('period timestretch through the processor', () => {
       ...(loop ? { loopEnd: 5000 / TEST_SAMPLE_RATE } : {}),
       ...loopPoints,
     });
-    const rendered = new Float32Array(loop ? FRAMES / 2 : FRAMES - 2048);
-    const block = new Float32Array(128);
-    for (let frame = 0; frame + 128 <= rendered.length; frame += 128) {
+    const rendered = new Float32Array(onFrame ? 200_000 : loop ? FRAMES / 2 : FRAMES - 2048);
+    const blockSize = onFrame ? 1 : 128;
+    const block = new Float32Array(blockSize);
+    for (let frame = 0; frame + blockSize <= rendered.length; frame += blockSize) {
       processor.process([], [[block]], parameters);
       rendered.set(block, frame);
+      onFrame?.(processor.engine as unknown as VoiceEngine, frame);
     }
     return rendered;
   }
 
   function risingCrossings(samples: Float32Array, from: number, to: number) {
-    let count = 0;
+    let count: number | undefined = 0;
     for (let i = from; i < to; i++) if (samples[i - 1] < 0 && samples[i] >= 0) count++;
     return count;
   }
@@ -208,6 +203,34 @@ describe('period timestretch through the processor', () => {
       expect(turns).toBeGreaterThanOrEqual(minTurns);
       expectNoClicks(rendered, rate, 12_000, 20_000);
     });
+  });
+
+  it.each([
+    ['forward', 0.5],
+    ['forward', 2],
+    ['backward', 0.5],
+    ['backward', 2],
+    ['ping-pong', 0.5],
+    ['ping-pong', 2],
+  ] as const)('keeps unit-rate loop timing in %s mode at rate %s', async (kind, rate) => {
+    const points =
+      kind === 'backward'
+        ? { loopStart: 7000 / TEST_SAMPLE_RATE, loopEnd: 2000 / TEST_SAMPLE_RATE }
+        : { loopStart: 2000 / TEST_SAMPLE_RATE, loopEnd: 7000 / TEST_SAMPLE_RATE };
+    async function edges(playbackRate: number) {
+      const frames: number[] = [];
+      let count: number | undefined = 0;
+      await renderSine(playbackRate, true, points, kind === 'ping-pong', (engine, frame) => {
+        if (engine.loopCount !== count) {
+          frames.push(frame);
+          count = engine.loopCount;
+        }
+      });
+      return frames;
+    }
+    const reference = await edges(1);
+    expect(reference.length).toBeGreaterThanOrEqual(4);
+    expect(await edges(rate)).toEqual(reference);
   });
 
   it('stretches on the way into a loop that starts later', async () => {
