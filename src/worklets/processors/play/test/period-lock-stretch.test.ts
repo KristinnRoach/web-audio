@@ -42,6 +42,14 @@ describe('PeriodLockStretcher', () => {
     expect(prepare(stretcher(), PERIOD + 1, 1.5, 1)).toBeNull();
   });
 
+  it('measures drift across the loop seam, not across the whole loop', () => {
+    const stretch = stretcher();
+    stretch.reset(990);
+    // Sets the loop; the timeline stays just before the seam the head has passed.
+    stretch.advance(true, 0, 1.5, null, true, 0, 1000);
+    expect(prepare(stretch, 10, 1.5, 1000)).toBeNull();
+  });
+
   it('uses short splices where no pitch is clear', () => {
     const stretch = stretcher(0);
     expect(prepare(stretch, 10, 2)).toBeNull();
@@ -124,15 +132,21 @@ describe('period timestretch through the processor', () => {
     expect(Math.max(...rendered.subarray(FRAMES - 8000, FRAMES - 4000))).toBeGreaterThan(0.3);
   });
 
-  it('jumps without clicks on a steady tone', async () => {
-    const rate = 1.5;
-    const rendered = await renderSine(rate);
+  function expectNoClicks(samples: Float32Array, rate: number, from: number, to: number) {
     const steepest = 0.4 * ((2 * Math.PI) / PERIOD) * rate;
     let largest = 0;
-    for (let i = 2000; i < 40_000; i++) {
-      largest = Math.max(largest, Math.abs(rendered[i] - rendered[i - 1]));
+    for (let i = from; i < to; i++) {
+      largest = Math.max(largest, Math.abs(samples[i] - samples[i - 1]));
     }
     expect(largest).toBeLessThan(steepest * 1.1);
+  }
+
+  it('jumps without clicks on a steady tone', async () => {
+    expectNoClicks(await renderSine(1.5), 1.5, 2000, 40_000);
+  });
+
+  it('crosses the loop seam without clicks', async () => {
+    expectNoClicks(await renderSine(2, true), 2, 2000, 20_000);
   });
 
   it('keeps sounding in a loop across wraps', async () => {

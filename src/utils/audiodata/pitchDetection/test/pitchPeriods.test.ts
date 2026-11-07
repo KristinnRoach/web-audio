@@ -32,6 +32,11 @@ describe('detectPitchPeriods', () => {
     for (const period of periods) expect(period).toBeCloseTo(RATE / 220, 0);
   });
 
+  it.each([1500, 1600, 2000])('finds the true period of %s Hz, not a multiple', (frequency) => {
+    const { periods } = detectPitchPeriods(tone(frequency, [[1, 1]]), RATE);
+    for (const period of periods) expect(period).toBeCloseTo(RATE / frequency, 0);
+  });
+
   it('follows a note change', () => {
     const samples = new Float32Array(RATE);
     samples.set(tone(220, [[1, 1]]), 0);

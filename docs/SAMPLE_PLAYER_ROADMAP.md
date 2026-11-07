@@ -62,6 +62,8 @@ Prototype each on a branch against the stable core. Order is a suggestion.
 
 Scope and order come from step 3. The render tests provide the reference output.
 
+`detectPitchPeriods` blocks the main thread, which only short samples can afford. Move it to background analysis before period mode has to support long recordings.
+
 ### Port-ready rules from step 4 on
 
 - The engine doesn't touch `port`, `currentTime` or `sampleRate` globals.

@@ -36,7 +36,8 @@ export function detectPitchPeriods(samples: Float32Array, sampleRate: number): P
     for (let i = 0; i < frame.length; i++) mean += samples[start + i] / frame.length;
     for (let i = 0; i < frame.length; i++) frame[i] = samples[start + i] - mean;
 
-    for (let lag = minLag; lag <= maxLag + 1; lag++) {
+    // Lags below minLag are not candidates, but they show where the peak at lag 0 ends.
+    for (let lag = 1; lag <= maxLag + 1; lag++) {
       let product = 0;
       let energy = 0;
       for (let i = 0; i < windowSamples; i += 2) {
@@ -52,8 +53,9 @@ export function detectPitchPeriods(samples: Float32Array, sampleRate: number): P
 
 function periodFromScores(scores: Float32Array, minLag: number, maxLag: number) {
   // Skip the peak at lag 0, then look among the peaks after it.
-  let lag = minLag;
+  let lag = 1;
   while (lag < maxLag && scores[lag] > 0) lag++;
+  lag = Math.max(lag, minLag);
   let highest = 0;
   for (let i = lag; i <= maxLag; i++) {
     if (isPeak(scores, i) && scores[i] > highest) highest = scores[i];

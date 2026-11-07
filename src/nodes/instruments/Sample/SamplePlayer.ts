@@ -104,7 +104,7 @@ export class SamplePlayer {
 
   #useZeroCrossings = true;
   #timestretchMode: TimestretchMode = 'off';
-  #pitchPeriodsSentFor: AudioBuffer | null = null;
+  #pitchPeriodsSent = false;
   #preprocessAudio = true;
 
   #voicePool!: SampleVoicePool; // todo: fix use of '!'
@@ -439,7 +439,7 @@ export class SamplePlayer {
 
       this.#voicePool.setBuffer(buffer, newZeroCrossings);
       // Voices drop their periods with the old buffer, even when it is the same one again.
-      this.#pitchPeriodsSentFor = null;
+      this.#pitchPeriodsSent = false;
       this.#sendPitchPeriods();
 
       this.#resetLoopPoints();
@@ -831,12 +831,10 @@ export class SamplePlayer {
   // Only 'period' needs them, and detection blocks, so nothing pays for it until then.
   #sendPitchPeriods() {
     const buffer = this.#buffer;
-    if (this.#timestretchMode !== 'period' || !buffer || buffer === this.#pitchPeriodsSentFor) {
-      return;
-    }
+    if (this.#timestretchMode !== 'period' || !buffer || this.#pitchPeriodsSent) return;
     const pitchPeriods = detectPitchPeriods(buffer.getChannelData(0), buffer.sampleRate);
     this.#voicePool.applyToAllVoices((voice) => voice.setPitchPeriods(pitchPeriods));
-    this.#pitchPeriodsSentFor = buffer;
+    this.#pitchPeriodsSent = true;
   }
 
   setLoopStart = (seconds: number) => {

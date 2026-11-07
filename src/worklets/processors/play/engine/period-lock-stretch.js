@@ -20,6 +20,7 @@ export class PeriodLockStretcher {
   #fadeIndex = 0;
   #fadeLength = 0;
   #fadeDirection = 1;
+  #loopLength = 0;
   #correction = { outgoingPosition: 0, resetTarget: 0 };
 
   /** @param {number} contextSampleRate Audio-context sample rate in Hz. */
@@ -100,12 +101,18 @@ export class PeriodLockStretcher {
     if (!active) return null;
 
     const period = this.#periodAt(this.#timelinePosition);
-    const drift = playbackPosition - this.#timelinePosition;
+    let drift = playbackPosition - this.#timelinePosition;
+    // Head and timeline wrap at different moments. The gap across the seam is the real drift.
+    if (this.#loopLength > 0 && Math.abs(drift) > this.#loopLength / 2) {
+      drift -= Math.sign(drift) * this.#loopLength;
+    }
     if (Math.abs(drift) <= period) return null;
 
     // The head lands where it would be next sample, less whole periods, so the phase carries over.
     const resetTarget = playbackPosition + playbackRate - Math.round(drift / period) * period;
-    if (resetTarget < startSamples || resetTarget >= endSamples) return null;
+    // Before the loop, the timeline is still approaching it, so jumps may land short of it.
+    const belowRange = resetTarget < startSamples && this.#timelinePosition >= startSamples;
+    if (belowRange || resetTarget >= endSamples) return null;
 
     if (playbackRate !== 0 && playbackPosition >= startSamples && playbackPosition < endSamples) {
       const available =
@@ -144,6 +151,7 @@ export class PeriodLockStretcher {
     loopEndSamples,
   ) {
     const nextPosition = resetTarget === null ? playbackPosition + playbackRate : resetTarget;
+    this.#loopLength = canWrapLoop ? loopEndSamples - loopStartSamples : 0;
 
     if (!active) {
       this.reset(nextPosition);
