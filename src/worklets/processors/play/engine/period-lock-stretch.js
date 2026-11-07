@@ -110,9 +110,7 @@ export class PeriodLockStretcher {
 
     // The head lands where it would be next sample, less whole periods, so the phase carries over.
     const resetTarget = playbackPosition + playbackRate - Math.round(drift / period) * period;
-    // Before the loop, the timeline is still approaching it, so jumps may land short of it.
-    const belowRange = resetTarget < startSamples && this.#timelinePosition >= startSamples;
-    if (belowRange || resetTarget >= endSamples) return null;
+    if (resetTarget < startSamples || resetTarget >= endSamples) return null;
 
     if (playbackRate !== 0 && playbackPosition >= startSamples && playbackPosition < endSamples) {
       const available =
@@ -151,9 +149,9 @@ export class PeriodLockStretcher {
     loopEndSamples,
   ) {
     const nextPosition = resetTarget === null ? playbackPosition + playbackRate : resetTarget;
-    this.#loopLength = canWrapLoop ? loopEndSamples - loopStartSamples : 0;
 
     if (!active) {
+      this.#loopLength = 0;
       this.reset(nextPosition);
       return nextPosition;
     }
@@ -169,6 +167,10 @@ export class PeriodLockStretcher {
       ? wrapLoopPosition(this.#timelinePosition, direction, loopStartSamples, loopEndSamples)
       : null;
     if (wrappedTimeline !== null) this.#timelinePosition = wrappedTimeline;
+    // No seam to measure across until the timeline is inside the loop.
+    const timelineInLoop =
+      this.#timelinePosition >= loopStartSamples && this.#timelinePosition < loopEndSamples;
+    this.#loopLength = canWrapLoop && timelineInLoop ? loopEndSamples - loopStartSamples : 0;
 
     return nextPosition;
   }

@@ -71,6 +71,12 @@ function hasSameValues(fields, other) {
   return true;
 }
 
+function isBeforeLoop(position, approachDirection, loopRange) {
+  return approachDirection > 0
+    ? position < loopRange.loopStartSamples
+    : position >= loopRange.loopEndSamples;
+}
+
 export class VoiceEngine {
   /**
    * @param {Object} options
@@ -917,12 +923,20 @@ export class VoiceEngine {
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
       const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift));
 
+      // Loop rules apply once head and timeline are in the loop, not on the way to it.
+      const approachingLoop =
+        this.loopEnabled &&
+        !this.loopTurned &&
+        (isBeforeLoop(this.playbackPosition, approachDirection, loopRange) ||
+          isBeforeLoop(this.timestretch.timelinePosition, approachDirection, loopRange));
+      const inLoop = this.loopEnabled && !approachingLoop;
+
       // The stretcher still has no independent turn state for backward/ping-pong.
       const timestretchActive =
-        (!this.loopEnabled || (loopMode === 'forward' && !this.loopTurned)) &&
+        (!inLoop || (loopMode === 'forward' && !this.loopTurned)) &&
         this.timestretch.isActive(
           this.zeroCrossings,
-          this.loopEnabled,
+          inLoop,
           loopRange.loopDurationSamples,
           this.pitchPreservationThreshold,
         );
@@ -952,10 +966,10 @@ export class VoiceEngine {
         playbackStep,
         this.zeroCrossings,
         this.buffer[0],
-        canWrapLoop
+        canWrapLoop && inLoop
           ? Math.max(playbackRange.startSamples, loopRange.loopStartSamples)
           : playbackRange.startSamples,
-        canWrapLoop
+        canWrapLoop && inLoop
           ? Math.min(playbackRange.endSamples, loopRange.loopEndSamples)
           : playbackRange.endSamples,
       );
