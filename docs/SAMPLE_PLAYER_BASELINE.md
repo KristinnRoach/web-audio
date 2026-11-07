@@ -7,7 +7,7 @@ with the new safety tests already in place.
 ## Render reference
 
 `render-output.test.ts` pins 8,192 stereo frames through `process()` for a moving
-quantized loop (including a length change and glide), ping-pong turns, and splice
+quantized loop (including a length change and glide), ping-pong turns, and period
 stretch at rate 2. Full left-channel output is rounded to 1e-6 and fingerprinted;
 the right channel is checked against its source relationship on every frame.
 Existing focused tests retain their edge, click, wrap and stretch assertions.

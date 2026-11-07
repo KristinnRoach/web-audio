@@ -6,9 +6,8 @@ const UNCLEAR_PITCH_PERIOD_MS = 10;
 /**
  * Timestretch that stays near the unit-rate timeline by jumping whole pitch periods.
  * A jump of whole periods continues the same waveform, so the pitch follows the playback rate exactly,
- * and jumps recur at a rate tied to the pitch instead of a fixed drift limit.
- * Same interface as SpliceStretcher, so the voice engine can hold either one. Periods come from
- * detectPitchPeriods; zero crossings are not used.
+ * and jumps recur at a rate tied to the pitch.
+ * Periods come from detectPitchPeriods.
  */
 export class PeriodLockStretcher {
   #enabled = false;
@@ -21,7 +20,6 @@ export class PeriodLockStretcher {
   #fadeLength = 0;
   #fadeDirection = 1;
   #loopLength = 0;
-  #correction = { outgoingPosition: 0, resetTarget: 0 };
 
   /** @param {number} contextSampleRate Audio-context sample rate in Hz. */
   constructor(contextSampleRate) {
@@ -52,7 +50,7 @@ export class PeriodLockStretcher {
   }
 
   setEnabled(enabled, playbackPosition) {
-    this.#enabled = Boolean(enabled);
+    this.#enabled = enabled;
     this.reset(playbackPosition);
   }
 
@@ -61,28 +59,19 @@ export class PeriodLockStretcher {
     this.#outgoingPosition = null;
   }
 
-  isActive(_zeroCrossings, loopEnabled, loopDurationSamples, pitchPreservationThreshold) {
+  isActive(inLoop, loopDurationSamples, pitchPreservationThreshold) {
     return (
       this.#enabled &&
       Boolean(this.#periods?.length) &&
-      (!loopEnabled || loopDurationSamples > pitchPreservationThreshold)
+      (!inLoop || loopDurationSamples > pitchPreservationThreshold)
     );
   }
 
   /**
-   * Prepares a jump before the current output sample is rendered.
-   * When non-null, render `outgoingPosition` now and pass `resetTarget` to `advance`.
-   * The result is a reused object, valid until the next call.
+   * Decides before the current output sample is rendered whether the head jumps after it.
+   * @returns {number | null} Where the head lands, to pass to `advance`, or null for no jump.
    */
-  prepareCorrection(
-    active,
-    playbackPosition,
-    playbackRate,
-    _zeroCrossings,
-    _referenceSamples,
-    startSamples,
-    endSamples,
-  ) {
+  prepareJump(active, playbackPosition, playbackRate, startSamples, endSamples) {
     if (this.#outgoingPosition !== null) {
       if (
         !active ||
@@ -109,14 +98,14 @@ export class PeriodLockStretcher {
     if (Math.abs(drift) <= period) return null;
 
     // The head lands where it would be next sample, less whole periods, so the phase carries over.
-    const resetTarget = playbackPosition + playbackRate - Math.round(drift / period) * period;
-    if (resetTarget < startSamples || resetTarget >= endSamples) return null;
+    const jumpTarget = playbackPosition + playbackRate - Math.round(drift / period) * period;
+    if (jumpTarget < startSamples || jumpTarget >= endSamples) return null;
 
     if (playbackRate !== 0 && playbackPosition >= startSamples && playbackPosition < endSamples) {
       const available =
         playbackRate > 0
-          ? endSamples - Math.max(playbackPosition, resetTarget)
-          : Math.min(playbackPosition, resetTarget) - startSamples;
+          ? endSamples - Math.max(playbackPosition, jumpTarget)
+          : Math.min(playbackPosition, jumpTarget) - startSamples;
       // Jumps recur every period / ||rate| - 1| output samples; at most half of that may fade.
       const jumpInterval = period / Math.abs(Math.abs(playbackRate) - 1);
       this.#fadeLength = Math.min(
@@ -130,25 +119,22 @@ export class PeriodLockStretcher {
       }
     }
 
-    this.#correction.outgoingPosition = playbackPosition;
-    this.#correction.resetTarget = resetTarget;
-    return this.#correction;
+    return jumpTarget;
   }
 
   /**
    * Advances the timeline after one output sample and returns the next playhead position.
-   * Takes the same arguments as SpliceStretcher.advance.
    */
   advance(
     active,
     playbackPosition,
     playbackRate,
-    resetTarget,
+    jumpTarget,
     canWrapLoop,
     loopStartSamples,
     loopEndSamples,
   ) {
-    const nextPosition = resetTarget === null ? playbackPosition + playbackRate : resetTarget;
+    const nextPosition = jumpTarget ?? playbackPosition + playbackRate;
 
     if (!active) {
       this.#loopLength = 0;

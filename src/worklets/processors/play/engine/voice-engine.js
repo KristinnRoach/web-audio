@@ -4,7 +4,6 @@
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { PeriodLockStretcher } from './period-lock-stretch.js';
-import { SpliceStretcher } from './splice-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import {
@@ -108,9 +107,7 @@ export class VoiceEngine {
     // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
 
-    this.spliceStretcher = new SpliceStretcher(sampleRate);
-    this.periodLockStretcher = new PeriodLockStretcher(sampleRate);
-    this.timestretch = this.spliceStretcher;
+    this.timestretch = new PeriodLockStretcher(sampleRate);
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
@@ -177,7 +174,7 @@ export class VoiceEngine {
   setBuffer(buffer) {
     this.reset();
     this.zeroCrossings = [];
-    this.periodLockStretcher.setPeriods(null, 1);
+    this.timestretch.setPeriods(null, 1);
     this.buffer = buffer ?? null;
   }
 
@@ -186,7 +183,7 @@ export class VoiceEngine {
   }
 
   setPitchPeriods(periods, hopSamples) {
-    this.periodLockStretcher.setPeriods(periods, hopSamples);
+    this.timestretch.setPeriods(periods, hopSamples);
   }
 
   start(triggerId, timestamp) {
@@ -230,8 +227,6 @@ export class VoiceEngine {
   }
 
   setTimestretchMode(mode) {
-    this.timestretch.setEnabled(false, this.playbackPosition);
-    this.timestretch = mode === 'period' ? this.periodLockStretcher : this.spliceStretcher;
     this.timestretch.setEnabled(mode !== 'off', this.playbackPosition);
   }
 
@@ -931,19 +926,11 @@ export class VoiceEngine {
           isBeforeLoop(this.timestretch.timelinePosition, approachDirection, loopRange));
       const inLoop = this.loopEnabled && !approachingLoop;
 
-      // Splice jumps to its timeline, which wraps at a loop edge and would pull the head off a turn.
-      const spliceTimestretchAllowed =
-        this.timestretch !== this.spliceStretcher ||
-        !inLoop ||
-        (loopMode === 'forward' && !this.loopTurned);
-      const timestretchActive =
-        spliceTimestretchAllowed &&
-        this.timestretch.isActive(
-          this.zeroCrossings,
-          inLoop,
-          loopRange.loopDurationSamples,
-          this.pitchPreservationThreshold,
-        );
+      const timestretchActive = this.timestretch.isActive(
+        inLoop,
+        loopRange.loopDurationSamples,
+        this.pitchPreservationThreshold,
+      );
       const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping
@@ -964,12 +951,10 @@ export class VoiceEngine {
       const direction = this.loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(rate);
 
-      const timestretchCorrection = this.timestretch.prepareCorrection(
+      const timestretchJumpTarget = this.timestretch.prepareJump(
         timestretchActive,
         this.playbackPosition,
         playbackStep,
-        this.zeroCrossings,
-        this.buffer[0],
         canWrapLoop && inLoop
           ? Math.max(playbackRange.startSamples, loopRange.loopStartSamples)
           : playbackRange.startSamples,
@@ -977,8 +962,6 @@ export class VoiceEngine {
           ? Math.min(playbackRange.endSamples, loopRange.loopEndSamples)
           : playbackRange.endSamples,
       );
-      const timestretchResetTarget = timestretchCorrection?.resetTarget ?? null;
-      if (timestretchCorrection) this.playbackPosition = timestretchCorrection.outgoingPosition;
 
       // End of playback: the playhead (or the stretcher's unit-rate timeline)
       // has left [startSamples, endSamples) in its direction of travel.
@@ -1049,7 +1032,7 @@ export class VoiceEngine {
         timestretchActive,
         this.playbackPosition,
         playbackStep,
-        timestretchResetTarget,
+        timestretchJumpTarget,
         canWrapLoop,
         loopRange.loopStartSamples,
         loopRange.loopEndSamples,

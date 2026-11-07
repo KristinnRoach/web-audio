@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { PeriodLockStretcher } from '../engine/period-lock-stretch.js';
-import { SpliceStretcher } from '../engine/splice-stretch.js';
 import {
   makeParameters,
   setupProcessorGlobals,
@@ -21,22 +20,19 @@ function stretcher(period = PERIOD) {
 }
 
 const prepare = (stretch: PeriodLockStretcher, position: number, rate: number, end = END) =>
-  stretch.prepareCorrection(true, position, rate, [], null, 0, end);
+  stretch.prepareJump(true, position, rate, 0, end);
 
 describe('PeriodLockStretcher', () => {
   it('waits for a full period of drift, then jumps whole periods and carries the phase', () => {
     const stretch = stretcher();
     expect(prepare(stretch, PERIOD, 1.5)).toBeNull();
-    expect(prepare(stretch, PERIOD + 1, 1.5)).toEqual({
-      outgoingPosition: PERIOD + 1,
-      resetTarget: PERIOD + 1 + 1.5 - PERIOD,
-    });
+    expect(prepare(stretch, PERIOD + 1, 1.5)).toBe(PERIOD + 1 + 1.5 - PERIOD);
   });
 
   it('jumps forward when the rate is below one', () => {
     const stretch = stretcher();
     stretch.reset(500);
-    expect(prepare(stretch, 500 - PERIOD - 1, 0.5)?.resetTarget).toBe(500 - 1 + 0.5);
+    expect(prepare(stretch, 500 - PERIOD - 1, 0.5)).toBe(500 - 1 + 0.5);
   });
 
   it('skips a jump that would land outside the range', () => {
@@ -54,17 +50,17 @@ describe('PeriodLockStretcher', () => {
   it('uses short splices where no pitch is clear', () => {
     const stretch = stretcher(0);
     expect(prepare(stretch, 10, 2)).toBeNull();
-    expect(prepare(stretch, 11, 2)?.resetTarget).toBe(3);
+    expect(prepare(stretch, 11, 2)).toBe(3);
   });
 
   it('is inactive until it has periods, and for loops in the oscillator regime', () => {
     const stretch = new PeriodLockStretcher(1000);
     stretch.setEnabled(true, 0);
-    expect(stretch.isActive([], false, 0, 100)).toBe(false);
+    expect(stretch.isActive(false, 0, 100)).toBe(false);
     stretch.setPeriods(Float32Array.of(PERIOD), 1000);
-    expect(stretch.isActive([], false, 0, 100)).toBe(true);
-    expect(stretch.isActive([], true, 100, 100)).toBe(false);
-    expect(stretch.isActive([], true, 101, 100)).toBe(true);
+    expect(stretch.isActive(false, 0, 100)).toBe(true);
+    expect(stretch.isActive(true, 100, 100)).toBe(false);
+    expect(stretch.isActive(true, 101, 100)).toBe(true);
   });
 
   // At rate 8 jumps recur every 96 / 7 samples: half of that, not half a period.
@@ -91,7 +87,6 @@ describe('period timestretch through the processor', () => {
     loop = false,
     loopPoints: { loopStart?: number; loopEnd?: number } = {},
     pingPong = false,
-    mode: 'period' | 'splice' = 'period',
   ) {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
@@ -108,11 +103,7 @@ describe('period timestretch through the processor', () => {
       periods: new Float32Array(101).fill(PERIOD),
       hopSamples: 480,
     });
-    send({
-      type: 'voice:setZeroCrossings',
-      zeroCrossings: Array.from({ length: FRAMES / PERIOD }, (_, i) => (i * PERIOD) / FRAMES),
-    });
-    send({ type: 'setTimestretchMode', value: mode });
+    send({ type: 'setTimestretchMode', value: 'period' });
     send({ type: 'voice:start', triggerId: 0 });
 
     const parameters = makeParameters({
@@ -164,7 +155,7 @@ describe('period timestretch through the processor', () => {
 
   // The playhead position of each jump.
   async function renderRecordingJumps(...args: Parameters<typeof renderSine>) {
-    const spy = vi.spyOn(PeriodLockStretcher.prototype, 'prepareCorrection');
+    const spy = vi.spyOn(PeriodLockStretcher.prototype, 'prepareJump');
     const rendered = await renderSine(...args);
     const jumps = spy.mock.calls
       .filter((_, call) => spy.mock.results[call].value !== null)
@@ -187,7 +178,7 @@ describe('period timestretch through the processor', () => {
     expectNoClicks(rendered, rate, 12_000, 20_000);
   });
 
-  describe.each(['period', 'splice'] as const)('turns in %s mode', (mode) => {
+  describe('turns', () => {
     it.each([
       ['ping-pong', 0.5, 2],
       ['ping-pong', 2, 2],
@@ -199,9 +190,8 @@ describe('period timestretch through the processor', () => {
       const points = pingPong
         ? { loopStart: low, loopEnd: high }
         : { loopStart: high, loopEnd: low };
-      const stretcher = mode === 'period' ? PeriodLockStretcher : SpliceStretcher;
-      const spy = vi.spyOn(stretcher.prototype, 'prepareCorrection');
-      const rendered = await renderSine(rate, true, points, pingPong, mode);
+      const spy = vi.spyOn(PeriodLockStretcher.prototype, 'prepareJump');
+      const rendered = await renderSine(rate, true, points, pingPong);
       const steps = spy.mock.calls.map(([, , playbackRate]) => playbackRate);
       spy.mockRestore();
       const turns = steps.filter((step, i) => i > 0 && step !== steps[i - 1]).length;

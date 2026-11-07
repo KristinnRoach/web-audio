@@ -23,10 +23,11 @@ export async function createRenderScenario(scenario: RenderScenario, voice = 0) 
   send({ type: 'setPanDriftEnabled', value: false });
   if (scenario === 'stretch' || scenario === 'looped stretch') {
     send({
-      type: 'voice:setZeroCrossings',
-      zeroCrossings: Array.from({ length: 501 }, (_, i) => (i * 96) / TEST_SAMPLE_RATE),
+      type: 'voice:setPitchPeriods',
+      periods: new Float32Array(101).fill(96),
+      hopSamples: 480,
     });
-    send({ type: 'setTimestretchMode', value: 'splice' });
+    send({ type: 'setTimestretchMode', value: 'period' });
   }
   send({ type: 'voice:start', triggerId: voice });
   const parameters = makeParameters({

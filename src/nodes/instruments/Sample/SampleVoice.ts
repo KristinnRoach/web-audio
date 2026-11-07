@@ -29,7 +29,7 @@ import {
 } from './sample-envelope-policy';
 
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
-export type TimestretchMode = 'off' | 'splice' | 'period';
+export type TimestretchMode = 'off' | 'period';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 

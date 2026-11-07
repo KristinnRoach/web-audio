@@ -215,7 +215,7 @@ it('sends pitch periods once per load, only in period mode', async () => {
   expect(setPitchPeriods).toHaveBeenCalledTimes(1);
 
   // Switching back to the mode reuses what the voices already hold.
-  player.setTimestretchMode('splice');
+  player.setTimestretchMode('off');
   player.setTimestretchMode('period');
   expect(setPitchPeriods).toHaveBeenCalledTimes(1);
 
