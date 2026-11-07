@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { PeriodLockStretcher } from '../engine/period-lock-stretch.js';
 import {
   makeParameters,
@@ -85,7 +85,12 @@ describe('PeriodLockStretcher', () => {
 describe('period timestretch through the processor', () => {
   const FRAMES = TEST_SAMPLE_RATE;
 
-  async function renderSine(rate: number, loop = false) {
+  async function renderSine(
+    rate: number,
+    loop = false,
+    loopPoints: { loopStart?: number; loopEnd?: number } = {},
+    pingPong = false,
+  ) {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
     const sine = Float32Array.from(
@@ -94,6 +99,7 @@ describe('period timestretch through the processor', () => {
     );
     send({ type: 'voice:setBuffer', buffer: [sine], durationSeconds: 1 });
     send({ type: 'setLoopEnabled', value: loop });
+    send({ type: 'setLoopPingPong', value: pingPong });
     send({ type: 'setPanDriftEnabled', value: false });
     send({
       type: 'voice:setPitchPeriods',
@@ -106,6 +112,7 @@ describe('period timestretch through the processor', () => {
     const parameters = makeParameters({
       playbackRate: rate,
       ...(loop ? { loopEnd: 5000 / TEST_SAMPLE_RATE } : {}),
+      ...loopPoints,
     });
     const rendered = new Float32Array(loop ? FRAMES / 2 : FRAMES - 2048);
     const block = new Float32Array(128);
@@ -147,6 +154,40 @@ describe('period timestretch through the processor', () => {
 
   it('crosses the loop seam without clicks', async () => {
     expectNoClicks(await renderSine(2, true), 2, 2000, 20_000);
+  });
+
+  // The playhead position of each jump.
+  async function renderRecordingJumps(...args: Parameters<typeof renderSine>) {
+    const spy = vi.spyOn(PeriodLockStretcher.prototype, 'prepareCorrection');
+    const rendered = await renderSine(...args);
+    const jumps = spy.mock.calls
+      .filter((_, call) => spy.mock.results[call].value !== null)
+      .map(([, playbackPosition]) => playbackPosition);
+    spy.mockRestore();
+    return { rendered, jumps };
+  }
+
+  it.each([
+    ['ping-pong', 0.5, true],
+    ['ping-pong', 2, true],
+    ['backward', 0.5, false],
+    ['backward', 2, false],
+  ] as const)('stretches inside a %s loop at rate %s', async (kind, rate, pingPong) => {
+    const [low, high] = [2000 / TEST_SAMPLE_RATE, 7000 / TEST_SAMPLE_RATE];
+    const points =
+      kind === 'backward' ? { loopStart: high, loopEnd: low } : { loopStart: low, loopEnd: high };
+    const { rendered, jumps } = await renderRecordingJumps(rate, true, points, pingPong);
+    expect(jumps.length).toBeGreaterThan(20);
+    expectNoClicks(rendered, rate, 12_000, 20_000);
+  });
+
+  it('stretches on the way into a loop that starts later', async () => {
+    const loopStart = 20_000;
+    const { jumps } = await renderRecordingJumps(2, true, {
+      loopStart: loopStart / TEST_SAMPLE_RATE,
+      loopEnd: 25_000 / TEST_SAMPLE_RATE,
+    });
+    expect(jumps.filter((position) => position < loopStart).length).toBeGreaterThan(20);
   });
 
   it('keeps sounding in a loop across wraps', async () => {

@@ -931,15 +931,12 @@ export class VoiceEngine {
           isBeforeLoop(this.timestretch.timelinePosition, approachDirection, loopRange));
       const inLoop = this.loopEnabled && !approachingLoop;
 
-      // The stretcher still has no independent turn state for backward/ping-pong.
-      const timestretchActive =
-        (!inLoop || (loopMode === 'forward' && !this.loopTurned)) &&
-        this.timestretch.isActive(
-          this.zeroCrossings,
-          inLoop,
-          loopRange.loopDurationSamples,
-          this.pitchPreservationThreshold,
-        );
+      const timestretchActive = this.timestretch.isActive(
+        this.zeroCrossings,
+        inLoop,
+        loopRange.loopDurationSamples,
+        this.pitchPreservationThreshold,
+      );
       const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping
