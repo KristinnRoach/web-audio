@@ -227,7 +227,7 @@ export class VoiceEngine {
   }
 
   setTimestretchMode(mode) {
-    this.timestretch.setEnabled(mode !== 'off', this.playbackPosition);
+    this.timestretch.setEnabled(mode === 'period', this.playbackPosition);
   }
 
   // ===== METHODS =====
