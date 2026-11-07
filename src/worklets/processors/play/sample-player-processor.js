@@ -34,6 +34,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       timestamp,
       durationSeconds,
       zeroCrossings,
+      periods,
+      hopSamples,
       playbackDirection,
       triggerId,
     } = event.data;
@@ -62,6 +64,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'voice:setZeroCrossings':
         engine.setZeroCrossings(zeroCrossings);
+        break;
+
+      case 'voice:setPitchPeriods':
+        engine.setPitchPeriods(periods, hopSamples);
         break;
 
       case 'voice:start':
@@ -117,7 +123,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'setTimestretchMode':
-        engine.setTimestretchEnabled(value === 'splice');
+        engine.setTimestretchMode(value);
         break;
     }
   }

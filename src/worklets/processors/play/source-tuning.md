@@ -10,5 +10,5 @@ reporting, smoothing and timestretch must all use compatible coordinates.
 Live ratio changes still need a continuity policy (retrigger or crossfade).
 
 References: [current sample reads](./engine/voice-engine.js),
-[splice timestretch](./engine/splice-stretch.js),
+[period timestretch](./engine/period-lock-stretch.js),
 [existing baked resampling (option A)](../../../nodes/preprocessor/Preprocessor.ts).

@@ -3,7 +3,7 @@
 // `post`, synchronously, in the order they occur.
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
-import { SpliceStretcher } from './splice-stretch.js';
+import { PeriodLockStretcher } from './period-lock-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import {
@@ -70,6 +70,12 @@ function hasSameValues(fields, other) {
   return true;
 }
 
+function isBeforeLoop(position, approachDirection, loopRange) {
+  return approachDirection > 0
+    ? position < loopRange.loopStartSamples
+    : position >= loopRange.loopEndSamples;
+}
+
 export class VoiceEngine {
   /**
    * @param {Object} options
@@ -101,7 +107,7 @@ export class VoiceEngine {
     // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
 
-    this.timestretch = new SpliceStretcher(sampleRate);
+    this.timestretch = new PeriodLockStretcher(sampleRate);
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
@@ -168,11 +174,16 @@ export class VoiceEngine {
   setBuffer(buffer) {
     this.reset();
     this.zeroCrossings = [];
+    this.timestretch.setPeriods(null, 1);
     this.buffer = buffer ?? null;
   }
 
   setZeroCrossings(zeroCrossings) {
     this.zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * this.sampleRate);
+  }
+
+  setPitchPeriods(periods, hopSamples) {
+    this.timestretch.setPeriods(periods, hopSamples);
   }
 
   start(triggerId, timestamp) {
@@ -215,8 +226,8 @@ export class VoiceEngine {
     this.keytrackLoopAmount = Math.max(0, Math.min(1, amount));
   }
 
-  setTimestretchEnabled(enabled) {
-    this.timestretch.setEnabled(enabled, this.playbackPosition);
+  setTimestretchMode(mode) {
+    this.timestretch.setEnabled(mode === 'period', this.playbackPosition);
   }
 
   // ===== METHODS =====
@@ -280,13 +291,22 @@ export class VoiceEngine {
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopMode, loopRange, silencePadTail, cycleTime) {
+  #passLoopEdge(
+    approachDirection,
+    loopMode,
+    loopRange,
+    silencePadTail,
+    cycleTime,
+    timestretchActive,
+  ) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { loopStartSamples: loopStart, loopEndSamples: loopEnd } = loopRange;
     const turns = loopMode === 'pingPong' || this.loopTurned !== (loopMode === 'backward');
+    // Stretch changes the read rate, while loop duration follows the unit-rate transport.
+    const position = timestretchActive ? this.timestretch.timelinePosition : this.playbackPosition;
     const nextPosition = turns
-      ? reflectLoopPosition(this.playbackPosition, direction, loopStart, loopEnd)
-      : wrapLoopPosition(this.playbackPosition, direction, loopStart, loopEnd);
+      ? reflectLoopPosition(position, direction, loopStart, loopEnd)
+      : wrapLoopPosition(position, direction, loopStart, loopEnd);
     if (nextPosition === null) return;
 
     if (turns) this.loopTurned = !this.loopTurned;
@@ -302,6 +322,7 @@ export class VoiceEngine {
       );
     }
     this.playbackPosition = nextPosition;
+    if (timestretchActive) this.timestretch.reset(nextPosition);
     this.loopCount++;
     this.pendingLoopCycleTime = cycleTime;
 
@@ -907,15 +928,19 @@ export class VoiceEngine {
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
       const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift));
 
-      // The stretcher still has no independent turn state for backward/ping-pong.
-      const timestretchActive =
-        (!this.loopEnabled || (loopMode === 'forward' && !this.loopTurned)) &&
-        this.timestretch.isActive(
-          this.zeroCrossings,
-          this.loopEnabled,
-          loopRange.loopDurationSamples,
-          this.pitchPreservationThreshold,
-        );
+      // Loop rules apply once head and timeline are in the loop, not on the way to it.
+      const approachingLoop =
+        this.loopEnabled &&
+        !this.loopTurned &&
+        (isBeforeLoop(this.playbackPosition, approachDirection, loopRange) ||
+          isBeforeLoop(this.timestretch.timelinePosition, approachDirection, loopRange));
+      const inLoop = this.loopEnabled && !approachingLoop;
+
+      const timestretchActive = this.timestretch.isActive(
+        inLoop,
+        loopRange.loopDurationSamples,
+        this.pitchPreservationThreshold,
+      );
       const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping
@@ -928,6 +953,7 @@ export class VoiceEngine {
           loopRange,
           silencePadTail,
           blockTime + sample / sampleRate,
+          timestretchActive,
         );
       }
       // Out of loop passes (the edge just passed may have been the last), or
@@ -936,21 +962,17 @@ export class VoiceEngine {
       const direction = this.loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(rate);
 
-      const timestretchCorrection = this.timestretch.prepareCorrection(
+      const timestretchJumpTarget = this.timestretch.prepareJump(
         timestretchActive,
         this.playbackPosition,
         playbackStep,
-        this.zeroCrossings,
-        this.buffer[0],
-        canWrapLoop
+        canWrapLoop && inLoop
           ? Math.max(playbackRange.startSamples, loopRange.loopStartSamples)
           : playbackRange.startSamples,
-        canWrapLoop
+        canWrapLoop && inLoop
           ? Math.min(playbackRange.endSamples, loopRange.loopEndSamples)
           : playbackRange.endSamples,
       );
-      const timestretchResetTarget = timestretchCorrection?.resetTarget ?? null;
-      if (timestretchCorrection) this.playbackPosition = timestretchCorrection.outgoingPosition;
 
       // End of playback: the playhead (or the stretcher's unit-rate timeline)
       // has left [startSamples, endSamples) in its direction of travel.
@@ -1021,10 +1043,7 @@ export class VoiceEngine {
         timestretchActive,
         this.playbackPosition,
         playbackStep,
-        timestretchResetTarget,
-        canWrapLoop,
-        loopRange.loopStartSamples,
-        loopRange.loopEndSamples,
+        timestretchJumpTarget,
       );
     }
 

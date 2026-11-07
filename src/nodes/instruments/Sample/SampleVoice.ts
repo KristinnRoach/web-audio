@@ -18,6 +18,7 @@ import type { EnvelopeConfig } from './envelope-config';
 import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { samplerParams } from './sampler-params';
+import type { PitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   createDefaultSampleEnvelopeConfig,
   getSampleEnvelopeRestValue,
@@ -28,7 +29,7 @@ import {
 } from './sample-envelope-policy';
 
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
-export type TimestretchMode = 'off' | 'splice';
+export type TimestretchMode = 'off' | 'period';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 
@@ -1017,6 +1018,9 @@ export class SampleVoice {
 
   setTimestretchMode = (mode: TimestretchMode) =>
     this.sendToProcessor({ type: 'setTimestretchMode', value: mode });
+
+  setPitchPeriods = ({ periods, hopSamples }: PitchPeriods) =>
+    this.sendToProcessor({ type: 'voice:setPitchPeriods', periods, hopSamples });
 
   setAMModOctaveOffset(offset: number) {
     assert(
