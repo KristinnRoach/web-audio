@@ -31,11 +31,15 @@ const TAIL_FADE_SAMPLES = 64;
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
 // Linear interpolation of one channel's samples at a fractional position.
 function interpolate(samples, position, lastIndex) {
+  // Continue the outgoing fade through buffer zero without flattening its slope.
+  const beforeStart = position < 0;
+  if (beforeStart) position = -position;
   const index = Math.floor(position);
   const weight = position - index;
   const a = samples[Math.max(0, Math.min(index, lastIndex))] || 0;
   const b = samples[Math.max(0, Math.min(index + 1, lastIndex))] || 0;
-  return a + weight * (b - a);
+  const value = a + weight * (b - a);
+  return beforeStart ? 2 * (samples[0] || 0) - value : value;
 }
 
 function tailGainAt(position, audioEndSamples) {

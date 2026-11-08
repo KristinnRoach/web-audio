@@ -4,6 +4,6 @@ exports[`pins rendered stereo output for looped stretch 1`] = `"2f79031cc95bb638
 
 exports[`pins rendered stereo output for moving quantized loop 1`] = `"9bab3c0963310a0744b3b41c8b03676e7f3e20d297bce0ef16c38075da113c16"`;
 
-exports[`pins rendered stereo output for ping-pong 1`] = `"ea5b2200dc0777e8a717ac6df2f72643a7ff99841569a340a7ac229efdef2e91"`;
+exports[`pins rendered stereo output for ping-pong 1`] = `"839a8761e4d81d7f48a684d88d0899a5f516e23c9b3a64918a7ff4291a1cc5fa"`;
 
 exports[`pins rendered stereo output for stretch 1`] = `"d86ce4d1785c205cf05e246b89bf3b71fb59a26e87f555a3aa0494f74068aa62"`;

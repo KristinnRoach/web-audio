@@ -59,27 +59,60 @@ describe('loop jump crossfade', () => {
       message: { type: 'voice:setPlaybackDirection', playbackDirection: 'reverse' },
     },
     { name: 'ping-pong turn', message: { type: 'setLoopPingPong', value: true } },
-  ])('holds the first sample when reading before the buffer on a $name', async ({ message }) => {
-    const source = new Float32Array(48_000).fill(1);
-    const processor = await startProcessor();
-    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
-    send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
-    send(message);
-    send({ type: 'voice:start', triggerId: 1 });
-    const output = new Float32Array(6000);
-    processor.process(
-      [],
-      [[output]],
-      makeParameters({ endPoint: 2000 / 48_000, loopEnd: 2000 / 48_000 }),
-    );
+  ])(
+    'preserves a constant source when reading before the buffer on a $name',
+    async ({ message }) => {
+      const source = new Float32Array(48_000).fill(1);
+      const processor = await startProcessor();
+      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+      send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
+      send(message);
+      send({ type: 'voice:start', triggerId: 1 });
+      const output = new Float32Array(6000);
+      processor.process(
+        [],
+        [[output]],
+        makeParameters({ endPoint: 2000 / 48_000, loopEnd: 2000 / 48_000 }),
+      );
 
-    // A constant source stays constant through the crossfade
-    expect(Math.min(...output)).toBeCloseTo(1, 4);
-  });
+      // A constant source stays constant through the crossfade
+      expect(Math.min(...output)).toBeCloseTo(1, 4);
+    },
+  );
 });
 
 // Covers LOOP_TURN_CROSSFADE; expected to fail with it off.
 describe('loop turn crossfade', () => {
+  it.each([0.5, 1, 1.5, 2])('smooths turns at buffer zero at rate %s', async (rate) => {
+    // Nonzero endpoint and fractional reads exercise reflection around the endpoint value.
+    const source = Float32Array.from(
+      { length: 48_000 },
+      (_, i) => 0.15 + 0.2 * Math.sin((2 * Math.PI * 220.3 * i) / 48_000),
+    );
+    const processor = await startProcessor();
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
+    send({ type: 'setLoopPingPong', value: true });
+    send({ type: 'voice:start', triggerId: 1 });
+    const output = new Float32Array(30_000);
+    processor.process(
+      [],
+      [[output]],
+      makeParameters({
+        playbackRate: rate,
+        loopStart: 0,
+        loopEnd: 0.1,
+        loopDurationDriftAmount: 0,
+      }),
+    );
+    const turn = Math.ceil(9600 / rate);
+    let curvature = 0;
+    for (let i = turn - 4; i < turn + Math.ceil(256 / rate) + 4; i++) {
+      curvature = Math.max(curvature, Math.abs(output[i] - 2 * output[i - 1] + output[i - 2]));
+    }
+    expect(curvature).toBeLessThan(0.002 * rate);
+  });
+
   it('rounds off the slope reversal of a ping-pong turn', async () => {
     const sine = Float32Array.from({ length: 48_000 }, (_, i) =>
       Math.sin((2 * Math.PI * 220.3 * i) / 48_000),
