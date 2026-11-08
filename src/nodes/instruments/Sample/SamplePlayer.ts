@@ -46,6 +46,8 @@ import {
   type SampleEnvelopeId,
 } from './sample-envelope-policy';
 
+const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
+
 export type SamplePlayerOptions = {
   context: AudioContext;
   polyphony?: number;
@@ -510,9 +512,16 @@ export class SamplePlayer {
     this.#lastPlayedNote = midiNote;
     this.#syncLFOsToNote(soundingNote);
 
-    this.#outBus.noteOn(soundingNote, safeVelocity, secondsFromNow, glideTime);
-
-    return this.#voicePool.noteOn(midiNote, safeVelocity, secondsFromNow, glideTime);
+    const played = this.#voicePool.noteOn(
+      midiNote,
+      safeVelocity,
+      secondsFromNow,
+      glideTime / GLIDE_TEMP_SCALAR,
+    );
+    if (!played) return null;
+    // The pool decides whether this note glides; the bus follows so a detached note stays put.
+    this.#outBus.noteOn(soundingNote, safeVelocity, secondsFromNow, played.glideTime);
+    return played.midiNote;
   }
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */

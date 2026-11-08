@@ -13,6 +13,8 @@ import { createSampleVoices } from './createSampleVoice';
 export type LegatoSettings = {
   mode: 'off' | 'always' | 'pitchLoop';
   interval?: readonly [min: number, max: number];
+  /** `legato` glides only notes that retune a playing voice; `always` (default) also glides new notes from the last one played. */
+  glide?: 'always' | 'legato';
 };
 
 export class SampleVoicePool implements LibNode {
@@ -199,10 +201,11 @@ export class SampleVoicePool implements LibNode {
     velocity: MidiValue = 100,
     secondsFromNow = 0,
     glideTime = 0,
-  ): MidiValue | null {
+  ): { midiNote: MidiValue; glideTime: number } | null {
     const legatoVoice = this.#allVoices.find((voice) => this.#canLegato(voice, midiNote));
     const voice = legatoVoice ?? this.allocate();
     if (!voice) return null;
+    if (!legatoVoice && this.legato.glide === 'legato') glideTime = 0;
 
     const success = legatoVoice
       ? voice.retune(midiNote, secondsFromNow, glideTime)
@@ -210,7 +213,7 @@ export class SampleVoicePool implements LibNode {
           midiNote,
           velocity,
           secondsFromNow,
-          glide: { prevMidiNote: this.prevMidiNote, glideTime },
+          glide: { fromMidiNote: this.prevMidiNote, seconds: glideTime },
         });
     if (success === null) return null;
 
@@ -231,7 +234,7 @@ export class SampleVoicePool implements LibNode {
       }
     });
     this.prevMidiNote = midiNote;
-    return midiNote;
+    return { midiNote, glideTime };
   }
 
   noteOff(midiNote: MidiValue, secondsFromNow: number = 0) {

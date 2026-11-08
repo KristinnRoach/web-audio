@@ -121,7 +121,7 @@ describe('SampleVoice state', () => {
     const timestamp = voice.triggerTimestamp;
 
     expect(voice.retune(72, 0.2, 0.3)).toBe(72);
-    expect(glide).toHaveBeenCalledWith(4, 0.2, 0.3 / 8);
+    expect(glide).toHaveBeenCalledWith(4, 0.2, 0.3);
     expect(voice.midiNote).toBe(72);
     expect(voice.triggerTimestamp).toBe(timestamp);
     expect(envelopes).not.toHaveBeenCalled();

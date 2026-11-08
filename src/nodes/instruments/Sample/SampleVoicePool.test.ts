@@ -117,6 +117,22 @@ describe('SampleVoicePool', () => {
     pool.dispose();
   });
 
+  it('glides only legato notes in legato glide mode', async () => {
+    const pool = await setup();
+    const [first, second] = pool.allVoices;
+    pool.legato = { mode: 'always', interval: [-12, 12], glide: 'legato' };
+    const trigger = vi.spyOn(second, 'trigger');
+    pool.noteOn(60, 100, 0, 0.3);
+    expect(pool.noteOn(64, 100, 0, 0.3)).toEqual({ midiNote: 64, glideTime: 0.3 });
+    expect(pool.noteOn(90, 100, 0, 0.3)).toEqual({ midiNote: 90, glideTime: 0 });
+    expect(trigger.mock.calls[0][0].glide).toEqual({ fromMidiNote: 64, seconds: 0 });
+    expect(first.midiNote).toBe(64);
+
+    pool.legato = { mode: 'off' };
+    expect(pool.noteOn(50, 100, 0, 0.3)?.glideTime).toBe(0.3);
+    pool.dispose();
+  });
+
   it('retriggers when the signed interval is outside the legato range', async () => {
     const pool = await setup();
     const [first, second] = pool.allVoices;
@@ -161,7 +177,7 @@ describe('SampleVoicePool', () => {
     const retune = vi.spyOn(second, 'retune');
     const stop = vi.spyOn(second, 'stop');
 
-    expect(pool.noteOn(65, 20, 0.2, 0.3)).toBe(65);
+    expect(pool.noteOn(65, 20, 0.2, 0.3)).toEqual({ midiNote: 65, glideTime: 0.3 });
     expect(retune).toHaveBeenCalledWith(65, 0.2, 0.3);
     expect(retrigger).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();

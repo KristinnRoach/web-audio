@@ -61,7 +61,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
           setParam() {},
           setLoopPoints() {},
         } as never),
-      noteOn: () => 60,
+      noteOn: () => ({ midiNote: 60, glideTime: 0 }),
       dispose() {},
     },
     { noteOn() {}, getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
