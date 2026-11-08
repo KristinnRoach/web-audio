@@ -8,8 +8,8 @@ Steps 1 and 2 completed on 2026-11-04; see [the render reference, timing baselin
 
 Three ideas should make most of the current branching go away. Step 4 tests whether they hold.
 
-1. **Loop window:** `start`, `length` and `direction`, resolved once from the requested points.
-2. **Two loop regimes:** the code already splits on `pitchPreservationThreshold`, but the checks are scattered.
+1. **Loop window:** `start`, `length` and `direction`, resolved once from the requested points. Folded into step 4.4.
+2. **Two loop regimes:** the code already splits on `pitchPreservationThreshold`, and since [#149](https://github.com/KristinnRoach/web-audio/pull/149) decides it once per loop range (`isPitchLoop`).
    - **Oscillator** (length is pitch): quantize, length and position glide, phase carry. Morphing goes here.
    - **Sample** (length is time): keytrack, zero-crossing snap, tempo sync later.
 3. **Read heads:** every sound comes from reading the source at a position with a gain. The playhead, crossfade heads and the stretcher's outgoing position are three versions of this today. Morph frames and grains would be more of the same.
@@ -42,8 +42,8 @@ Items 1 to 3 do not wait for the research in step 3; item 4 does.
 
 1. **Shell and engine — complete:** the processor keeps registration, messages, descriptors and `process()`; `engine/voice-engine.js` gets `sampleRate`, time and random values passed in, with no AudioWorklet globals ([#145](https://github.com/KristinnRoach/web-audio/pull/145)). It still reads the `parameters` arrays directly, since flattening them means choosing the engine boundary.
 2. **Pure stages — complete:** quantize, glide, keytrack and drift are small functions in `engine/loop-length.js` ([#146](https://github.com/KristinnRoach/web-audio/pull/146)).
-3. **Core model:** read heads now mix in one list, and per-block render allocations are gone ([#147](https://github.com/KristinnRoach/web-audio/pull/147)). The loop window and regimes are on hold until the core model is discussed.
-4. **Playhead as an offset from the window start (oscillator regime):** try this here. Window moves would no longer need the carry logic, and morphing needs a shared phase anyway. Drop it if it doesn't simplify things.
+3. **Core model — complete:** read heads mix in one list, and per-block render allocations are gone ([#147](https://github.com/KristinnRoach/web-audio/pull/147)). The loop type is decided once, before keytrack, snap and drift ([#149](https://github.com/KristinnRoach/web-audio/pull/149)). The loop window moved to item 4, where it would actually remove branching.
+4. **Loop window, and the playhead as an offset from its start (oscillator regime):** try this here. Window moves would no longer need the carry logic, and morphing needs a shared phase anyway. Drop it if it doesn't simplify things.
 
 ### 5. Param contract
 
