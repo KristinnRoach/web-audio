@@ -946,7 +946,6 @@ export class SampleVoice {
   }
 
   setLoopEnabled(enabled: boolean): this {
-    if (!enabled) this.#isInPitchLoop = false;
     this.#loopEnabled = enabled; // a trigger right after must see it, not wait for the reply
     this.sendToProcessor({
       type: 'setLoopEnabled',

@@ -519,8 +519,14 @@ export class SamplePlayer {
       glideTime / GLIDE_TEMP_SCALAR,
     );
     if (!played) return null;
-    // The pool decides whether this note glides; the bus follows so a detached note stays put.
-    this.#outBus.noteOn(soundingNote, safeVelocity, secondsFromNow, played.glideTime);
+    // The bus follows the pool: same glide, and a legato retune doesn't restart its decay.
+    this.#outBus.noteOn(
+      soundingNote,
+      safeVelocity,
+      secondsFromNow,
+      played.glideTime,
+      played.retuned,
+    );
     return played.midiNote;
   }
 

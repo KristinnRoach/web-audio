@@ -143,6 +143,9 @@ describe('SampleVoice state', () => {
     expect(voice.isInPitchLoop).toBe(true);
     voice.setLoopEnabled(false);
     expect(voice.isInPitchLoop).toBe(false);
+    // The processor skips unchanged reports, so a quick off/on keeps the last one.
+    voice.setLoopEnabled(true);
+    expect(voice.isInPitchLoop).toBe(true);
     voice.stop();
     voice.setLoopEnabled(true);
     trigger(voice);

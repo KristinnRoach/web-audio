@@ -201,7 +201,7 @@ export class SampleVoicePool implements LibNode {
     velocity: MidiValue = 100,
     secondsFromNow = 0,
     glideTime = 0,
-  ): { midiNote: MidiValue; glideTime: number } | null {
+  ): { midiNote: MidiValue; glideTime: number; retuned: boolean } | null {
     const legatoVoice = this.#allVoices.find((voice) => this.#canLegato(voice, midiNote));
     const voice = legatoVoice ?? this.allocate();
     if (!voice) return null;
@@ -234,7 +234,7 @@ export class SampleVoicePool implements LibNode {
       }
     });
     this.prevMidiNote = midiNote;
-    return { midiNote, glideTime };
+    return { midiNote, glideTime, retuned: !!legatoVoice };
   }
 
   noteOff(midiNote: MidiValue, secondsFromNow: number = 0) {

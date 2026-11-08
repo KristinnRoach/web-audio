@@ -123,8 +123,8 @@ describe('SampleVoicePool', () => {
     pool.legato = { mode: 'always', interval: [-12, 12], glide: 'legato' };
     const trigger = vi.spyOn(second, 'trigger');
     pool.noteOn(60, 100, 0, 0.3);
-    expect(pool.noteOn(64, 100, 0, 0.3)).toEqual({ midiNote: 64, glideTime: 0.3 });
-    expect(pool.noteOn(90, 100, 0, 0.3)).toEqual({ midiNote: 90, glideTime: 0 });
+    expect(pool.noteOn(64, 100, 0, 0.3)).toEqual({ midiNote: 64, glideTime: 0.3, retuned: true });
+    expect(pool.noteOn(90, 100, 0, 0.3)).toEqual({ midiNote: 90, glideTime: 0, retuned: false });
     expect(trigger.mock.calls[0][0].glide).toEqual({ fromMidiNote: 64, seconds: 0 });
     expect(first.midiNote).toBe(64);
 
@@ -177,7 +177,7 @@ describe('SampleVoicePool', () => {
     const retune = vi.spyOn(second, 'retune');
     const stop = vi.spyOn(second, 'stop');
 
-    expect(pool.noteOn(65, 20, 0.2, 0.3)).toEqual({ midiNote: 65, glideTime: 0.3 });
+    expect(pool.noteOn(65, 20, 0.2, 0.3)).toEqual({ midiNote: 65, glideTime: 0.3, retuned: true });
     expect(retune).toHaveBeenCalledWith(65, 0.2, 0.3);
     expect(retrigger).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
