@@ -92,6 +92,7 @@ export class SamplePlayer {
   #glideTime: number = samplerParams.glide.defaultValue;
   #loopLengthGlide: number = samplerParams.loopLengthGlide.defaultValue;
   #loopPositionGlide: number = samplerParams.loopPositionGlide.defaultValue;
+  #loopPitchPeriods = this.#getNotePeriodsInSeconds([0], 1, 5);
   #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
@@ -644,12 +645,22 @@ export class SamplePlayer {
   } = {}) {
     this.#validateLoopPitchQuantization({ scale, lowestOctave, highestOctave });
     const periods = this.#getNotePeriodsInSeconds(scale, lowestOctave, highestOctave);
+    this.#loopPitchPeriods = periods;
 
     this.#voicePool?.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
     });
 
     return this;
+  }
+
+  /**
+   * Configured pitch-loop periods in seconds, shortest first, before playback-rate
+   * transposition. Returns a copy. Use with setLoopDuration() to select a pitch loop;
+   * longer durations continue to use the normal time-loop behavior.
+   */
+  getLoopPitchPeriods(): number[] {
+    return [...this.#loopPitchPeriods];
   }
 
   #validateLoopPitchQuantization({
