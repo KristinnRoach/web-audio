@@ -362,23 +362,6 @@ export const samplerParams = defineSamplerParams({
     format: positionPercent('loopDurationDrift'),
     apply: (p, v) => p.setLoopDurationDriftAmount(v),
   },
-  // proto/two-window-morph
-  morphOffset: {
-    label: 'Morph Offset',
-    min: -1,
-    max: 1,
-    defaultValue: 0,
-    step: 0.0001,
-    apply: (p, v) => p.setMorphOffset(v * p.sampleDuration),
-  },
-  morphAmount: {
-    label: 'Morph',
-    min: 0,
-    max: 1,
-    defaultValue: 0,
-    step: 0.01,
-    apply: (p, v) => p.setMorphAmount(v),
-  },
   keytrackLoop: {
     label: 'KeyTrack',
     min: 0,

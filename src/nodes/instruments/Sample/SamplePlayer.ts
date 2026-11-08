@@ -682,18 +682,6 @@ export class SamplePlayer {
     return this;
   }
 
-  // proto/two-window-morph
-  setMorphOffset(seconds: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setParam('morphOffset', seconds));
-    return this;
-  }
-
-  // proto/two-window-morph
-  setMorphAmount(amount: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setParam('morphAmount', amount));
-    return this;
-  }
-
   setSampleStartPoint(seconds: number): this {
     this.#voicePool.applyToAllVoices((voice) => voice.setParam('startPoint', seconds));
     return this;

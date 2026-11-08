@@ -71,6 +71,11 @@ export class LoopCrossfade {
     this.#count = 0;
   }
 
+  // proto/two-window-morph: moves every head with a carried playhead.
+  shift(delta) {
+    for (let i = 0; i < this.#count; i++) this.#heads[i].position += delta;
+  }
+
   // Keeps order; the removed object moves past the live heads for reuse.
   #remove(i) {
     const head = this.#heads[i];
