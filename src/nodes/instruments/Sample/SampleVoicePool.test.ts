@@ -9,6 +9,9 @@ vi.mock('./createSampleVoice', () => {
     state: VoiceState = VoiceState.AVAILABLE;
     midiNote: number | null = null;
     triggerTimestamp = -1;
+    get isInPitchLoop() {
+      return false;
+    }
     handlers = new Map<string, Set<MessageHandler<Message>>>();
 
     onMessage(type: string, handler: MessageHandler<Message>) {
@@ -72,7 +75,7 @@ async function setup(polyphony = 3) {
 describe('SampleVoicePool', () => {
   it('returns to the most recent held note without retriggering', async () => {
     const pool = await setup();
-    pool.legatoCondition = () => true;
+    pool.legato = { mode: 'always' };
     const voice = pool.allVoices[0];
     const retrigger = vi.spyOn(voice, 'trigger');
     const retune = vi.spyOn(voice, 'retune');
@@ -100,7 +103,7 @@ describe('SampleVoicePool', () => {
     const [first, second] = pool.allVoices;
     pool.noteOn(60);
     pool.noteOn(72);
-    pool.legatoCondition = (voice, note) => voice === (note < 70 ? first : second);
+    pool.legato = { mode: 'always', interval: [-6, 6] };
     pool.noteOn(65);
     pool.noteOn(77);
 
@@ -114,28 +117,46 @@ describe('SampleVoicePool', () => {
     pool.dispose();
   });
 
-  it.each(['stop', 'allNotesOff'] as const)('clears the held-note stack on %s', async (action) => {
-    const pool = await setup(1);
-    const voice = pool.allVoices[0];
-    pool.legatoCondition = () => true;
+  it('retriggers when the signed interval is outside the legato range', async () => {
+    const pool = await setup();
+    const [first, second] = pool.allVoices;
+    pool.legato = { mode: 'always', interval: [1, 12] };
     pool.noteOn(60);
     pool.noteOn(64);
-    if (action === 'stop') voice.stop();
-    else pool.allNotesOff();
-
-    pool.noteOn(67);
-    pool.noteOn(67);
-    pool.noteOff(67);
-    expect(voice.state).toBe(VoiceState.RELEASING);
+    pool.noteOn(62);
+    expect(first.midiNote).toBe(64);
+    expect(second.midiNote).toBe(62);
+    pool.noteOn(77);
+    expect(pool.allVoices[2].midiNote).toBe(77);
     pool.dispose();
   });
 
-  it('retunes a matching playing voice and releases after all its notes are off', async () => {
+  it.each(['stop', 'allNotesOff'] as const)(
+    'starts a fresh held-note stack after %s',
+    async (action) => {
+      const pool = await setup(1);
+      const voice = pool.allVoices[0];
+      pool.legato = { mode: 'always' };
+      pool.noteOn(60);
+      pool.noteOn(64);
+      if (action === 'stop') voice.stop();
+      else pool.allNotesOff();
+
+      pool.noteOn(67);
+      pool.noteOn(67);
+      pool.noteOff(67);
+      expect(voice.state).toBe(VoiceState.RELEASING);
+      pool.dispose();
+    },
+  );
+
+  it('retunes only a voice in a pitch loop and releases after all its notes are off', async () => {
     const pool = await setup();
     const [first, second] = pool.allVoices;
     pool.noteOn(60);
     pool.noteOn(62);
-    pool.legatoCondition = (voice, note) => voice === second && note === 65;
+    vi.spyOn(second, 'isInPitchLoop', 'get').mockReturnValue(true);
+    pool.legato = { mode: 'pitchLoop' };
     const retrigger = vi.spyOn(second, 'trigger');
     const retune = vi.spyOn(second, 'retune');
     const stop = vi.spyOn(second, 'stop');
@@ -151,7 +172,7 @@ describe('SampleVoicePool', () => {
     pool.noteOff(65);
     expect(second.state).toBe(VoiceState.RELEASING);
 
-    pool.legatoCondition = () => true;
+    pool.legato = { mode: 'always' };
     pool.noteOff(60);
     pool.noteOn(67);
     expect(pool.allVoices[2].midiNote).toBe(67);

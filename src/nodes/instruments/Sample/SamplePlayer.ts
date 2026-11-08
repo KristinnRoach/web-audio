@@ -26,7 +26,7 @@ import {
 import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
-import { SampleVoicePool } from './SampleVoicePool';
+import { SampleVoicePool, type LegatoSettings } from './SampleVoicePool';
 import { getDuration, setDuration } from '@/nodes/modulators/envelope';
 import {
   assertValidEnvelopeConfig,
@@ -718,9 +718,9 @@ export class SamplePlayer {
     return this;
   }
 
-  /** Pass undefined to restore normal triggering. */
-  setLegatoCondition(condition: SampleVoicePool['legatoCondition']): this {
-    this.#voicePool.legatoCondition = condition;
+  /** Retune a playing voice instead of retriggering; `{ mode: 'off' }` restores normal triggering. */
+  setLegato(settings: LegatoSettings): this {
+    this.#voicePool.legato = { ...settings };
     return this;
   }
 

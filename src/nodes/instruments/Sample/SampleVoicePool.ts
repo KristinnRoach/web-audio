@@ -5,6 +5,16 @@ import { Message, MessageHandler, MessageBus, createMessageBus } from '@/events'
 import { GainStages, LibNode } from '@/nodes/LibNode';
 import { createSampleVoices } from './createSampleVoice';
 
+/**
+ * When noteOn retunes a playing voice instead of triggering a new one.
+ * `pitchLoop` waits until the voice is looping a pitch-length loop.
+ * `interval` is the inclusive range of signed semitones from the voice's current note.
+ */
+export type LegatoSettings = {
+  mode: 'off' | 'always' | 'pitchLoop';
+  interval?: readonly [min: number, max: number];
+};
+
 export class SampleVoicePool implements LibNode {
   readonly nodeId: NodeID;
   readonly nodeType = 'pool';
@@ -99,9 +109,6 @@ export class SampleVoicePool implements LibNode {
   #initializedVoices = new Set<NodeID>();
 
   #setupMessageHandling(voice: SampleVoice) {
-    for (const type of ['voice:stopped', 'voice:releasing']) {
-      voice.onMessage(type, () => this.#heldNotes.delete(voice));
-    }
     voice.onMessage('voice:initialized', () => {
       this.#initializedVoices.add(voice.nodeId);
 
@@ -175,8 +182,17 @@ export class SampleVoicePool implements LibNode {
 
   prevMidiNote = 60;
 
-  /** Reuse the first matching PLAYING voice; undefined keeps normal triggering. */
-  legatoCondition?: (voice: SampleVoice, midiNote: MidiValue) => boolean;
+  legato: LegatoSettings = { mode: 'off' };
+
+  #canLegato(voice: SampleVoice, midiNote: MidiValue): boolean {
+    const { mode, interval } = this.legato;
+    if (mode === 'off' || voice.state !== VoiceState.PLAYING || voice.midiNote === null) {
+      return false;
+    }
+    if (mode === 'pitchLoop' && !voice.isInPitchLoop) return false;
+    const offset = midiNote - voice.midiNote;
+    return !interval || (offset >= interval[0] && offset <= interval[1]);
+  }
 
   noteOn(
     midiNote: MidiValue,
@@ -184,9 +200,7 @@ export class SampleVoicePool implements LibNode {
     secondsFromNow = 0,
     glideTime = 0,
   ): MidiValue | null {
-    const legatoVoice = this.#allVoices.find(
-      (voice) => voice.state === VoiceState.PLAYING && this.legatoCondition?.(voice, midiNote),
-    );
+    const legatoVoice = this.#allVoices.find((voice) => this.#canLegato(voice, midiNote));
     const voice = legatoVoice ?? this.allocate();
     if (!voice) return null;
 
@@ -200,6 +214,7 @@ export class SampleVoicePool implements LibNode {
         });
     if (success === null) return null;
 
+    // Stacks are only read on PLAYING voices, and trigger always starts a fresh one.
     const notes = legatoVoice ? (this.#heldNotes.get(voice)?.notes ?? []) : [];
     this.#heldNotes.set(voice, {
       notes: [...notes.filter((note) => note !== midiNote), midiNote],

@@ -162,7 +162,7 @@ describe('SampleVoice state', () => {
     trigger(voice, 60);
     expect(set).toHaveBeenLastCalledWith(2, 0.001);
 
-    const glide = vi.spyOn(voice.getParam('playbackRate')!, 'linearRampToValueAtTime');
+    const glide = vi.spyOn(voice.getParam('playbackRate')!, 'setTargetAtTime');
     voice.setPitchOffset(-12);
     expect(glide.mock.calls.at(-1)?.[0]).toBe(0.5);
     expect(voice.midiNote).toBe(60);
