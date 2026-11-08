@@ -110,6 +110,51 @@ describe('SampleVoice state', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it('retunes without restarting the source, velocity or envelopes', async () => {
+    const voice = await loadedVoice();
+    voice.setPitchOffset(12);
+    trigger(voice, 60);
+    audio.posted = [];
+    const envelopes = vi.spyOn(voice, 'triggerEnvelopes');
+    const velocity = vi.spyOn(voice.getParam('velocity')!, 'setValueAtTime');
+    const glide = vi.spyOn(voice.getParam('playbackRate')!, 'setTargetAtTime');
+    const timestamp = voice.triggerTimestamp;
+
+    expect(voice.retune(72, 0.2, 0.3)).toBe(72);
+    expect(glide).toHaveBeenCalledWith(4, 0.2, 0.3 / 8);
+    expect(voice.midiNote).toBe(72);
+    expect(voice.triggerTimestamp).toBe(timestamp);
+    expect(envelopes).not.toHaveBeenCalled();
+    expect(velocity).not.toHaveBeenCalled();
+    expect(sentTypes()).not.toContain('voice:start');
+    voice.release();
+    expect(voice.retune(60)).toBeNull();
+    voice.stop();
+  });
+
+  it('uses only current playing reports for pitch-loop eligibility', async () => {
+    const voice = await loadedVoice();
+    voice.setLoopEnabled(true);
+    trigger(voice);
+    const report = (triggerId: number, isInPitchLoop: boolean) =>
+      audio.port.onmessage({ data: { type: 'loop:range', triggerId, isInPitchLoop } });
+    expect(voice.isInPitchLoop).toBe(false);
+    report(1, true);
+    expect(voice.isInPitchLoop).toBe(true);
+    voice.setLoopEnabled(false);
+    expect(voice.isInPitchLoop).toBe(false);
+    voice.stop();
+    voice.setLoopEnabled(true);
+    trigger(voice);
+    report(1, true);
+    expect(voice.isInPitchLoop).toBe(false);
+    report(2, true);
+    expect(voice.isInPitchLoop).toBe(true);
+    report(2, false);
+    expect(voice.isInPitchLoop).toBe(false);
+    voice.stop();
+  });
+
   it('adds the pitch offset to new notes and retunes a held one', async () => {
     const voice = await loadedVoice();
     const set = vi.spyOn(voice.getParam('playbackRate')!, 'setValueAtTime');

@@ -36,6 +36,7 @@ const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feed
 /** Time constant for the gate fade when the amp envelope is off:
  * fast enough to read as a gate, slow enough not to click. */
 const AMP_GATE_SMOOTHING_SEC = 0.002;
+const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
 
 export class SampleVoice {
   readonly nodeId: NodeID;
@@ -291,6 +292,38 @@ export class SampleVoice {
     this.#pitchGlideTime = seconds;
   }
 
+  /** Keeps the source, velocity and envelopes running; note-off follows the new note. */
+  retune(midiNote: MidiValue, secondsFromNow = 0, glideTime = 0): MidiValue | null {
+    if (this.#state !== VoiceState.PLAYING) return null;
+    const timestamp = this.now + secondsFromNow;
+    const soundingNote = midiNote + this.#pitchOffset;
+    const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
+    const scaledGlideTime = glideTime / GLIDE_TEMP_SCALAR;
+    if (!this.#pitchDisabled && scaledGlideTime > 0) {
+      const param = this.getParam('playbackRate')!;
+      if (timestamp <= this.now) cancelAndPinParamValue(param, timestamp);
+      else param.cancelScheduledValues(timestamp);
+      param.setTargetAtTime(playbackRate, timestamp, scaledGlideTime);
+    } else {
+      this.setParam('playbackRate', playbackRate, timestamp);
+    }
+    this.#feedback?.setPitch(soundingNote, 0, timestamp, scaledGlideTime);
+    this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
+      timestamp,
+      glideTime: scaledGlideTime,
+    });
+    this.#midiNote = midiNote;
+    if (this.#lastTrigger) this.#lastTrigger.playbackRate = playbackRate;
+    return midiNote;
+  }
+
+  #isInPitchLoop = false;
+
+  /** Latest processor report, gated by the current voice and loop state. */
+  get isInPitchLoop(): boolean {
+    return this.#state === VoiceState.PLAYING && this.#loopEnabled && this.#isInPitchLoop;
+  }
+
   trigger(options: {
     midiNote: MidiValue;
     velocity: MidiValue;
@@ -314,7 +347,6 @@ export class SampleVoice {
       startedTimestamp: timestamp,
     });
 
-    const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
     const glideTime = options.glide?.glideTime ?? this.#pitchGlideTime;
     const scaledGlideTime = glideTime / GLIDE_TEMP_SCALAR;
 
@@ -453,6 +485,7 @@ export class SampleVoice {
   #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
     switch (state) {
       case VoiceState.AVAILABLE:
+        this.#isInPitchLoop = false;
         this.#clearTimeouts();
         this.#stopEnvelopes();
         this.#midiNote = null;
@@ -838,6 +871,7 @@ export class SampleVoice {
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
+          if (type === 'loop:range') this.#isInPitchLoop = data.isInPitchLoop ?? false;
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           if (type === 'loop:cycle') {
@@ -934,6 +968,7 @@ export class SampleVoice {
   }
 
   setLoopEnabled(enabled: boolean): this {
+    if (!enabled) this.#isInPitchLoop = false;
     this.#loopEnabled = enabled; // a trigger right after must see it, not wait for the reply
     this.sendToProcessor({
       type: 'setLoopEnabled',

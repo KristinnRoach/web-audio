@@ -31,6 +31,11 @@ vi.mock('./createSampleVoice', () => {
       return midiNote;
     }
 
+    retune(midiNote: number) {
+      this.midiNote = midiNote;
+      return midiNote;
+    }
+
     release() {
       if (this.state !== VoiceState.PLAYING) return this;
       this.state = VoiceState.RELEASING;
@@ -65,6 +70,94 @@ async function setup(polyphony = 3) {
 }
 
 describe('SampleVoicePool', () => {
+  it('returns to the most recent held note without retriggering', async () => {
+    const pool = await setup();
+    pool.legatoCondition = () => true;
+    const voice = pool.allVoices[0];
+    const retrigger = vi.spyOn(voice, 'trigger');
+    const retune = vi.spyOn(voice, 'retune');
+    pool.noteOn(0);
+    pool.noteOn(62);
+    pool.noteOn(64);
+    pool.noteOn(65, 20, 0, 0.4);
+    pool.noteOff(62);
+    expect(voice.midiNote).toBe(65);
+
+    pool.noteOff(65, 0.2);
+    expect(voice.midiNote).toBe(64);
+    expect(retune).toHaveBeenLastCalledWith(64, 0.2, 0.4);
+    pool.noteOff(64);
+    expect(voice.midiNote).toBe(0);
+    expect(voice.state).toBe(VoiceState.PLAYING);
+    expect(retrigger).toHaveBeenCalledOnce();
+    pool.noteOff(0);
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    pool.dispose();
+  });
+
+  it('keeps held-note stacks separate for independent voices', async () => {
+    const pool = await setup();
+    const [first, second] = pool.allVoices;
+    pool.noteOn(60);
+    pool.noteOn(72);
+    pool.legatoCondition = (voice, note) => voice === (note < 70 ? first : second);
+    pool.noteOn(65);
+    pool.noteOn(77);
+
+    pool.noteOff(65);
+    expect(first.midiNote).toBe(60);
+    expect(second.midiNote).toBe(77);
+    pool.noteOff(72);
+    pool.noteOff(77);
+    expect(second.state).toBe(VoiceState.RELEASING);
+    expect(first.state).toBe(VoiceState.PLAYING);
+    pool.dispose();
+  });
+
+  it.each(['stop', 'allNotesOff'] as const)('clears the held-note stack on %s', async (action) => {
+    const pool = await setup(1);
+    const voice = pool.allVoices[0];
+    pool.legatoCondition = () => true;
+    pool.noteOn(60);
+    pool.noteOn(64);
+    if (action === 'stop') voice.stop();
+    else pool.allNotesOff();
+
+    pool.noteOn(67);
+    pool.noteOn(67);
+    pool.noteOff(67);
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    pool.dispose();
+  });
+
+  it('retunes a matching playing voice and releases after all its notes are off', async () => {
+    const pool = await setup();
+    const [first, second] = pool.allVoices;
+    pool.noteOn(60);
+    pool.noteOn(62);
+    pool.legatoCondition = (voice, note) => voice === second && note === 65;
+    const retrigger = vi.spyOn(second, 'trigger');
+    const retune = vi.spyOn(second, 'retune');
+    const stop = vi.spyOn(second, 'stop');
+
+    expect(pool.noteOn(65, 20, 0.2, 0.3)).toBe(65);
+    expect(retune).toHaveBeenCalledWith(65, 0.2, 0.3);
+    expect(retrigger).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(first.midiNote).toBe(60);
+    expect(pool.playingVoicesCount).toBe(2);
+    pool.noteOff(62);
+    expect(second.state).toBe(VoiceState.PLAYING);
+    pool.noteOff(65);
+    expect(second.state).toBe(VoiceState.RELEASING);
+
+    pool.legatoCondition = () => true;
+    pool.noteOff(60);
+    pool.noteOn(67);
+    expect(pool.allVoices[2].midiNote).toBe(67);
+    pool.dispose();
+  });
+
   it('uses an available voice, then steals the oldest releasing and playing voices', async () => {
     const pool = await setup();
     const [first, second, third] = pool.allVoices;

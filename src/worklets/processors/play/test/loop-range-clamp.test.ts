@@ -13,6 +13,23 @@ import {
 describe('loop range clamping', () => {
   setupProcessorGlobals();
 
+  it('reports pitch-loop eligibility only after playback enters the loop', async () => {
+    const processor = await startProcessor();
+    const parameters = makeParameters({ endPoint: 1, loopStart: 0.1, loopEnd: 0.102 });
+    const reports = () =>
+      processor.port.postMessage.mock.calls
+        .map(([msg]) => msg)
+        .filter((msg) => msg.type === 'loop:range');
+    render(processor, parameters, 128);
+    expect(reports().at(-1).isInPitchLoop).toBe(false);
+    vi.stubGlobal('currentTime', 0.2);
+    render(processor, parameters, TEST_SAMPLE_RATE / 5);
+    expect(reports().at(-1).isInPitchLoop).toBe(true);
+    vi.stubGlobal('currentTime', 0.4);
+    render(processor, makeParameters({ loopStart: 0.1, loopEnd: 0.5 }), 128);
+    expect(reports().at(-1).isInPitchLoop).toBe(false);
+  });
+
   it.each([
     [0.25, 0.75],
     [0, 1],

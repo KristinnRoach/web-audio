@@ -718,6 +718,12 @@ export class SamplePlayer {
     return this;
   }
 
+  /** Pass undefined to restore normal triggering. */
+  setLegatoCondition(condition: SampleVoicePool['legatoCondition']): this {
+    this.#voicePool.legatoCondition = condition;
+    return this;
+  }
+
   setLoopEnabled(enabled: boolean): this {
     // if loop is locked (ON), turning it off is disabled but turning it on should work
     if (this.#loopLocked && !enabled) return this;

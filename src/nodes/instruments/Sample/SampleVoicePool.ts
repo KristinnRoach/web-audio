@@ -17,6 +17,8 @@ export class SampleVoicePool implements LibNode {
 
   #allVoices: SampleVoice[] = [];
   #loaded = new Set<NodeID>();
+  // Last-note priority stays local to each voice's legato phrase.
+  #heldNotes = new Map<SampleVoice, { notes: MidiValue[]; glideTime: number }>();
 
   constructor(
     context: AudioContext,
@@ -97,6 +99,9 @@ export class SampleVoicePool implements LibNode {
   #initializedVoices = new Set<NodeID>();
 
   #setupMessageHandling(voice: SampleVoice) {
+    for (const type of ['voice:stopped', 'voice:releasing']) {
+      voice.onMessage(type, () => this.#heldNotes.delete(voice));
+    }
     voice.onMessage('voice:initialized', () => {
       this.#initializedVoices.add(voice.nodeId);
 
@@ -170,22 +175,36 @@ export class SampleVoicePool implements LibNode {
 
   prevMidiNote = 60;
 
+  /** Reuse the first matching PLAYING voice; undefined keeps normal triggering. */
+  legatoCondition?: (voice: SampleVoice, midiNote: MidiValue) => boolean;
+
   noteOn(
     midiNote: MidiValue,
     velocity: MidiValue = 100,
     secondsFromNow = 0,
     glideTime = 0,
   ): MidiValue | null {
-    const voice = this.allocate();
+    const legatoVoice = this.#allVoices.find(
+      (voice) => voice.state === VoiceState.PLAYING && this.legatoCondition?.(voice, midiNote),
+    );
+    const voice = legatoVoice ?? this.allocate();
     if (!voice) return null;
 
-    const success = voice.trigger({
-      midiNote,
-      velocity,
-      secondsFromNow,
-      glide: { prevMidiNote: this.prevMidiNote, glideTime },
-    });
+    const success = legatoVoice
+      ? voice.retune(midiNote, secondsFromNow, glideTime)
+      : voice.trigger({
+          midiNote,
+          velocity,
+          secondsFromNow,
+          glide: { prevMidiNote: this.prevMidiNote, glideTime },
+        });
     if (success === null) return null;
+
+    const notes = legatoVoice ? (this.#heldNotes.get(voice)?.notes ?? []) : [];
+    this.#heldNotes.set(voice, {
+      notes: [...notes.filter((note) => note !== midiNote), midiNote],
+      glideTime,
+    });
 
     this.#allVoices.forEach((otherVoice) => {
       if (
@@ -201,12 +220,17 @@ export class SampleVoicePool implements LibNode {
   }
 
   noteOff(midiNote: MidiValue, secondsFromNow: number = 0) {
-    const voices = this.#allVoices.filter(
-      (voice) => voice.state === VoiceState.PLAYING && voice.midiNote === midiNote,
-    );
-    if (!voices.length) return;
+    this.#allVoices.forEach((voice) => {
+      if (voice.state !== VoiceState.PLAYING) return;
+      const held = this.#heldNotes.get(voice);
+      if (held) held.notes = held.notes.filter((note) => note !== midiNote);
+      if (voice.midiNote !== midiNote) return;
 
-    voices.forEach((voice) => voice.release({ secondsFromNow }));
+      const previousNote = held?.notes.at(-1);
+      if (held && previousNote !== undefined)
+        voice.retune(previousNote, secondsFromNow, held.glideTime);
+      else voice.release({ secondsFromNow });
+    });
 
     return this;
   }
@@ -265,6 +289,7 @@ export class SampleVoicePool implements LibNode {
 
   dispose() {
     this.applyToAllVoices((voice) => voice.dispose());
+    this.#heldNotes.clear();
     this.#allVoices = [];
     this.#loaded.clear();
     this.#initialized = false;
