@@ -32,13 +32,13 @@ Answer in this order, since each answer can change or cancel the ones below it. 
 | 1   | How should web and native share DSP? One native core compiled to WASM, separate JS and native engines checked against shared renders.                                                    | None       | Everything below |
 | 2   | Is keeping the JS engine beneficial after a port? Weigh fast prototyping, fallback and reference output against maintaining two engines.                                                 | 1          | 6, steps 6 and 7 |
 | 3   | If there is a native core, Rust or C++? Compare WASM, plugin and hardware tooling.                                                                                                       | 1          | 5, step 7        |
-| 4   | Where does sample memory live, and is `SharedArrayBuffer` needed? Compare per-voice copies, one shared store and shared memory, including the cross-origin isolation cost for consumers. | 1          | 5, step 4.4      |
-| 5   | What engine boundary does this need? Run a small throwaway spike outside the refactor to check bundling, memory and CPU against JS.                                                      | 3, 4       | Step 4.4         |
+| 4   | Where does sample memory live, and is `SharedArrayBuffer` needed? Compare per-voice copies, one shared store and shared memory, including the cross-origin isolation cost for consumers. | 1          | 5                |
+| 5   | What engine boundary does this need? Run a small throwaway spike outside the refactor to check bundling, memory and CPU against JS.                                                      | 3, 4       | 6                |
 | 6   | Port before or after the features?                                                                                                                                                       | 2, 5       | Steps 6 and 7    |
 
 ### 4. Split, then simplify
 
-Items 1 to 3 do not wait for the research in step 3; item 4 does.
+None of these items wait for the research in step 3. The loop window is internal to the engine, so it doesn't depend on where sample memory lives or on the engine boundary.
 
 1. **Shell and engine — complete:** the processor keeps registration, messages, descriptors and `process()`; `engine/voice-engine.js` gets `sampleRate`, time and random values passed in, with no AudioWorklet globals ([#145](https://github.com/KristinnRoach/web-audio/pull/145)). It still reads the `parameters` arrays directly, since flattening them means choosing the engine boundary.
 2. **Pure stages — complete:** quantize, glide, keytrack and drift are small functions in `engine/loop-length.js` ([#146](https://github.com/KristinnRoach/web-audio/pull/146)).
@@ -48,6 +48,10 @@ Items 1 to 3 do not wait for the research in step 3; item 4 does.
 ### 5. Param contract
 
 Replace the paired `loopStart`/`loopEnd` AudioParams with position and length, which removes the Float32 tolerance workaround. This is the largest test churn (about 220 references), so it comes after the model has settled. The public `SamplePlayer` API can stay as it is.
+
+### Proposal: the processor owns its voices
+
+Not scheduled or broken down yet. After step 5, each `SamplePlayer` would get one audio-thread engine that owns the voice pool, allocation and voice lifecycle, which are on the main thread today. Each voice keeps its own effects chain inside the engine, and the stages can still be enabled, disabled and reordered. `InstrumentBus` stays outside and processes the mixed output. With one engine per player, sample memory is one store per processor and needs no `SharedArrayBuffer`.
 
 ### 6. Features
 
