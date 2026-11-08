@@ -128,7 +128,8 @@ export class VoiceEngine {
     this.positionMessage = { type: 'voice:position', position: 0 };
     // Everything sounding this sample: the playhead, the stretcher's outgoing head
     // and the crossfade heads.
-    this.readHeads = Array.from({ length: MAX_OUTGOING_HEADS + 2 }, () => ({
+    // ponytail: +1 for the proto morph head
+    this.readHeads = Array.from({ length: MAX_OUTGOING_HEADS + 3 }, () => ({
       position: 0,
       gain: 1,
       mix: 0,
@@ -351,9 +352,18 @@ export class VoiceEngine {
   // it started later; among those, the newest is innermost, since each fades from
   // what was audible when it started. They keep their own tail gain, so the silent
   // tail can't mute the outgoing side of a reverse wrap.
-  #collectReadHeads(tailGain, lastAudioIndex) {
+  #collectReadHeads(tailGain, lastAudioIndex, morph) {
     this.readHeadCount = 0;
     this.#addReadHead(this.playbackPosition, tailGain, 0, lastAudioIndex);
+    // proto/two-window-morph: same phase in a second window, mixed over the playhead only.
+    // ponytail: crossfade heads don't follow the morph; pass 2 of the test listens for that.
+    if (morph) {
+      const start = morph.range.loopStartSamples;
+      const length = morph.range.loopDurationSamples;
+      const morphStart = Math.max(0, Math.min(start + morph.offset, lastAudioIndex - length));
+      const phase = (((this.playbackPosition - start) % length) + length) % length;
+      this.#addReadHead(morphStart + phase, tailGain, 1 - morph.amount, lastAudioIndex);
+    }
     if (this.timestretch.outgoingPosition !== null) {
       this.#addReadHead(
         this.timestretch.outgoingPosition,
@@ -802,6 +812,10 @@ export class VoiceEngine {
     // direction change needs no position correction.
     const approachDirection = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
     const driftAmount = parameters.loopDurationDriftAmount[0];
+    // ponytail: optional so test fixtures without the proto params still render
+    const morphAmount = parameters.morphAmount?.[0] ?? 0;
+    const morphOffset = (parameters.morphOffset?.[0] ?? 0) * this.sampleRate;
+    const morph = { range: null, offset: morphOffset, amount: morphAmount };
     let loopRange;
     let previousRate;
 
@@ -1008,7 +1022,13 @@ export class VoiceEngine {
       // after the playhead. Indices clamp to the last audio sample: endSamples can
       // be fractional (minimum-length growth), and a ping-pong turn at the audio
       // end reads exactly at endSamples. Past it, the silent tail gain is 0.
-      this.#collectReadHeads(tailGain, Math.ceil(playbackRange.endSamples) - 1);
+      morph.range = loopRange;
+      const morphing = morphAmount > 0 && inLoop && loopRange.isPitchLoop;
+      this.#collectReadHeads(
+        tailGain,
+        Math.ceil(playbackRange.endSamples) - 1,
+        morphing ? morph : null,
+      );
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists

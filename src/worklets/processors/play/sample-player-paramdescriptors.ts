@@ -83,6 +83,22 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 1, // 0 = no drift, 1 = max drift (up to 100% of loop duration)
     automationRate: 'k-rate',
   },
+  // proto/two-window-morph: second loop window, in seconds from the loop start
+  morphOffset: {
+    name: 'morphOffset',
+    defaultValue: 0,
+    minValue: -9999,
+    maxValue: 9999,
+    automationRate: 'k-rate',
+  },
+  // proto/two-window-morph: 0 plays the loop window, 1 the offset window
+  morphAmount: {
+    name: 'morphAmount',
+    defaultValue: 0,
+    minValue: 0,
+    maxValue: 1,
+    automationRate: 'k-rate',
+  },
   maxLoopCount: {
     name: 'maxLoopCount',
     defaultValue: 999999,
