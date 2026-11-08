@@ -572,16 +572,16 @@ export class SamplePlayer {
     if (!fallback) return;
     const soundingNote = fallback.midiNote + this.#pitchOffset;
     this.#lastPlayedNote = fallback.midiNote;
-    this.#syncLFOsToNote(soundingNote);
-    this.#outBus
-      .getFeedback()
-      ?.setPitch(soundingNote, 0, this.now + secondsFromNow, fallback.glideTime);
+    const timestamp = this.now + secondsFromNow;
+    this.#syncLFOsToNote(soundingNote, timestamp);
+    this.#outBus.getFeedback()?.setPitch(soundingNote, 0, timestamp, fallback.glideTime);
   }
 
-  #syncLFOsToNote(soundingNote: number) {
-    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+  #syncLFOsToNote(soundingNote: number, timestamp = this.now) {
+    if (this.#syncGainLFOToMidiNote)
+      this.#gainLFO?.setMusicalNote(soundingNote, { divisor: 4, timestamp });
     if (this.#syncPitchLFOToMidiNote) {
-      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4, timestamp });
     }
   }
 

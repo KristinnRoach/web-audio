@@ -91,6 +91,10 @@ describe('SampleVoicePool', () => {
     expect(retune).toHaveBeenLastCalledWith(64, 0.2, 0.4);
     pool.noteOff(64);
     expect(voice.midiNote).toBe(0);
+    const nextTrigger = vi.spyOn(pool.allVoices[1], 'trigger');
+    pool.legato = { mode: 'off' };
+    pool.noteOn(72, 100, 0, 0.2);
+    expect(nextTrigger.mock.calls[0][0].glide).toEqual({ fromMidiNote: 0, seconds: 0.2 });
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(retrigger).toHaveBeenCalledOnce();
     pool.noteOff(0);
@@ -114,6 +118,19 @@ describe('SampleVoicePool', () => {
     pool.noteOff(77);
     expect(second.state).toBe(VoiceState.RELEASING);
     expect(first.state).toBe(VoiceState.PLAYING);
+    pool.dispose();
+  });
+
+  it('removes a reassigned note from the earlier voice stack', async () => {
+    const pool = await setup();
+    pool.legato = { mode: 'always', interval: [1, 12] };
+    pool.noteOn(60);
+    pool.noteOn(64);
+    pool.noteOn(60);
+    pool.noteOff(64);
+    expect(pool.allVoices[0].state).toBe(VoiceState.RELEASING);
+    expect(pool.allVoices[1].midiNote).toBe(60);
+    expect(pool.allVoices[1].state).toBe(VoiceState.PLAYING);
     pool.dispose();
   });
 

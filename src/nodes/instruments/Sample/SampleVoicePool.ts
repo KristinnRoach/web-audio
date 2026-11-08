@@ -225,11 +225,10 @@ export class SampleVoicePool implements LibNode {
     });
 
     this.#allVoices.forEach((otherVoice) => {
-      if (
-        otherVoice !== voice &&
-        otherVoice.state === VoiceState.PLAYING &&
-        otherVoice.midiNote === midiNote
-      ) {
+      if (otherVoice === voice) return;
+      const held = this.#heldNotes.get(otherVoice);
+      if (held) held.notes = held.notes.filter((note) => note !== midiNote);
+      if (otherVoice.state === VoiceState.PLAYING && otherVoice.midiNote === midiNote) {
         otherVoice.release({ secondsFromNow });
       }
     });
@@ -252,6 +251,7 @@ export class SampleVoicePool implements LibNode {
       const previousNote = held?.notes.at(-1);
       if (held && previousNote !== undefined) {
         voice.retune(previousNote, secondsFromNow, held.glideTime);
+        this.prevMidiNote = previousNote;
         fallback = { midiNote: previousNote, glideTime: held.glideTime };
       } else voice.release({ secondsFromNow });
     });

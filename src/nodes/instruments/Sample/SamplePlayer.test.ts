@@ -103,8 +103,13 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     player.transpose(2);
     expect(setBusFeedbackPitch.mock.lastCall?.[0]).toBe(61.5);
     // A legato fallback on release retunes the bus feedback to the earlier held note.
-    player.release(60);
-    expect(setBusFeedbackPitch).toHaveBeenLastCalledWith(58.5, 0, expect.any(Number), 0.1);
+    player.syncLFOsToNoteFreq('gain-lfo', true);
+    player.syncLFOsToNoteFreq('pitch-lfo', true);
+    player.release(60, 1);
+    expect(setBusFeedbackPitch).toHaveBeenLastCalledWith(58.5, 0, 1, 0.1);
+    for (const lfo of getTestLFOs().slice(-2)) {
+      expect(lfo.setMusicalNote).toHaveBeenLastCalledWith(58.5, { divisor: 4, timestamp: 1 });
+    }
 
     player.setLoopPitchQuantization({
       scale: [2],
