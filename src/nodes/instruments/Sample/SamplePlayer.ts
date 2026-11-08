@@ -542,7 +542,7 @@ export class SamplePlayer {
     // Remove from sustained notes if it was there
     this.#sustainedNotes.delete(midiNote);
 
-    this.#voicePool.noteOff(midiNote, secondsFromNow);
+    this.#followFallback(this.#voicePool.noteOff(midiNote, secondsFromNow), secondsFromNow);
     this.#outBus.noteOff(midiNote + this.#pitchOffset);
     this.#sendUpstreamMessage('note:off', { midiNote });
     return this;
@@ -565,6 +565,17 @@ export class SamplePlayer {
   /** Semitones added to every played note: transpose plus fine tune. */
   get #pitchOffset() {
     return this.#transposeSemitones + this.#fineTuneCents / 100;
+  }
+
+  /** A legato voice returning to an earlier held note takes the note-tracking LFOs and bus feedback with it. */
+  #followFallback(fallback: { midiNote: MidiValue; glideTime: number } | null, secondsFromNow = 0) {
+    if (!fallback) return;
+    const soundingNote = fallback.midiNote + this.#pitchOffset;
+    this.#lastPlayedNote = fallback.midiNote;
+    this.#syncLFOsToNote(soundingNote);
+    this.#outBus
+      .getFeedback()
+      ?.setPitch(soundingNote, 0, this.now + secondsFromNow, fallback.glideTime);
   }
 
   #syncLFOsToNote(soundingNote: number) {
@@ -804,7 +815,7 @@ export class SamplePlayer {
 
     if (!pressed) {
       for (const [note, count] of this.#sustainedNotes) {
-        this.#voicePool.noteOff(note);
+        this.#followFallback(this.#voicePool.noteOff(note));
         // One outBus release per held release: InstrumentBus counts note-ons.
         for (let i = 0; i < count; i++) this.#outBus.noteOff(note + this.#pitchOffset);
         this.#sendUpstreamMessage('note:off', { midiNote: note });

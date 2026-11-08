@@ -237,7 +237,12 @@ export class SampleVoicePool implements LibNode {
     return { midiNote, glideTime, retuned: !!legatoVoice };
   }
 
-  noteOff(midiNote: MidiValue, secondsFromNow: number = 0) {
+  /** Returns the earlier held note a legato voice fell back to, if any. */
+  noteOff(
+    midiNote: MidiValue,
+    secondsFromNow: number = 0,
+  ): { midiNote: MidiValue; glideTime: number } | null {
+    let fallback: { midiNote: MidiValue; glideTime: number } | null = null;
     this.#allVoices.forEach((voice) => {
       if (voice.state !== VoiceState.PLAYING) return;
       const held = this.#heldNotes.get(voice);
@@ -245,12 +250,13 @@ export class SampleVoicePool implements LibNode {
       if (voice.midiNote !== midiNote) return;
 
       const previousNote = held?.notes.at(-1);
-      if (held && previousNote !== undefined)
+      if (held && previousNote !== undefined) {
         voice.retune(previousNote, secondsFromNow, held.glideTime);
-      else voice.release({ secondsFromNow });
+        fallback = { midiNote: previousNote, glideTime: held.glideTime };
+      } else voice.release({ secondsFromNow });
     });
 
-    return this;
+    return fallback;
   }
 
   allNotesOff() {

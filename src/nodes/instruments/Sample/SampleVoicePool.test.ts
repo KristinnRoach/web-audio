@@ -86,7 +86,7 @@ describe('SampleVoicePool', () => {
     pool.noteOff(62);
     expect(voice.midiNote).toBe(65);
 
-    pool.noteOff(65, 0.2);
+    expect(pool.noteOff(65, 0.2)).toEqual({ midiNote: 64, glideTime: 0.4 });
     expect(voice.midiNote).toBe(64);
     expect(retune).toHaveBeenLastCalledWith(64, 0.2, 0.4);
     pool.noteOff(64);
