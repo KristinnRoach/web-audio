@@ -46,23 +46,23 @@ describe('PeriodLockStretcher', () => {
     expect(prepare(stretch, 11, 2)).toBe(3);
   });
 
-  it('is inactive until it has periods, and for loops in the oscillator regime', () => {
+  it('is inactive until it has periods, and for pitch loops', () => {
     const stretch = new PeriodLockStretcher(1000);
     stretch.setEnabled(true, 0);
-    expect(stretch.isActive(false, 0, 100)).toBe(false);
+    expect(stretch.isActive(false, false)).toBe(false);
     stretch.setPeriods(Float32Array.of(PERIOD), 1000);
-    expect(stretch.isActive(false, 0, 100)).toBe(true);
-    expect(stretch.isActive(true, 100, 100)).toBe(false);
-    expect(stretch.isActive(true, 101, 100)).toBe(true);
+    expect(stretch.isActive(false, false)).toBe(true);
+    expect(stretch.isActive(true, true)).toBe(false);
+    expect(stretch.isActive(true, false)).toBe(true);
   });
 
   it('stretches only in period mode, so a removed mode name turns it off', () => {
     const engine = new VoiceEngine({ sampleRate: 1000, random: Math.random, post: () => {} });
     engine.setPitchPeriods(Float32Array.of(PERIOD), 1000);
     engine.setTimestretchMode('period');
-    expect(engine.timestretch.isActive(false, 0, 100)).toBe(true);
+    expect(engine.timestretch.isActive(false, false)).toBe(true);
     engine.setTimestretchMode('splice');
-    expect(engine.timestretch.isActive(false, 0, 100)).toBe(false);
+    expect(engine.timestretch.isActive(false, false)).toBe(false);
   });
 
   // At rate 8 jumps recur every 96 / 7 samples: half of that, not half a period.

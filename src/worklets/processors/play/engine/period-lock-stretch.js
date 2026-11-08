@@ -56,12 +56,8 @@ export class PeriodLockStretcher {
     this.#outgoingPosition = null;
   }
 
-  isActive(inLoop, loopDurationSamples, pitchPreservationThreshold) {
-    return (
-      this.#enabled &&
-      Boolean(this.#periods?.length) &&
-      (!inLoop || loopDurationSamples > pitchPreservationThreshold)
-    );
+  isActive(inLoop, isPitchLoop) {
+    return this.#enabled && Boolean(this.#periods?.length) && (!inLoop || !isPitchLoop);
   }
 
   /**

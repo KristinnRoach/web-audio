@@ -580,9 +580,13 @@ export class VoiceEngine {
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
+    // Loop type is decided once, from the quantized length fitted to trim. Later stages
+    // (keytrack, snap, drift) read it and never change it, even when they move the
+    // length across the pitch cutoff.
+    const isPitchLoop = baseDuration <= this.pitchPreservationThreshold;
+
     // Keytrack loop length so amount=1 keeps its real-time duration across notes.
-    const keytrackAmount =
-      baseDuration > this.pitchPreservationThreshold ? this.keytrackLoopAmount : 0;
+    const keytrackAmount = isPitchLoop ? 0 : this.keytrackLoopAmount;
     if (keytrackAmount > 0) {
       baseDuration = keytrackLoopDuration(baseDuration, keytrackAmount, playbackRate);
       // Deliberately unclamped: above the loop's root note the loop duration is longer than
@@ -594,13 +598,12 @@ export class VoiceEngine {
     // Re-derive the duration after keytrack before drift sizes its minimum length.
     baseDuration = calcLoopEnd - calcLoopStart;
 
-    const isAudioRate = baseDuration <= this.pitchPreservationThreshold;
     const minZeroCrossingLength = Math.max(this.pitchPreservationThreshold, this.minRangeSamples);
 
-    // Only snap to zero crossing if it doesnt affect pitch (audio-rate loop duration).
+    // Only snap time loops: a pitch loop's length is its pitch.
     // Snaps move both ends inward, so each is kept only if the loop stays above the
-    // audio-rate threshold and minimum: without an interior crossing, both could coincide.
-    if (!isAudioRate) {
+    // pitch cutoff and minimum: without an interior crossing, both could coincide.
+    if (!isPitchLoop) {
       const snappedStart = this.#findNearestZeroCrossing(calcLoopStart, 'right');
       if (calcLoopEnd - snappedStart > minZeroCrossingLength) {
         calcLoopStart = snappedStart;
@@ -611,7 +614,7 @@ export class VoiceEngine {
       calcLoopStart,
       calcLoopEnd,
       baseDuration,
-      isAudioRate,
+      isPitchLoop,
       driftAmount,
       playbackRange.endSamples,
     );
@@ -620,7 +623,7 @@ export class VoiceEngine {
     // leaves the actual loop end off a zero crossing -> discontinuity click.
     // Skip the snap when the end sits in the silent tail: zero crossings only exist
     // inside the buffer, so snapping there would erase the padding.
-    if (!isAudioRate && calcLoopEnd <= playbackRange.endSamples) {
+    if (!isPitchLoop && calcLoopEnd <= playbackRange.endSamples) {
       const snappedEnd = this.#findNearestZeroCrossing(calcLoopEnd, 'left');
       if (snappedEnd - calcLoopStart > minZeroCrossingLength) {
         calcLoopEnd = snappedEnd;
@@ -638,6 +641,7 @@ export class VoiceEngine {
     range.loopEndSamples = calcLoopEnd;
     range.loopDurationSamples = calcLoopEnd - calcLoopStart;
     range.keytrackAmount = keytrackAmount;
+    range.isPitchLoop = isPitchLoop;
     range.audioEndSamples = rangeEnd;
     return range;
   }
@@ -665,26 +669,26 @@ export class VoiceEngine {
    * @param {number} baseDuration - Loop duration in samples, before zero-crossing snaps
    * @returns {number} - Drifted loop end in samples
    */
-  #applyLoopDrift(loopStart, loopEnd, baseDuration, isAudioRate, driftAmount, playbackEnd) {
+  #applyLoopDrift(loopStart, loopEnd, baseDuration, isPitchLoop, driftAmount, playbackEnd) {
     if (driftAmount <= 0 || !this.loopEnabled) {
       this.currentPanDrift = 0;
       return loopEnd;
     }
 
-    if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration, isAudioRate);
+    if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration, isPitchLoop);
 
     return driftLoopEnd(loopStart, loopEnd, baseDuration, this.currentLoopDrift, playbackEnd);
   }
 
   /** Runs once per loop iteration. Audio-rate loops re-roll less often. */
-  #rollLoopDrift(driftAmount, baseDuration, isAudioRate) {
+  #rollLoopDrift(driftAmount, baseDuration, isPitchLoop) {
     const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
 
     if (this.driftUpdateCounter % updateInterval === 0) {
       this.currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
-      // Audio-rate drift is scaled down and rounded to whole samples, often to nothing,
+      // Pitch loop drift is scaled down and rounded to whole samples, often to nothing,
       // so pan rolls its own value there.
-      const panDrift = isAudioRate
+      const panDrift = isPitchLoop
         ? (this.random() - 0.5) * 2 * driftAmount
         : this.currentLoopDrift / baseDuration;
       this.currentPanDrift = this.panDriftEnabled && this.loopCount > 0 ? panDrift : 0;
@@ -906,7 +910,7 @@ export class VoiceEngine {
         previous &&
         loopRange.loopStartSamples !== previous.loopStartSamples &&
         this.loopEnabled &&
-        loopRange.loopDurationSamples <= this.pitchPreservationThreshold &&
+        loopRange.isPitchLoop &&
         this.previousPlaybackPosition >= previous.loopStartSamples &&
         this.previousPlaybackPosition <= previous.loopEndSamples
       ) {
@@ -936,11 +940,7 @@ export class VoiceEngine {
           isBeforeLoop(this.timestretch.timelinePosition, approachDirection, loopRange));
       const inLoop = this.loopEnabled && !approachingLoop;
 
-      const timestretchActive = this.timestretch.isActive(
-        inLoop,
-        loopRange.loopDurationSamples,
-        this.pitchPreservationThreshold,
-      );
+      const timestretchActive = this.timestretch.isActive(inLoop, loopRange.isPitchLoop);
       const silencePadTail = loopRange.loopEndSamples > playbackRange.endSamples;
 
       // Handle looping
