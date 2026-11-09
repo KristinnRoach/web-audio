@@ -610,10 +610,9 @@ export class VoiceEngine {
 
     const keytrackAmount = isPitchLoop ? 0 : this.keytrackLoopAmount;
     if (keytrackAmount > 0) {
-      // Period stretch loops on a unit-rate timeline, so invert the rate to mirror resampling.
-      const isStretched = this.timestretch.isActive(true, isPitchLoop);
-      const keytrackRate = isStretched ? 1 / playbackRate : playbackRate;
-      baseDuration = keytrackLoopDuration(baseDuration, keytrackAmount, keytrackRate);
+      // Only time loops get here, so stretch applies whenever it is on.
+      const isStretched = this.timestretch.isActive(true, false);
+      baseDuration = keytrackLoopDuration(baseDuration, keytrackAmount, playbackRate, isStretched);
       // Deliberately unclamped: a keytracked loop can be longer than the available audio
       // (above the root note when resampling, below it when stretched). The tail is padded
       // with silence in render() instead of collapsing to the buffer end.
