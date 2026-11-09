@@ -27,6 +27,9 @@ const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
 // false restores bare turns.
 const LOOP_TURN_CROSSFADE = true;
 const TAIL_FADE_SAMPLES = 64;
+// proto/two-window-morph: pitch loop move crossfade, old frame to new at the same phase.
+// Moves during a fade wait for it, so this is also the longest lag behind a drag. Tune by ear.
+const FRAME_FADE_SECONDS = 0.03; // reasonable: 0.005 - 0.1
 // Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
 // Linear interpolation of one channel's samples at a fractional position.
@@ -128,6 +131,14 @@ export class VoiceEngine {
     this.positionMessage = { type: 'voice:position', position: 0 };
     // Everything sounding this sample: the playhead, the stretcher's outgoing head
     // and the crossfade heads.
+    // proto/two-window-morph: the latched frame, the one it fades from, and two range
+    // slots so the previous sample's range is never the one being rewritten.
+    this.frameFadeSamples = Math.max(1, Math.round(FRAME_FADE_SECONDS * sampleRate));
+    this.frameStart = null;
+    this.frameFrom = 0;
+    this.frameFadeLeft = 0;
+    this.frameRanges = [{}, {}];
+    this.frameSlot = 0;
     this.readHeads = Array.from({ length: MAX_OUTGOING_HEADS + 2 }, () => ({
       position: 0,
       gain: 1,
@@ -197,6 +208,8 @@ export class VoiceEngine {
     this.loopTurned = false;
     this.#resetLoopGlides(); // new notes start on the target range
     this.previousLoopRange = null;
+    this.frameStart = null;
+    this.frameFadeLeft = 0;
     this.loopCrossfade.reset();
     this.postedRanges = {}; // each note posts its first resolved range
 
@@ -248,6 +261,8 @@ export class VoiceEngine {
     this.loopCount = 0;
     this.pendingLoopCycleTime = null;
     this.previousLoopRange = null;
+    this.frameStart = null;
+    this.frameFadeLeft = 0;
 
     this.loopCrossfade.reset();
     this.#resetLoopGlides();
@@ -376,14 +391,55 @@ export class VoiceEngine {
 
   // Each head's `mix` is the weight of the heads inside it. The innermost has
   // nothing inside it, so its 0 leaves it at full level.
-  #mixReadHeads(channel) {
+  // proto/two-window-morph: `offset` reads every head in another frame, seams included.
+  #mixReadHeads(channel, offset = 0) {
     let mixed = 0;
     for (let i = 0; i < this.readHeadCount; i++) {
       const head = this.readHeads[i];
-      const value = this.#readSample(head.position, channel, head.lastIndex) * head.gain;
+      const value = this.#readSample(head.position + offset, channel, head.lastIndex) * head.gain;
       mixed = value + head.mix * (mixed - value);
     }
     return mixed;
+  }
+
+  // proto/two-window-morph: a pitch loop plays one window (frame) at a time. A move
+  // latches the new start and fades from the old frame; moves that arrive during the
+  // fade wait for it to end, then fade to the latest start. Returns the range to play.
+  #latchFrame(range, trimStart) {
+    if (!this.loopEnabled || !range.isPitchLoop) {
+      this.frameStart = null;
+      this.frameFadeLeft = 0;
+      return range;
+    }
+    if (this.frameStart === null) this.frameStart = range.loopStartSamples;
+    if (this.frameFadeLeft === 0 && range.loopStartSamples !== this.frameStart) {
+      // Only a playhead inside the frame has a phase to keep; one on its way in just follows.
+      const inFrame =
+        this.playbackPosition >= this.frameStart &&
+        this.playbackPosition <= this.frameStart + range.loopDurationSamples;
+      this.frameFrom = this.frameStart;
+      this.frameStart = range.loopStartSamples;
+      if (inFrame) this.frameFadeLeft = this.frameFadeSamples;
+    }
+    // ponytail: a trim that cuts the latched frame skips the wait and jumps to the new one
+    const end = this.frameStart + range.loopDurationSamples;
+    if (
+      this.frameStart < Math.min(range.loopStartSamples, trimStart) ||
+      end > Math.max(range.loopEndSamples, range.audioEndSamples)
+    ) {
+      this.frameStart = range.loopStartSamples;
+    }
+    const shift = this.frameStart - range.loopStartSamples;
+    if (shift === 0) return range;
+    this.frameSlot ^= 1;
+    const latched = this.frameRanges[this.frameSlot];
+    latched.loopStartSamples = this.frameStart;
+    latched.loopEndSamples = range.loopEndSamples + shift;
+    latched.loopDurationSamples = range.loopDurationSamples;
+    latched.keytrackAmount = range.keytrackAmount;
+    latched.isPitchLoop = true;
+    latched.audioEndSamples = range.audioEndSamples;
+    return latched;
   }
 
   #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
@@ -802,6 +858,7 @@ export class VoiceEngine {
     // direction change needs no position correction.
     const approachDirection = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
     const driftAmount = parameters.loopDurationDriftAmount[0];
+    let requestedRange;
     let loopRange;
     let previousRate;
 
@@ -881,15 +938,16 @@ export class VoiceEngine {
         loopRange?.loopDurationSamples < 2 * this.pitchPreservationThreshold;
       const driftPending = driftAmount > 0 && this.loopEnabled && !this.loopDriftRolled;
       if (
-        !loopRange ||
+        !requestedRange ||
         (rangeInputsChanged && followsPointsPerSample) ||
         this.isLoopLengthGliding ||
         this.isLoopPositionGliding ||
         driftPending
       ) {
-        loopRange = this.#calculateLoopRange(positionParams, playbackRange, driftAmount, rate);
+        requestedRange = this.#calculateLoopRange(positionParams, playbackRange, driftAmount, rate);
         previousRate = rate;
       }
+      loopRange = this.#latchFrame(requestedRange, playbackRange.startSamples);
 
       // Report the incoming range after its drift is resolved, keeping the wrap time.
       if (this.pendingLoopCycleTime !== null) {
@@ -914,17 +972,11 @@ export class VoiceEngine {
         this.previousPlaybackPosition >= previous.loopStartSamples &&
         this.previousPlaybackPosition <= previous.loopEndSamples
       ) {
-        if (this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped)) {
-          // From the unmoved playhead, before any edge it passes this frame
-          this.loopCrossfade.start(
-            this.playbackPosition,
-            this.loopTurned ? -approachDirection : approachDirection,
-            this.#crossfadeLength(loopRange),
-            previous.loopEndSamples > previous.audioEndSamples,
-            previous.audioEndSamples,
-          );
-        }
-        this.playbackPosition += loopRange.loopStartSamples - previous.loopStartSamples;
+        // proto/two-window-morph: the frame fade replaces the move crossfade here, and
+        // every head moves with the playhead, so all of them read the new frame.
+        const carry = loopRange.loopStartSamples - previous.loopStartSamples;
+        this.playbackPosition += carry;
+        this.loopCrossfade.shift(carry);
       }
       this.previousLoopRange = loopRange;
 
@@ -1010,12 +1062,23 @@ export class VoiceEngine {
       // be fractional (minimum-length growth), and a ping-pong turn at the audio
       // end reads exactly at endSamples. Past it, the silent tail gain is 0.
       this.#collectReadHeads(tailGain, Math.ceil(playbackRange.endSamples) - 1);
+      // proto/two-window-morph: the whole head set read in both frames, so the old
+      // frame's loop seams get the same crossfades as the new one's.
+      const frameMix = 1 - this.frameFadeLeft / this.frameFadeSamples;
+      const frameOffset = this.frameFrom - (this.frameStart ?? 0);
+      const fadingFrames = this.frameFadeLeft > 0;
+      if (fadingFrames) this.frameFadeLeft--;
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
         if (!outputChannels[channel]) continue;
 
-        const finalSample = this.#mixReadHeads(channel) * velocityGain * envelopeGain * masterGain;
+        let voiceSample = this.#mixReadHeads(channel);
+        if (fadingFrames) {
+          const old = this.#mixReadHeads(channel, frameOffset);
+          voiceSample = old + frameMix * (voiceSample - old);
+        }
+        const finalSample = voiceSample * velocityGain * envelopeGain * masterGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;
