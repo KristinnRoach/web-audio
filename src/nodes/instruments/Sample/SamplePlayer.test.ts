@@ -53,6 +53,8 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   const sendToProcessor = vi.fn();
   const setPitchOffset = vi.fn();
   const setBusFeedbackPitch = vi.fn();
+  player.setLoopPitchQuantization({ scale: [2], lowestOctave: 0, highestOctave: 5 });
+
   await initTestPlayer(
     player,
     {
@@ -69,9 +71,11 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     },
     { noteOn() {}, getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
   );
-  // init() sets the default quantization once; sample loads no longer resend it.
+
+  const initialPeriods = [62, 50, 38, 26, 14, 2].map((i) => expect.closeTo(NOTE_PERIODS[i], 6));
+  expect(player.getLoopPitchPeriods()).toEqual(initialPeriods);
   expect(sendToProcessor).toHaveBeenCalledWith(
-    expect.objectContaining({ type: 'setLoopQuantizePeriods' }),
+    expect.objectContaining({ type: 'setLoopQuantizePeriods', value: initialPeriods }),
   );
   sendToProcessor.mockClear();
 
