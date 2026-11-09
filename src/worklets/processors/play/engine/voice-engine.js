@@ -680,7 +680,6 @@ export class VoiceEngine {
         : this.loopWindowSlots[0];
     window.start = calcLoopStart;
     window.length = calcLoopEnd - calcLoopStart;
-    window.direction = params.loopStartSamples > params.loopEndSamples ? -1 : 1;
     window.keytrackAmount = keytrackAmount;
     window.isPitchLoop = isPitchLoop;
     window.audioEnd = rangeEnd;
@@ -940,8 +939,8 @@ export class VoiceEngine {
         this.pendingLoopCycleTime = null;
       }
 
-      // Direction still follows a-rate points even when a time window's bounds
-      // are resolved only once per block. The turn itself waits for an edge.
+      // Set per sample, not in #calculateLoopWindow: direction follows a-rate points
+      // even when a time window's bounds resolve once per block. Turns wait for an edge.
       loopWindow.direction = loopStart > loopEnd ? -1 : 1;
       this.#useLoopWindow(loopWindow, approachDirection);
 
@@ -1068,6 +1067,8 @@ export class VoiceEngine {
           timestretchJumpTarget,
         );
       } else {
+        // Step the offset directly so it stays exact relative to the window;
+        // an inactive stretcher never jumps, so this matches advance(false, ...).
         this.playbackOffset += playbackStep;
         this.timestretch.reset(this.playbackPosition);
       }
