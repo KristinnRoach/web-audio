@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { initTestPlayer } from './test/initTestPlayer';
+import type { SamplePlayer } from './SamplePlayer';
 import type { Message, MessageHandler } from '../../../events';
 import { VoiceState } from '../VoiceState';
 
@@ -39,6 +41,8 @@ vi.mock('./createSampleVoice', () => {
       return midiNote;
     }
 
+    setLoopEnabled = vi.fn();
+
     release() {
       if (this.state !== VoiceState.PLAYING) return this;
       this.state = VoiceState.RELEASING;
@@ -62,6 +66,141 @@ vi.mock('./createSampleVoice', () => {
     createSampleVoices: async (numVoices: number) =>
       Array.from({ length: numVoices }, () => new TestVoice()),
   };
+});
+
+describe('SamplePlayer sustain with the real voice pool', () => {
+  let player: SamplePlayer | undefined;
+
+  afterEach(() => {
+    player?.dispose();
+    player = undefined;
+    vi.unstubAllGlobals();
+  });
+
+  async function setupPlayer() {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('AudioContext', class {});
+    vi.stubGlobal('AudioWorkletNode', class {});
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        connect() {}
+        disconnect() {}
+      },
+    );
+    const { SamplePlayer } = await import('./SamplePlayer');
+    const context = Object.assign(new EventTarget(), { currentTime: 0 }) as AudioContext;
+    const pool = await setup();
+    const noteOff = vi.fn();
+    const releaseAll = vi.fn();
+    const setPitch = vi.fn();
+    player = new SamplePlayer({ context });
+    const playerPool = await initTestPlayer(
+      player,
+      {
+        allVoices: pool.allVoices,
+        noteOn: pool.noteOn.bind(pool),
+        noteOff: pool.noteOff.bind(pool),
+        allNotesOff: pool.allNotesOff.bind(pool),
+        dispose: pool.dispose.bind(pool),
+      },
+      { noteOn() {}, noteOff, releaseAll, getFeedback: () => ({ setPitch }) } as never,
+    );
+    Object.defineProperty(playerPool, 'legato', {
+      get: () => pool.legato,
+      set: (settings) => {
+        pool.legato = settings;
+      },
+    });
+    const upstream = vi.fn();
+    player.onMessage('note:off', upstream);
+    return { player, pool, noteOff, releaseAll, setPitch, upstream };
+  }
+
+  it('releases only deferred keys and drains multiple pitches and counts once', async () => {
+    const { player, pool, noteOff, releaseAll, upstream } = await setupPlayer();
+    player.play(60);
+    player.play(64);
+    player.play(67);
+    player.setSustainPedal(true);
+    expect(player.holdEnabled).toBe(false);
+    player.release(64, 10);
+    player.release(64);
+    player.release(67);
+    expect(pool.playingVoicesCount).toBe(3);
+    expect(noteOff).not.toHaveBeenCalled();
+    expect(upstream).not.toHaveBeenCalled();
+
+    player.setSustainPedal(false);
+    expect(pool.allVoices.find((voice) => voice.midiNote === 60)?.state).toBe(VoiceState.PLAYING);
+    expect(pool.playingVoicesCount).toBe(1);
+    expect(releaseAll).not.toHaveBeenCalled();
+    expect(noteOff.mock.calls).toEqual([[64], [64], [67]]);
+    expect(upstream.mock.calls.map(([message]) => message.midiNote)).toEqual([64, 64, 67]);
+    player.setSustainPedal(false);
+    expect(noteOff).toHaveBeenCalledTimes(3);
+    player.release(60);
+    expect(pool.playingVoicesCount).toBe(0);
+  });
+
+  it('returns a legato voice to a still-held key on pedal-up', async () => {
+    const { player, pool, setPitch } = await setupPlayer();
+    player.setLegato({ mode: 'always' });
+    player.play(60);
+    player.play(64);
+    player.setSustainPedal(true);
+    player.release(64);
+    expect(pool.allVoices[0].midiNote).toBe(64);
+    player.setSustainPedal(false);
+    expect(pool.allVoices[0].state).toBe(VoiceState.PLAYING);
+    expect(pool.allVoices[0].midiNote).toBe(60);
+    expect(setPitch).toHaveBeenLastCalledWith(60, 0, 0, 0);
+  });
+
+  it.each(['hold', 'lock'] as const)('keeps explicit %s independent of the pedal', async (mode) => {
+    const { player, pool, noteOff, releaseAll } = await setupPlayer();
+    const setHold = (enabled: boolean) =>
+      mode === 'hold' ? player.setHoldEnabled(enabled) : player.setHoldLocked(enabled);
+    player.play(60);
+    player.setSustainPedal(true);
+    player.release(60);
+    setHold(true);
+    player.setSustainPedal(false);
+    expect(pool.playingVoicesCount).toBe(1);
+    expect(noteOff).not.toHaveBeenCalled();
+    expect(releaseAll).not.toHaveBeenCalled();
+    setHold(false);
+    expect(pool.playingVoicesCount).toBe(0);
+    expect(releaseAll).toHaveBeenCalledOnce();
+
+    // Disabling explicit hold while the pedal stays down keeps release-all semantics.
+    setHold(true);
+    player.setSustainPedal(true);
+    player.play(64);
+    player.release(64);
+    setHold(false);
+    expect(pool.playingVoicesCount).toBe(0);
+    player.play(67);
+    player.release(67);
+    expect(pool.playingVoicesCount).toBe(1);
+    player.setSustainPedal(false);
+    expect(pool.playingVoicesCount).toBe(0);
+    expect(noteOff.mock.calls).toEqual([[67]]);
+  });
+
+  it('preserves ordinary pedal looping and a loop enabled before pedal-down', async () => {
+    const { player, pool } = await setupPlayer();
+    const loop = vi.spyOn(pool.allVoices[0], 'setLoopEnabled');
+    player.setSustainPedal(true);
+    expect(loop).toHaveBeenLastCalledWith(true);
+    player.setSustainPedal(false);
+    expect(loop).toHaveBeenLastCalledWith(false);
+    player.setLoopEnabled(true);
+    loop.mockClear();
+    player.setSustainPedal(true);
+    player.setSustainPedal(false);
+    expect(loop).not.toHaveBeenCalled();
+  });
 });
 
 async function setup(polyphony = 3) {
