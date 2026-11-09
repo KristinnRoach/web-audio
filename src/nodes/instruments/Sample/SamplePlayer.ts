@@ -94,6 +94,7 @@ export class SamplePlayer {
   #glideTime: number = samplerParams.glide.defaultValue;
   #loopLengthGlide: number = samplerParams.loopLengthGlide.defaultValue;
   #loopPositionGlide: number = samplerParams.loopPositionGlide.defaultValue;
+  #loopPitchPeriods = this.#getNotePeriodsInSeconds([0], 1, 5);
   #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
@@ -150,8 +151,12 @@ export class SamplePlayer {
           this.#polyphony,
           this.#voiceSignalChain,
         );
-        // Processors persist the periods across sample loads, so defaults are set once here.
-        this.setLoopPitchQuantization();
+        // Processors persist the periods across sample loads, so they are sent once here.
+        // Keeps any periods configured before init.
+        const periods = this.#loopPitchPeriods;
+        this.#voicePool.applyToAllVoices((voice) => {
+          voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
+        });
 
         // Connect audio chain
         this.#connectAudioChain();
@@ -670,12 +675,22 @@ export class SamplePlayer {
   } = {}) {
     this.#validateLoopPitchQuantization({ scale, lowestOctave, highestOctave });
     const periods = this.#getNotePeriodsInSeconds(scale, lowestOctave, highestOctave);
+    this.#loopPitchPeriods = periods;
 
     this.#voicePool?.applyToAllVoices((voice) => {
       voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
     });
 
     return this;
+  }
+
+  /**
+   * Configured pitch-loop periods in seconds, shortest first, before playback-rate
+   * transposition. Returns a copy. Use with setLoopDuration() to select a pitch loop;
+   * longer durations continue to use the normal time-loop behavior.
+   */
+  getLoopPitchPeriods(): number[] {
+    return [...this.#loopPitchPeriods];
   }
 
   #validateLoopPitchQuantization({

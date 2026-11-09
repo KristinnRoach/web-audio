@@ -47,9 +47,14 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   });
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
   expect(() => player.setLoopEnabled(false)).not.toThrow();
+  expect(player.getLoopPitchPeriods()).toEqual(
+    [60, 48, 36, 24, 12].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)),
+  );
   const sendToProcessor = vi.fn();
   const setPitchOffset = vi.fn();
   const setBusFeedbackPitch = vi.fn();
+  player.setLoopPitchQuantization({ scale: [2], lowestOctave: 0, highestOctave: 5 });
+
   await initTestPlayer(
     player,
     {
@@ -67,9 +72,11 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     },
     { noteOn() {}, noteOff() {}, getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
   );
-  // init() sets the default quantization once; sample loads no longer resend it.
+
+  const initialPeriods = [62, 50, 38, 26, 14, 2].map((i) => expect.closeTo(NOTE_PERIODS[i], 6));
+  expect(player.getLoopPitchPeriods()).toEqual(initialPeriods);
   expect(sendToProcessor).toHaveBeenCalledWith(
-    expect.objectContaining({ type: 'setLoopQuantizePeriods' }),
+    expect.objectContaining({ type: 'setLoopQuantizePeriods', value: initialPeriods }),
   );
   sendToProcessor.mockClear();
 
@@ -84,6 +91,11 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
       type: 'setLoopQuantizePeriods',
       value: [60, 48, 36, 24, 12, 0].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)),
     });
+
+    const periods = player.getLoopPitchPeriods();
+    expect(periods).toEqual(sendToProcessor.mock.lastCall?.[0].value);
+    periods.fill(0);
+    expect(player.getLoopPitchPeriods()[0]).toBeGreaterThan(0);
 
     // The transpose carries quantized loops; rebuilding the periods too would shift them twice.
     player.transpose(2);
