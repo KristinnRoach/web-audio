@@ -61,10 +61,11 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
           setParam() {},
           setLoopPoints() {},
         } as never),
-      noteOn: () => 60,
+      noteOn: () => ({ midiNote: 60, glideTime: 0, retuned: false }),
+      noteOff: () => ({ midiNote: 57, glideTime: 0.1 }),
       dispose() {},
     },
-    { noteOn() {}, getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
+    { noteOn() {}, noteOff() {}, getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
   );
   // init() sets the default quantization once; sample loads no longer resend it.
   expect(sendToProcessor).toHaveBeenCalledWith(
@@ -101,6 +102,14 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     player.play(60);
     player.transpose(2);
     expect(setBusFeedbackPitch.mock.lastCall?.[0]).toBe(61.5);
+    // A legato fallback on release retunes the bus feedback to the earlier held note.
+    player.syncLFOsToNoteFreq('gain-lfo', true);
+    player.syncLFOsToNoteFreq('pitch-lfo', true);
+    player.release(60, 1);
+    expect(setBusFeedbackPitch).toHaveBeenLastCalledWith(58.5, 0, 1, 0.1);
+    for (const lfo of getTestLFOs().slice(-2)) {
+      expect(lfo.setMusicalNote).toHaveBeenLastCalledWith(58.5, { divisor: 4, timestamp: 1 });
+    }
 
     player.setLoopPitchQuantization({
       scale: [2],

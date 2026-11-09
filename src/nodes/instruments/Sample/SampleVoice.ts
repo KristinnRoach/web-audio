@@ -77,7 +77,6 @@ export class SampleVoice {
   /** Loop keytrack in effect for the idle length, which is resolved at rate 1. */
   #idleLoopKeytrack = 0;
 
-  #pitchGlideTime = 0; // in seconds
   /** Semitones added to the played note for everything that tracks pitch. */
   #pitchOffset = 0;
 
@@ -277,25 +276,50 @@ export class SampleVoice {
   setPitchOffset(semitones: number): this {
     if (this.#pitchOffset === semitones) return this;
     this.#pitchOffset = semitones;
-    if (this.#midiNote === null) return this;
-    if (!this.#pitchDisabled) {
-      const rate = midiToPlaybackRate(this.#midiNote + semitones);
-      this.setParam('playbackRate', rate, this.now, { glideTime: 0.01 });
-    }
-    this.#feedback?.setPitch(this.#midiNote + semitones, 0, this.now, 0.01);
-    this.#am_lfo?.setMusicalNote(this.#midiNote + semitones + this.#am_lfo_semitone_offset);
+    if (this.#midiNote !== null) this.#applyPitch(this.#midiNote, this.now, 0.01);
     return this;
   }
 
-  setGlideTime(seconds: number) {
-    this.#pitchGlideTime = seconds;
+  /** Keeps the source, velocity and envelopes running; note-off follows the new note. */
+  retune(midiNote: MidiValue, secondsFromNow = 0, glideTime = 0): MidiValue | null {
+    if (this.#state !== VoiceState.PLAYING) return null;
+    this.#applyPitch(midiNote, this.now + secondsFromNow, glideTime);
+    return midiNote;
+  }
+
+  /** Moves a sounding note: playback rate, feedback and the AM LFO follow. */
+  #applyPitch(midiNote: MidiValue, timestamp: number, glideSeconds: number) {
+    const soundingNote = midiNote + this.#pitchOffset;
+    const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
+    if (!this.#pitchDisabled && glideSeconds > 0) {
+      const param = this.getParam('playbackRate')!;
+      if (timestamp <= this.now) cancelAndPinParamValue(param, timestamp);
+      else param.cancelScheduledValues(timestamp);
+      param.setTargetAtTime(playbackRate, timestamp, glideSeconds);
+    } else {
+      this.setParam('playbackRate', playbackRate, timestamp);
+    }
+    this.#feedback?.setPitch(soundingNote, 0, timestamp, glideSeconds);
+    this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
+      timestamp,
+      glideTime: glideSeconds,
+    });
+    this.#midiNote = midiNote;
+    if (this.#lastTrigger) this.#lastTrigger.playbackRate = playbackRate;
+  }
+
+  #isInPitchLoop = false;
+
+  /** Latest processor report, gated by the current voice and loop state. */
+  get isInPitchLoop(): boolean {
+    return this.#state === VoiceState.PLAYING && this.#loopEnabled && this.#isInPitchLoop;
   }
 
   trigger(options: {
     midiNote: MidiValue;
     velocity: MidiValue;
     secondsFromNow?: number;
-    glide?: { prevMidiNote: number; glideTime?: number };
+    glide?: { fromMidiNote: number; seconds: number };
   }): MidiValue | null {
     if (!this.#hasLoadedAudio) return null;
     const { midiNote, velocity, secondsFromNow = 0 } = options;
@@ -314,27 +338,15 @@ export class SampleVoice {
       startedTimestamp: timestamp,
     });
 
-    const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
-    const glideTime = options.glide?.glideTime ?? this.#pitchGlideTime;
-    const scaledGlideTime = glideTime / GLIDE_TEMP_SCALAR;
-
-    let playbackRate = 1;
-    let prevRate = 1;
-
+    const glideSeconds = options.glide?.seconds ?? 0;
+    const glideFrom = glideSeconds > 0 ? options.glide!.fromMidiNote + this.#pitchOffset : null;
     const soundingNote = midiNote + this.#pitchOffset;
-    if (!this.#pitchDisabled) {
-      playbackRate = midiToPlaybackRate(soundingNote);
-      if (options.glide) {
-        prevRate = midiToPlaybackRate(options.glide.prevMidiNote + this.#pitchOffset);
-      }
-    }
+    const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
 
-    // Only apply glide if pitch is enabled and glide is requested
-    if (!this.#pitchDisabled && options.glide && scaledGlideTime > 0) {
+    if (!this.#pitchDisabled && glideFrom !== null) {
       const rateParam = this.getParam('playbackRate')!;
-      if (prevRate > 0) rateParam.setValueAtTime(prevRate, timestamp);
-
-      rateParam.setTargetAtTime(playbackRate, timestamp, scaledGlideTime);
+      rateParam.setValueAtTime(midiToPlaybackRate(glideFrom), timestamp);
+      rateParam.setTargetAtTime(playbackRate, timestamp, glideSeconds);
     } else {
       this.setParam('playbackRate', playbackRate, timestamp);
     }
@@ -365,16 +377,14 @@ export class SampleVoice {
     this.#feedback?.trigger(soundingNote, {
       velocity,
       secondsFromNow,
-      glideTime: scaledGlideTime,
+      glideTime: glideSeconds,
       triggerDecay: true,
     });
 
     this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
       divisor: 1,
-      glideTime: scaledGlideTime,
-      glideFromMidiNote: options.glide
-        ? options.glide.prevMidiNote + this.#pitchOffset + this.#am_lfo_semitone_offset
-        : undefined,
+      glideTime: glideSeconds,
+      glideFromMidiNote: glideFrom === null ? undefined : glideFrom + this.#am_lfo_semitone_offset,
       timestamp,
     });
 
@@ -463,6 +473,7 @@ export class SampleVoice {
         assert(note, 'PLAYING requires note information');
         this.#clearTimeouts();
         this.#triggerId++;
+        this.#isInPitchLoop = false;
         this.#midiNote = note.midiNote;
         this.#startedTimestamp = note.startedTimestamp;
         break;
@@ -838,6 +849,7 @@ export class SampleVoice {
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
+          if (type === 'loop:range') this.#isInPitchLoop = data.isInPitchLoop ?? false;
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           if (type === 'loop:cycle') {

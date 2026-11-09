@@ -26,7 +26,7 @@ import {
 import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
-import { SampleVoicePool } from './SampleVoicePool';
+import { SampleVoicePool, type LegatoSettings } from './SampleVoicePool';
 import { getDuration, setDuration } from '@/nodes/modulators/envelope';
 import {
   assertValidEnvelopeConfig,
@@ -45,6 +45,8 @@ import {
   createDefaultSampleEnvelopeConfig,
   type SampleEnvelopeId,
 } from './sample-envelope-policy';
+
+const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
 
 export type SamplePlayerOptions = {
   context: AudioContext;
@@ -510,9 +512,22 @@ export class SamplePlayer {
     this.#lastPlayedNote = midiNote;
     this.#syncLFOsToNote(soundingNote);
 
-    this.#outBus.noteOn(soundingNote, safeVelocity, secondsFromNow, glideTime);
-
-    return this.#voicePool.noteOn(midiNote, safeVelocity, secondsFromNow, glideTime);
+    const played = this.#voicePool.noteOn(
+      midiNote,
+      safeVelocity,
+      secondsFromNow,
+      glideTime / GLIDE_TEMP_SCALAR,
+    );
+    if (!played) return null;
+    // The bus follows the pool: same glide, and a legato retune doesn't restart its decay.
+    this.#outBus.noteOn(
+      soundingNote,
+      safeVelocity,
+      secondsFromNow,
+      played.glideTime,
+      played.retuned,
+    );
+    return played.midiNote;
   }
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
@@ -527,7 +542,7 @@ export class SamplePlayer {
     // Remove from sustained notes if it was there
     this.#sustainedNotes.delete(midiNote);
 
-    this.#voicePool.noteOff(midiNote, secondsFromNow);
+    this.#followFallback(this.#voicePool.noteOff(midiNote, secondsFromNow), secondsFromNow);
     this.#outBus.noteOff(midiNote + this.#pitchOffset);
     this.#sendUpstreamMessage('note:off', { midiNote });
     return this;
@@ -552,10 +567,21 @@ export class SamplePlayer {
     return this.#transposeSemitones + this.#fineTuneCents / 100;
   }
 
-  #syncLFOsToNote(soundingNote: number) {
-    if (this.#syncGainLFOToMidiNote) this.#gainLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+  /** A legato voice returning to an earlier held note takes the note-tracking LFOs and bus feedback with it. */
+  #followFallback(fallback: { midiNote: MidiValue; glideTime: number } | null, secondsFromNow = 0) {
+    if (!fallback) return;
+    const soundingNote = fallback.midiNote + this.#pitchOffset;
+    this.#lastPlayedNote = fallback.midiNote;
+    const timestamp = this.now + secondsFromNow;
+    this.#syncLFOsToNote(soundingNote, timestamp);
+    this.#outBus.getFeedback()?.setPitch(soundingNote, 0, timestamp, fallback.glideTime);
+  }
+
+  #syncLFOsToNote(soundingNote: number, timestamp = this.now) {
+    if (this.#syncGainLFOToMidiNote)
+      this.#gainLFO?.setMusicalNote(soundingNote, { divisor: 4, timestamp });
     if (this.#syncPitchLFOToMidiNote) {
-      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4 });
+      this.#pitchLFO?.setMusicalNote(soundingNote, { divisor: 4, timestamp });
     }
   }
 
@@ -718,6 +744,12 @@ export class SamplePlayer {
     return this;
   }
 
+  /** Retune a playing voice instead of retriggering; `{ mode: 'off' }` restores normal triggering. */
+  setLegato(settings: LegatoSettings): this {
+    this.#voicePool.legato = { ...settings };
+    return this;
+  }
+
   setLoopEnabled(enabled: boolean): this {
     // if loop is locked (ON), turning it off is disabled but turning it on should work
     if (this.#loopLocked && !enabled) return this;
@@ -783,7 +815,7 @@ export class SamplePlayer {
 
     if (!pressed) {
       for (const [note, count] of this.#sustainedNotes) {
-        this.#voicePool.noteOff(note);
+        this.#followFallback(this.#voicePool.noteOff(note));
         // One outBus release per held release: InstrumentBus counts note-ons.
         for (let i = 0; i < count; i++) this.#outBus.noteOff(note + this.#pitchOffset);
         this.#sendUpstreamMessage('note:off', { midiNote: note });

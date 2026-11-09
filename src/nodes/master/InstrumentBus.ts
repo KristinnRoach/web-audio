@@ -332,7 +332,14 @@ export class InstrumentBus implements ILibAudioNode {
 
   // === NOTE ON/OFF ===
 
-  noteOn(midiNote: number, velocity: number = 100, secondsFromNow = 0, glideTime = 0): this {
+  /** `retune` moves a held legato note: pitch follows, the feedback decay keeps running. */
+  noteOn(
+    midiNote: number,
+    velocity: number = 100,
+    secondsFromNow = 0,
+    glideTime = 0,
+    retune = false,
+  ): this {
     this.#heldNotes.set(midiNote, (this.#heldNotes.get(midiNote) ?? 0) + 1);
 
     const feedback = this.getNode('feedback');
@@ -341,6 +348,7 @@ export class InstrumentBus implements ILibAudioNode {
         velocity,
         secondsFromNow,
         glideTime,
+        triggerDecay: !retune,
       });
     }
 

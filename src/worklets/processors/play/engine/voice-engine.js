@@ -946,6 +946,7 @@ export class VoiceEngine {
       // Handle looping
       const maxLoopCount = parameters.maxLoopCount[0];
       const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
+      this.loopMessage.isInPitchLoop = canWrapLoop && inLoop && loopRange.isPitchLoop;
       if (canWrapLoop) {
         this.#passLoopEdge(
           approachDirection,

@@ -4,6 +4,7 @@ import type { SampleVoicePool } from '../SampleVoicePool';
 import type { InstrumentBus } from '../../../master/InstrumentBus';
 
 type TestLFO = {
+  setMusicalNote: ReturnType<typeof vi.fn>;
   connect: ReturnType<typeof vi.fn>;
   setDepth: ReturnType<typeof vi.fn>;
   setFrequency: ReturnType<typeof vi.fn>;
@@ -17,6 +18,8 @@ vi.mock('@/nodes/modulators/LFO/LFO', () => ({
       testLFOs.push(this);
     }
     setWaveform() {}
+    storeCurrentValues() {}
+    setMusicalNote = vi.fn();
     getPitchWobbleWaveform() {}
     connect = vi.fn();
     setDepth = vi.fn();
