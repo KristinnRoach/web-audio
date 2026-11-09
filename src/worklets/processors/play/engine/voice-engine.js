@@ -157,16 +157,6 @@ export class VoiceEngine {
     );
   }
 
-  // Only the main head uses window-relative coordinates. Source readers, outgoing
-  // fades and the stretcher continue to receive absolute source positions.
-  get playbackPosition() {
-    return this.playbackOrigin + this.playbackOffset;
-  }
-
-  set playbackPosition(position) {
-    this.playbackOffset = position - this.playbackOrigin;
-  }
-
   // Rendering needs a note and a source; otherwise the voice is idle.
   get canRender() {
     return this.isPlaying && !!this.buffer?.[0]?.length;
@@ -211,8 +201,7 @@ export class VoiceEngine {
     this.postedRanges = {}; // each note posts its first resolved range
 
     // Set from the trim range on the first audible block
-    this.playbackOrigin = 0;
-    this.playbackOffset = 0;
+    this.playbackPosition = 0;
     this.needsStartPosition = true;
 
     // Frame this note should sound at. A timestamp that has already passed
@@ -252,8 +241,7 @@ export class VoiceEngine {
     // True while cycling a loop against the approach direction (backward loops,
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
-    this.playbackOrigin = 0;
-    this.playbackOffset = 0;
+    this.playbackPosition = 0;
     this.previousPlaybackPosition = 0;
     this.needsStartPosition = false;
 
@@ -288,8 +276,7 @@ export class VoiceEngine {
   stop() {
     this.isPlaying = false;
     this.pendingStartFrame = 0;
-    this.playbackOrigin = 0;
-    this.playbackOffset = 0;
+    this.playbackPosition = 0;
     this.needsStartPosition = false;
   }
 
@@ -336,26 +323,24 @@ export class VoiceEngine {
     this.loopDriftRolled = false;
   }
 
-  // Keep a source-sample offset while following a pitch window. Resizing keeps
-  // the offset (not a normalized phase); the normal edge rules handle overshoot.
-  // Approach, disabled loops and time loops keep absolute source coordinates.
-  #useLoopWindow(window, approachDirection) {
+  // A pitch loop's length is its pitch. The playhead is in source coordinates, so
+  // a moving window would shift its phase every sample and bend the cycles while
+  // it moves. Carry the playhead with the window start instead.
+  #carryPlayhead(window, approachDirection) {
     const previous = this.loopWindow;
-    const followsWindow =
-      previous &&
-      this.loopEnabled &&
-      window.isPitchLoop &&
-      this.previousPlaybackPosition >= previous.start &&
-      this.previousPlaybackPosition <= previous.end;
-
+    this.loopWindow = window;
     if (
-      followsWindow &&
-      window.start !== previous.start &&
-      this.enableLoopCrossfade &&
-      (!this.isLoopPositionGliding || this.isLoopStartClamped)
+      !previous ||
+      window.start === previous.start ||
+      !this.loopEnabled ||
+      !window.isPitchLoop ||
+      this.previousPlaybackPosition < previous.start ||
+      this.previousPlaybackPosition > previous.end
     ) {
-      // Snapshot before changing origin or passing an edge. Outgoing heads keep
-      // their source positions, direction, trim limit and existing nested fades.
+      return;
+    }
+    if (this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped)) {
+      // From the unmoved playhead, before any edge it passes this frame
       this.loopCrossfade.start(
         this.playbackPosition,
         this.loopTurned ? -approachDirection : approachDirection,
@@ -364,12 +349,7 @@ export class VoiceEngine {
         previous.audioEnd,
       );
     }
-
-    if (!followsWindow || this.playbackOrigin !== previous.start) {
-      this.playbackOffset = this.playbackPosition - (followsWindow ? previous.start : 0);
-    }
-    this.playbackOrigin = followsWindow ? window.start : 0;
-    this.loopWindow = window;
+    this.playbackPosition += window.start - previous.start;
   }
 
   // Mono sources feed every output channel.
@@ -527,7 +507,7 @@ export class VoiceEngine {
     return Math.min(Math.exp(this.glidedLoopLogLength), this.loopQuantizePeriods.at(-1));
   }
 
-  // Move the source window gradually; the pitch-loop offset stays relative to it.
+  // Move the source window gradually; the playhead carry follows it.
   #glideLoopPosition(targetStart, params, length) {
     const requestedSpan = params.loopEndSamples - params.loopStartSamples;
     const previous = this.previousRequestedLoop;
@@ -942,7 +922,7 @@ export class VoiceEngine {
       // Set per sample, not in #calculateLoopWindow: direction follows a-rate points
       // even when a time window's bounds resolve once per block. Turns wait for an edge.
       loopWindow.direction = loopStart > loopEnd ? -1 : 1;
-      this.#useLoopWindow(loopWindow, approachDirection);
+      this.#carryPlayhead(loopWindow, approachDirection);
 
       this.smoothedPanDrift +=
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
@@ -1057,21 +1037,14 @@ export class VoiceEngine {
       this.loopCrossfade.advance(Math.abs(playbackStep));
 
       // Remember the rendered position, before a fractional step can overshoot
-      // the edge. Window adoption must retain that overshoot on the next sample.
+      // the edge. The next sample must carry that overshoot with a moving loop.
       this.previousPlaybackPosition = this.playbackPosition;
-      if (timestretchActive) {
-        this.playbackPosition = this.timestretch.advance(
-          true,
-          this.playbackPosition,
-          playbackStep,
-          timestretchJumpTarget,
-        );
-      } else {
-        // Step the offset directly so it stays exact relative to the window;
-        // an inactive stretcher never jumps, so this matches advance(false, ...).
-        this.playbackOffset += playbackStep;
-        this.timestretch.reset(this.playbackPosition);
-      }
+      this.playbackPosition = this.timestretch.advance(
+        timestretchActive,
+        this.playbackPosition,
+        playbackStep,
+        timestretchJumpTarget,
+      );
     }
 
     // Effective range at the last audible sample, still throttled per voice.
