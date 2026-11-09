@@ -149,8 +149,12 @@ export class SamplePlayer {
           this.#polyphony,
           this.#voiceSignalChain,
         );
-        // Processors persist the periods across sample loads, so defaults are set once here.
-        this.setLoopPitchQuantization();
+        // Processors persist the periods across sample loads, so they are sent once here.
+        // Keeps any periods configured before init.
+        const periods = this.#loopPitchPeriods;
+        this.#voicePool.applyToAllVoices((voice) => {
+          voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
+        });
 
         // Connect audio chain
         this.#connectAudioChain();
