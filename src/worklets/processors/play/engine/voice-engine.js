@@ -71,7 +71,7 @@ function hasSameValues(fields, other) {
   return true;
 }
 
-function isBeforeLoop(position, approachDirection, loopWindow) {
+function isApproachingLoopWindow(position, approachDirection, loopWindow) {
   return approachDirection > 0 ? position < loopWindow.start : position >= loopWindow.end;
 }
 
@@ -953,8 +953,12 @@ export class VoiceEngine {
       const approachingLoop =
         this.loopEnabled &&
         !this.loopTurned &&
-        (isBeforeLoop(this.playbackPosition, approachDirection, loopWindow) ||
-          isBeforeLoop(this.timestretch.timelinePosition, approachDirection, loopWindow));
+        (isApproachingLoopWindow(this.playbackPosition, approachDirection, loopWindow) ||
+          isApproachingLoopWindow(
+            this.timestretch.timelinePosition,
+            approachDirection,
+            loopWindow,
+          ));
       const inLoop = this.loopEnabled && !approachingLoop;
 
       const timestretchActive = this.timestretch.isActive(inLoop, loopWindow.isPitchLoop);
