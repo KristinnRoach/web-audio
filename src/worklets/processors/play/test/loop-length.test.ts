@@ -41,6 +41,12 @@ describe('loop length stages', () => {
     expect(keytrackLoopDuration(1, 1, 0.1)).toBe(1);
   });
 
+  it('inverts the rate under period stretch', () => {
+    expect(keytrackLoopDuration(1000, 1, 2, true)).toBe(500);
+    expect(keytrackLoopDuration(1000, 1, -0.5, true)).toBe(2000);
+    expect(keytrackLoopDuration(1000, 0.5, 2, true)).toBe(750);
+  });
+
   it('rolls audio-rate drift less often', () => {
     expect(driftRollInterval(100, 1000)).toBe(10);
     expect(driftRollInterval(2000, 1000)).toBe(1);
