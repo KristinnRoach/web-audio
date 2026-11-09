@@ -40,7 +40,8 @@ export function longestPeriodWithin(length, periods) {
   return undefined;
 }
 
-// amount = 1 keeps the loop's real-time duration across notes.
+// Scales from 1 (amount 0) to |playbackRate| (amount 1). When resampling, amount 1 keeps
+// the loop's real-time duration across notes; period stretch passes 1 / rate instead.
 export function keytrackLoopDuration(duration, amount, playbackRate) {
   const scale = 1 + amount * (Math.abs(playbackRate) - 1);
   return Math.max(1, Math.floor(duration * scale));

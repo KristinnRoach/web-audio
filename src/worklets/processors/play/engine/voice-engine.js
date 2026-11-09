@@ -102,8 +102,9 @@ export class VoiceEngine {
     this.loopWindowSlots = [new LoopWindow(), new LoopWindow()];
     // Ping-pong turns around at both loop edges and overrides loop point order.
     this.loopPingPong = false;
-    // Keytrack loop: 0 = loop length fixed in samples (loop time shortens as you play higher).
-    // 1 = loop length scales with playbackRate so real-time loop duration stays constant across notes.
+    // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
+    // play higher), 1 = real-time loop duration constant across notes. Period stretch loops on
+    // a unit-rate timeline and mirrors that: 0 = constant loop time, 1 = loop time / rate.
     // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
 
@@ -607,13 +608,15 @@ export class VoiceEngine {
     // length across the pitch cutoff.
     const isPitchLoop = baseDuration <= this.pitchPreservationThreshold;
 
-    // Keytrack loop length so amount=1 keeps its real-time duration across notes.
     const keytrackAmount = isPitchLoop ? 0 : this.keytrackLoopAmount;
     if (keytrackAmount > 0) {
-      baseDuration = keytrackLoopDuration(baseDuration, keytrackAmount, playbackRate);
-      // Deliberately unclamped: above the loop's root note the loop duration is longer than
-      // the available audio. The tail is padded with silence in render() so the
-      // real-time duration stays constant instead of collapsing to the buffer end.
+      // Period stretch loops on a unit-rate timeline, so invert the rate to mirror resampling.
+      const isStretched = this.timestretch.isActive(true, isPitchLoop);
+      const keytrackRate = isStretched ? 1 / playbackRate : playbackRate;
+      baseDuration = keytrackLoopDuration(baseDuration, keytrackAmount, keytrackRate);
+      // Deliberately unclamped: a keytracked loop can be longer than the available audio
+      // (above the root note when resampling, below it when stretched). The tail is padded
+      // with silence in render() instead of collapsing to the buffer end.
       calcLoopEnd = calcLoopStart + baseDuration;
     }
 
