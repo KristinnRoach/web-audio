@@ -809,18 +809,13 @@ export class SamplePlayer {
       }
     }
 
-    if (!this.#holdLocked) {
-      this.setHoldEnabled(pressed);
-    }
-
     if (!pressed) {
-      for (const [note, count] of this.#sustainedNotes) {
-        this.#followFallback(this.#voicePool.noteOff(note));
-        // One outBus release per held release: InstrumentBus counts note-ons.
-        for (let i = 0; i < count; i++) this.#outBus.noteOff(note + this.#pitchOffset);
-        this.#sendUpstreamMessage('note:off', { midiNote: note });
-      }
+      // release() mutates the queue and respects explicit hold/hold-lock.
+      const deferred = [...this.#sustainedNotes];
       this.#sustainedNotes.clear();
+      for (const [note, count] of deferred) {
+        for (let i = 0; i < count; i++) this.release(note);
+      }
     }
 
     return this;

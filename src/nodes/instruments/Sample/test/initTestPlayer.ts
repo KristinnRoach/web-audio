@@ -63,4 +63,5 @@ export async function initTestPlayer(
     poolSpy.mockRestore();
     busSpy.mockRestore();
   }
+  return pool;
 }
