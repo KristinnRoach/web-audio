@@ -27,7 +27,7 @@ describe('buffer reload settings', () => {
       isPlaying: false,
       playbackPosition: 0,
       loopCount: 0,
-      previousLoopRange: null,
+      loopWindow: null,
     });
 
     // The saved direction also applies to the newly loaded audio.

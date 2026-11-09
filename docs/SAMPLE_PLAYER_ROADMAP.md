@@ -43,7 +43,11 @@ None of these items wait for the research in step 3. The loop window is internal
 1. **Shell and engine — complete:** the processor keeps registration, messages, descriptors and `process()`; `engine/voice-engine.js` gets `sampleRate`, time and random values passed in, with no AudioWorklet globals ([#145](https://github.com/KristinnRoach/web-audio/pull/145)). It still reads the `parameters` arrays directly, since flattening them means choosing the engine boundary.
 2. **Pure stages — complete:** quantize, glide, keytrack and drift are small functions in `engine/loop-length.js` ([#146](https://github.com/KristinnRoach/web-audio/pull/146)).
 3. **Core model — complete:** read heads mix in one list, and per-block render allocations are gone ([#147](https://github.com/KristinnRoach/web-audio/pull/147)). The loop type is decided once, before keytrack, snap and drift ([#149](https://github.com/KristinnRoach/web-audio/pull/149)). The loop window moved to item 4, where it would actually remove branching.
-4. **Loop window, and the playhead as an offset from its start (oscillator regime):** try this here. Window moves would no longer need the carry logic, and morphing needs a shared phase anyway. Drop it if it doesn't simplify things.
+4. **Loop window — complete:** resolved windows use `start`, `length` and requested `direction`, with the end derived from start + length. The oscillator playhead stores a source-sample offset from the window start; moving the origin replaces adding a move delta to the playhead. The existing resolution stages and pitch/time classification order stay in the voice engine.
+   - Trim fitting preserves pitch-loop length when it fits; otherwise the existing quantized-period and minimum-range rules apply.
+   - Resizing preserves the sample offset, not normalized phase; existing wrap/turn rules handle overshoot. Approach, disabled loops and time loops use absolute source positions. Entering a pitch window preserves the offset within the preceding window only if the last rendered position was inside it.
+   - Requested direction follows the points, but travel direction changes at an edge. Outgoing fades retain their original source position, direction, trim limit and tail state; overlapping moves and turns keep the existing nested fades and cap. Trim-forced moves use the same short fade.
+   - No morphing or new fade policy here. Revisit #151 in step 6A after the parameter contract in step 5.
 
 ### 5. Param contract
 
@@ -81,7 +85,7 @@ src/worklets/
     sample-player-paramdescriptors.ts
     engine/                       # no AudioWorklet globals
       voice-engine.js             # orchestration
-      loop-window.js              # requested points -> window + regime
+      loop-window.js              # resolved start, length, direction and regime
       loop-length.js              # quantize, glide, keytrack, drift
       loop-edges.js               # existing
       loop-crossfade.js           # existing

@@ -96,9 +96,9 @@ describe('a-rate loop points and duration glide', () => {
       moving.process([], [[new Float32Array(1)]], movingParams);
       const actualStart = (
         moving.engine as typeof moving.engine & {
-          previousLoopRange: { loopStartSamples: number };
+          loopWindow: { start: number };
         }
-      ).previousLoopRange.loopStartSamples;
+      ).loopWindow.start;
       expect(moving.engine.playbackPosition - actualStart).toBeCloseTo(
         fixed.engine.playbackPosition,
         5,
@@ -163,7 +163,7 @@ describe('a-rate loop points and duration glide', () => {
       processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
       processor.process([], [[new Float32Array(37)]], makeParameters({ loopEnd: 0.0075 }));
       const state = processor.engine as typeof processor.engine & {
-        previousLoopRange: { loopDurationSamples: number };
+        loopWindow: { length: number };
       };
       const expected =
         lengthGlideSeconds === 0
@@ -173,10 +173,7 @@ describe('a-rate loop points and duration glide', () => {
                 (Math.log(0.002) - Math.log(0.008)) *
                   Math.exp(-37 / TEST_SAMPLE_RATE / lengthGlideSeconds),
             );
-      expect(state.previousLoopRange.loopDurationSamples / TEST_SAMPLE_RATE).toBeCloseTo(
-        expected,
-        10,
-      );
+      expect(state.loopWindow.length / TEST_SAMPLE_RATE).toBeCloseTo(expected, 10);
     },
   );
 
@@ -193,17 +190,14 @@ describe('a-rate loop points and duration glide', () => {
     } as MessageEvent);
     processor.process([], [[new Float32Array(19)]], target);
     const state = processor.engine as typeof processor.engine & {
-      previousLoopRange: { loopDurationSamples: number };
+      loopWindow: { length: number };
     };
     const expected = Math.exp(
       Math.log(0.008) +
         (Math.log(0.002) - Math.log(0.008)) *
           Math.exp(-37 / TEST_SAMPLE_RATE / 0.01 - 19 / TEST_SAMPLE_RATE / 0.02),
     );
-    expect(state.previousLoopRange.loopDurationSamples / TEST_SAMPLE_RATE).toBeCloseTo(
-      expected,
-      10,
-    );
+    expect(state.loopWindow.length / TEST_SAMPLE_RATE).toBeCloseTo(expected, 10);
   });
 
   it('contains every modulated range inside trim without rounding fractional lengths', async () => {
@@ -220,15 +214,15 @@ describe('a-rate loop points and duration glide', () => {
     processor.process([], [[new Float32Array(128)]], params);
     const range = (
       processor.engine as typeof processor.engine & {
-        previousLoopRange: {
-          loopStartSamples: number;
-          loopEndSamples: number;
-          loopDurationSamples: number;
+        loopWindow: {
+          start: number;
+          end: number;
+          length: number;
         };
       }
-    ).previousLoopRange;
-    expect(range.loopStartSamples).toBeGreaterThanOrEqual(Math.floor(0.001 * TEST_SAMPLE_RATE));
-    expect(range.loopEndSamples).toBeLessThanOrEqual(Math.floor(0.01 * TEST_SAMPLE_RATE));
-    expect(range.loopDurationSamples).toBeCloseTo(100.5, 7);
+    ).loopWindow;
+    expect(range.start).toBeGreaterThanOrEqual(Math.floor(0.001 * TEST_SAMPLE_RATE));
+    expect(range.end).toBeLessThanOrEqual(Math.floor(0.01 * TEST_SAMPLE_RATE));
+    expect(range.length).toBeCloseTo(100.5, 7);
   });
 });
