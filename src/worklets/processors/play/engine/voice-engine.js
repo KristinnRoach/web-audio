@@ -94,7 +94,6 @@ export class VoiceEngine {
     this.reversePlayback = false;
     this.panDriftEnabled = true;
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
-    this.smoothedPanDrift = 0;
 
     this.reportPlaybackPosition = false;
     this.enableLoopCrossfade = true; // Crossfade between loop points
@@ -190,15 +189,7 @@ export class VoiceEngine {
   start(triggerId, timestamp) {
     this.isPlaying = true;
     this.triggerId = triggerId;
-    this.loopCount = 0;
-    this.pendingLoopCycleTime = null;
-    this.loopDriftRolled = false; // roll fresh drift for this note
-    this.smoothedPanDrift = 0;
-    this.driftUpdateCounter = 0; // and don't let the short-loop cadence skip it
-    this.loopTurned = false;
-    this.#resetLoopGlides(); // new notes start on the target range
-    this.loopWindow = null;
-    this.loopCrossfade.reset();
+    this.#resetNoteLoop();
     this.postedRanges = {}; // each note posts its first resolved range
 
     // Set from the trim range on the first audible block
@@ -239,28 +230,28 @@ export class VoiceEngine {
     this.triggerId = 0;
 
     this.previousApproachDirection = null;
-    // True while cycling a loop against the approach direction (backward loops,
-    // or the return half of a ping-pong). Direction = approach, negated when turned.
-    this.loopTurned = false;
     this.playbackPosition = 0;
     this.previousPlaybackPosition = 0;
     this.needsStartPosition = false;
+    this.#resetNoteLoop();
+    this.timestretch.reset();
+  }
 
+  // Loop state each note starts from.
+  #resetNoteLoop() {
+    // True while cycling a loop against the approach direction (backward loops,
+    // or the return half of a ping-pong). Direction = approach, negated when turned.
+    this.loopTurned = false;
     this.loopCount = 0;
     this.pendingLoopCycleTime = null;
     this.loopWindow = null;
-
     this.loopCrossfade.reset();
-    this.#resetLoopGlides();
+    this.#resetLoopGlides(); // new notes start on the target range
 
-    this.driftUpdateCounter = 0;
+    this.loopDriftRolled = false; // roll fresh drift for this note
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
     this.smoothedPanDrift = 0;
-
-    this.loopDriftRolled = false;
-
-    this.timestretch.reset();
   }
 
   #resetLoopGlides() {
@@ -574,6 +565,8 @@ export class VoiceEngine {
         targetLoopLength;
     }
     const glidedLoopLength = this.#glideLoopLength(targetLoopLength);
+    // Decided on the requested length. A longer loop clipped short by trim is fitted as a
+    // time loop here, then typed as a pitch loop by its resolved length below.
     if (glidedLoopLength >= 1 && glidedLoopLength <= this.pitchPreservationThreshold) {
       // Preserve the length when it fits; otherwise fill trim without changing the target.
       const fittedLength = Math.min(glidedLoopLength, playbackRange.durationSamples);
@@ -603,9 +596,8 @@ export class VoiceEngine {
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
-    // Loop type is decided once, from the quantized length fitted to trim. Later stages
-    // (keytrack, snap, drift) read it and never change it, even when they move the
-    // length across the pitch cutoff.
+    // Loop type, from the resolved length. Later stages (keytrack, snap, drift) read it
+    // and never change it, even when they move the length across the pitch cutoff.
     const isPitchLoop = baseDuration <= this.pitchPreservationThreshold;
 
     const keytrackAmount = isPitchLoop ? 0 : this.keytrackLoopAmount;
@@ -662,7 +654,6 @@ export class VoiceEngine {
         : this.loopWindowSlots[0];
     window.start = calcLoopStart;
     window.length = calcLoopEnd - calcLoopStart;
-    window.keytrackAmount = keytrackAmount;
     window.isPitchLoop = isPitchLoop;
     window.audioEnd = rangeEnd;
     return window;
@@ -706,7 +697,7 @@ export class VoiceEngine {
   #rollLoopDrift(driftAmount, baseDuration, isPitchLoop) {
     const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
 
-    if (this.driftUpdateCounter % updateInterval === 0) {
+    if (this.loopCount % updateInterval === 0) {
       this.currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
       // Pitch loop drift is scaled down and rounded to whole samples, often to nothing,
       // so pan rolls its own value there.
@@ -716,7 +707,6 @@ export class VoiceEngine {
       this.currentPanDrift = this.panDriftEnabled && this.loopCount > 0 ? panDrift : 0;
     }
 
-    this.driftUpdateCounter++;
     this.loopDriftRolled = true;
   }
 
@@ -782,7 +772,7 @@ export class VoiceEngine {
       loopStart: loopWindow.start / this.sampleRate,
       loopEnd: loopWindow.end / this.sampleRate,
       // Resolved at rate 1: the voice rescales the length by the note's rate.
-      keytrackAmount: loopWindow.keytrackAmount,
+      keytrackAmount: loopWindow.isPitchLoop ? 0 : this.keytrackLoopAmount,
       idle: true,
       triggerId: this.triggerId,
     });
