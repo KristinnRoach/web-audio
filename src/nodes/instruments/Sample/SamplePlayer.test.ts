@@ -520,6 +520,44 @@ describe('SamplePlayer envelope config', () => {
 });
 
 describe('SamplePlayer context watch', () => {
+  it('distinguishes disposal from initialization and ignores late note calls', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('AudioContext', class {});
+    vi.stubGlobal('AudioWorkletNode', class {});
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        connect() {}
+        disconnect() {}
+      },
+    );
+    const { SamplePlayer } = await import('./SamplePlayer');
+    const { getNodeById } = await import('../../node-store');
+    const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
+    expect(player.initialized).toBe(false);
+    expect(player.disposed).toBe(false);
+    const dispose = vi.fn();
+    const releaseAll = vi.fn();
+    await initTestPlayer(player, { dispose }, { releaseAll });
+    expect(player.initialized).toBe(true);
+    expect(player.disposed).toBe(false);
+
+    player.dispose();
+    player.dispose();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(getNodeById(player.nodeId)).toBeNull();
+    expect(player.initialized).toBe(false);
+    expect(player.disposed).toBe(true);
+    expect(player.play(60)).toBeNull();
+    expect(player.release(60)).toBe(player);
+    expect(player.releaseAll()).toBe(player);
+    expect(releaseAll).toHaveBeenCalledOnce();
+    await expect(player.init()).rejects.toThrow('SamplePlayer is disposed');
+    await expect(player.cropSample()).rejects.toThrow('SamplePlayer is disposed');
+    await expect(player.commitPitch()).rejects.toThrow('SamplePlayer is disposed');
+    vi.unstubAllGlobals();
+  });
+
   it('warns and emits context:closed when its context closes, until disposed', async () => {
     vi.resetModules();
     vi.stubGlobal('window', {});

@@ -22,6 +22,72 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it.each(['resampling', 'preprocessing', 'processor acknowledgement'])(
+  'rejects a load disposed during %s without restoring the sample',
+  async (stage) => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('AudioContext', class {});
+    vi.stubGlobal('AudioWorkletNode', class {});
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        connect() {}
+        disconnect() {}
+      },
+    );
+    const { SamplePlayer } = await import('./SamplePlayer');
+    const { resampleAudioBuffer } =
+      await import('../../../utils/audiodata/convert/resampleAudioBuffer');
+    const { preProcessAudioBuffer } = await import('../../preprocessor/Preprocessor');
+    let markEntered!: () => void;
+    let resume!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const paused = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const pause = async () => {
+      markEntered();
+      await paused;
+    };
+    vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => {
+      if (stage === 'resampling') await pause();
+      return buffer;
+    });
+    vi.mocked(preProcessAudioBuffer).mockImplementation(async (_context, buffer) => {
+      if (stage === 'preprocessing') await pause();
+      return { audiobuffer: buffer };
+    });
+    const context = Object.assign(new EventTarget(), { sampleRate: 48000, currentTime: 0 });
+    const player = new SamplePlayer({ context: context as unknown as AudioContext });
+    const setBuffer = vi.fn((): SampleVoicePool => {
+      markEntered();
+      return pool;
+    });
+    const unsubscribe = vi.fn();
+    const pool = await initTestPlayer(player, { setBuffer, onMessage: () => unsubscribe });
+    const buffer = {
+      duration: 1,
+      numberOfChannels: 1,
+      sampleRate: 48000,
+      getChannelData: () => new Float32Array([0.5]),
+    } as unknown as AudioBuffer;
+
+    const loading = player.loadAudio(buffer);
+    const rejected = expect(loading).rejects.toThrow('SamplePlayer is disposed');
+    await entered;
+    player.dispose();
+    resume();
+    await rejected;
+    expect(player.audiobuffer).toBeNull();
+    expect(player.isLoaded).toBe(false);
+    if (stage === 'processor acknowledgement') expect(unsubscribe).toHaveBeenCalled();
+    else expect(setBuffer).not.toHaveBeenCalled();
+    await expect(player.loadAudio(buffer)).rejects.toThrow('SamplePlayer is disposed');
+  },
+);
+
 it('loads one buffer, preserves it on failure, and permits retry', async () => {
   vi.stubGlobal('window', {});
   vi.stubGlobal('AudioContext', class {});
