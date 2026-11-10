@@ -159,8 +159,10 @@ export class LFO {
     const { divisor = 1, glideTime = 0, timestamp = this.now } = options;
     // Ceiling only, no MIN_HZ floor: sub-20 Hz is the normal LFO range.
     const ceiling = maxSafeHz(this.#context.sampleRate);
-    const hz = 440 * Math.pow(2, (midiNote - 69) / 12);
-    const scaledHz = Math.min(hz / divisor, ceiling);
+    // Noise only (#rateDivisor is 1 for other waveforms): undo the noise slowdown so the
+    // noise pattern repeats at the note rate, which is what makes it sound pitched.
+    const toRate = (h: number) => Math.min(h / divisor, ceiling) * this.#rateDivisor;
+    const scaledHz = toRate(440 * Math.pow(2, (midiNote - 69) / 12));
 
     if (glideTime <= 0.001) {
       this.setFrequency(scaledHz, timestamp);
@@ -168,8 +170,7 @@ export class LFO {
     }
 
     if (options.glideFromMidiNote) {
-      const fromHz = 440 * Math.pow(2, (options.glideFromMidiNote - 69) / 12);
-      const fromScaledHz = Math.min(fromHz / divisor, ceiling);
+      const fromScaledHz = toRate(440 * Math.pow(2, (options.glideFromMidiNote - 69) / 12));
       this.setFrequency(fromScaledHz, timestamp);
     }
     // todo: test diff ramp methods
