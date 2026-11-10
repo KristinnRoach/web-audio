@@ -148,14 +148,20 @@ export class SamplePlayer {
       try {
         // Initialize child components first
         this.#outBus = await createInstrumentBus(this.context); // WIP
-        if (this.#disposed) this.#outBus.dispose();
+        if (this.#disposed) {
+          this.#outBus.dispose();
+          this.#outBus = null as unknown as InstrumentBus;
+        }
         this.#assertNotDisposed();
         this.#voicePool = await createSampleVoicePool(
           this.context,
           this.#polyphony,
           this.#voiceSignalChain,
         );
-        if (this.#disposed) this.#voicePool.dispose();
+        if (this.#disposed) {
+          this.#voicePool.dispose();
+          this.#voicePool = null as unknown as SampleVoicePool;
+        }
         this.#assertNotDisposed();
         // Processors persist the periods across sample loads, so they are sent once here.
         // Keeps any periods configured before init.
