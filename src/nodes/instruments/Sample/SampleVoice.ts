@@ -369,7 +369,7 @@ export class SampleVoice {
     // Todo: On initial trigger, if loop does not start at right away, we should defer scaling envelopes to the loop until entering the loop range, or until the processor reports the first wrap or turn
     // Same keytrack scale as the processor's loop range.
     const loopSeconds =
-      this.#processedLoopSeconds * (1 + this.#idleLoopKeytrack * (Math.abs(playbackRate) - 1));
+      this.#processedLoopSeconds * Math.abs(playbackRate) ** this.#idleLoopKeytrack;
     this.#lastTrigger = { playbackRate, loopSeconds };
     this.triggerEnvelopes(timestamp, playbackRate);
 

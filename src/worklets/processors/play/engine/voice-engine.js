@@ -7,6 +7,7 @@ import { PeriodLockStretcher } from './period-lock-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import { LoopWindow } from './loop-window.js';
+import { keyOctaves } from './keytrack.js';
 import {
   driftLoopEnd,
   driftRollInterval,
@@ -539,11 +540,11 @@ export class VoiceEngine {
    * @param {Object} params - Position parameters from #extractPositionParams
    * @param {Object} playbackRange - Range from #calculatePlaybackRange
    * @param {number} driftAmount - Loop duration drift amount (0-1)
-   * @param {number} playbackRate - Current playback rate
+   * @param {number} noteRate - Playback rate of the played note, before pitch modulation
    * @returns {LoopWindow} - Resolved source window with drift applied.
    *   A reused object, valid until the call after next; copy it to keep it longer.
    */
-  #calculateLoopWindow(params, playbackRange, driftAmount = 0, playbackRate = 1) {
+  #calculateLoopWindow(params, playbackRange, driftAmount = 0, noteRate = 1) {
     const { startSamples: rangeStart, endSamples: rangeEnd } = playbackRange;
     let lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
     let lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
@@ -604,7 +605,12 @@ export class VoiceEngine {
     if (keytrackAmount > 0) {
       // Only time loops get here, so stretch applies whenever it is on.
       const isStretched = this.timestretch.isActive(true, false);
-      baseDuration = keytrackLoopDuration(baseDuration, keytrackAmount, playbackRate, isStretched);
+      baseDuration = keytrackLoopDuration(
+        baseDuration,
+        keytrackAmount,
+        keyOctaves(noteRate),
+        isStretched,
+      );
       // Deliberately unclamped: a keytracked loop can be longer than the available audio
       // (above the root note when resampling, below it when stretched). The tail is padded
       // with silence in render() instead of collapsing to the buffer end.
@@ -815,7 +821,7 @@ export class VoiceEngine {
     const approachDirection = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
     const driftAmount = parameters.loopDurationDriftAmount[0];
     let loopWindow;
-    let previousRate;
+    let previousNoteRate;
 
     const velocityGain = this.#midiVelocityToGain(parameters.velocity[0]);
 
@@ -886,7 +892,7 @@ export class VoiceEngine {
       const rangeInputsChanged =
         positionParams.loopStartSamples !== this.previousRequestedLoop.start ||
         positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
-        rate !== previousRate;
+        baseRate !== previousNoteRate;
       const followsPointsPerSample = loopWindow?.length < 2 * this.pitchPreservationThreshold;
       const driftPending = driftAmount > 0 && this.loopEnabled && !this.loopDriftRolled;
       if (
@@ -896,8 +902,13 @@ export class VoiceEngine {
         this.isLoopPositionGliding ||
         driftPending
       ) {
-        loopWindow = this.#calculateLoopWindow(positionParams, playbackRange, driftAmount, rate);
-        previousRate = rate;
+        loopWindow = this.#calculateLoopWindow(
+          positionParams,
+          playbackRange,
+          driftAmount,
+          baseRate,
+        );
+        previousNoteRate = baseRate;
       }
 
       // Report the incoming range after its drift is resolved, keeping the wrap time.
