@@ -169,22 +169,6 @@ export const samplerParams = defineSamplerParams({
     format: positionPercent('distortion'),
     apply: (p, v) => p.setDistortionMacro(v),
   },
-  drive: {
-    label: 'Drive',
-    min: 0,
-    max: 1,
-    defaultValue: 0,
-    format: positionPercent('drive'),
-    apply: (p, v) => p.setDrive(v),
-  },
-  clipping: {
-    label: 'Clipping',
-    min: 0,
-    max: 1,
-    defaultValue: 0,
-    format: positionPercent('clipping'),
-    apply: (p, v) => p.setClippingMacro(v),
-  },
   amMod: {
     label: 'AM',
     min: 0,
