@@ -1,6 +1,5 @@
 // Pure loop length stages: quantize, glide, keytrack and drift. No state and no
 // allocation; these run per sample. Lengths are in source samples.
-import { trackOctaves } from './keytrack.js';
 
 // One-pole coefficient per sample; 1 = stepped.
 export function glideCoefficient(seconds, sampleRate) {
@@ -39,13 +38,6 @@ export function longestPeriodWithin(length, periods) {
     if (periods[i] <= length) return periods[i];
   }
   return undefined;
-}
-
-// Tracks the source's octaves. When resampling, amount 1 keeps the loop's real-time duration
-// across notes. Period stretch loops on a unit-rate timeline, so it tracks inverted to
-// mirror that: amount 0 keeps it instead.
-export function keytrackLoopDuration(duration, amount, octaves, isStretched = false) {
-  return Math.max(1, Math.floor(trackOctaves(duration, isStretched ? -amount : amount, octaves)));
 }
 
 // Loop iterations between drift rolls. Audio-rate loops re-roll less often.

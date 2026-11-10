@@ -74,7 +74,7 @@ export class SampleVoice {
    * Reported while idle for the next note; 0 until the processor reports it.
    */
   #processedLoopSeconds = 0;
-  /** Loop keytrack in effect for the idle length, which is resolved at rate 1. */
+  /** Loop keytrack in effect for the idle length, which is resolved at playback rate 1. */
   #idleLoopKeytrack = 0;
 
   /** Semitones added to the played note for everything that tracks pitch. */
@@ -750,8 +750,11 @@ export class SampleVoice {
   enablePitch = () => {
     this.#pitchDisabled = false;
     if (this.#midiNote !== null) {
-      const rate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
-      this.getParam('playbackRate')?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
+      const playbackRate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
+      this.getParam('playbackRate')?.linearRampToValueAtTime(
+        playbackRate,
+        this.context.currentTime + 0.01,
+      );
     }
   };
 

@@ -7,14 +7,13 @@ import { PeriodLockStretcher } from './period-lock-stretch.js';
 import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import { LoopWindow } from './loop-window.js';
-import { rateOctaves } from './keytrack.js';
+import { getKeytrackedValue } from './keytrack.js';
 import {
   driftLoopEnd,
   driftRollInterval,
   glideCoefficient,
   glideToward,
   isInQuantizationRange,
-  keytrackLoopDuration,
   loopDriftSamples,
   longestPeriodWithin,
   quantizeLoopLength,
@@ -104,9 +103,11 @@ export class VoiceEngine {
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
     // play higher), 1 = real-time loop duration constant across notes. Period stretch loops on
-    // a unit-rate timeline and mirrors that: 0 = constant loop time, 1 = loop time / rate.
+    // a unit-rate timeline and mirrors that: 0 = constant loop time, 1 = loop time / playbackRate.
     // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
+    // Reused during rendering to avoid allocating options per sample.
+    this.loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
 
     this.timestretch = new PeriodLockStretcher(sampleRate);
 
@@ -540,11 +541,11 @@ export class VoiceEngine {
    * @param {Object} params - Position parameters from #extractPositionParams
    * @param {Object} playbackRange - Range from #calculatePlaybackRange
    * @param {number} driftAmount - Loop duration drift amount (0-1)
-   * @param {number} pitchRate - Sounding playback rate, pitch modulation included
+   * @param {number} playbackRate - Sounding playback rate, pitch modulation included
    * @returns {LoopWindow} - Resolved source window with drift applied.
    *   A reused object, valid until the call after next; copy it to keep it longer.
    */
-  #calculateLoopWindow(params, playbackRange, driftAmount = 0, pitchRate = 1) {
+  #calculateLoopWindow(params, playbackRange, driftAmount = 0, playbackRate = 1) {
     const { startSamples: rangeStart, endSamples: rangeEnd } = playbackRange;
     let lpStart = Math.min(params.loopStartSamples, params.loopEndSamples);
     let lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
@@ -605,11 +606,14 @@ export class VoiceEngine {
     if (keytrackAmount > 0) {
       // Only time loops get here, so stretch applies whenever it is on.
       const isStretched = this.timestretch.isActive(true, false);
-      baseDuration = keytrackLoopDuration(
-        baseDuration,
-        keytrackAmount,
-        rateOctaves(pitchRate),
-        isStretched,
+      const keytrackOptions = this.loopKeytrackOptions;
+      keytrackOptions.depth = isStretched ? -keytrackAmount : keytrackAmount;
+      // The worklet receives playback rate rather than MIDI notes. Reconstruct the
+      // pitch relative to our reference root, including detune and ignoring direction.
+      const midiNote = keytrackOptions.rootNote + 12 * Math.log2(Math.abs(playbackRate));
+      baseDuration = Math.max(
+        1,
+        Math.floor(getKeytrackedValue(baseDuration, midiNote, keytrackOptions)),
       );
       // Deliberately unclamped: a keytracked loop can be longer than the available audio
       // (above the root note when resampling, below it when stretched). The tail is padded
@@ -777,7 +781,7 @@ export class VoiceEngine {
       type: 'loop:range',
       loopStart: loopWindow.start / this.sampleRate,
       loopEnd: loopWindow.end / this.sampleRate,
-      // Resolved at rate 1: the voice rescales the length by the note's rate.
+      // Resolved at playback rate 1: the voice rescales the length by the note's playback rate.
       keytrackAmount: loopWindow.isPitchLoop ? 0 : this.keytrackLoopAmount,
       idle: true,
       triggerId: this.triggerId,
@@ -821,7 +825,7 @@ export class VoiceEngine {
     const approachDirection = this.reversePlayback !== playbackRange.inverted ? -1 : 1;
     const driftAmount = parameters.loopDurationDriftAmount[0];
     let loopWindow;
-    let previousRate;
+    let previousPlaybackRate;
 
     const velocityGain = this.#midiVelocityToGain(parameters.velocity[0]);
 
@@ -867,9 +871,14 @@ export class VoiceEngine {
     for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
       // Use getSafeParam for a-rate params
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
-      const baseRate = this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
+      const basePlaybackRate = this.#getSafeParam(
+        parameters.playbackRate,
+        sample,
+        isConstant.playbackRate,
+      );
       const detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
-      const rate = detune === 0 ? baseRate : baseRate * 2 ** (detune / 1200);
+      const playbackRate =
+        detune === 0 ? basePlaybackRate : basePlaybackRate * 2 ** (detune / 1200);
 
       const loopStart = this.#getSafeParam(
         parameters.loopStart,
@@ -892,7 +901,7 @@ export class VoiceEngine {
       const rangeInputsChanged =
         positionParams.loopStartSamples !== this.previousRequestedLoop.start ||
         positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
-        rate !== previousRate;
+        playbackRate !== previousPlaybackRate;
       const followsPointsPerSample = loopWindow?.length < 2 * this.pitchPreservationThreshold;
       const driftPending = driftAmount > 0 && this.loopEnabled && !this.loopDriftRolled;
       if (
@@ -902,8 +911,13 @@ export class VoiceEngine {
         this.isLoopPositionGliding ||
         driftPending
       ) {
-        loopWindow = this.#calculateLoopWindow(positionParams, playbackRange, driftAmount, rate);
-        previousRate = rate;
+        loopWindow = this.#calculateLoopWindow(
+          positionParams,
+          playbackRange,
+          driftAmount,
+          playbackRate,
+        );
+        previousPlaybackRate = playbackRate;
       }
 
       // Report the incoming range after its drift is resolved, keeping the wrap time.
@@ -958,7 +972,7 @@ export class VoiceEngine {
       // loop off: play out in the approach direction
       if (!this.loopEnabled || this.loopCount >= maxLoopCount) this.loopTurned = false;
       const direction = this.loopTurned ? -approachDirection : approachDirection;
-      const playbackStep = direction * Math.abs(rate);
+      const playbackStep = direction * Math.abs(playbackRate);
 
       const timestretchJumpTarget = this.timestretch.prepareJump(
         timestretchActive,

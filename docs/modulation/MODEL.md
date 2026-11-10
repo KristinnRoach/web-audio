@@ -1,54 +1,84 @@
 # Modulation model
 
-One rule for every user-facing parameter that can move while a note plays: keytracking, velocity, envelopes, LFOs and randomness all work the same way.
+The planned model uses one routing system for keytracking, velocity, envelopes, LFOs and randomness. Currently implemented: the MIDI-note keytracking helper and its use for loop duration. Source signals and the route list described below are future work.
 
 ## The rule
 
 Each modulatable parameter is a **target**, resolved per voice on the audio thread:
 
 ```text
-value = fromDomain(base + Σ amount · source)
+result = fromDomain(toDomain(value) + Σ depth · sourceOffset)
 ```
 
-Clamping happens once, at the end.
+Each route converts its source into an offset appropriate for the target mapping. Clamping happens once, at the end.
 
 ## Domains
 
-A target's domain decides what an amount means, so the same amount means the same thing on every target in that domain.
+A target's mapping defines how modulation depth changes its value.
 
-- **Log:** pitch, frequency, time, rate, length. Base and amounts are in octaves.
-- **Linear:** gain, pan, mix, position. Amounts are a fraction of the target's range.
+- **Exponential:** frequency, duration, playback speed, length. Values are scaled multiplicatively; the formula uses base-2 logarithms internally. A change of 1 in this domain doubles a value. For musical pitch, that is one octave.
+- **Linear:** MIDI pitch, gain, pan, mix, position. Values receive an additive offset; depth uses the target's units.
 
 ## Sources
 
-Per-voice signals with a fixed range:
+Per-voice source signals (before route conversion):
 
-| Source     | Range                      | Notes                                                                |
-| ---------- | -------------------------- | -------------------------------------------------------------------- |
-| `key`      | octaves from the root note | The played note, including glide. Pitch modulation does not move it. |
-| `pitch`    | octaves from the root note | The sounding pitch: `key` plus all pitch modulation.                 |
-| `velocity` | 0..1                       |                                                                      |
-| `env`      | 0..1 or -1..1              | Several per voice                                                    |
-| `lfo`      | -1..1                      | Per voice, or shared by the player                                   |
-| `random`   | -1..1                      | Rolled once per note                                                 |
-| `cycle`    | -1..1                      | Rolled on each loop cycle                                            |
+| Source             | Range                  | Notes                                                                |
+| ------------------ | ---------------------- | -------------------------------------------------------------------- |
+| `midiNote`         | MIDI note (fractional) | The played note, including glide. Pitch modulation does not move it. |
+| `soundingMidiNote` | MIDI note (fractional) | The sounding pitch: `midiNote` plus all pitch modulation.            |
+| `velocity`         | 0..1                   |                                                                      |
+| `env`              | 0..1 or -1..1          | Several per voice                                                    |
+| `lfo`              | -1..1                  | Per voice, or shared by the player                                   |
+| `random`           | -1..1                  | Rolled once per note                                                 |
+| `cycle`            | -1..1                  | Rolled on each loop cycle                                            |
 
 ## Routes
 
-A route is `{ source, target, amount }`. A voice holds a fixed, preallocated list of them. The main thread sends base values and amounts; a note-on sends the note and velocity.
+A target owns its value, mapping, limits and rounding. A route owns its source, target and depth. Routes from `midiNote` or `soundingMidiNote` also specify `rootNote`.
 
-`pitch` is the resolved pitch target, so targets that read it resolve after pitch, and nothing that reads `pitch` routes back into pitch.
+```js
+const targets = {
+  cutoff: { value: 1000, mapping: 'exponential' },
+  pan: { value: 0, mapping: 'linear' },
+};
+
+const routes = [
+  { source: 'midiNote', target: 'cutoff', rootNote: 60, depth: 1 },
+  { source: 'midiNote', target: 'pan', rootNote: 60, depth: 0.025 },
+  { source: 'velocity', target: 'cutoff', depth: 2 },
+];
+```
+
+Normalized sources such as velocity and envelopes contribute `sourceValue * depth` in the target's domain. MIDI-note sources first subtract the route's root note and, for exponential targets, divide by 12. Contributions are summed in that domain before converting back and clamping.
+
+A voice holds a fixed, preallocated list of routes. The main thread sends target values and route settings; a note-on sends the note and velocity.
+
+`soundingMidiNote` is the resolved pitch target in MIDI-note units. It starts from `midiNote` and adds pitch modulation. Targets that read it resolve afterwards, and nothing that reads `soundingMidiNote` routes back into it.
 
 ## Keytracking
 
-Keytracking is the `key` or `pitch` source routed to a log-domain target; each target picks one. An amount of 1 makes the target follow the note fully, 0 leaves it fixed, and a negative amount inverts it. For example, cutoff with amount 1 moves an octave per octave played.
+Keytracking routes the played note (`midiNote`) or sounding pitch (`soundingMidiNote`) to a target. Both use MIDI notes, including fractional notes for glide and pitch modulation. The route supplies root note and depth; the target supplies mapping. For exponential keytracking, the route offset is `(midiNote - rootNote) / 12`; for linear keytracking it is `midiNote - rootNote`. Raw MIDI-note numbers are never added directly as modulation offsets.
 
-Glide smooths `key` itself, so every keytracked target glides together.
+The engine exports only `getKeytrackedValue(value, midiNote, { rootNote, depth, mapping })` from `keytrack.js`. Pure math helpers remain private. Defaults are root note 60, depth 1 and exponential mapping.
+
+- **Exponential:** `value * 2 ** ((midiNote - rootNote) / 12 * depth)`. Depth 1 doubles the value per 12 semitones, 0 leaves it fixed, and -1 inverts tracking.
+- **Linear:** `value + (midiNote - rootNote) * depth`. Depth is target units per semitone, with 0 leaving the value fixed.
+
+For example, a 1000 Hz cutoff with root note 60 and exponential depth 1 becomes 2000 Hz at MIDI note 72. Centered pan with the same root and linear depth 0.025 becomes 0.3 at note 72. Each target clamps and rounds its own result.
+
+The loop worklet currently receives playback rate rather than MIDI notes. It converts the magnitude to a fractional MIDI note relative to the reference root, including pitch modulation. Stretch reverses depth; rounding and the one-sample minimum stay in the loop calculation. Options are reused to avoid per-sample allocation.
+
+The name `depth` is shared with envelopes, but it is not a universal unit: envelope depth currently scales a normalized envelope in target units, while keytracking depth uses the mapping-specific units above. Envelope interpolation curves describe movement over time; keytracking mappings describe how a note changes a value.
+
+Existing public loop controls still use `amount` in their names for compatibility; the new keytracking API uses `depth`.
+
+Glide smooths `midiNote` itself, so every keytracked target glides together.
 
 ## Update rate
 
-Each target declares its update rate. Targets that shape the waveform, such as pitch, amplitude modulation and audio-rate loop length, update every sample. The rest update every few dozen samples. `key`, `velocity` and `random` are constant for a note apart from glide, so routing them costs little.
+Each target declares its update rate. Targets that shape the waveform, such as pitch, amplitude modulation and audio-rate loop length, update every sample. The rest update every few dozen samples. `midiNote`, `velocity` and `random` are constant for a note apart from glide, so routing them costs little.
 
 ## Scope
 
-Rules that belong to a target stay with that target. One example: a loop whose length sets the pitch ignores keytrack on its length. Another: loop length keytracks `pitch`. Effects on the mixed output use player-level sources only.
+Rules that belong to a target stay with that target. One example: a loop whose length sets the pitch ignores keytrack on its length. Another: loop length keytracks `soundingMidiNote`. Effects on the mixed output use player-level sources only.
