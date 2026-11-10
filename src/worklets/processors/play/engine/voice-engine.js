@@ -608,8 +608,7 @@ export class VoiceEngine {
       const isStretched = this.timestretch.isActive(true, false);
       const keytrackOptions = this.loopKeytrackOptions;
       keytrackOptions.depth = isStretched ? -keytrackAmount : keytrackAmount;
-      // The worklet receives playback rate rather than MIDI notes. Reconstruct the
-      // pitch relative to our reference root, including detune and ignoring direction.
+      // Sounding note from the rate, detune included; temporary, see docs/modulation/MIGRATION.md.
       const midiNote = keytrackOptions.rootNote + 12 * Math.log2(Math.abs(playbackRate));
       baseDuration = Math.max(
         1,
