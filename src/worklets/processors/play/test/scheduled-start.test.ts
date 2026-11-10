@@ -18,7 +18,6 @@ class MockAudioWorkletProcessor {
 
 type TestProcessor = {
   engine: {
-    driftUpdateCounter: number;
     isPlaying: boolean;
     loopDriftRolled: boolean;
     pendingStartFrame: number;
@@ -109,7 +108,6 @@ describe('scheduled sample start', () => {
 
     expect(output.every((sample) => sample === 0)).toBe(true);
     expect(processor.engine.playbackPosition).toBe(0);
-    expect(processor.engine.driftUpdateCounter).toBe(0);
     expect(processor.engine.loopDriftRolled).toBe(false);
     expect(random).not.toHaveBeenCalled();
     expect(processor.engine.pendingStartFrame).toBe(BLOCK_SIZE * 2);

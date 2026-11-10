@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { SAMPLE_PLAYER_WORKLET_AUDIOPARAMS } from '../sample-player-paramdescriptors';
 import {
   makeParameters,
@@ -131,11 +131,11 @@ describe('a-rate loop points and duration glide', () => {
     const params = makeParameters({ loopDurationDriftAmount: 0.01 });
     params.loopStart = Float32Array.from({ length: 32 }, (_, i) => i / 1e7);
     params.loopEnd = Float32Array.from(params.loopStart, (start) => start + 0.004);
+    const engine = processor.engine as typeof processor.engine & { random: () => number };
+    const random = vi.spyOn(engine, 'random');
     processor.process([], [[new Float32Array(32)]], params);
-    expect(
-      (processor.engine as typeof processor.engine & { driftUpdateCounter: number })
-        .driftUpdateCounter,
-    ).toBe(1);
+    // One pitch-loop roll draws twice: loop drift, then its own pan drift.
+    expect(random).toHaveBeenCalledTimes(2);
   });
 
   it('rolls fresh drift on the first pass of every note', async () => {
@@ -145,11 +145,11 @@ describe('a-rate loop points and duration glide', () => {
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
     const state = processor.engine as typeof processor.engine & {
       currentLoopDrift: number;
-      driftUpdateCounter: number;
+      loopDriftRolled: boolean;
     };
     state.currentLoopDrift = 12345; // stale drift from the previous note
     processor.process([], [[new Float32Array(1)]], params);
-    expect(state.driftUpdateCounter).toBe(1);
+    expect(state.loopDriftRolled).toBe(true);
     expect(state.currentLoopDrift).not.toBe(12345);
   });
 
