@@ -62,6 +62,7 @@ export class SamplePlayer {
   #messages: MessageBus<Message>;
 
   #initialized = false;
+  #disposed = false;
   #initPromise: Promise<void> | null = null;
   #isLoaded = false;
   private readonly envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
@@ -139,6 +140,7 @@ export class SamplePlayer {
   }
 
   async init(): Promise<void> {
+    this.#assertNotDisposed();
     if (this.#initialized) return; // todo: remove #initialized flag if redundant (since now using initPromise)
     if (this.#initPromise) return this.#initPromise;
 
@@ -146,11 +148,21 @@ export class SamplePlayer {
       try {
         // Initialize child components first
         this.#outBus = await createInstrumentBus(this.context); // WIP
+        if (this.#disposed) {
+          this.#outBus.dispose();
+          this.#outBus = null as unknown as InstrumentBus;
+        }
+        this.#assertNotDisposed();
         this.#voicePool = await createSampleVoicePool(
           this.context,
           this.#polyphony,
           this.#voiceSignalChain,
         );
+        if (this.#disposed) {
+          this.#voicePool.dispose();
+          this.#voicePool = null as unknown as SampleVoicePool;
+        }
+        this.#assertNotDisposed();
         // Processors persist the periods across sample loads, so they are sent once here.
         // Keeps any periods configured before init.
         const periods = this.#loopPitchPeriods;
@@ -171,6 +183,7 @@ export class SamplePlayer {
           if (!loaded) throw new Error('No usable initial audio');
         }
 
+        this.#assertNotDisposed();
         this.#resetLoopPoints();
 
         this.#initialized = true;
@@ -263,6 +276,15 @@ export class SamplePlayer {
 
   get initialized() {
     return this.#initialized;
+  }
+
+  /** True once teardown starts; distinct from a player that has not initialized yet. */
+  get disposed(): boolean {
+    return this.#disposed;
+  }
+
+  #assertNotDisposed(): void {
+    if (this.#disposed) throw new Error('SamplePlayer is disposed');
   }
 
   /* === MESSAGES === */
@@ -389,6 +411,7 @@ export class SamplePlayer {
   /* === LOAD / RESET === */
 
   #isLoading = false;
+  #cancelPendingLoad: ((error: Error) => void) | null = null;
 
   /** Replace the sample, converting it to the context's sample rate before preprocessing. */
   async loadAudio(
@@ -403,6 +426,7 @@ export class SamplePlayer {
     preprocessOptions?: Partial<PreProcessOptions>,
     validatedCrop = false,
   ): Promise<AudioBuffer | null> {
+    this.#assertNotDisposed();
     if (this.#isLoading) {
       throw new Error('A sample load is already in progress');
     }
@@ -413,12 +437,14 @@ export class SamplePlayer {
       if (buffer instanceof ArrayBuffer) {
         // decodeAudioData detaches its input; keep callers' encoded data reusable.
         buffer = await this.context.decodeAudioData(buffer.slice(0));
+        this.#assertNotDisposed();
       }
       if (!validatedCrop && !isValidAudioBuffer(buffer)) {
         console.error('Invalid AudioBuffer provided');
         return null;
       }
       buffer = await resampleAudioBuffer(buffer, this.context.sampleRate);
+      this.#assertNotDisposed();
       let newZeroCrossings: number[] = [];
       if (this.#preprocessAudio) {
         const processed: PreProcessResults = await preProcessAudioBuffer(
@@ -431,6 +457,7 @@ export class SamplePlayer {
           newZeroCrossings = processed.zeroCrossings;
         }
       }
+      this.#assertNotDisposed();
 
       // Clear and release only if all preprocessing succeeds.
       this.releaseAll();
@@ -438,7 +465,8 @@ export class SamplePlayer {
       this.#buffer = buffer;
       this.#bufferDuration = buffer.duration;
 
-      const loadedPromise = new Promise<void>((resolve) => {
+      const loadedPromise = new Promise<void>((resolve, reject) => {
+        this.#cancelPendingLoad = reject;
         unsubscribe = this.#voicePool.onMessage('sample:loaded', () => {
           resolve();
         });
@@ -456,9 +484,11 @@ export class SamplePlayer {
       this.setSampleEndPoint(this.#bufferDuration);
 
       await loadedPromise;
+      this.#assertNotDisposed();
       return buffer;
     } finally {
       unsubscribe?.();
+      this.#cancelPendingLoad = null;
       this.#isLoading = false;
     }
   }
@@ -475,6 +505,7 @@ export class SamplePlayer {
     endSeconds = this.getEndPoint(),
     fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
+    this.#assertNotDisposed();
     const buffer = this.audiobuffer;
     if (!buffer) return null;
     if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) {
@@ -506,6 +537,7 @@ export class SamplePlayer {
     glideTime = this.getGlideTime(),
     secondsFromNow = 0,
   ): MidiValue | null {
+    if (this.#disposed) return null;
     const safeVelocity = isMidiValue(velocity) ? velocity : 100;
     if (!isMidiValue(midiNote)) {
       console.warn(`Invalid midiNote: ${midiNote}`);
@@ -537,6 +569,7 @@ export class SamplePlayer {
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
   release(midiNote: MidiValue, secondsFromNow = 0): this {
+    if (this.#disposed) return this;
     if (this.holdEnabled || this.#holdLocked) return this;
 
     if (this.#sustainPedalPressed) {
@@ -623,12 +656,14 @@ export class SamplePlayer {
    * Returns null if there is no sample or no offset to commit.
    */
   async commitPitch(): Promise<AudioBuffer | null> {
+    this.#assertNotDisposed();
     const transpose = this.#transposeSemitones;
     const fineTune = this.#fineTuneCents;
     const semitones = this.#pitchOffset;
     if (!this.#buffer || semitones === 0) return null;
     const pitched = resampleForPitch(this.context, this.#buffer, semitones);
     const loaded = await this.#loadAudio(pitched, { skipPreProcessing: true }, true);
+    this.#assertNotDisposed();
     if (!loaded) return null;
     // Subtract what was baked rather than zeroing, so a transpose() or
     // fineTune() made during the reload is kept.
@@ -1334,6 +1369,9 @@ export class SamplePlayer {
   /* === CLEANUP === */
 
   dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#cancelPendingLoad?.(new Error('SamplePlayer is disposed'));
     try {
       this.context.removeEventListener('statechange', this.#onContextStateChange);
       this.releaseAll();
