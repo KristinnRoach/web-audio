@@ -6,7 +6,7 @@ Main-thread modulation, such as envelopes, LFOs and Web Audio filters, moves onl
 
 ## Steps
 
-1. **`key` source and octave tracking.** Add a `key` source and one log-domain tracking helper to the engine, then move loop keytrack onto them. This changes the sound in two ways: amounts between 0 and 1 now track exponentially, and pitch modulation no longer changes the loop length.
+1. **`key` source and octave tracking.** Add a `key` source and one log-domain tracking helper to the engine, then move loop keytrack onto them. Loop length tracks the `pitch` source (the note plus pitch modulation), so its endpoints sound as before. Amounts between 0 and 1 now track exponentially.
 2. **Engine-side randomness as sources.** Loop drift becomes the `cycle` source, routed to loop length and pan.
 3. **Routes on the audio thread.** Add the route list when envelopes and LFOs move to the audio thread ([roadmap 6D](../SAMPLE_PLAYER_ROADMAP.md)). Move each main-thread modulator onto routes as it arrives. That covers envelopes, LFOs and their note sync, envelope rate sync, filter keytrack, AM rate and feedback pitch.
 4. **Remove main-thread copies.** Delete main-thread copies of engine formulas once the engine owns their consumers.

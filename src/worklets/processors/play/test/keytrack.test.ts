@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { keyOctaves, trackOctaves } from '../engine/keytrack.js';
+import { rateOctaves, trackOctaves } from '../engine/keytrack.js';
 import {
   makeParameters,
   render,
@@ -11,14 +11,14 @@ describe('keytrack', () => {
   setupProcessorGlobals();
 
   it('tracks exponentially in octaves of the note', () => {
-    expect(keyOctaves(2)).toBe(1);
-    expect(keyOctaves(-0.5)).toBe(-1);
+    expect(rateOctaves(2)).toBe(1);
+    expect(rateOctaves(-0.5)).toBe(-1);
     expect(trackOctaves(500, 1, 1)).toBe(1000);
     expect(trackOctaves(500, 0.5, 1)).toBeCloseTo(500 * Math.SQRT2);
     expect(trackOctaves(500, -1, 1)).toBe(250);
   });
 
-  it('follows the note, not pitch modulation', async () => {
+  it('follows pitch modulation', async () => {
     const loopLength = async (detune: number) => {
       const processor = await startProcessor();
       processor.port.onmessage?.({
@@ -37,6 +37,6 @@ describe('keytrack', () => {
     };
 
     expect(await loopLength(0)).toBeCloseTo(0.5, 6);
-    expect(await loopLength(-1200)).toBeCloseTo(0.5, 6);
+    expect(await loopLength(-1200)).toBeCloseTo(0.25, 6);
   });
 });
