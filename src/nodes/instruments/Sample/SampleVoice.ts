@@ -74,7 +74,7 @@ export class SampleVoice {
    * Reported while idle for the next note; 0 until the processor reports it.
    */
   #processedLoopSeconds = 0;
-  /** Loop keytrack in effect for the idle length, which is resolved at rate 1. */
+  /** Loop keytrack in effect for the idle length, which is resolved at playback rate 1. */
   #idleLoopKeytrack = 0;
 
   /** Semitones added to the played note for everything that tracks pitch. */
@@ -367,9 +367,11 @@ export class SampleVoice {
     // Trigger amp, filter and pitch envelopes if enabled
 
     // Todo: On initial trigger, if loop does not start at right away, we should defer scaling envelopes to the loop until entering the loop range, or until the processor reports the first wrap or turn
-    // Same keytrack scale as the processor's loop range.
+    // TODO: This initial estimate omits period-stretch inversion, so loop-synced
+    // envelopes can start at the wrong speed until the first loop-cycle report.
+    // Moving envelopes to the audio thread will remove the need for this estimate.
     const loopSeconds =
-      this.#processedLoopSeconds * (1 + this.#idleLoopKeytrack * (Math.abs(playbackRate) - 1));
+      this.#processedLoopSeconds * Math.abs(playbackRate) ** this.#idleLoopKeytrack;
     this.#lastTrigger = { playbackRate, loopSeconds };
     this.triggerEnvelopes(timestamp, playbackRate);
 
@@ -750,8 +752,11 @@ export class SampleVoice {
   enablePitch = () => {
     this.#pitchDisabled = false;
     if (this.#midiNote !== null) {
-      const rate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
-      this.getParam('playbackRate')?.linearRampToValueAtTime(rate, this.context.currentTime + 0.01);
+      const playbackRate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
+      this.getParam('playbackRate')?.linearRampToValueAtTime(
+        playbackRate,
+        this.context.currentTime + 0.01,
+      );
     }
   };
 

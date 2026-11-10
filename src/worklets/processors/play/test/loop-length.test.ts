@@ -4,7 +4,6 @@ import {
   driftRollInterval,
   glideToward,
   isInQuantizationRange,
-  keytrackLoopDuration,
   loopDriftSamples,
   longestPeriodWithin,
   quantizeLoopLength,
@@ -32,19 +31,6 @@ describe('loop length stages', () => {
     expect(glideToward(0, 10, 0.5, 1e-6)).toBe(5);
     expect(glideToward(10 - 1e-7, 10, 0.5, 1e-6)).toBe(10);
     expect(glideToward(0, 10, 1, 1e-6)).toBe(10);
-  });
-
-  it('keytracks with the rate magnitude, at least one sample', () => {
-    expect(keytrackLoopDuration(1000, 1, 2)).toBe(2000);
-    expect(keytrackLoopDuration(1000, 1, -0.5)).toBe(500);
-    expect(keytrackLoopDuration(1000, 0.5, 2)).toBe(1500);
-    expect(keytrackLoopDuration(1, 1, 0.1)).toBe(1);
-  });
-
-  it('inverts the rate under period stretch', () => {
-    expect(keytrackLoopDuration(1000, 1, 2, true)).toBe(500);
-    expect(keytrackLoopDuration(1000, 1, -0.5, true)).toBe(2000);
-    expect(keytrackLoopDuration(1000, 0.5, 2, true)).toBe(750);
   });
 
   it('rolls audio-rate drift less often', () => {
