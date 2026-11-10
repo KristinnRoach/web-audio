@@ -6,7 +6,7 @@ export function rateOctaves(rate) {
   return Math.log2(Math.abs(rate));
 }
 
-// `amount` is target octaves per key octave: 0 = fixed, 1 = follows the note, negative inverts.
-export function trackOctaves(value, amount, key) {
-  return value * 2 ** (amount * key);
+// `amount` is target octaves per source octave: 0 = fixed, 1 = follows the source, negative inverts.
+export function trackOctaves(value, amount, octaves) {
+  return value * 2 ** (amount * octaves);
 }

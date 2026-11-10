@@ -37,6 +37,8 @@ Per-voice signals with a fixed range:
 
 A route is `{ source, target, amount }`. A voice holds a fixed, preallocated list of them. The main thread sends base values and amounts; a note-on sends the note and velocity.
 
+`pitch` is the resolved pitch target, so targets that read it resolve after pitch, and nothing that reads `pitch` routes back into pitch.
+
 ## Keytracking
 
 Keytracking is the `key` or `pitch` source routed to a log-domain target; each target picks one. An amount of 1 makes the target follow the note fully, 0 leaves it fixed, and a negative amount inverts it. For example, cutoff with amount 1 moves an octave per octave played.
@@ -49,4 +51,4 @@ Each target declares its update rate. Targets that shape the waveform, such as p
 
 ## Scope
 
-Rules that belong to a target stay with that target. One example: a loop whose length sets the pitch ignores keytrack on its length. Another: loop length keytracks `pitch`, and amount 1 inverts the loop's natural rhythm behaviour. A resampled loop naturally follows pitch, so it keeps its rhythm; a period-stretched loop naturally keeps its rhythm, so it follows pitch. Effects on the mixed output use player-level sources only.
+Rules that belong to a target stay with that target. One example: a loop whose length sets the pitch ignores keytrack on its length. Another: loop length keytracks `pitch`. Effects on the mixed output use player-level sources only.

@@ -41,11 +41,11 @@ export function longestPeriodWithin(length, periods) {
   return undefined;
 }
 
-// Tracks `key` octaves. When resampling, amount 1 keeps the loop's real-time duration
+// Tracks the source's octaves. When resampling, amount 1 keeps the loop's real-time duration
 // across notes. Period stretch loops on a unit-rate timeline, so it tracks inverted to
 // mirror that: amount 0 keeps it instead.
-export function keytrackLoopDuration(duration, amount, key, isStretched = false) {
-  return Math.max(1, Math.floor(trackOctaves(duration, isStretched ? -amount : amount, key)));
+export function keytrackLoopDuration(duration, amount, octaves, isStretched = false) {
+  return Math.max(1, Math.floor(trackOctaves(duration, isStretched ? -amount : amount, octaves)));
 }
 
 // Loop iterations between drift rolls. Audio-rate loops re-roll less often.
