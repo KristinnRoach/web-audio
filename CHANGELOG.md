@@ -1,5 +1,44 @@
 # @kidlib/web-audio
 
+## 0.9.0
+
+### Minor Changes
+
+- 7e122de: Remove `drive` and `clipping` from `samplerParams` to avoid overriding the distortion macro in parameter snapshots; `SamplePlayer.setDrive()` and `setClippingMacro()` remain available.
+- 7e122de: Add `SamplePlayer.setLegato()` and exported `LegatoSettings` to retune held voices without retriggering, with optional interval limits, pitch-loop-only mode, and legato-only glide.
+- 438bd1a: Split the loop glide into separate length and position controls.
+
+  - `setLoopLengthGlide()` and `samplerParams.loopLengthGlide` replace `setLoopRampDuration()` and `samplerParams.loopRampDuration`.
+  - `setLoopPositionGlide()` and `samplerParams.loopPositionGlide` add a glide for moving a quantized audio-rate loop through the sample without changing its length (`0` = instant, the default).
+  - Fix a click when the trim end moves onto or behind a playing short loop.
+
+- 55828f0: Add `SamplePlayer.getLoopPitchPeriods()` to read configured pitch-loop targets in seconds, shortest first, before playback-rate transposition. Pass a returned period to `setLoopDuration()` to select a pitch loop. The returned array is a copy and reflects `setLoopPitchQuantization()` settings, including those set before `init()`.
+- 6c51ab0: Narrow the SamplePlayer public API while preserving sampler descriptor behavior.
+
+  - Remove the legacy `setParam()`, `getParameterValue()`, and null-only `getAudioParam()` methods. Use `applyParams()`, `samplerParams`, or dedicated controls instead.
+  - Replace mutable `gainLFO` and `pitchLFO` access with `setGainLFOFrequency()`, `setGainLFODepth()`, `setPitchLFOFrequency()`, and `setPitchLFODepth()`. Frequencies are in Hz; pitch depth is in cents.
+  - Keep draft graph bookkeeping (`addIncoming`, `removeIncoming`, `connections`) private.
+  - Remove the `audioNode` alias in favor of `output`, and the deprecated `setModulationAmount` alias in favor of `setModulationDepth`.
+  - Audio routing accepts native nodes and wrappers exposing `input: AudioNode`, including `SamplePlayer`, without requiring legacy parameter APIs.
+
+- 9672ba5: Add `setTimestretchMode('period')`: a timestretch that jumps whole pitch periods, for cleaner high notes on pitched samples. It also stretches inside backward and ping-pong loops. Audio without a clear pitch falls back to short splices. Selecting it runs pitch tracking on the main thread, about 0.05 s per second of audio, so it suits short samples; long recordings will stall the UI. `'off'` is unchanged.
+
+  Breaking: remove `setTimestretchMode('splice')`. Use `'period'`.
+
+- 7b4bc02: Remove unfinished multiple-source playback and unused sampler tempo sync.
+
+  - `audio` and `loadAudio()` accept one input; `loadAudio()` returns `AudioBuffer | null`. Use `audiobuffer` instead of the removed `samples` getter. `MAX_SAMPLES` is removed.
+  - Use `SampleVoice.loadBuffer()` in place of `SampleVoice.loadAudioData()`; layer independent voices for multiple sources.
+  - Remove `setTempo()`, `syncLoopToTempo()`, the `tempo` getter/parameter and associated messages.
+
+- 601184b: Add `SamplePlayer.disposed`; repeated disposal and late note calls are harmless, and loading or initializing after teardown rejects with `SamplePlayer is disposed`.
+
+### Patch Changes
+
+- 22a6a43: Loop keytrack now scales loop duration exponentially with playback rate. Amounts 0 and 1 sound the same as before; amounts in between change.
+- 9918fee: Keep still-held keys sounding when the sustain pedal is lifted, preserve legato fallback, and keep pedal sustain independent of explicit hold.
+- eaaa294: `SamplePlayer.transpose()` and `fineTune()` now retune feedback on held notes, on both the voices and the bus. Previously feedback stayed at the old pitch until the next note-on.
+
 ## 0.8.0
 
 ### Minor Changes
