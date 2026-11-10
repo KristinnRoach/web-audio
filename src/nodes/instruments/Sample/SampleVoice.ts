@@ -367,7 +367,9 @@ export class SampleVoice {
     // Trigger amp, filter and pitch envelopes if enabled
 
     // Todo: On initial trigger, if loop does not start at right away, we should defer scaling envelopes to the loop until entering the loop range, or until the processor reports the first wrap or turn
-    // Same keytrack scale as the processor's loop range.
+    // TODO: This initial estimate omits period-stretch inversion, so loop-synced
+    // envelopes can start at the wrong speed until the first loop-cycle report.
+    // Moving envelopes to the audio thread will remove the need for this estimate.
     const loopSeconds =
       this.#processedLoopSeconds * Math.abs(playbackRate) ** this.#idleLoopKeytrack;
     this.#lastTrigger = { playbackRate, loopSeconds };
