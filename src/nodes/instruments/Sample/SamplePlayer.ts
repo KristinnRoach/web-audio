@@ -38,7 +38,7 @@ import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { createSampleVoicePool } from './createSampleVoicePool';
-import type { SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
+import type { InterpolationMode, SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
 import { detectPitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   SAMPLE_ENVELOPE_IDS,
@@ -902,6 +902,12 @@ export class SamplePlayer {
     this.#timestretchMode = mode;
     this.#sendPitchPeriods();
     this.#voicePool.applyToAllVoices((voice) => voice.setTimestretchMode(mode));
+    return this;
+  };
+
+  /** Experimental: for comparing source interpolation by ear, may be removed. */
+  setInterpolation = (mode: InterpolationMode) => {
+    this.#voicePool.applyToAllVoices((voice) => voice.setInterpolation(mode));
     return this;
   };
 

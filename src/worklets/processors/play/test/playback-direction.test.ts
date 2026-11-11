@@ -25,6 +25,8 @@ async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPon
   });
   send({ type: 'setLoopEnabled', value: loop });
   send({ type: 'setLoopPingPong', value: pingPong });
+  // The ramp reads back the playhead position only through linear interpolation.
+  send({ type: 'setInterpolation', value: 'linear' });
   send({ type: 'voice:setPlaybackDirection', playbackDirection: direction });
   send({ type: 'voice:start' });
   return { processor, send };

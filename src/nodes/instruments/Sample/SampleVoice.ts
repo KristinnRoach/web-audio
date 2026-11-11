@@ -30,6 +30,8 @@ import {
 
 export type SampleVoiceChainNode = 'feedback' | 'am' | 'hpf' | 'lpf';
 export type TimestretchMode = 'off' | 'period';
+/** Experimental: for comparing source interpolation by ear, may be removed. */
+export type InterpolationMode = 'linear' | 'hermite' | 'sinc';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 
@@ -1035,6 +1037,9 @@ export class SampleVoice {
 
   setTimestretchMode = (mode: TimestretchMode) =>
     this.sendToProcessor({ type: 'setTimestretchMode', value: mode });
+
+  setInterpolation = (mode: InterpolationMode) =>
+    this.sendToProcessor({ type: 'setInterpolation', value: mode });
 
   setPitchPeriods = ({ periods, hopSamples }: PitchPeriods) =>
     this.sendToProcessor({ type: 'voice:setPitchPeriods', periods, hopSamples });
