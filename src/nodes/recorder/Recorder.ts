@@ -1,4 +1,4 @@
-import { LibNode, SampleLoader } from '@/nodes/LibNode';
+import { LibNode } from '@/nodes/LibNode';
 import { NodeID, registerNode, unregisterNode } from '@/nodes/node-store';
 import { tryCatch, assert } from '@/utils';
 
@@ -67,7 +67,6 @@ export class Recorder implements LibNode {
   #stream: MediaStream | null = null;
   #recorder: MediaRecorder | null = null;
   #messages: MessageBus<Message>;
-  #destination: (LibNode & SampleLoader) | null = null;
   #state: AudioRecorderState = AudioRecorderState.IDLE;
   #disposed = false;
 
@@ -205,10 +204,7 @@ export class Recorder implements LibNode {
     this.#state = AudioRecorderState.ARMED;
     console.info('Recorder state: ARMED');
 
-    this.sendMessage('record:armed', {
-      threshold: this.#config!.startThreshold,
-      destination: this.#destination,
-    });
+    this.sendMessage('record:armed', { threshold: this.#config!.startThreshold });
 
     void this.#setupAudioMonitoring();
   }
@@ -218,7 +214,7 @@ export class Recorder implements LibNode {
     this.#state = AudioRecorderState.RECORDING;
     console.info(`Recorder state: ${this.#state}`);
 
-    this.sendMessage('record:start', { destination: this.#destination });
+    this.sendMessage('record:start', {});
 
     if (this.#config?.autoStop) {
       void this.#setupAudioMonitoring();
@@ -355,15 +351,10 @@ export class Recorder implements LibNode {
     const blob = await this.#stopRecording();
     const buffer = await this.#blobToAudioBuffer(blob);
 
-    if (this.#destination) {
-      // Auto load sample. The destination owns preprocessing.
-      await this.#destination.loadAudio(buffer);
-    }
-
     this.#state = AudioRecorderState.STOPPED;
     console.info(`Recorder state: ${this.#state}`);
 
-    this.sendMessage('record:stop', { duration: buffer.duration });
+    this.sendMessage('record:stop', { duration: buffer.duration, buffer });
 
     // Clean up - a new stream and recorder is created for each recording
     this.#releaseStream();
@@ -406,21 +397,12 @@ export class Recorder implements LibNode {
     }
   }
 
-  connect(destination: LibNode & SampleLoader): this {
-    this.#destination = destination;
-    return this;
-  }
-
   #cleanupAudioNodeConnection(): void {
     if (this.#audioDestination && this.#connectedInputNode) {
       this.#connectedInputNode.disconnect(this.#audioDestination);
       this.#audioDestination = null;
       this.#connectedInputNode = null;
     }
-  }
-
-  disconnect(): void {
-    this.#destination = null;
   }
 
   dispose(): void {
@@ -454,9 +436,5 @@ export class Recorder implements LibNode {
 
   get now(): number {
     return this.#context.currentTime;
-  }
-
-  get destination() {
-    return this.#destination;
   }
 }

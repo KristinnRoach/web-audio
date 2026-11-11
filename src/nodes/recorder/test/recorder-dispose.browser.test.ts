@@ -23,6 +23,22 @@ describe('Recorder', () => {
     await ctx.close();
   });
 
+  it('delivers the recorded buffer on record:stop', async () => {
+    const ctx = new AudioContext();
+    const source = new ConstantSourceNode(ctx);
+    source.start();
+    const recorder = new Recorder(ctx);
+    let delivered: AudioBuffer | undefined;
+    recorder.onMessage('record:stop', (msg) => (delivered = msg.buffer));
+
+    await recorder.start({ input: { type: 'audio-node', node: source }, useThreshold: false });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const buffer = await recorder.stop();
+
+    expect(delivered).toBe(buffer);
+    await ctx.close();
+  });
+
   it('does not request the microphone when disposed while resuming', async () => {
     const getUserMedia = vi.spyOn(navigator.mediaDevices, 'getUserMedia');
     const ctx = new AudioContext();
