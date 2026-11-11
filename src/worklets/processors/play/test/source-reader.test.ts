@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { ClampedSourceReader, type SourceReader } from '../engine/source-reader.js';
-import { readHermite, readLinear, readSinc } from '../engine/interpolation-kernels.js';
+import { readHermite, readLinear, SincKernel } from '../engine/interpolation-kernels.js';
+
+// Reuse one kernel in the numerical tests, just as a read head does.
+const sincKernel = new SincKernel();
+function readSinc(source: SourceReader, position: number, rate: number) {
+  return sincKernel.read(source, position, rate);
+}
 
 const LENGTH = 4096;
 const sine = (cyclesPerSample: number) =>
@@ -22,6 +28,43 @@ function readRms(
 }
 
 describe('source reader', () => {
+  it('preserves pre-cache sinc output across channels, positions and rates', () => {
+    const kernel = new SincKernel();
+    const left = new ClampedSourceReader(
+      Float32Array.from({ length: 257 }, (_, i) => 0.2 * Math.sin(i * 0.37)),
+    );
+    const right = new ClampedSourceReader(
+      Float32Array.from({ length: 257 }, (_, i) => 0.3 * Math.cos(i * 0.19)),
+    );
+    // Reference values from the original per-channel sinc reader. Includes both
+    // clamped edges, widening/shrinking the kernel, and the rate cap.
+    const reference = [
+      [-0.75, 0, -0.0048605870503870075, 0.30010780646552865],
+      [0, 1, 0.0019413561832728335, 0.2999935583085521],
+      [17.375, 1.7, 0.029010254709581445, -0.29614442811980946],
+      [17.375, 8, 0.024703475727598498, -0.2986987846765904],
+      [18.375, 8, 0.04880657566619562, -0.28515353405385907],
+      [18.375, 0.5, 0.0985880782900085, -0.2818215190814944],
+      [128, 8, -0.01619132534884246, 0.20626143154879611],
+      [254.75, 20, -0.06863628107320467, -0.11215161610471094],
+      [257, 0.5, 0.0925876628653531, -0.015028098554204271],
+    ];
+    for (const [position, rate, expectedLeft, expectedRight] of reference) {
+      expect(kernel.read(left, position, rate)).toBeCloseTo(expectedLeft, 14);
+      expect(kernel.read(right, position, rate)).toBeCloseTo(expectedRight, 14);
+    }
+  });
+
+  it('reuses weights without caching source content or bounds', () => {
+    const kernel = new SincKernel();
+    const source = new ClampedSourceReader(new Float32Array([0.2, 0.4, 0.6]));
+    kernel.read(source, 1.25, 2);
+    source.lastIndex = 0;
+    expect(kernel.read(source, 1.25, 2)).toBeCloseTo(0.2, 7);
+    source.samples = new Float32Array([0.75]);
+    expect(kernel.read(source, 1.25, 2)).toBeCloseTo(0.75, 14);
+  });
+
   it('repeats the endpoints of the head’s inclusive sample range', () => {
     const source = new ClampedSourceReader(new Float32Array([2, 4, 8, 16]), 2);
     expect([-100, -1, 0, 1, 2, 3, 100].map((index) => source.readTap(index))).toEqual([

@@ -42,27 +42,59 @@ export function readHermite(source, position) {
   return ((c3 * t + c2) * t + c1) * t + x0;
 }
 
-// Band-limited read: lowers the cutoff below the output Nyquist frequency for
-// rates above 1, so pitching up drops what would fold back instead of aliasing.
-/** @param {import('./source-reader.js').SourceReader} source */
-export function readSinc(source, position, rate) {
-  const scale = Math.min(Math.max(rate, 1), SINC_MAX_RATE);
-  const cutoff = SINC_CUTOFF / scale; // kernel zero crossings per source sample
-  const halfWidth = SINC_ZERO_CROSSINGS / cutoff;
-  const first = Math.ceil(position - halfWidth);
-  const last = Math.floor(position + halfWidth);
-  let sum = 0;
-  let weightSum = 0;
-  for (let i = first; i <= last; i++) {
-    const tablePosition = Math.abs(position - i) * cutoff * SINC_TABLE_RESOLUTION;
-    const tableIndex = Math.floor(tablePosition);
-    const a = SINC_TABLE[tableIndex];
-    const weight = a + (tablePosition - tableIndex) * (SINC_TABLE[tableIndex + 1] - a);
-    sum += weight * source.readTap(i);
-    weightSum += weight;
+// Each head caches only its weights, never source samples or output. The first
+// channel computes weights while reading; later channels reuse them.
+export class SincKernel {
+  constructor() {
+    // Float64 preserves the original JS weight precision. Size for the rate cap.
+    this.weights = new Float64Array(
+      Math.floor((2 * SINC_ZERO_CROSSINGS * SINC_MAX_RATE) / SINC_CUTOFF) + 1,
+    );
+    this.position = NaN;
+    this.rate = NaN;
+    this.firstIndex = 0;
+    this.tapCount = 0;
+    this.weightSum = 0;
   }
-  // Normalizing keeps unity gain at DC wherever the kernel lands between samples.
-  return weightSum === 0 ? 0 : sum / weightSum;
+
+  /** @param {import('./source-reader.js').SourceReader} source */
+  read(source, position, rate) {
+    const weights = this.weights;
+    if (position === this.position && rate === this.rate) {
+      const { firstIndex, tapCount, weightSum } = this;
+      let sum = 0;
+      for (let tap = 0; tap < tapCount; tap++) {
+        sum += weights[tap] * source.readTap(firstIndex + tap);
+      }
+      return weightSum === 0 ? 0 : sum / weightSum;
+    }
+
+    // Lower the cutoff when pitching up. No allocation or separate weight pass.
+    const scale = Math.min(Math.max(rate, 1), SINC_MAX_RATE);
+    const cutoff = SINC_CUTOFF / scale;
+    const halfWidth = SINC_ZERO_CROSSINGS / cutoff;
+    const firstIndex = Math.ceil(position - halfWidth);
+    const tapCount = Math.floor(position + halfWidth) - firstIndex + 1;
+    let sum = 0;
+    let weightSum = 0;
+    for (let tap = 0; tap < tapCount; tap++) {
+      const index = firstIndex + tap;
+      const tablePosition = Math.abs(position - index) * cutoff * SINC_TABLE_RESOLUTION;
+      const tableIndex = Math.floor(tablePosition);
+      const a = SINC_TABLE[tableIndex];
+      const weight = a + (tablePosition - tableIndex) * (SINC_TABLE[tableIndex + 1] - a);
+      weights[tap] = weight;
+      sum += weight * source.readTap(index);
+      weightSum += weight;
+    }
+    this.position = position;
+    this.rate = rate;
+    this.firstIndex = firstIndex;
+    this.tapCount = tapCount;
+    this.weightSum = weightSum;
+    // Normalizing keeps unity gain at DC wherever the kernel lands between samples.
+    return weightSum === 0 ? 0 : sum / weightSum;
+  }
 }
 
 /** @typedef {'linear' | 'hermite' | 'sinc'} InterpolationMode */
@@ -72,9 +104,10 @@ export function readSinc(source, position, rate) {
  * @param {import('./source-reader.js').SourceReader} source
  * @param {number} position Fractional position in source samples.
  * @param {number} rate Nonnegative source samples per output sample.
+ * @param {SincKernel} sincKernel The head’s reusable weight cache.
  */
-export function readSource(mode, source, position, rate) {
-  if (mode === 'sinc') return readSinc(source, position, rate);
+export function readSource(mode, source, position, rate, sincKernel) {
+  if (mode === 'sinc') return sincKernel.read(source, position, rate);
   if (mode === 'linear') return readLinear(source, position);
   return readHermite(source, position);
 }

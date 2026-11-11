@@ -9,7 +9,7 @@ import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import { LoopWindow } from './loop-window.js';
 import { getKeytrackedValue } from './keytrack.js';
 import { ClampedSourceReader } from './source-reader.js';
-import { readSource } from './interpolation-kernels.js';
+import { readSource, SincKernel } from './interpolation-kernels.js';
 import {
   driftLoopEnd,
   driftRollInterval,
@@ -130,6 +130,7 @@ export class VoiceEngine {
       gain: 1,
       mix: 0,
       source: new ClampedSourceReader(),
+      sincKernel: new SincKernel(),
     }));
     this.readHeadCount = 0;
     this.idleLoopInputs = [];
@@ -385,7 +386,9 @@ export class VoiceEngine {
       // Mono sources feed every output channel. Each head keeps its own bounds,
       // including the saved trim end of an outgoing crossfade head.
       head.source.samples = this.buffer[Math.min(channel, this.buffer.length - 1)];
-      const value = readSource(this.interpolation, head.source, head.position, rate) * head.gain;
+      const value =
+        readSource(this.interpolation, head.source, head.position, rate, head.sincKernel) *
+        head.gain;
       mixed = value + head.mix * (mixed - value);
     }
     return mixed;
