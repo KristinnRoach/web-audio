@@ -9,7 +9,11 @@ export { SamplePlayer } from './nodes/instruments/Sample/SamplePlayer';
 export type { Recorder, RecorderInput, RecorderStartOptions } from './nodes/recorder';
 export type { SampleLoader, AudioInput, GainStages } from './nodes';
 export type { SamplePlayerOptions } from './nodes/instruments/Sample/SamplePlayer';
-export type { SampleVoiceChainNode, TimestretchMode } from './nodes/instruments/Sample/SampleVoice';
+export type {
+  InterpolationMode,
+  SampleVoiceChainNode,
+  TimestretchMode,
+} from './nodes/instruments/Sample/SampleVoice';
 export type { LegatoSettings } from './nodes/instruments/Sample/SampleVoicePool';
 export type { EnvelopeShape, EnvelopeMode, EnvelopePoint } from './nodes/modulators/envelope';
 export type { EnvelopeConfig } from './nodes/instruments/Sample/envelope-config';

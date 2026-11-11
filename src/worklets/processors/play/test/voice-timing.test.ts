@@ -7,12 +7,19 @@ import { createRenderScenario, QUANTUM, renderScenarios } from './render-scenari
 
 setupProcessorGlobals();
 
+const interpolation = process.env.SAMPLE_PLAYER_INTERPOLATION ?? 'hermite';
+
 it.skipIf(!process.env.SAMPLE_PLAYER_TIMING).each(renderScenarios)(
   'times 16 voices: %s',
   async (scenario) => {
     const voices = await Promise.all(
       Array.from({ length: 16 }, (_, i) => createRenderScenario(scenario, i)),
     );
+    for (const { processor } of voices) {
+      processor.port.onmessage?.({
+        data: { type: 'setInterpolation', value: interpolation },
+      } as MessageEvent);
+    }
     // Do not time mock call recording or retain messages from thousands of cycles.
     for (const { processor } of voices) Object.assign(processor.port, { postMessage() {} });
     const times: number[] = [];
@@ -34,6 +41,7 @@ it.skipIf(!process.env.SAMPLE_PLAYER_TIMING).each(renderScenarios)(
     console.log(
       JSON.stringify({
         scenario,
+        interpolation,
         voices: 16,
         sampleRate: TEST_SAMPLE_RATE,
         quantum: QUANTUM,

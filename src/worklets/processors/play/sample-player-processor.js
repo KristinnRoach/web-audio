@@ -125,6 +125,10 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'setTimestretchMode':
         engine.setTimestretchMode(value);
         break;
+
+      case 'setInterpolation':
+        engine.interpolation = value;
+        break;
     }
   }
 

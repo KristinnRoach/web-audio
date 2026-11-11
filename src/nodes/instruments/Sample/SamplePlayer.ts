@@ -38,7 +38,7 @@ import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { createSampleVoicePool } from './createSampleVoicePool';
-import type { SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
+import type { InterpolationMode, SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
 import { detectPitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   SAMPLE_ENVELOPE_IDS,
@@ -107,6 +107,7 @@ export class SamplePlayer {
   #lastPlayedNote: number | null = null;
 
   #useZeroCrossings = true;
+  #interpolationMode: InterpolationMode | null = null;
   #timestretchMode: TimestretchMode = 'off';
   #pitchPeriodsSent = false;
   #preprocessAudio = true;
@@ -163,6 +164,10 @@ export class SamplePlayer {
           this.#voicePool = null as unknown as SampleVoicePool;
         }
         this.#assertNotDisposed();
+        const interpolationMode = this.#interpolationMode;
+        if (interpolationMode !== null) {
+          this.#voicePool.applyToAllVoices((voice) => voice.setInterpolation(interpolationMode));
+        }
         // Processors persist the periods across sample loads, so they are sent once here.
         // Keeps any periods configured before init.
         const periods = this.#loopPitchPeriods;
@@ -902,6 +907,16 @@ export class SamplePlayer {
     this.#timestretchMode = mode;
     this.#sendPitchPeriods();
     this.#voicePool.applyToAllVoices((voice) => voice.setTimestretchMode(mode));
+    return this;
+  };
+
+  /** Experimental: for comparing source interpolation by ear, may be removed. */
+  setInterpolation = (mode: InterpolationMode) => {
+    if (mode !== 'linear' && mode !== 'hermite' && mode !== 'sinc') {
+      throw new RangeError('Interpolation mode must be linear, hermite or sinc');
+    }
+    this.#interpolationMode = mode;
+    this.#voicePool?.applyToAllVoices((voice) => voice.setInterpolation(mode));
     return this;
   };
 
