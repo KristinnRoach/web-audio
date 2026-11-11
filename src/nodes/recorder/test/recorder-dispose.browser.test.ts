@@ -39,6 +39,32 @@ describe('Recorder', () => {
     await ctx.close();
   });
 
+  it('records again after stop()', async () => {
+    const ctx = new AudioContext();
+    const source = new ConstantSourceNode(ctx);
+    source.start();
+    const recorder = new Recorder(ctx);
+    const input = { type: 'audio-node', node: source } as const;
+
+    for (let take = 0; take < 2; take++) {
+      await recorder.start({ input, useThreshold: false });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect((await recorder.stop()).duration).toBeGreaterThan(0);
+    }
+    await ctx.close();
+  });
+
+  it('rejects an out-of-range startThreshold without acquiring input', async () => {
+    const getUserMedia = vi.spyOn(navigator.mediaDevices, 'getUserMedia');
+    const ctx = new AudioContext();
+    const recorder = new Recorder(ctx);
+
+    await expect(recorder.start({ startThreshold: -80 })).rejects.toThrow(RangeError);
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(recorder.state).toBe('IDLE');
+    await ctx.close();
+  });
+
   it('does not request the microphone when disposed while resuming', async () => {
     const getUserMedia = vi.spyOn(navigator.mediaDevices, 'getUserMedia');
     const ctx = new AudioContext();

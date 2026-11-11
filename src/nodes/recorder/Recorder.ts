@@ -50,6 +50,18 @@ export type RecorderStartOptions = Partial<RecorderOptions> & {
   input?: RecorderInput;
 };
 
+type RecordEvents = {
+  'record:armed': { threshold: number };
+  'record:start': {};
+  'record:stopping': {};
+  'record:stop': { duration: number; buffer: AudioBuffer };
+  'record:cancelled': {};
+};
+
+export type RecorderEvents = RecordEvents & {
+  'state-change': { state: AudioRecorderState; event: keyof RecordEvents };
+};
+
 export const DEFAULT_RECORDER_OPTIONS: RecorderOptions = {
   mediaRecorderOptions: DEFAULT_MEDIA_REC_OPTIONS,
   useThreshold: true,
@@ -115,6 +127,10 @@ export class Recorder implements LibNode {
 
     if (input.type === 'display' && options.startThreshold === undefined) {
       config.startThreshold = -60;
+    }
+    // Validate before acquiring input so a bad threshold never prompts for a device.
+    if (config.useThreshold && !this.#isValidThreshold(config.startThreshold)) {
+      throw new RangeError(`startThreshold ${config.startThreshold}dB out of range (-60 to 0)`);
     }
     this.#config = config;
     let streamResult;
@@ -196,11 +212,6 @@ export class Recorder implements LibNode {
   }
 
   #startArmedRecording(): void {
-    if (!this.#isValidThreshold(this.#config!.startThreshold)) {
-      console.warn(`Threshold ${this.#config!.startThreshold}dB out of range (-60 to 0)`);
-      return;
-    }
-
     this.#state = AudioRecorderState.ARMED;
     console.info('Recorder state: ARMED');
 
@@ -377,24 +388,21 @@ export class Recorder implements LibNode {
   }
 
   #isValidThreshold(threshold: number): boolean {
-    return threshold > -60 && threshold < 0;
+    return threshold >= -60 && threshold <= 0;
   }
 
-  onMessage(type: string, handler: MessageHandler<Message>): () => void {
-    return this.#messages.onMessage(type, handler);
+  onMessage<K extends keyof RecorderEvents>(
+    type: K,
+    handler: MessageHandler<Message & RecorderEvents[K]>,
+  ): () => void {
+    return this.#messages.onMessage(type, handler as MessageHandler<Message>);
   }
 
-  protected sendMessage(type: string, data: any) {
+  protected sendMessage<K extends keyof RecordEvents>(type: K, data: RecordEvents[K]) {
     this.#messages.sendMessage(type, data);
 
     // Send unified state-change message for recorder events
-    if (type.startsWith('record:')) {
-      this.#messages.sendMessage('state-change', {
-        state: this.#state,
-        event: type,
-        ...data,
-      });
-    }
+    this.#messages.sendMessage('state-change', { state: this.#state, event: type, ...data });
   }
 
   #cleanupAudioNodeConnection(): void {
