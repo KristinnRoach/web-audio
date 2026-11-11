@@ -8,7 +8,8 @@ import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
 import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import { LoopWindow } from './loop-window.js';
 import { getKeytrackedValue } from './keytrack.js';
-import { readSource } from './source-reader.js';
+import { ClampedSourceReader } from './source-reader.js';
+import { readSource } from './interpolation-kernels.js';
 import {
   driftLoopEnd,
   driftRollInterval,
@@ -88,7 +89,7 @@ export class VoiceEngine {
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlaybackPosition = false;
-    /** @type {import('./source-reader.js').InterpolationMode} */
+    /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
     this.enableLoopCrossfade = true; // Crossfade between loop points
     this.loopCrossfade = new LoopCrossfade();
@@ -128,7 +129,7 @@ export class VoiceEngine {
       position: 0,
       gain: 1,
       mix: 0,
-      lastIndex: 0,
+      source: new ClampedSourceReader(),
     }));
     this.readHeadCount = 0;
     this.idleLoopInputs = [];
@@ -340,23 +341,12 @@ export class VoiceEngine {
     this.playbackPosition += window.start - previous.start;
   }
 
-  // Mono sources feed every output channel.
-  #readSample(position, channel, lastAudioIndex, rate) {
-    return readSource(
-      this.interpolation,
-      this.buffer[Math.min(channel, this.buffer.length - 1)],
-      position,
-      lastAudioIndex,
-      rate,
-    );
-  }
-
   #addReadHead(position, gain, mix, lastIndex) {
     const head = this.readHeads[this.readHeadCount++];
     head.position = position;
     head.gain = gain;
     head.mix = mix;
-    head.lastIndex = lastIndex;
+    head.source.lastIndex = lastIndex;
   }
 
   // Innermost first. The stretcher's head stays inside the crossfade heads even when
@@ -392,7 +382,10 @@ export class VoiceEngine {
     let mixed = 0;
     for (let i = 0; i < this.readHeadCount; i++) {
       const head = this.readHeads[i];
-      const value = this.#readSample(head.position, channel, head.lastIndex, rate) * head.gain;
+      // Mono sources feed every output channel. Each head keeps its own bounds,
+      // including the saved trim end of an outgoing crossfade head.
+      head.source.samples = this.buffer[Math.min(channel, this.buffer.length - 1)];
+      const value = readSource(this.interpolation, head.source, head.position, rate) * head.gain;
       mixed = value + head.mix * (mixed - value);
     }
     return mixed;
