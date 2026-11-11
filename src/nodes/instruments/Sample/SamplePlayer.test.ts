@@ -633,3 +633,50 @@ describe('SamplePlayer context watch', () => {
     vi.unstubAllGlobals();
   });
 });
+
+it.each([null, 'linear', 'sinc'] as const)(
+  'preserves interpolation selected before initialization: %s',
+  async (mode) => {
+    vi.resetModules();
+    vi.doUnmock('@/nodes/params');
+    vi.doUnmock('@/nodes/master/createInstrumentBus');
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('AudioContext', class {});
+    vi.stubGlobal('AudioWorkletNode', class {});
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        connect() {}
+        disconnect() {}
+      },
+    );
+    const { SamplePlayer } = await import('./SamplePlayer');
+    const context = Object.assign(new EventTarget(), { currentTime: 0 });
+    const player = new SamplePlayer({ context: context as unknown as AudioContext });
+    const setInterpolation = vi.fn();
+    try {
+      expect(() => player.setInterpolation('sync' as never)).toThrow(RangeError);
+      if (mode !== null) {
+        player.setInterpolation('hermite');
+        expect(player.setInterpolation(mode)).toBe(player);
+      }
+      await initTestPlayer(player, {
+        applyToAllVoices: (apply) =>
+          apply({
+            sendToProcessor() {},
+            getParam: () => null,
+            setParam() {},
+            setLoopPoints() {},
+            setInterpolation,
+          } as never),
+      });
+      if (mode === null) expect(setInterpolation).not.toHaveBeenCalled();
+      else expect(setInterpolation).toHaveBeenCalledExactlyOnceWith(mode);
+      player.setInterpolation('linear');
+      expect(setInterpolation).toHaveBeenLastCalledWith('linear');
+    } finally {
+      player.dispose();
+      vi.unstubAllGlobals();
+    }
+  },
+);

@@ -66,7 +66,7 @@ describe('source reader', () => {
   });
 
   it('repeats the endpoints of the head’s inclusive sample range', () => {
-    const source = new ClampedSourceReader(new Float32Array([2, 4, 8, 16]), 2);
+    const source = new ClampedSourceReader(new Float32Array([2, 4, 8, 16]), 0, 2);
     expect([-100, -1, 0, 1, 2, 3, 100].map((index) => source.readTap(index))).toEqual([
       2, 2, 2, 4, 8, 8, 8,
     ]);
@@ -83,8 +83,8 @@ describe('source reader', () => {
 
   it('keeps head bounds independent while reusing a reader across channels', () => {
     const samples = new Float32Array([1, 2, 3, 4]);
-    const outgoing = new ClampedSourceReader(samples, 2);
-    const current = new ClampedSourceReader(samples, 3);
+    const outgoing = new ClampedSourceReader(samples, 0, 2);
+    const current = new ClampedSourceReader(samples, 0, 3);
     current.lastIndex = 1;
     expect(outgoing.readTap(10)).toBe(3);
     expect(current.readTap(10)).toBe(2);

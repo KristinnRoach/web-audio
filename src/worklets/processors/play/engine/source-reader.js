@@ -5,20 +5,21 @@
  * @typedef {{ readTap(index: number): number }} SourceReader
  */
 
-// Repeat the endpoints of [0, lastIndex], inclusive. lastIndex is an integer;
-// the engine resolves fractional trim ends with ceil(endSamples) - 1.
+// Repeat the endpoints of [firstIndex, lastIndex], inclusive. Bounds are integer
+// sample indices inside the trim: ceil(startSamples) through ceil(endSamples) - 1.
 // shortcut: loop edges do not extend the source yet. Short loops can pick up
 // content outside the loop, especially with sinc. Add loop-aware readers once
 // fractional wrap/reflect continuation is defined; never round loop boundaries.
 export class ClampedSourceReader {
   /** @param {Float32Array | null} samples */
-  constructor(samples = null, lastIndex = samples ? samples.length - 1 : -1) {
+  constructor(samples = null, firstIndex = 0, lastIndex = samples ? samples.length - 1 : -1) {
     this.samples = samples;
+    this.firstIndex = firstIndex;
     this.lastIndex = lastIndex;
   }
 
   // The engine reuses this reader across channels, without allocating.
   readTap(index) {
-    return this.samples?.[Math.max(0, Math.min(index, this.lastIndex))] || 0;
+    return this.samples?.[Math.max(this.firstIndex, Math.min(index, this.lastIndex))] || 0;
   }
 }

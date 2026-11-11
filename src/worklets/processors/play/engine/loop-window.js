@@ -6,6 +6,7 @@ export class LoopWindow {
   length = 0;
   direction = 1;
   isPitchLoop = false;
+  audioStart = 0;
   audioEnd = 0;
 
   get end() {
