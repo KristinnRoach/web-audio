@@ -49,4 +49,37 @@ describe('cancelAndPinParamValue', () => {
       );
     }
   });
+
+  // Step left when a glide replacement cuts a fast ramp. Offline suspend reads an exact
+  // param.value, so this cannot show a real-time AudioContext's stale read (#33).
+  it('measures the step when pinning a fast linear ramp mid-flight', async () => {
+    const cancelAt = (94 * 128) / SR; // on a render-quantum boundary, mid-ramp
+    const maxJump = async (apply: (p: AudioParam) => void) => {
+      const ctx = new OfflineAudioContext(1, SR * 0.5, SR);
+      const dc = new ConstantSourceNode(ctx, { offset: 1 });
+      const gain = new GainNode(ctx, { gain: 1 });
+      dc.connect(gain).connect(ctx.destination);
+      gain.gain.setValueAtTime(1, cancelAt - 0.01);
+      gain.gain.linearRampToValueAtTime(0, cancelAt + 0.01); // 1 -> 0 over 20 ms
+      dc.start();
+      ctx.suspend(cancelAt).then(() => {
+        apply(gain.gain);
+        void ctx.resume();
+      });
+      const data = (await ctx.startRendering()).getChannelData(0);
+      let jump = 0;
+      for (let i = cancelAt * SR - 256; i < data.length; i++) {
+        jump = Math.max(jump, Math.abs(data[i] - data[i - 1]));
+      }
+      return jump;
+    };
+
+    const pinned = await maxJump((p) => cancelAndPinParamValue(p, cancelAt));
+    const native = await maxJump((p) => p.cancelAndHoldAtTime(cancelAt));
+    console.log(
+      `ramp pin max step: pinned ${pinned.toFixed(4)}, native ${native.toFixed(4)} (ramp slope ${(1 / (0.02 * SR)).toFixed(4)}/sample)`,
+    );
+    expect(pinned).toBeLessThan(0.01);
+    expect(native).toBeLessThan(0.01);
+  });
 });
