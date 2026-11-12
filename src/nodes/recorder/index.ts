@@ -2,6 +2,7 @@ export * from './factory';
 export type {
   AudioRecorderState,
   RecorderArmOptions,
+  RecorderDisplayOptions,
   RecorderEvents,
   RecorderInput,
   RecorderMonitorOptions,

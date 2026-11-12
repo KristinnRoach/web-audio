@@ -120,6 +120,25 @@ recorder.start({ input: { type: 'audio-node', node: synthOutput } });
 recorder.start({ input: { type: 'stream', stream } }); // its tracks are left running
 ```
 
+Display input accepts native `getDisplayMedia()` options without translating their names:
+
+```ts
+await recorder.arm({
+  input: {
+    type: 'display',
+    options: { preferCurrentTab: true, audio: { suppressLocalAudioPlayback: false } },
+  },
+});
+```
+
+Unspecified options default to `audio: true`, `video: true`,
+`audioSelection: 'preferred'`, `systemAudio: 'include'` and `windowAudio: 'window'`.
+The browser requires video for this API; Recorder immediately stops its video
+tracks and only retains audio. Picker hints depend on browser/OS support and do
+not guarantee audio; a selection without an audio track rejects the call.
+Explicit options are passed through, including `false` values (although the
+browser rejects `video: false`, and `audio: false` produces no recordable audio).
+
 An explicit microphone `deviceId` is required to match: if unavailable, the call
 rejects instead of opening a different microphone. The app decides whether to
 retry with the default input. Device-list helpers in `@kidlib/web-audio/io` only

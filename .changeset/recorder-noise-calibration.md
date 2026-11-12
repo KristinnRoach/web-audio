@@ -12,3 +12,4 @@ Add room-noise calibration and metering before arming to `Recorder`.
 - `RecorderMonitorOptions`, `RecorderNoiseOptions` and `RecorderNoiseMeasurement` are exported.
 - An unavailable explicit microphone `deviceId` now rejects instead of falling back to another input. Consumers decide whether to retry with the default microphone.
 - Device-list helpers no longer request microphone and camera access. Labels and the available device list may be limited until capture permission is granted.
+- Display input accepts native `getDisplayMedia()` options, with defaults that request and prefer audio for the chosen surface. The browser-required video tracks are immediately stopped. `RecorderDisplayOptions` is exported.

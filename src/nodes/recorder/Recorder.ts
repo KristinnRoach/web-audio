@@ -16,9 +16,27 @@ export const AudioRecorderState = {
 
 export type AudioRecorderState = (typeof AudioRecorderState)[keyof typeof AudioRecorderState];
 
+/** Native capture options, including browser fields missing from older DOM typings. */
+export type RecorderDisplayOptions = DisplayMediaStreamOptions & {
+  preferCurrentTab?: boolean;
+  selfBrowserSurface?: 'include' | 'exclude';
+  systemAudio?: 'include' | 'exclude';
+  windowAudio?: 'system' | 'window' | 'exclude';
+  surfaceSwitching?: 'include' | 'exclude';
+  monitorTypeSurfaces?: 'include' | 'exclude';
+  audioSelection?: 'preferred';
+  audio?:
+    | boolean
+    | (MediaTrackConstraints & {
+        suppressLocalAudioPlayback?: ConstrainBoolean;
+        restrictOwnAudio?: ConstrainBoolean;
+      });
+  video?: boolean | (MediaTrackConstraints & { displaySurface?: 'browser' | 'window' | 'monitor' });
+};
+
 export type RecorderInput =
   | { type: 'microphone'; deviceId?: string; constraints?: MediaTrackConstraints }
-  | { type: 'display' }
+  | { type: 'display'; options?: RecorderDisplayOptions }
   | { type: 'audio-node'; node: AudioNode }
   /** The caller owns the stream: the recorder never stops its tracks. */
   | { type: 'stream'; stream: MediaStream };
@@ -443,7 +461,15 @@ export class Recorder implements LibNode {
         return new MediaStream(input.stream.getAudioTracks());
       case 'display': {
         // Browsers require video to be requested along with display audio.
-        const display = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+        const options: RecorderDisplayOptions = {
+          ...input.options,
+          audio: input.options?.audio ?? true,
+          video: input.options?.video ?? true,
+          audioSelection: input.options?.audioSelection ?? 'preferred',
+          systemAudio: input.options?.systemAudio ?? 'include',
+          windowAudio: input.options?.windowAudio ?? 'window',
+        };
+        const display = await navigator.mediaDevices.getDisplayMedia(options);
         display.getVideoTracks().forEach((t) => t.stop());
         const tracks = display.getAudioTracks();
         take.cleanup.push(() => tracks.forEach((t) => t.stop()));

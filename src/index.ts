@@ -10,6 +10,7 @@ export type {
   AudioRecorderState,
   Recorder,
   RecorderArmOptions,
+  RecorderDisplayOptions,
   RecorderEvents,
   RecorderInput,
   RecorderMonitorOptions,

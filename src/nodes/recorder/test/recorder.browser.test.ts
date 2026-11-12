@@ -695,6 +695,52 @@ describe('Recorder', () => {
     await ctx.close();
   });
 
+  it.each([
+    {
+      options: undefined,
+      expected: {
+        audio: true,
+        video: true,
+        audioSelection: 'preferred',
+        systemAudio: 'include',
+        windowAudio: 'window',
+      },
+    },
+    {
+      options: {
+        preferCurrentTab: true,
+        video: { displaySurface: 'browser' },
+        audio: { suppressLocalAudioPlayback: false },
+        systemAudio: 'exclude',
+        windowAudio: 'exclude',
+      } as const,
+      expected: {
+        preferCurrentTab: true,
+        video: { displaySurface: 'browser' },
+        audio: { suppressLocalAudioPlayback: false },
+        audioSelection: 'preferred',
+        systemAudio: 'exclude',
+        windowAudio: 'exclude',
+      },
+    },
+  ])('requests display audio with native options: $options', async ({ options, expected }) => {
+    const { ctx, source, recorder } = await setup();
+    const destination = ctx.createMediaStreamDestination();
+    source.connect(destination);
+    const [audioTrack] = destination.stream.getAudioTracks();
+    const [videoTrack] = document.createElement('canvas').captureStream().getVideoTracks();
+    const display = new MediaStream([audioTrack, videoTrack]);
+    const capture = vi.spyOn(navigator.mediaDevices, 'getDisplayMedia').mockResolvedValue(display);
+
+    await recorder.monitor({ input: { type: 'display', options } });
+    expect(capture).toHaveBeenCalledExactlyOnceWith(expected);
+    expect(videoTrack.readyState).toBe('ended');
+    expect(audioTrack.readyState).toBe('live');
+    recorder.cancel();
+    expect(audioTrack.readyState).toBe('ended');
+    await ctx.close();
+  });
+
   it('rejects display capture without audio and stops its tracks', async () => {
     const video = document.createElement('canvas').captureStream();
     const [videoTrack] = video.getVideoTracks();
