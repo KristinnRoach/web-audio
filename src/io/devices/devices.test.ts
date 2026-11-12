@@ -54,6 +54,7 @@ describe('Device Access Utils', () => {
         label: 'Mic 1',
         kind: 'audioinput',
       });
+      expect(getUserMediaMock).not.toHaveBeenCalled();
     });
 
     it('handles enumeration errors gracefully', async () => {
@@ -91,25 +92,14 @@ describe('Device Access Utils', () => {
       });
     });
 
-    it('falls back to default input when requested device is unavailable', async () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    it('rejects an unavailable selected device without opening another microphone', async () => {
       const overconstrained = Object.assign(new Error('unavailable'), {
         name: 'OverconstrainedError',
       });
       getUserMediaMock.mockRejectedValueOnce(overconstrained).mockResolvedValueOnce(mockStream);
 
-      const stream = await getMicrophone(undefined, 'gone-device');
-
-      expect(stream).toBe(mockStream);
-      expect(getUserMediaMock).toHaveBeenLastCalledWith({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          voiceIsolation: false,
-        },
-      });
-      consoleSpy.mockRestore();
+      await expect(getMicrophone(undefined, 'gone-device')).rejects.toBe(overconstrained);
+      expect(getUserMediaMock).toHaveBeenCalledOnce();
     });
 
     it('rethrows non-OverconstrainedError failures', async () => {
@@ -165,6 +155,7 @@ describe('Device Access Utils', () => {
       expect(audioInputs[0].kind).toBe('audioinput');
       expect(audioOutputs[0].kind).toBe('audiooutput');
       expect(videoInputs[0].kind).toBe('videoinput');
+      expect(getUserMediaMock).not.toHaveBeenCalled();
     });
   });
 

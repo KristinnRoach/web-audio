@@ -10,3 +10,5 @@ Add room-noise calibration and metering before arming to `Recorder`.
 - `stopOnSilence: { trim: true }` cuts the silence wait off the end of a take that stopped on silence.
 - `record:level` reports `startThresholdDb: null` while monitoring, so its type is now `number | null`.
 - `RecorderMonitorOptions`, `RecorderNoiseOptions` and `RecorderNoiseMeasurement` are exported.
+- An unavailable explicit microphone `deviceId` now rejects instead of falling back to another input. Consumers decide whether to retry with the default microphone.
+- Device-list helpers no longer request microphone and camera access. Labels and the available device list may be limited until capture permission is granted.

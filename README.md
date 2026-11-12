@@ -120,6 +120,12 @@ recorder.start({ input: { type: 'audio-node', node: synthOutput } });
 recorder.start({ input: { type: 'stream', stream } }); // its tracks are left running
 ```
 
+An explicit microphone `deviceId` is required to match: if unavailable, the call
+rejects instead of opening a different microphone. The app decides whether to
+retry with the default input. Device-list helpers in `@kidlib/web-audio/io` only
+enumerate; they do not request microphone or camera access. Device labels and
+the available list may be limited until the app obtains capture permission.
+
 `cancel()` discards a take at any stage and ends monitoring. `state-change` reports
 `IDLE`, `REQUESTING_INPUT`, `MONITORING`, `ARMED`, `RECORDING` and `FINALIZING`; failures arrive on
 `record:error`. Input acquisition failures also reject `start()`/`arm()`;
