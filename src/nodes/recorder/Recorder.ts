@@ -203,7 +203,7 @@ export class Recorder implements LibNode {
     if (this.#take && !this.#take.monitorOnly) {
       throw new Error('Cannot measure noise while a take is active');
     }
-    const wasMonitoring = this.#take?.monitorOnly === true;
+    const wasMonitoring = this.#take?.measure?.keepMonitoring ?? this.#take?.monitorOnly === true;
     const ready = this.#begin({ input: options.input }, 'monitor');
     const take = this.#take;
     await ready;

@@ -441,16 +441,24 @@ describe('Recorder', () => {
     await ctx.close();
   });
 
-  it('replaces a measurement without cancelling its replacement or leaving input open', async () => {
-    const { ctx, recorder, input } = await setup({ level: 0.01 });
-    const first = recorder.measureNoiseFloor({ input, durationMs: 5000 });
-    await wait(80);
-    const second = recorder.measureNoiseFloor({ durationMs: 100 });
-    expect(await first).toBeNull();
-    expect((await second)!.noiseFloorDb).toBeCloseTo(-40, 1);
-    expect(recorder.state).toBe('IDLE');
-    await ctx.close();
-  });
+  it.each([false, true])(
+    'replacing a measurement releases its input (different input: %s)',
+    async (differentInput) => {
+      const { ctx, recorder, input } = await setup({ level: 0.01 });
+      const stop = vi.spyOn(MediaStreamTrack.prototype, 'stop');
+      const other = new ConstantSourceNode(ctx, { offset: 0.02 });
+      other.start();
+      const replacement = differentInput ? ({ type: 'audio-node', node: other } as const) : input;
+      const first = recorder.measureNoiseFloor({ input, durationMs: 5000 });
+      await wait(80);
+      const second = recorder.measureNoiseFloor({ input: replacement, durationMs: 100 });
+      expect(await first).toBeNull();
+      expect((await second)!.noiseFloorDb).toBeCloseTo(differentInput ? -33.98 : -40, 1);
+      expect(recorder.state).toBe('IDLE');
+      expect(stop).toHaveBeenCalledTimes(differentInput ? 2 : 1);
+      await ctx.close();
+    },
+  );
 
   it('does not attach a cancelled measurement to new monitoring', async () => {
     const { ctx, recorder, input } = await setup();
