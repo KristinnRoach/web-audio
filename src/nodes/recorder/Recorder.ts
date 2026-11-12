@@ -169,6 +169,7 @@ export class Recorder implements LibNode {
   #state: AudioRecorderState = IDLE;
   #take: Take | null = null;
   #disposed = false;
+  #noiseGeneration = 0;
 
   constructor(context: AudioContext) {
     this.nodeId = registerNode(this.nodeType, this);
@@ -222,6 +223,7 @@ export class Recorder implements LibNode {
     if (this.#take && !this.#take.monitorOnly) {
       throw new Error('Cannot measure noise while a take is active');
     }
+    const generation = ++this.#noiseGeneration;
     const ready = this.#begin(
       { input: options.input },
       'monitor',
@@ -240,7 +242,13 @@ export class Recorder implements LibNode {
         resolve,
       };
     });
-    if (measurement && !take.keepMonitoring && take === this.#take && take.monitorOnly)
+    if (
+      measurement &&
+      generation === this.#noiseGeneration &&
+      !take.keepMonitoring &&
+      take === this.#take &&
+      take.monitorOnly
+    )
       this.cancel();
     return measurement;
   }

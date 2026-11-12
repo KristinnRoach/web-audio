@@ -465,6 +465,28 @@ describe('Recorder', () => {
     },
   );
 
+  it('does not let completed calibration cancel a replacement from a level handler', async () => {
+    const { ctx, recorder, input } = await setup();
+    let time = 0;
+    let readings = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => time);
+    vi.spyOn(AnalyserNode.prototype, 'getFloatTimeDomainData').mockImplementation((data) => {
+      data.fill(0.01);
+      time += 20;
+    });
+    let replacement: ReturnType<Recorder['measureNoiseFloor']> | undefined;
+    recorder.onMessage('record:level', () => {
+      if (++readings === 5) replacement = recorder.measureNoiseFloor({ durationMs: 100 });
+    });
+
+    expect(await recorder.measureNoiseFloor({ input, durationMs: 100 })).not.toBeNull();
+    expect(replacement).toBeDefined();
+    expect(await replacement).not.toBeNull();
+    expect(readings).toBe(10);
+    expect(recorder.state).toBe('IDLE');
+    await ctx.close();
+  });
+
   it('keeps monitoring explicitly requested while calibration is starting', async () => {
     const { ctx, recorder, input } = await setup({ level: 0.01 });
     const measurement = recorder.measureNoiseFloor({ input, durationMs: 100 });
