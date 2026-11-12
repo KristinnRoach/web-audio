@@ -46,11 +46,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         engine.setLoopQuantizePeriods(value);
         break;
 
-      case 'voice:reset':
-        engine.reset();
-        this.port.postMessage({ type: 'voice:reset' });
-        break;
-
       case 'voice:setBuffer': {
         engine.setBuffer(buffer);
 
@@ -98,11 +93,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'voice:setPlaybackDirection': {
         // Global invert; inverted trim points flip it again in the engine
         engine.reversePlayback = playbackDirection === 'reverse';
-
-        this.port.postMessage({
-          type: 'voice:playbackDirectionChange',
-          playbackDirection,
-        });
         break;
       }
 

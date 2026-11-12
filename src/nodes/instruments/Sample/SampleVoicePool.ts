@@ -125,7 +125,6 @@ export class SampleVoicePool implements LibNode {
     this.#messages.forwardFrom(
       voice,
       [
-        'voice:initialized',
         'voice:started',
         'voice:stopped',
         'voice:releasing',
