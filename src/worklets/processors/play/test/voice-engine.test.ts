@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { VoiceEngine } from '../engine/voice-engine.js';
 import { makeParameters } from './range-test-helpers';
 
@@ -115,4 +115,55 @@ it('keeps an outgoing head inside its saved trim when the current trim moves', (
   const output = new Float32Array(1);
   engine.render([output], makeParameters({ startPoint: 200 / SR, endPoint: 500 / SR }), 1, 1 / SR);
   expect(output[0]).toBeCloseTo(0.5, 6);
+});
+
+describe('host stop', () => {
+  const STOP_FRAME = 200;
+  const FADE = 64;
+
+  function playing() {
+    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+    engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+    engine.start(1, 0);
+    return engine;
+  }
+
+  function renderBlocks(engine: VoiceEngine, blocks: number) {
+    const output = new Float32Array(blocks * QUANTUM);
+    for (let block = 0; block < blocks; block++) {
+      if (!engine.canRender) break;
+      const frame = block * QUANTUM;
+      engine.render([output.subarray(frame, frame + QUANTUM)], makeParameters(), frame, frame / SR);
+    }
+    return output;
+  }
+
+  it('fades from the scheduled frame, then ends', () => {
+    const engine = playing();
+    engine.stop(STOP_FRAME / SR);
+    const output = renderBlocks(engine, 3);
+    const full = output[0];
+
+    expect(output[STOP_FRAME - 1]).toBe(full);
+    expect(output[STOP_FRAME]).toBeCloseTo(full * (1 - 1 / FADE), 6);
+    expect(output[STOP_FRAME + FADE - 2]).toBeCloseTo(full / FADE, 6);
+    expect(output.subarray(STOP_FRAME + FADE - 1).every((value) => value === 0)).toBe(true);
+    expect(engine.isPlaying).toBe(false);
+  });
+
+  it('lets a following start supersede the stop', () => {
+    const engine = playing();
+    const full = renderBlocks(engine, 1)[0];
+    engine.stop();
+    engine.start(2, 0);
+    const output = renderBlocks(engine, 2);
+    expect(output.every((value) => value === full)).toBe(true);
+  });
+
+  it('ends a note silently when stopped before its scheduled start', () => {
+    const engine = playing();
+    engine.start(2, (2 * QUANTUM) / SR);
+    engine.stop(QUANTUM / SR);
+    expect(engine.isPlaying).toBe(false);
+  });
 });

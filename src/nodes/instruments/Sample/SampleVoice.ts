@@ -35,8 +35,7 @@ export type InterpolationMode = 'linear' | 'hermite' | 'sinc';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 
-/** Time constant for the gate fade when the amp envelope is off:
- * fast enough to read as a gate, slow enough not to click. */
+/** Time constant for envGain returning to rest when the amp envelope is disabled mid-note. */
 const AMP_GATE_SMOOTHING_SEC = 0.002;
 
 export class SampleVoice {
@@ -333,8 +332,6 @@ export class SampleVoice {
       return null;
     }
 
-    // A reused voice can still have a stop or release scheduled against the
-    // note it just finished. Left armed, they fire into this note and cut it.
     this.#transitionTo(VoiceState.PLAYING, {
       midiNote,
       startedTimestamp: timestamp,
@@ -415,7 +412,7 @@ export class SampleVoice {
   ) {
     assert(Number.isFinite(timestamp), 'SampleVoice envelope timestamp must be finite');
     if (!this.#isEnvEnabled(envType)) {
-      this.#resetEnvTarget(envType, timestamp, envType === 'amp');
+      this.#resetEnvTarget(envType, timestamp, false);
       return;
     }
 
@@ -446,20 +443,6 @@ export class SampleVoice {
     });
   }
 
-  #releaseTimeout: number | null = null;
-  #stopTimeout: number | null = null;
-
-  #clearTimeouts() {
-    if (this.#releaseTimeout !== null) {
-      clearTimeout(this.#releaseTimeout);
-      this.#releaseTimeout = null;
-    }
-    if (this.#stopTimeout !== null) {
-      clearTimeout(this.#stopTimeout);
-      this.#stopTimeout = null;
-    }
-  }
-
   #stopEnvelopes() {
     this.#envelopes.forEach((env) => env.stop());
   }
@@ -467,7 +450,6 @@ export class SampleVoice {
   #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
     switch (state) {
       case VoiceState.AVAILABLE:
-        this.#clearTimeouts();
         this.#stopEnvelopes();
         this.#midiNote = null;
         break;
@@ -475,7 +457,6 @@ export class SampleVoice {
       case VoiceState.PLAYING:
         assert(this.#state === VoiceState.AVAILABLE, 'Only AVAILABLE voices can play');
         assert(note, 'PLAYING requires note information');
-        this.#clearTimeouts();
         this.#triggerId++;
         this.#isInPitchLoop = false;
         this.#midiNote = note.midiNote;
@@ -494,9 +475,6 @@ export class SampleVoice {
   release({ secondsFromNow = 0 } = {}): this {
     if (this.#state !== VoiceState.PLAYING) return this;
 
-    const envGain = this.getParam('envGain');
-    if (!envGain) throw new Error('Cannot release - envGain parameter is null');
-
     this.#transitionTo(VoiceState.RELEASING);
     const timestamp = this.now + secondsFromNow;
 
@@ -504,9 +482,6 @@ export class SampleVoice {
     this.#envelopes.forEach((env, envType) => {
       if (this.#isEnvEnabled(envType)) env.release(timestamp);
     });
-
-    // A disabled amp env is a gate, so close it. ponytail: voice-side fade until #65 moves de-click fades into the processor.
-    if (!this.#isEnvEnabled('amp')) envGain.setTargetAtTime(0, timestamp, AMP_GATE_SMOOTHING_SEC);
 
     const releaseDuration = this.releaseTime;
 
@@ -516,28 +491,14 @@ export class SampleVoice {
       releaseDuration,
     });
 
-    // Stop after the scheduled release and amplitude tail.
-    if (this.#releaseTimeout) clearTimeout(this.#releaseTimeout);
-    this.#releaseTimeout = setTimeout(
-      () => {
-        try {
-          if (this.#state !== VoiceState.AVAILABLE) {
-            this.stop();
-          }
-        } finally {
-          this.#releaseTimeout = null;
-        }
-      },
-      (secondsFromNow + releaseDuration) * 1000 + 50,
-    ); // 50ms buffer
-
+    // The processor stops at the end of the amp tail and reports it as voice:ended.
+    this.sendToProcessor({ type: 'voice:stop', timestamp: timestamp + releaseDuration });
     return this;
   }
 
   /**
-   * The processor cuts output as soon as it gets `voice:stop`, so a stop is a
-   * hard edge. De-click fading belongs on the processor side, where rendering
-   * actually ends - see issue #65.
+   * The processor schedules the stop on its render clock and fades out from
+   * `timestamp`; a `voice:start` that follows supersedes it.
    */
   stop(timestamp = this.now): this {
     if (this.#state === VoiceState.AVAILABLE) return this;
@@ -547,22 +508,7 @@ export class SampleVoice {
       voiceId: this.nodeId,
       midiNote,
     });
-
-    const now = this.now;
-    const stopAt = Math.max(timestamp, now);
-
-    // Deferred even when stopAt is now, which lets a synchronous
-    // stop()-then-trigger() coalesce into only voice:start.
-    this.#stopTimeout = setTimeout(
-      () => {
-        // ponytail: the processor ignores this timestamp and stops on receipt,
-        // so a future stopAt is only as accurate as the host timer. Sample
-        // accuracy needs the processor to own stop timing - see issue #65.
-        this.sendToProcessor({ type: 'voice:stop', timestamp: stopAt });
-        this.#stopTimeout = null;
-      },
-      (stopAt - now) * 1000,
-    );
+    this.sendToProcessor({ type: 'voice:stop', timestamp });
     return this;
   }
 
@@ -934,10 +880,9 @@ export class SampleVoice {
     return this.getParam('endPoint')!.value;
   }
 
-  /** Amp release duration, or the gate fade while the amp envelope is off; drives voice cleanup. */
+  /** Amp release duration, or 0 while the amp envelope is off; drives voice cleanup. */
   get releaseTime() {
-    // ~5 time constants is under 1% of the gate level.
-    if (!this.#isEnvEnabled('amp')) return AMP_GATE_SMOOTHING_SEC * 5;
+    if (!this.#isEnvEnabled('amp')) return 0;
     return this.#envelopes.get('amp')!.releaseDuration();
   }
 
@@ -1063,7 +1008,6 @@ export class SampleVoice {
     this.#cleanupAmpModLFO();
     this.#envelopes.forEach((env) => env.stop());
     this.#playerWorklet.port.close();
-    this.#clearTimeouts();
     unregisterNode(this.nodeId);
   }
 

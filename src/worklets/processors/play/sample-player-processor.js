@@ -75,7 +75,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:stop':
-        engine.stop();
+        engine.stop(timestamp);
         break;
 
       case 'setLoopEnabled':
