@@ -70,7 +70,9 @@ describe('Recorder', () => {
 
     await recorder.start({ input });
     expect(recorder.state).toBe('RECORDING');
-    await wait(200);
+    const startedAt = ctx.currentTime;
+    // A busy CI runner can advance wall time before it has rendered enough audio to decode.
+    await until(() => ctx.currentTime - startedAt >= 0.2);
     const buffer = await recorder.stop();
 
     expect(delivered).toBe(buffer);
