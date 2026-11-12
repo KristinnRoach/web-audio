@@ -29,8 +29,11 @@ const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
 // rounds it off, at the cost of a brief level dip. Not standard sampler practice;
 // false restores bare turns.
 const LOOP_TURN_CROSSFADE = true;
+// Source-domain fade into a loop's silence padding; not a note release.
 const TAIL_FADE_SAMPLES = 64;
-// De-click fade for a host stop, in output frames (~1.3 ms at 48 kHz).
+// Note-boundary de-click ramps, independent of pitch, direction and the musical
+// amp envelope. Keep these in output frames; loop fades follow source position.
+// Host stop: ~1.3 ms at 48 kHz.
 const STOP_FADE_FRAMES = 64;
 // Tiny opening ramp in output frames (~0.33 ms at 48 kHz).
 const START_FADE_FRAMES = 16;
@@ -232,6 +235,7 @@ export class VoiceEngine {
   reset() {
     this.isPlaying = false;
     this.pendingStartFrame = 0;
+    this.startFadeFrames = 0;
     this.#clearStop();
     this.triggerId = 0;
 

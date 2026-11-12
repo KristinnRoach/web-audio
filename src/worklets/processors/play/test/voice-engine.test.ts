@@ -168,11 +168,36 @@ describe('host stop', () => {
     engine.stop(QUANTUM / SR);
     expect(engine.isPlaying).toBe(false);
   });
+
+  it('keeps fade progress when stopped again during the opening ramp', () => {
+    const post = vi.fn();
+    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post });
+    engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+    engine.start(3, 0);
+    const output = new Float32Array(96);
+    engine.render([output.subarray(0, 8)], makeParameters(), 0, 0);
+    engine.stop();
+    engine.render([output.subarray(8, 20)], makeParameters(), 8, 8 / SR);
+    engine.stop();
+    engine.render([output.subarray(20)], makeParameters(), 20, 20 / SR);
+
+    for (let frame = 0; frame < 8 + FADE; frame++) {
+      const startGain = Math.min(frame / 16, 1);
+      const stopGain = frame < 8 ? 1 : 1 - (frame - 8 + 1) / FADE;
+      expect(output[frame]).toBeCloseTo(0.5 * startGain * stopGain, 6);
+    }
+    expect(output.subarray(8 + FADE - 1).every((value) => value === 0)).toBe(true);
+    expect(engine.canRender).toBe(false);
+    expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
+      [{ type: 'voice:ended', triggerId: 3 }],
+    ]);
+  });
 });
 
-it('fades a scheduled stereo start over 16 output frames across blocks at any playback rate', () => {
+it.each([0.5, 1, 2])('fades a scheduled stereo start across blocks at playback rate %s', (rate) => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5), new Float32Array(SR).fill(-0.25)]);
+  engine.reversePlayback = true;
   const start = QUANTUM - 8;
   engine.start(1, start / SR);
   const output = [new Float32Array(2 * QUANTUM), new Float32Array(2 * QUANTUM)];
@@ -180,7 +205,7 @@ it('fades a scheduled stereo start over 16 output frames across blocks at any pl
     const frame = block * QUANTUM;
     engine.render(
       output.map((channel) => channel.subarray(frame, frame + QUANTUM)),
-      makeParameters({ playbackRate: 2 }),
+      makeParameters({ playbackRate: rate }),
       frame,
       frame / SR,
     );
