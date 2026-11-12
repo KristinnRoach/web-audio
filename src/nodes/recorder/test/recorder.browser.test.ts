@@ -377,7 +377,7 @@ describe('Recorder', () => {
     expect(starts).not.toHaveBeenCalled();
     expect(levels.at(-1)!.startThresholdDb).toBeNull();
 
-    await recorder.arm({ startThresholdDb: -20, metering: true });
+    await recorder.arm({ input, startThresholdDb: -20, metering: true });
     await until(() => recorder.isRecording);
     expect(connect).toHaveBeenCalledOnce();
     await wait(200); // long enough to decode
@@ -418,6 +418,49 @@ describe('Recorder', () => {
     await expect(recorder.measureNoiseFloor({ durationMs: 0 })).rejects.toThrow(RangeError);
     await recorder.start({ input });
     await expect(recorder.measureNoiseFloor()).rejects.toThrow('take is active');
+    recorder.cancel();
+    await ctx.close();
+  });
+
+  it.each([0, 0.01])('ignores one click among 20 noise readings at %s', async (level) => {
+    const { ctx, recorder, input } = await setup();
+    let time = 0;
+    let readings = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => time);
+    vi.spyOn(AnalyserNode.prototype, 'getFloatTimeDomainData').mockImplementation((data) => {
+      readings++;
+      data.fill(readings === 20 ? 1 : level);
+      time += 20;
+    });
+    const measured = await recorder.measureNoiseFloor({ input, durationMs: 400 });
+    expect(readings).toBe(20);
+    expect(measured!.noiseFloorDb).toBe(
+      level === 0 ? -Infinity : 20 * Math.log10(Math.fround(level)),
+    );
+    expect(recorder.state).toBe('IDLE');
+    await ctx.close();
+  });
+
+  it('replaces a measurement without cancelling its replacement or leaving input open', async () => {
+    const { ctx, recorder, input } = await setup({ level: 0.01 });
+    const first = recorder.measureNoiseFloor({ input, durationMs: 5000 });
+    await wait(80);
+    const second = recorder.measureNoiseFloor({ durationMs: 100 });
+    expect(await first).toBeNull();
+    expect((await second)!.noiseFloorDb).toBeCloseTo(-40, 1);
+    expect(recorder.state).toBe('IDLE');
+    await ctx.close();
+  });
+
+  it('does not attach a cancelled measurement to new monitoring', async () => {
+    const { ctx, recorder, input } = await setup();
+    await recorder.monitor({ input });
+    const measurement = recorder.measureNoiseFloor({ durationMs: 40 });
+    recorder.cancel();
+    await recorder.monitor({ input });
+    expect(await measurement).toBeNull();
+    await wait(80);
+    expect(recorder.isMonitoring).toBe(true);
     recorder.cancel();
     await ctx.close();
   });

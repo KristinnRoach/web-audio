@@ -96,6 +96,7 @@ type Measure = {
   peaks: number[];
   endsAt: number;
   marginDb: number;
+  keepMonitoring: boolean;
   resolve: (measurement: RecorderNoiseMeasurement | null) => void;
 };
 
@@ -133,11 +134,9 @@ function assertDb(name: string, value: number): void {
 }
 
 function suggestThresholds(peaksDb: number[], marginDb: number): RecorderNoiseMeasurement {
-  const finite = peaksDb.filter(Number.isFinite).sort((a, b) => a - b);
+  const sorted = peaksDb.filter((db) => db < Infinity).sort((a, b) => a - b);
   // 95th percentile: a single click doesn't set the floor, steady hum does.
-  const noiseFloorDb = finite.length
-    ? finite[Math.min(finite.length - 1, Math.floor(finite.length * 0.95))]
-    : -Infinity;
+  const noiseFloorDb = sorted.length ? sorted[Math.ceil(sorted.length * 0.95) - 1] : -Infinity;
   const startThresholdDb = Math.min(0, Math.max(-60, noiseFloorDb + marginDb));
   return { noiseFloorDb, startThresholdDb, stopThresholdDb: startThresholdDb - 6 };
 }
@@ -201,16 +200,27 @@ export class Recorder implements LibNode {
     if (!Number.isFinite(marginDb) || marginDb < 0) {
       throw new RangeError(`marginDb must be a finite number >= 0, got ${marginDb}`);
     }
+    if (this.#take && !this.#take.monitorOnly) {
+      throw new Error('Cannot measure noise while a take is active');
+    }
     const wasMonitoring = this.#take?.monitorOnly === true;
-    await this.#begin({ input: options.input }, 'monitor');
+    const ready = this.#begin({ input: options.input }, 'monitor');
     const take = this.#take;
-    if (!take?.monitorOnly || this.#state !== MONITORING) return null;
+    await ready;
+    if (take !== this.#take || !take?.monitorOnly || this.#state !== MONITORING) return null;
 
+    const keepMonitoring = take.measure?.keepMonitoring ?? wasMonitoring;
     take.measure?.resolve(null);
     const measurement = await new Promise<RecorderNoiseMeasurement | null>((resolve) => {
-      take.measure = { peaks: [], endsAt: performance.now() + durationMs, marginDb, resolve };
+      take.measure = {
+        peaks: [],
+        endsAt: performance.now() + durationMs,
+        marginDb,
+        keepMonitoring,
+        resolve,
+      };
     });
-    if (!wasMonitoring && take === this.#take && take.monitorOnly) this.cancel();
+    if (measurement && !keepMonitoring && take === this.#take && take.monitorOnly) this.cancel();
     return measurement;
   }
 
@@ -237,7 +247,7 @@ export class Recorder implements LibNode {
     if (this.#disposed) throw new Error('Recorder is disposed');
     const armed = mode === 'arm';
     const current = this.#take;
-    if (current?.monitorOnly && mode !== 'monitor' && options.input) {
+    if (current?.monitorOnly && options.input && options.input !== current.options.input) {
       // A different input was asked for: drop the monitored one and start over.
       current.cancel();
       this.#end(current);

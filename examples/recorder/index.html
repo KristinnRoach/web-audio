@@ -429,7 +429,7 @@
         note = '';
         if (monitorOn) {
           if (state === 'IDLE') recorder.monitor().catch(() => (monitorOn = false));
-        } else if (!takeActive && !measuring) recorder.cancel();
+        } else if (!takeActive) recorder.cancel();
       }
 
       function stopPlayback() {
