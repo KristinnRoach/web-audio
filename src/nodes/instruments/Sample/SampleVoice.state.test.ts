@@ -425,19 +425,19 @@ describe('SampleVoice state', () => {
     expect(sentTypes().filter((t) => t === 'voice:stop')).toHaveLength(1);
   });
 
-  it('coalesces a synchronous stop and retrigger', async () => {
+  it('sends a synchronous stop and retrigger in order', async () => {
     const voice = await loadedVoice();
     trigger(voice, 60);
 
     voice.stop();
     expect(voice.state).toBe(VoiceState.AVAILABLE);
-    expect(sentTypes()).not.toContain('voice:stop');
 
     trigger(voice, 64);
     vi.runAllTimers();
     expect(voice.state).toBe(VoiceState.PLAYING);
     expect(voice.midiNote).toBe(64);
-    expect(sentTypes()).not.toContain('voice:stop');
+    // The processor lets the start supersede the stop.
+    expect(sentTypes().slice(-2)).toEqual(['voice:stop', 'voice:start']);
   });
 
   it('ignores completion from an older playback with the same timestamp', async () => {
@@ -458,17 +458,12 @@ describe('SampleVoice state', () => {
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
-  it('holds a stop scheduled for a future timestamp', async () => {
+  it('leaves a future stop to the processor clock', async () => {
     const voice = await loadedVoice();
     trigger(voice);
 
     voice.stop(0.5); // context currentTime is 0 in this suite
 
-    expect(sentTypes()).not.toContain('voice:stop');
-    vi.advanceTimersByTime(499);
-    expect(sentTypes()).not.toContain('voice:stop');
-
-    vi.advanceTimersByTime(2);
     expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: 0.5 });
   });
 

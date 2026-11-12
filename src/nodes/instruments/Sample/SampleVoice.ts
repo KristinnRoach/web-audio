@@ -447,16 +447,11 @@ export class SampleVoice {
   }
 
   #releaseTimeout: number | null = null;
-  #stopTimeout: number | null = null;
 
   #clearTimeouts() {
     if (this.#releaseTimeout !== null) {
       clearTimeout(this.#releaseTimeout);
       this.#releaseTimeout = null;
-    }
-    if (this.#stopTimeout !== null) {
-      clearTimeout(this.#stopTimeout);
-      this.#stopTimeout = null;
     }
   }
 
@@ -535,9 +530,8 @@ export class SampleVoice {
   }
 
   /**
-   * The processor cuts output as soon as it gets `voice:stop`, so a stop is a
-   * hard edge. De-click fading belongs on the processor side, where rendering
-   * actually ends - see issue #65.
+   * The processor schedules the stop on its render clock and fades out from
+   * `timestamp`; a `voice:start` that follows supersedes it.
    */
   stop(timestamp = this.now): this {
     if (this.#state === VoiceState.AVAILABLE) return this;
@@ -547,22 +541,7 @@ export class SampleVoice {
       voiceId: this.nodeId,
       midiNote,
     });
-
-    const now = this.now;
-    const stopAt = Math.max(timestamp, now);
-
-    // Deferred even when stopAt is now, which lets a synchronous
-    // stop()-then-trigger() coalesce into only voice:start.
-    this.#stopTimeout = setTimeout(
-      () => {
-        // ponytail: the processor ignores this timestamp and stops on receipt,
-        // so a future stopAt is only as accurate as the host timer. Sample
-        // accuracy needs the processor to own stop timing - see issue #65.
-        this.sendToProcessor({ type: 'voice:stop', timestamp: stopAt });
-        this.#stopTimeout = null;
-      },
-      (stopAt - now) * 1000,
-    );
+    this.sendToProcessor({ type: 'voice:stop', timestamp });
     return this;
   }
 

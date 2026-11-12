@@ -154,9 +154,11 @@ describe('scheduled sample start', () => {
     processor.port.postMessage.mockClear();
 
     processor.port.onmessage?.({ data: { type: 'voice:stop' } } as MessageEvent);
+    processor.process([], [[new Float32Array(BLOCK_SIZE)]], makeParameters());
 
     expect(processor.engine.isPlaying).toBe(false);
-    expect(processor.port.postMessage).not.toHaveBeenCalled();
+    const types = processor.port.postMessage.mock.calls.map(([message]) => message.type);
+    expect(types.filter((type) => type.startsWith('voice:'))).toEqual([]);
   });
 
   it('reports when playback reaches the sample boundary', async () => {

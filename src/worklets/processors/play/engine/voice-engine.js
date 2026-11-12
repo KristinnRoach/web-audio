@@ -30,6 +30,8 @@ const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
 // false restores bare turns.
 const LOOP_TURN_CROSSFADE = true;
 const TAIL_FADE_SAMPLES = 64;
+// De-click fade for a host stop, in output frames (~1.3 ms at 48 kHz).
+const STOP_FADE_FRAMES = 64;
 // Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
 function tailGainAt(position, audioEndSamples) {
@@ -198,6 +200,7 @@ export class VoiceEngine {
     // Frame this note should sound at. A timestamp that has already passed
     // by the time the message arrives starts the note now.
     this.pendingStartFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
+    this.#clearStop(); // a new note supersedes the previous note's stop
   }
 
   setPanDriftEnabled(enabled) {
@@ -226,6 +229,7 @@ export class VoiceEngine {
   reset() {
     this.isPlaying = false;
     this.pendingStartFrame = 0;
+    this.#clearStop();
     this.triggerId = 0;
 
     this.previousApproachDirection = null;
@@ -264,9 +268,27 @@ export class VoiceEngine {
     this.previousRequestedLoop.end = null;
   }
 
-  stop() {
+  /**
+   * Fades out from the frame of `timestamp`, then ends the note without
+   * posting anything. A passed (or missing) timestamp fades from the next
+   * rendered frame; a stop at or before a pending start ends the note silently.
+   */
+  stop(timestamp) {
+    const frame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
+    if (this.pendingStartFrame && frame <= this.pendingStartFrame) return this.#halt();
+    // The earliest stop wins, and a fade already under way keeps its progress.
+    this.pendingStopFrame = Math.min(this.pendingStopFrame ?? Infinity, frame);
+  }
+
+  #clearStop() {
+    this.pendingStopFrame = null;
+    this.stopFadeFrames = 0;
+  }
+
+  #halt() {
     this.isPlaying = false;
     this.pendingStartFrame = 0;
+    this.#clearStop();
     this.playbackPosition = 0;
     this.needsStartPosition = false;
   }
@@ -867,6 +889,12 @@ export class VoiceEngine {
     // ===== AUDIO PROCESSING =====
 
     for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
+      let stopGain = 1;
+      if (this.pendingStopFrame !== null && blockFrame + sample >= this.pendingStopFrame) {
+        stopGain = 1 - ++this.stopFadeFrames / STOP_FADE_FRAMES;
+        if (stopGain <= 0) return this.#halt();
+      }
+
       // Use getSafeParam for a-rate params
       const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
       const basePlaybackRate = this.#getSafeParam(
@@ -1001,7 +1029,7 @@ export class VoiceEngine {
 
       if (leftPlaybackRange && !isWithinLoop) {
         const endedTriggerId = this.triggerId;
-        this.stop();
+        this.#halt();
         this.post({
           type: 'voice:ended',
           triggerId: endedTriggerId,
@@ -1031,7 +1059,8 @@ export class VoiceEngine {
           this.#mixReadHeads(channel, Math.abs(playbackStep)) *
           velocityGain *
           envelopeGain *
-          masterGain;
+          masterGain *
+          stopGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;
