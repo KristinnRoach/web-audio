@@ -24,6 +24,85 @@ const player = await createSamplePlayer({ audio: sampleData });
 player.play(60);
 ```
 
+## Recording
+
+`createAudioRecorder()` records takes into an `AudioBuffer`. Takes go through
+`MediaRecorder`, so they are encoded and decoded on the way
+([lossless capture is tracked here](https://github.com/KristinnRoach/web-audio/issues/166)).
+
+```ts
+import { createAudioRecorder } from '@kidlib/web-audio';
+
+const recorder = createAudioRecorder();
+recorder.onMessage('record:stop', ({ buffer }) => player.loadAudio(buffer));
+
+// Record now, stop by hand. stop() resolves null if nothing was recording.
+await recorder.start();
+// Later, when the user presses Stop:
+const buffer = await recorder.stop();
+
+// Wait for sound, then stop after 600 ms below -36 dB.
+await recorder.arm({
+  startThresholdDb: -30,
+  stopOnSilence: true,
+});
+// recorder.start() records the armed take without waiting.
+```
+
+`stopOnSilence: true` derives its stop threshold 6 dB below the start threshold
+and waits for **600 ms of continuous silence**. Sound above the stop threshold
+resets the wait. This is not a minimum recording length, and the silence wait is
+included in the buffer. Omit `stopOnSilence` or pass `false` to stop manually.
+Override either setting independently, for example
+`stopOnSilence: { durationMs: 1000 }` for longer pauses or
+`stopOnSilence: { thresholdDb: -50, durationMs: 1000 }` for full control.
+
+For a UI meter and one sensitivity slider, opt into level events:
+
+```ts
+const unsubscribe = recorder.onMessage('record:level', ({ peakDb, rmsDb }) => {
+  updateMeter(peakDb, rmsDb); // Your UI; clamp -Infinity (digital silence) for display.
+});
+await recorder.arm({ startThresholdDb: -30, stopOnSilence: true, metering: true });
+
+// On sensitivity changes while waiting for sound:
+if (recorder.isArmed) recorder.setStartThresholdDb(-36);
+// The derived stop threshold follows to -42 dB; explicit stop thresholds stay fixed.
+
+// When removing the UI subscription:
+unsubscribe();
+```
+
+`record:level` also includes the effective `startThresholdDb` and `stopThresholdDb`
+(`null` when silence stopping is off). Readings are sampled peak/RMS levels in
+dBFS, approximately every 20 ms while armed or recording; background tabs can
+slow updates. They reuse the detection analyser. A manual recording only creates
+an analyser if silence stopping or metering is enabled. `setStartThresholdDb()`
+also works while an armed take is requesting input; it rejects once recording
+starts and does not change future takes. An explicit stop threshold must remain
+below the new start threshold.
+
+Set the stop threshold above room noise so the take can finish. Fixed defaults
+cannot suit every environment; room-noise calibration and adaptive thresholds
+are tracked in [#167](https://github.com/KristinnRoach/web-audio/issues/167).
+
+`input` picks the source; the microphone is the default. One of:
+
+```ts
+recorder.start({ input: { type: 'microphone', deviceId, constraints: { channelCount: 2 } } });
+recorder.start({ input: { type: 'display' } }); // tab or screen audio
+recorder.start({ input: { type: 'audio-node', node: synthOutput } });
+recorder.start({ input: { type: 'stream', stream } }); // its tracks are left running
+```
+
+`cancel()` discards a take at any stage. `state-change` reports `IDLE`,
+`REQUESTING_INPUT`, `ARMED`, `RECORDING` and `FINALIZING`; failures arrive on
+`record:error`. Input acquisition failures also reject `start()`/`arm()`;
+capture or decode failures reject a pending `stop()`. Cancelling settles pending
+startup calls and resolves a pending `stop()` with `null`, even while permission
+or decoding is still pending. The browser's permission prompt itself cannot be
+closed by the recorder; any input granted later is released.
+
 ### Live demo app: [Hljóð-Smali](https://kristinnroach.github.io/hljod-smali)
 
 ## Global audio context

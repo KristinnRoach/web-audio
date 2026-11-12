@@ -6,8 +6,15 @@ export { createAudioRecorder } from './nodes/recorder';
 export { SamplePlayer } from './nodes/instruments/Sample/SamplePlayer';
 
 // =*=*=  Types =*=*= \\
-export type { Recorder, RecorderInput, RecorderStartOptions } from './nodes/recorder';
-export type { SampleLoader, AudioInput, GainStages } from './nodes';
+export type {
+  AudioRecorderState,
+  Recorder,
+  RecorderArmOptions,
+  RecorderEvents,
+  RecorderInput,
+  RecorderStartOptions,
+} from './nodes/recorder';
+export type { AudioInput, GainStages } from './nodes';
 export type { SamplePlayerOptions } from './nodes/instruments/Sample/SamplePlayer';
 export type {
   InterpolationMode,
