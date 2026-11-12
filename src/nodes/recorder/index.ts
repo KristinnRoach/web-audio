@@ -4,5 +4,8 @@ export type {
   RecorderArmOptions,
   RecorderEvents,
   RecorderInput,
+  RecorderMonitorOptions,
+  RecorderNoiseMeasurement,
+  RecorderNoiseOptions,
   RecorderStartOptions,
 } from './Recorder';

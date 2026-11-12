@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recorder example: minimal sample recorder</title>
+    <style>
+      :root {
+        --bg: #f6f6f4;
+        --panel: #ffffff;
+        --text: #1c1c1a;
+        --muted: #77776f;
+        --line: #deded8;
+        --track: #e9e9e4;
+        --accent: #d83a34;
+        --w: 300px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161614;
+          --panel: #20201d;
+          --text: #ecece6;
+          --muted: #96968e;
+          --line: #35352f;
+          --track: #2c2c28;
+          --accent: #f0655f;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 48px;
+        padding: 20vh 16px 48px;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+
+      /* ===== The widget: everything a consuming app would show ===== */
+      .rec {
+        width: var(--w);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px;
+      }
+      .rec-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .rec button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      .round {
+        flex: none;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        display: grid;
+        place-items: center;
+        padding: 0;
+      }
+      .round:hover:not(:disabled) {
+        border-color: var(--text);
+      }
+      .round:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      .round:focus-visible,
+      #meter:focus-visible,
+      .pill:focus-visible {
+        outline: 2px solid var(--text);
+        outline-offset: 2px;
+      }
+      #record i {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      #record.waiting {
+        border-color: var(--accent);
+        animation: pulse 1s ease-in-out infinite;
+      }
+      #record.recording {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      #record.recording i {
+        border-radius: 3px;
+        width: 13px;
+        height: 13px;
+        background: var(--panel);
+      }
+      @keyframes pulse {
+        50% {
+          box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 25%, transparent);
+        }
+      }
+      #play i {
+        border-left: 12px solid var(--text);
+        border-top: 7px solid transparent;
+        border-bottom: 7px solid transparent;
+        margin-left: 3px;
+      }
+      #play.playing i {
+        border: 0;
+        margin: 0;
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        background: var(--text);
+      }
+      .mid {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        gap: 5px;
+      }
+      #wave {
+        width: 100%;
+        height: 24px;
+        display: block;
+      }
+      #meter {
+        position: relative;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--track);
+        cursor: ew-resize;
+        touch-action: none;
+      }
+      /* Bigger hit area than the visible strip. */
+      #meter::before {
+        content: '';
+        position: absolute;
+        inset: -7px 0;
+      }
+      #level {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: var(--muted);
+      }
+      #marker {
+        position: absolute;
+        top: -4px;
+        width: 3px;
+        height: 14px;
+        margin-left: -1px;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 7px;
+        min-height: 20px;
+        font-size: 12px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .pill {
+        border: 1px solid var(--line);
+        background: none;
+        border-radius: 6px;
+        padding: 1px 8px;
+        font-size: 12px;
+      }
+      .pill[aria-pressed='true'] {
+        border-color: var(--text);
+        color: var(--text) !important;
+      }
+      .pills {
+        display: flex;
+        gap: 6px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      /* ===== Behaviour switches for trying the options, not part of the widget ===== */
+      details {
+        width: min(100%, 460px);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      summary {
+        cursor: pointer;
+        text-align: center;
+      }
+      .opts {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+        padding: 14px;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+      }
+      .opts label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .opts select,
+      .opts input[type='range'] {
+        width: 200px;
+        font: inherit;
+      }
+      .opts .check {
+        justify-content: flex-start;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="rec">
+      <div class="rec-row">
+        <button id="record" class="round" aria-label="Record"><i></i></button>
+        <div class="mid">
+          <canvas id="wave" width="600" height="48"></canvas>
+          <div
+            id="meter"
+            role="slider"
+            tabindex="0"
+            aria-label="Sensitivity"
+            aria-valuemin="-80"
+            aria-valuemax="0"
+            title="Drag: how loud a sound must be to start recording"
+          >
+            <div id="level"></div>
+            <div id="marker"></div>
+          </div>
+        </div>
+        <button id="play" class="round" aria-label="Play take" disabled><i></i></button>
+      </div>
+      <div class="foot">
+        <span id="status">Press record</span>
+        <span class="pills">
+          <button
+            id="monitor"
+            class="pill"
+            aria-pressed="false"
+            title="Turn the microphone and meter on without recording, to set the marker"
+          >
+            Mic
+          </button>
+          <button id="auto" class="pill" hidden title="Set sensitivity from the room noise">
+            Auto
+          </button>
+        </span>
+      </div>
+    </div>
+
+    <details>
+      <summary>Behaviour switches (for trying the options, not part of the widget)</summary>
+      <div class="opts">
+        <label
+          >Pressing record
+          <select data-cfg="mode">
+            <option value="wait">waits for sound</option>
+            <option value="now">records immediately</option>
+          </select></label
+        >
+        <label
+          >Pressing again while waiting
+          <select data-cfg="pressAgain">
+            <option value="cancel">cancels</option>
+            <option value="start">starts recording now</option>
+          </select></label
+        >
+        <label
+          >The take ends
+          <select data-cfg="ends">
+            <option value="silence">on silence (or stop)</option>
+            <option value="manual">only when I press stop</option>
+          </select></label
+        >
+        <label
+          >Sensitivity
+          <select data-cfg="sensitivity">
+            <option value="slider">marker on the meter</option>
+            <option value="auto">marker + Auto button</option>
+            <option value="each">measured on every record press</option>
+            <option value="fixed">fixed at -30 dB, no control</option>
+          </select></label
+        >
+        <label
+          >Silence before stopping <span><output id="silenceOut"></output></span
+          ><input type="range" data-cfg="silenceMs" min="200" max="2000" step="50"
+        /></label>
+        <label
+          >Widget width <span><output id="widthOut"></output></span
+          ><input type="range" data-cfg="width" min="200" max="420" step="10"
+        /></label>
+        <label class="check"
+          ><input type="checkbox" data-cfg="trimTail" />Trim the silent wait off the end of the
+          take</label
+        >
+      </div>
+    </details>
+
+    <!--
+      Minimal record / meter / play widget on top of Recorder.
+      Run from the repo root: `pnpm exec vp dev --open /examples/recorder/`
+      In an app, import from '@kidlib/web-audio' instead of the source path.
+    -->
+    <script type="module">
+      import { createAudioRecorder } from '../../src/index.ts';
+
+      const $ = (id) => document.getElementById(id);
+      const cfg = {
+        mode: 'wait',
+        pressAgain: 'cancel',
+        ends: 'silence',
+        sensitivity: 'auto',
+        silenceMs: 600,
+        trimTail: false,
+        width: 300,
+      };
+
+      const ctx = new AudioContext();
+      const recorder = createAudioRecorder(ctx);
+
+      let state = recorder.state;
+      let startDb = -30;
+      let peakDb = -Infinity;
+      let livePeaks = [];
+      let recordingSince = 0;
+      let take = null; // the last AudioBuffer, what a SamplePlayer would load
+      let playing = null;
+      let note = '';
+      let takeActive = false; // record was pressed and has not finished or been cancelled
+      let measuring = false;
+      let monitorOn = false; // the Mic toggle: meter without arming
+
+      recorder.onMessage('state-change', (msg) => {
+        state = msg.state;
+        if (state === 'RECORDING') {
+          livePeaks = [];
+          recordingSince = performance.now();
+        }
+        if (state !== 'IDLE') return;
+        takeActive = false;
+        peakDb = -Infinity;
+        // A finished or cancelled take releases the input, so reopen the meter if it is on.
+        queueMicrotask(() => {
+          if (monitorOn) recorder.monitor().catch(() => (monitorOn = false));
+        });
+      });
+      recorder.onMessage('record:level', (level) => {
+        peakDb = level.peakDb;
+        if (state === 'RECORDING') livePeaks.push(10 ** (level.peakDb / 20));
+      });
+      recorder.onMessage('record:stop', ({ buffer }) => (take = buffer));
+      recorder.onMessage('record:error', ({ error }) => {
+        note =
+          error.name === 'NotAllowedError'
+            ? 'Microphone blocked'
+            : error.name === 'EncodingError'
+              ? 'Too short, try again'
+              : 'Could not record';
+        if (error.name !== 'EncodingError') monitorOn = false; // don't retry a broken input
+      });
+
+      async function measure() {
+        measuring = true;
+        try {
+          const measured = await recorder.measureNoiseFloor();
+          if (measured) startDb = Math.round(measured.startThresholdDb);
+          return measured;
+        } finally {
+          measuring = false;
+        }
+      }
+
+      async function pressRecord() {
+        if (state === 'RECORDING') return recorder.stop();
+        if (state === 'ARMED' && cfg.pressAgain === 'start') return recorder.start();
+        if (takeActive) return recorder.cancel();
+        if (measuring || state === 'FINALIZING') return;
+
+        stopPlayback();
+        note = '';
+        takeActive = true;
+        const silence = cfg.ends === 'silence' && { durationMs: cfg.silenceMs, trim: cfg.trimTail };
+        try {
+          if (cfg.mode === 'now') {
+            await recorder.start({
+              stopOnSilence: silence && { ...silence, thresholdDb: startDb - 6 },
+              metering: true,
+            });
+            return;
+          }
+          if (cfg.sensitivity === 'each') {
+            // Monitor first, so measuring and arming share one microphone request.
+            await recorder.monitor();
+            if (!(await measure())) return; // cancelled
+          }
+          await recorder.arm({ startThresholdDb: startDb, stopOnSilence: silence, metering: true });
+        } catch {
+          // Reported through record:error.
+        }
+      }
+
+      async function pressAuto() {
+        if (measuring || takeActive || (state !== 'IDLE' && state !== 'MONITORING')) return;
+        note = '';
+        await measure().catch(() => {});
+      }
+
+      function pressMonitor() {
+        monitorOn = !monitorOn;
+        note = '';
+        if (monitorOn) {
+          if (state === 'IDLE') recorder.monitor().catch(() => (monitorOn = false));
+        } else if (!takeActive && !measuring) recorder.cancel();
+      }
+
+      function stopPlayback() {
+        playing?.stop();
+        playing = null;
+      }
+      function pressPlay() {
+        if (playing) return stopPlayback();
+        const source = ctx.createBufferSource();
+        source.buffer = take;
+        source.connect(ctx.destination);
+        source.onended = () => {
+          if (playing === source) playing = null;
+        };
+        source.start();
+        playing = source;
+      }
+
+      $('record').onclick = pressRecord;
+      $('auto').onclick = pressAuto;
+      $('monitor').onclick = pressMonitor;
+      $('play').onclick = pressPlay;
+
+      // Sensitivity marker: drag or arrow keys. Applies to the armed take straight away.
+      const meter = $('meter');
+      const setStartDb = (db) => {
+        if (cfg.sensitivity === 'fixed' || state === 'RECORDING' || state === 'FINALIZING') return;
+        startDb = Math.max(-80, Math.min(0, Math.round(db)));
+        if (state === 'ARMED') recorder.setStartThresholdDb(startDb);
+      };
+      const setFromPointer = (e) => {
+        const r = meter.getBoundingClientRect();
+        setStartDb(-80 + 80 * ((e.clientX - r.left) / r.width));
+      };
+      meter.onpointerdown = (e) => {
+        meter.setPointerCapture(e.pointerId);
+        setFromPointer(e);
+      };
+      meter.onpointermove = (e) => e.buttons && setFromPointer(e);
+      meter.onkeydown = (e) => {
+        const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+        if (step) setStartDb(startDb + step);
+      };
+
+      // Behaviour switches.
+      function applyCfg() {
+        if (cfg.sensitivity === 'fixed') startDb = -30;
+        document.documentElement.style.setProperty('--w', `${cfg.width}px`);
+        $('auto').hidden = cfg.sensitivity !== 'auto';
+        $('marker').hidden = cfg.sensitivity === 'fixed';
+        $('silenceOut').textContent = `${cfg.silenceMs} ms`;
+        $('widthOut').textContent = `${cfg.width} px`;
+      }
+      document.querySelectorAll('[data-cfg]').forEach((el) => {
+        const key = el.dataset.cfg;
+        if (el.type === 'checkbox') el.checked = cfg[key];
+        else el.value = cfg[key];
+        el.oninput = () => {
+          cfg[key] =
+            el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : el.value;
+          applyCfg();
+        };
+      });
+      applyCfg();
+
+      // Rendering.
+      const wave = $('wave');
+      const g = wave.getContext('2d');
+      const pct = (db) => `${((Math.max(-80, Math.min(0, db)) + 80) / 80) * 100}%`;
+
+      function drawWave() {
+        const { width: W, height: H } = wave;
+        const css = getComputedStyle(document.documentElement);
+        g.clearRect(0, 0, W, H);
+        if (state === 'RECORDING') {
+          g.fillStyle = css.getPropertyValue('--accent');
+          livePeaks.forEach((p, i) => {
+            const h = Math.max(2, p * H);
+            g.fillRect(
+              (i / livePeaks.length) * W,
+              (H - h) / 2,
+              Math.max(1, W / livePeaks.length - 1),
+              h,
+            );
+          });
+        } else if (take) {
+          g.fillStyle = css.getPropertyValue('--text');
+          const samples = take.getChannelData(0);
+          const per = Math.max(1, Math.floor(samples.length / W));
+          for (let x = 0; x < W; x++) {
+            let peak = 0;
+            for (let i = x * per; i < (x + 1) * per && i < samples.length; i += 4) {
+              peak = Math.max(peak, Math.abs(samples[i]));
+            }
+            const h = Math.max(1, peak * H);
+            g.fillRect(x, (H - h) / 2, 1, h);
+          }
+        } else {
+          g.fillStyle = css.getPropertyValue('--track');
+          g.fillRect(0, H / 2 - 1, W, 2);
+        }
+      }
+
+      let lastDrawn = null;
+      function render() {
+        const waiting = takeActive && state !== 'RECORDING' && state !== 'FINALIZING';
+        $('record').className =
+          `round ${state === 'RECORDING' ? 'recording' : waiting ? 'waiting' : ''}`;
+        $('record').setAttribute(
+          'aria-label',
+          state === 'RECORDING' ? 'Stop' : waiting ? 'Cancel' : 'Record',
+        );
+        $('play').disabled = !take || takeActive || state === 'FINALIZING';
+        $('play').className = `round ${playing ? 'playing' : ''}`;
+        $('auto').disabled = measuring || takeActive || state === 'FINALIZING';
+        $('monitor').setAttribute('aria-pressed', monitorOn);
+        $('level').style.width = pct(peakDb);
+        $('marker').style.left = pct(startDb);
+        meter.setAttribute('aria-valuenow', startDb);
+        meter.setAttribute('aria-valuetext', `${startDb} dB`);
+
+        $('status').textContent =
+          note ||
+          (measuring && state === 'MONITORING'
+            ? 'Checking room noise, stay quiet…'
+            : state === 'REQUESTING_INPUT'
+              ? 'Allow the microphone…'
+              : state === 'ARMED'
+                ? 'Waiting for sound…'
+                : state === 'RECORDING'
+                  ? `Recording ${((performance.now() - recordingSince) / 1000).toFixed(1)} s`
+                  : state === 'FINALIZING'
+                    ? 'Saving…'
+                    : take
+                      ? `${take.duration.toFixed(2)} s`
+                      : state === 'MONITORING'
+                        ? 'Meter on'
+                        : 'Press record');
+
+        // The finished waveform only needs drawing once; the live one every frame.
+        const key = state === 'RECORDING' ? null : take;
+        if (key === null || key !== lastDrawn) drawWave();
+        lastDrawn = key;
+        requestAnimationFrame(render);
+      }
+      render();
+    </script>
+  </body>
+</html>

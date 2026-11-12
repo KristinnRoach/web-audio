@@ -8,6 +8,7 @@ import { MUSIC_MIC_CONSTRAINTS, getMicrophone } from '@/io/devices/devices';
 export const AudioRecorderState = {
   IDLE: 'IDLE',
   REQUESTING_INPUT: 'REQUESTING_INPUT',
+  MONITORING: 'MONITORING',
   ARMED: 'ARMED',
   RECORDING: 'RECORDING',
   FINALIZING: 'FINALIZING',
@@ -27,9 +28,11 @@ export type RecorderStartOptions = {
   input?: RecorderInput;
   /**
    * Stop after continuous silence, including that wait in the buffer. `true` or
-   * `{}` defaults to 6 dB below the start threshold and a 600 ms wait.
+   * `{}` defaults to 6 dB below the start threshold and a 600 ms wait. Silence
+   * only counts once the take has had sound. `trim` cuts the wait off the end of
+   * a take that stopped on silence.
    */
-  stopOnSilence?: boolean | { thresholdDb?: number; durationMs?: number };
+  stopOnSilence?: boolean | { thresholdDb?: number; durationMs?: number; trim?: boolean };
   /** Emit record:level readings while armed or recording, using the detection analyser. */
   metering?: boolean;
   /** Passed to `MediaRecorder`. Without a `mimeType` the browser picks the format. */
@@ -39,6 +42,27 @@ export type RecorderStartOptions = {
 export type RecorderArmOptions = RecorderStartOptions & {
   /** Peak level that starts the take. Defaults to -30 dB, or -60 dB for display input. */
   startThresholdDb?: number;
+};
+
+export type RecorderMonitorOptions = {
+  /** Defaults to the microphone. */
+  input?: RecorderInput;
+};
+
+export type RecorderNoiseOptions = RecorderMonitorOptions & {
+  /** How long to listen. Defaults to 800 ms. */
+  durationMs?: number;
+  /** How far above the noise floor to suggest the start threshold. Defaults to 12 dB. */
+  marginDb?: number;
+};
+
+export type RecorderNoiseMeasurement = {
+  /** 95th percentile of the sampled peaks in dBFS; -Infinity for digital silence. */
+  noiseFloorDb: number;
+  /** `noiseFloorDb + marginDb`, kept within -60..0 dB. */
+  startThresholdDb: number;
+  /** 6 dB below `startThresholdDb`, matching the `stopOnSilence` default. */
+  stopThresholdDb: number;
 };
 
 type RecordEvents = {
@@ -55,7 +79,8 @@ export type RecorderEvents = RecordEvents & {
   'record:level': {
     peakDb: number;
     rmsDb: number;
-    startThresholdDb: number;
+    /** `null` while monitoring, which has no thresholds. */
+    startThresholdDb: number | null;
     stopThresholdDb: number | null;
   };
 };
@@ -63,14 +88,26 @@ export type RecorderEvents = RecordEvents & {
 type TakeOptions = Omit<RecorderStartOptions, 'input' | 'stopOnSilence'> & {
   input: RecorderInput;
   startThresholdDb: number;
-  stopOnSilence?: { thresholdDb: number; durationMs: number };
+  stopOnSilence?: { thresholdDb: number; durationMs: number; trim: boolean };
   stopThresholdDerived: boolean;
+};
+
+type Measure = {
+  peaks: number[];
+  endsAt: number;
+  marginDb: number;
+  resolve: (measurement: RecorderNoiseMeasurement | null) => void;
 };
 
 // Everything one take owns, so async work from an old take can't touch a newer one.
 type Take = {
   options: TakeOptions;
   armed: boolean;
+  /** Holds input for metering only, until start() or arm() turns it into a real take. */
+  monitorOnly: boolean;
+  measure?: Measure;
+  /** Set when the take stops on silence with `trim`. */
+  trimSeconds?: number;
   ready: Promise<void>;
   cancelled: Promise<void>;
   cancel: () => void;
@@ -84,12 +121,25 @@ type Take = {
   cleanup: (() => void)[];
 };
 
-const { IDLE, REQUESTING_INPUT, ARMED, RECORDING, FINALIZING } = AudioRecorderState;
+const { IDLE, REQUESTING_INPUT, MONITORING, ARMED, RECORDING, FINALIZING } = AudioRecorderState;
+
+// Audio kept after the last sound when trimming, so the cut doesn't land on the tail.
+const TRIM_KEEP_SECONDS = 0.05;
 
 function assertDb(name: string, value: number): void {
   if (!Number.isFinite(value) || value > 0) {
     throw new RangeError(`${name} must be a finite dB value <= 0, got ${value}`);
   }
+}
+
+function suggestThresholds(peaksDb: number[], marginDb: number): RecorderNoiseMeasurement {
+  const finite = peaksDb.filter(Number.isFinite).sort((a, b) => a - b);
+  // 95th percentile: a single click doesn't set the floor, steady hum does.
+  const noiseFloorDb = finite.length
+    ? finite[Math.min(finite.length - 1, Math.floor(finite.length * 0.95))]
+    : -Infinity;
+  const startThresholdDb = Math.min(0, Math.max(-60, noiseFloorDb + marginDb));
+  return { noiseFloorDb, startThresholdDb, stopThresholdDb: startThresholdDb - 6 };
 }
 
 export class Recorder implements LibNode {
@@ -110,15 +160,58 @@ export class Recorder implements LibNode {
 
   /**
    * Records right away. While armed, starts the armed take now. While a take is
-   * starting or recording, shares it and ignores `options`.
+   * starting or recording, shares it and ignores `options`. While monitoring,
+   * records the monitored input unless `options.input` names another.
    */
   start(options: RecorderStartOptions = {}): Promise<this> {
-    return this.#begin(options, false);
+    return this.#begin(options, 'start');
   }
 
-  /** Acquires input and waits for its peak to reach `startThresholdDb` before recording. */
+  /**
+   * Acquires input and waits for its peak to reach `startThresholdDb` before
+   * recording. While monitoring, arms the monitored input unless `options.input`
+   * names another.
+   */
   arm(options: RecorderArmOptions = {}): Promise<this> {
-    return this.#begin(options, true);
+    return this.#begin(options, 'arm');
+  }
+
+  /**
+   * Opens input and emits record:level without arming, so a threshold can be set
+   * against a live meter with no risk of starting a take. Ends with `cancel()`,
+   * or when a take that started from it finishes.
+   */
+  monitor(options: RecorderMonitorOptions = {}): Promise<this> {
+    return this.#begin(options, 'monitor');
+  }
+
+  /**
+   * Listens to the input and suggests thresholds above its noise floor. Nothing is
+   * applied: pass the result to `arm()`. Opens input for the measurement when idle
+   * and keeps monitoring when already monitoring. Resolves `null` if cancelled or
+   * if a take starts meanwhile; rejects while a take is active.
+   */
+  async measureNoiseFloor(
+    options: RecorderNoiseOptions = {},
+  ): Promise<RecorderNoiseMeasurement | null> {
+    const { durationMs = 800, marginDb = 12 } = options;
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+      throw new RangeError(`durationMs must be a finite number > 0, got ${durationMs}`);
+    }
+    if (!Number.isFinite(marginDb) || marginDb < 0) {
+      throw new RangeError(`marginDb must be a finite number >= 0, got ${marginDb}`);
+    }
+    const wasMonitoring = this.#take?.monitorOnly === true;
+    await this.#begin({ input: options.input }, 'monitor');
+    const take = this.#take;
+    if (!take?.monitorOnly || this.#state !== MONITORING) return null;
+
+    take.measure?.resolve(null);
+    const measurement = await new Promise<RecorderNoiseMeasurement | null>((resolve) => {
+      take.measure = { peaks: [], endsAt: performance.now() + durationMs, marginDb, resolve };
+    });
+    if (!wasMonitoring && take === this.#take && take.monitorOnly) this.cancel();
+    return measurement;
   }
 
   /**
@@ -140,15 +233,39 @@ export class Recorder implements LibNode {
     return this;
   }
 
-  async #begin(options: RecorderArmOptions, armed: boolean): Promise<this> {
+  async #begin(options: RecorderArmOptions, mode: 'start' | 'arm' | 'monitor'): Promise<this> {
     if (this.#disposed) throw new Error('Recorder is disposed');
+    const armed = mode === 'arm';
     const current = this.#take;
-    if (current) {
+    if (current?.monitorOnly && mode !== 'monitor' && options.input) {
+      // A different input was asked for: drop the monitored one and start over.
+      current.cancel();
+      this.#end(current);
+    } else if (current?.monitorOnly && mode !== 'monitor') {
+      // Keep the monitored input, so the take starts without reacquiring it.
+      current.options = this.#resolveOptions({ ...options, input: current.options.input }, armed);
+      current.armed = armed;
+      current.monitorOnly = false;
+      current.measure?.resolve(null);
+      current.measure = undefined;
+      if (this.#state === MONITORING) {
+        try {
+          this.#prepare(current);
+        } catch (error) {
+          this.#fail(current, error);
+          throw error;
+        }
+      }
+      await current.ready;
+      return this;
+    } else if (current) {
       if (this.#state === FINALIZING) {
         await current.result!.catch(() => {});
-        return this.#begin(options, armed);
+        return this.#begin(options, mode);
       }
-      if (!armed) {
+      if (mode === 'monitor') {
+        if (!current.monitorOnly) throw new Error('Cannot monitor while a take is active');
+      } else if (!armed) {
         current.armed = false;
         if (this.#state === ARMED) this.#recordOrFail(current);
       }
@@ -156,12 +273,16 @@ export class Recorder implements LibNode {
       return this;
     }
 
-    const resolved = this.#resolveOptions(options, armed);
+    const resolved =
+      mode === 'monitor'
+        ? this.#resolveOptions({ input: options.input, metering: true }, false)
+        : this.#resolveOptions(options, armed);
     let cancel!: () => void;
     const cancelled = new Promise<void>((resolve) => (cancel = resolve));
     const take: Take = {
       options: resolved,
       armed,
+      monitorOnly: mode === 'monitor',
       ready: Promise.resolve(),
       cancelled,
       cancel,
@@ -187,6 +308,7 @@ export class Recorder implements LibNode {
           thresholdDb:
             (typeof silence === 'object' ? silence.thresholdDb : undefined) ?? startThresholdDb - 6,
           durationMs: (typeof silence === 'object' ? silence.durationMs : undefined) ?? 600,
+          trim: typeof silence === 'object' && !!silence.trim,
         }
       : undefined;
 
@@ -248,25 +370,35 @@ export class Recorder implements LibNode {
           track.addEventListener('ended', () => this.#onInputEnded(take), { signal: ended.signal }),
         );
 
-      const recorder = new MediaRecorder(stream, take.options.mediaRecorderOptions);
-      take.recorder = recorder;
-      recorder.addEventListener('dataavailable', (e) => take.chunks.push(e.data));
-      recorder.addEventListener('error', (e) => {
-        take.error = (e as ErrorEvent).error ?? new Error('MediaRecorder error');
-        if (take === this.#take && !take.result) this.#fail(take, take.error);
-      });
-
-      if (!take.armed) return this.#record(take);
-
-      this.#monitor(take);
-      this.#setState(ARMED);
-      if (take === this.#take && this.#state === ARMED) {
-        this.sendMessage('record:armed', { thresholdDb: take.options.startThresholdDb });
+      if (take.monitorOnly) {
+        this.#monitor(take);
+        this.#setState(MONITORING);
+        return;
       }
+      this.#prepare(take);
     } catch (error) {
       if (take !== this.#take) return this.#release(take);
       this.#fail(take, error);
       throw error;
+    }
+  }
+
+  // Input is open: create the take's MediaRecorder, then record or wait for sound.
+  #prepare(take: Take): void {
+    const recorder = new MediaRecorder(take.stream!, take.options.mediaRecorderOptions);
+    take.recorder = recorder;
+    recorder.addEventListener('dataavailable', (e) => take.chunks.push(e.data));
+    recorder.addEventListener('error', (e) => {
+      take.error = (e as ErrorEvent).error ?? new Error('MediaRecorder error');
+      if (take === this.#take && !take.result) this.#fail(take, take.error);
+    });
+
+    if (!take.armed) return this.#record(take);
+
+    this.#monitor(take);
+    this.#setState(ARMED);
+    if (take === this.#take && this.#state === ARMED) {
+      this.sendMessage('record:armed', { thresholdDb: take.options.startThresholdDb });
     }
   }
 
@@ -340,7 +472,7 @@ export class Recorder implements LibNode {
     }
   }
 
-  // One loop per take: handles the arm trigger, then silence, without restarting.
+  // One loop per take: handles metering, the arm trigger, then silence, without restarting.
   #monitor(take: Take): void {
     if (take.monitoring) return;
     take.monitoring = true;
@@ -351,10 +483,13 @@ export class Recorder implements LibNode {
     source.connect(analyser);
     const data = new Float32Array(analyser.fftSize);
     let silentSince: number | null = null;
+    let heardSound = false;
 
     // shortcut: background tabs throttle this timer; audio-timeline detection is tracked in #166.
     const interval = setInterval(() => {
-      if (take !== this.#take || (this.#state !== ARMED && this.#state !== RECORDING)) return;
+      const state = this.#state;
+      if (take !== this.#take) return;
+      if (state !== MONITORING && state !== ARMED && state !== RECORDING) return;
       analyser.getFloatTimeDomainData(data);
       let peak = 0;
       let sumSquares = 0;
@@ -363,11 +498,19 @@ export class Recorder implements LibNode {
         sumSquares += sample * sample;
       }
       const peakDb = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+      const measure = take.measure;
+      if (measure) {
+        measure.peaks.push(peakDb);
+        if (performance.now() >= measure.endsAt) {
+          take.measure = undefined;
+          measure.resolve(suggestThresholds(measure.peaks, measure.marginDb));
+        }
+      }
       if (take.options.metering) {
         this.#messages.sendMessage('record:level', {
           peakDb,
           rmsDb: sumSquares > 0 ? 10 * Math.log10(sumSquares / data.length) : -Infinity,
-          startThresholdDb: take.options.startThresholdDb,
+          startThresholdDb: take.monitorOnly ? null : take.options.startThresholdDb,
           stopThresholdDb: take.options.stopOnSilence?.thresholdDb ?? null,
         });
         // A UI handler may cancel, dispose, or start a new take.
@@ -376,6 +519,7 @@ export class Recorder implements LibNode {
 
       if (this.#state === ARMED) {
         if (peakDb >= take.options.startThresholdDb) {
+          heardSound = true;
           try {
             this.#recordOrFail(take);
           } catch {
@@ -387,11 +531,16 @@ export class Recorder implements LibNode {
 
       const silence = take.options.stopOnSilence;
       if (this.#state !== RECORDING || !silence) return;
+      const now = performance.now();
       if (peakDb >= silence.thresholdDb) {
         silentSince = null;
+        heardSound = true;
+      } else if (!heardSound) {
+        // Silence before the first sound doesn't end a take that has nothing in it yet.
       } else if (silentSince === null) {
-        silentSince = performance.now();
-      } else if (performance.now() - silentSince >= silence.durationMs) {
+        silentSince = now;
+      } else if (now - silentSince >= silence.durationMs) {
+        if (silence.trim) take.trimSeconds = (now - silentSince) / 1000 - TRIM_KEEP_SECONDS;
         this.stop().catch(() => {}); // failures are reported through record:error
       }
     }, 20);
@@ -407,12 +556,14 @@ export class Recorder implements LibNode {
     if (take !== this.#take) return;
     if (!take.stream!.getTracks().every((t) => t.readyState === 'ended')) return;
     if (this.#state === RECORDING) this.stop().catch(() => {});
-    else if (this.#state === ARMED) this.#fail(take, new Error('Recorder input ended'));
+    else if (this.#state === ARMED || this.#state === MONITORING) {
+      this.#fail(take, new Error('Recorder input ended'));
+    }
   }
 
   /**
    * Finishes the take and resolves with its audio. Resolves `null` when idle, or
-   * when armed or still requesting input, which cancels the take. Calls while
+   * when monitoring, armed or still requesting input, which cancels. Calls while
    * finalizing share the same result.
    */
   stop(): Promise<AudioBuffer | null> {
@@ -446,6 +597,7 @@ export class Recorder implements LibNode {
 
       buffer = await this.#context.decodeAudioData(await blob.arrayBuffer());
       if (take !== this.#take) return null; // cancelled or disposed while decoding
+      if (take.trimSeconds) buffer = this.#trimEnd(buffer, take.trimSeconds);
     } catch (error) {
       if (take !== this.#take) {
         this.#release(take);
@@ -462,18 +614,30 @@ export class Recorder implements LibNode {
     return buffer;
   }
 
+  #trimEnd(buffer: AudioBuffer, seconds: number): AudioBuffer {
+    const length = buffer.length - Math.floor(seconds * buffer.sampleRate);
+    if (length <= 0 || length >= buffer.length) return buffer;
+    const trimmed = this.#context.createBuffer(buffer.numberOfChannels, length, buffer.sampleRate);
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      trimmed.copyToChannel(buffer.getChannelData(channel).subarray(0, length), channel);
+    }
+    return trimmed;
+  }
+
   /**
    * Discards the current take, whether it is requesting input, armed, recording
-   * or finalizing. A pending `stop()` resolves `null`.
+   * or finalizing. A pending `stop()` resolves `null`. Also ends monitoring, which
+   * emits no record:cancelled since no take was discarded.
    *
-   * @returns true if a take was cancelled, false if there was nothing to cancel.
+   * @returns true if a take or monitoring was cancelled, false if there was nothing to cancel.
    */
   cancel(): boolean {
     const take = this.#take;
     if (!take) return false;
+    const { monitorOnly } = take;
     take.cancel();
     this.#end(take);
-    if (!this.#disposed) this.sendMessage('record:cancelled', {});
+    if (!this.#disposed && !monitorOnly) this.sendMessage('record:cancelled', {});
     return true;
   }
 
@@ -491,6 +655,8 @@ export class Recorder implements LibNode {
   // Safe to call repeatedly: runs cleanup registered since the last call.
   #release(take: Take): void {
     if (take.recorder && take.recorder.state !== 'inactive') take.recorder.stop();
+    take.measure?.resolve(null);
+    take.measure = undefined;
     for (const cleanup of take.cleanup.splice(0)) cleanup();
   }
 
@@ -527,6 +693,10 @@ export class Recorder implements LibNode {
   // Getters
   get isArmed(): boolean {
     return this.#state === ARMED;
+  }
+
+  get isMonitoring(): boolean {
+    return this.#state === MONITORING;
   }
 
   get isRecording(): boolean {

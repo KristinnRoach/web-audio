@@ -97,7 +97,7 @@ describe('Recorder', () => {
   });
 
   it('start() while armed records the prepared take, keeping stopOnSilence', async () => {
-    const { ctx, recorder, input } = await setup({ level: 0 });
+    const { ctx, source, recorder, input } = await setup({ level: 0 });
     const stops = vi.fn();
     recorder.onMessage('record:stop', stops);
 
@@ -105,6 +105,10 @@ describe('Recorder', () => {
     await recorder.start({ input: { type: 'microphone' } }); // options ignored: shares the take
     expect(recorder.state).toBe('RECORDING');
 
+    // Silence only counts after sound, so the forced take needs some before it can stop.
+    source.offset.value = 1;
+    await wait(150);
+    source.offset.value = 0;
     await until(() => recorder.state === 'IDLE');
     await wait(150);
     expect(stops).toHaveBeenCalledOnce();
@@ -307,16 +311,125 @@ describe('Recorder', () => {
   });
 
   it('stopOnSilence completes once during an immediate take', async () => {
-    const { ctx, recorder, input } = await setup({ level: 0 });
+    const { ctx, source, recorder, input } = await setup();
     const stops = vi.fn();
     recorder.onMessage('record:stop', stops);
 
     await recorder.start({ input, stopOnSilence: { thresholdDb: -40, durationMs: 100 } });
+    await wait(150);
+    source.offset.value = 0;
     await until(() => recorder.state === 'IDLE');
     await wait(200);
 
     expect(stops).toHaveBeenCalledOnce();
     expect(recorder.initialized).toBe(false);
+    await ctx.close();
+  });
+
+  it('does not count silence until the take has had sound', async () => {
+    const { ctx, source, recorder, input } = await setup({ level: 0 });
+    await recorder.start({ input, stopOnSilence: { thresholdDb: -40, durationMs: 100 } });
+    await wait(400);
+    expect(recorder.isRecording).toBe(true);
+
+    source.offset.value = 1;
+    await wait(150);
+    source.offset.value = 0;
+    await until(() => recorder.state === 'IDLE');
+    await ctx.close();
+  });
+
+  it('trims the silence wait off a take that stopped on silence', async () => {
+    const { ctx, source, recorder, input } = await setup();
+    const takes: AudioBuffer[] = [];
+    recorder.onMessage('record:stop', ({ buffer }) => takes.push(buffer));
+    const record = async (trim: boolean) => {
+      source.offset.value = 1;
+      await recorder.start({ input, stopOnSilence: { thresholdDb: -40, durationMs: 500, trim } });
+      await wait(300);
+      source.offset.value = 0;
+      await until(() => takes.length === (trim ? 2 : 1));
+    };
+    await record(false);
+    await record(true);
+
+    expect(takes[0].duration - takes[1].duration).toBeGreaterThan(0.3);
+    expect(takes[1].duration).toBeGreaterThan(0.2);
+    expect(peak(takes[1])).toBeGreaterThan(0.5);
+    await ctx.close();
+  });
+
+  it('monitors levels without arming, then records the monitored input', async () => {
+    const { ctx, recorder, input } = await setup();
+    const connect = vi.spyOn(input.node, 'connect');
+    const starts = vi.fn();
+    const cancels = vi.fn();
+    const levels: RecorderEvents['record:level'][] = [];
+    recorder.onMessage('record:start', starts);
+    recorder.onMessage('record:cancelled', cancels);
+    recorder.onMessage('record:level', (level) => levels.push(level));
+
+    await recorder.monitor({ input });
+    expect(recorder.state).toBe('MONITORING');
+    await until(() => levels.some((l) => l.peakDb > -1));
+    await wait(100);
+    expect(recorder.isMonitoring).toBe(true);
+    expect(starts).not.toHaveBeenCalled();
+    expect(levels.at(-1)!.startThresholdDb).toBeNull();
+
+    await recorder.arm({ startThresholdDb: -20, metering: true });
+    await until(() => recorder.isRecording);
+    expect(connect).toHaveBeenCalledOnce();
+    await wait(200); // long enough to decode
+    const buffer = await recorder.stop();
+    expect(peak(buffer!)).toBeGreaterThan(0.5);
+
+    // Ending monitoring discards no take, so nothing is reported as cancelled.
+    await recorder.monitor({ input });
+    expect(await recorder.stop()).toBeNull();
+    expect(recorder.state).toBe('IDLE');
+    expect(cancels).not.toHaveBeenCalled();
+    await recorder.start({ input });
+    await expect(recorder.monitor({ input })).rejects.toThrow('take is active');
+    recorder.cancel();
+    await ctx.close();
+  });
+
+  it('measures the noise floor and suggests thresholds above it', async () => {
+    const { ctx, recorder, input } = await setup({ level: 0.01 });
+    const measured = await recorder.measureNoiseFloor({ input, durationMs: 200 });
+    expect(measured!.noiseFloorDb).toBeCloseTo(-40, 1);
+    expect(measured!.startThresholdDb).toBeCloseTo(-28, 1);
+    expect(measured!.stopThresholdDb).toBeCloseTo(-34, 1);
+    expect(recorder.state).toBe('IDLE');
+    expect(recorder.initialized).toBe(false);
+
+    // Already monitoring: measures on the open input and keeps monitoring.
+    await recorder.monitor({ input });
+    const wider = await recorder.measureNoiseFloor({ durationMs: 100, marginDb: 20 });
+    expect(wider!.startThresholdDb).toBeCloseTo(-20, 1);
+    expect(recorder.isMonitoring).toBe(true);
+
+    const cancelled = recorder.measureNoiseFloor({ durationMs: 5000 });
+    await wait(50);
+    recorder.cancel();
+    expect(await cancelled).toBeNull();
+
+    await expect(recorder.measureNoiseFloor({ durationMs: 0 })).rejects.toThrow(RangeError);
+    await recorder.start({ input });
+    await expect(recorder.measureNoiseFloor()).rejects.toThrow('take is active');
+    recorder.cancel();
+    await ctx.close();
+  });
+
+  it('suggests the most sensitive threshold for digital silence', async () => {
+    const { ctx, recorder, input } = await setup({ level: 0 });
+    const measured = await recorder.measureNoiseFloor({ input, durationMs: 100 });
+    expect(measured).toEqual({
+      noiseFloorDb: -Infinity,
+      startThresholdDb: -60,
+      stopThresholdDb: -66,
+    });
     await ctx.close();
   });
 

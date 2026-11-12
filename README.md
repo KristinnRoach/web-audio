@@ -51,11 +51,12 @@ await recorder.arm({
 
 `stopOnSilence: true` derives its stop threshold 6 dB below the start threshold
 and waits for **600 ms of continuous silence**. Sound above the stop threshold
-resets the wait. This is not a minimum recording length, and the silence wait is
-included in the buffer. Omit `stopOnSilence` or pass `false` to stop manually.
-Override either setting independently, for example
+resets the wait. Silence only counts once the take has had sound, so `start()`
+in a quiet room keeps recording until something is played. The silence wait is
+included in the buffer unless `trim: true` cuts it off. Omit `stopOnSilence` or
+pass `false` to stop manually. Override any setting independently, for example
 `stopOnSilence: { durationMs: 1000 }` for longer pauses or
-`stopOnSilence: { thresholdDb: -50, durationMs: 1000 }` for full control.
+`stopOnSilence: { thresholdDb: -50, durationMs: 1000, trim: true }` for full control.
 
 For a UI meter and one sensitivity slider, opt into level events:
 
@@ -83,8 +84,32 @@ starts and does not change future takes. An explicit stop threshold must remain
 below the new start threshold.
 
 Set the stop threshold above room noise so the take can finish. Fixed defaults
-cannot suit every environment; room-noise calibration and adaptive thresholds
-are tracked in [#167](https://github.com/KristinnRoach/web-audio/issues/167).
+cannot suit every environment, so the recorder can measure the room and show a
+meter before anything is armed:
+
+```ts
+// "Auto" button: listen for 800 ms and suggest a threshold 12 dB above the noise.
+const measured = await recorder.measureNoiseFloor(); // null if cancelled
+if (measured) startThresholdDb = measured.startThresholdDb;
+
+// Mic toggle: a live meter with no risk of starting a take.
+await recorder.monitor(); // record:level events, state MONITORING
+recorder.cancel(); // or arm()/start(), which reuse the open input
+
+await recorder.arm({ startThresholdDb, stopOnSilence: true, metering: true });
+```
+
+`measureNoiseFloor()` takes the 95th percentile of the sampled peaks as the
+noise floor, so one click does not set it, and returns `noiseFloorDb`,
+`startThresholdDb` and `stopThresholdDb` (6 dB lower). Nothing is applied for
+you. Digital silence suggests -60 dB; a suggestion near 0 dB means the room is
+too loud to trigger reliably. `durationMs` and `marginDb` are adjustable. It
+opens input for the measurement when idle, and keeps monitoring when called
+while monitoring. Thresholds stay fixed for the take; the recorder does not
+adapt them while armed. During monitoring `record:level` reports
+`startThresholdDb: null`, and a take that finishes ends the monitoring it
+started from. [examples/recorder](examples/recorder/index.html) is a minimal
+record/meter/play widget built on these calls.
 
 `input` picks the source; the microphone is the default. One of:
 
@@ -95,8 +120,8 @@ recorder.start({ input: { type: 'audio-node', node: synthOutput } });
 recorder.start({ input: { type: 'stream', stream } }); // its tracks are left running
 ```
 
-`cancel()` discards a take at any stage. `state-change` reports `IDLE`,
-`REQUESTING_INPUT`, `ARMED`, `RECORDING` and `FINALIZING`; failures arrive on
+`cancel()` discards a take at any stage and ends monitoring. `state-change` reports
+`IDLE`, `REQUESTING_INPUT`, `MONITORING`, `ARMED`, `RECORDING` and `FINALIZING`; failures arrive on
 `record:error`. Input acquisition failures also reject `start()`/`arm()`;
 capture or decode failures reject a pending `stop()`. Cancelling settles pending
 startup calls and resolves a pending `stop()` with `null`, even while permission
