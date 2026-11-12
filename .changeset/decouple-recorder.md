@@ -32,5 +32,8 @@ Other changes:
 - `start()`/`arm()` reject before acquiring input for non-finite or positive dB values, a non-positive or non-finite `durationMs`, `stopOnSilence.thresholdDb` at or above `startThresholdDb`, an unsupported `mimeType`, an `AudioNode` from another context, or a stream without a live audio track. Display capture without an audio track rejects and releases the capture.
 - `createAudioRecorder()` returns the `Recorder` directly instead of a promise. Existing `await` calls keep working.
 - `onMessage()` is typed per event. `AudioRecorderState`, `RecorderEvents` and `RecorderArmOptions` are exported.
+- `stopOnSilence: true` (or `{}`) uses a stop threshold 6 dB below the start threshold and waits for 600 ms of continuous silence. Object options can override either setting. Silence stopping remains opt-in; the wait is included in the buffer and resets when sound returns.
+- `metering: true` enables typed `record:level` events with sampled `peakDb`, `rmsDb`, and the effective start/stop thresholds. Levels are dBFS with `-Infinity` for digital silence, reported approximately every 20 ms while armed or recording using the existing analyser. Timer throttling can delay updates in background tabs.
+- `setStartThresholdDb()` adjusts a pending/armed take without reacquiring input. Derived stop thresholds follow; explicit stop thresholds stay fixed and must remain lower. It does not change future takes. Room-noise calibration and adaptive defaults are tracked in https://github.com/KristinnRoach/web-audio/issues/167.
 
 Recording still goes through `MediaRecorder` and a decode, so lossless capture is not guaranteed and the initial attack before a trigger can be missed. Tracked in https://github.com/KristinnRoach/web-audio/issues/166.

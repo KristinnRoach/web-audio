@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vite-plus/test';
-import { Recorder } from '../Recorder';
+import { Recorder, type RecorderEvents } from '../Recorder';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -317,6 +317,132 @@ describe('Recorder', () => {
 
     expect(stops).toHaveBeenCalledOnce();
     expect(recorder.initialized).toBe(false);
+    await ctx.close();
+  });
+
+  it('stopOnSilence: true waits for 600 ms of continuous silence', async () => {
+    const { ctx, source, recorder, input } = await setup();
+    const levels: RecorderEvents['record:level'][] = [];
+    const stops = vi.fn();
+    recorder.onMessage('record:level', (level) => levels.push(level));
+    recorder.onMessage('record:stop', stops);
+    await recorder.start({ input, stopOnSilence: true, metering: true });
+    await until(() => levels.some((l) => l.peakDb > -1));
+    expect(levels.at(-1)!.stopThresholdDb).toBe(-36);
+
+    source.offset.value = 0;
+    await until(() => levels.at(-1)!.peakDb === -Infinity);
+    await wait(300);
+    expect(recorder.isRecording).toBe(true);
+    // Sound returning resets the continuous-silence wait.
+    source.offset.value = 1;
+    await until(() => levels.at(-1)!.peakDb > -1);
+    source.offset.value = 0;
+    await until(() => levels.at(-1)!.peakDb === -Infinity);
+    const silentAt = performance.now();
+    await wait(400);
+    expect(recorder.isRecording).toBe(true);
+    await until(() => recorder.state === 'IDLE');
+    expect(performance.now() - silentAt).toBeGreaterThanOrEqual(570);
+    expect(stops).toHaveBeenCalledOnce();
+    await ctx.close();
+  });
+
+  it('meters known levels and adjusts both derived thresholds without reacquiring input', async () => {
+    const { ctx, recorder, input } = await setup({ level: 0.01 });
+    const analyser = vi.spyOn(ctx, 'createAnalyser');
+    const connect = vi.spyOn(input.node, 'connect');
+    const levels: RecorderEvents['record:level'][] = [];
+    recorder.onMessage('record:level', (level) => levels.push(level));
+    await recorder.arm({
+      input,
+      startThresholdDb: -20,
+      stopOnSilence: { durationMs: 100 },
+      metering: true,
+    });
+    await until(() => Math.abs((levels.at(-1)?.rmsDb ?? 0) + 40) < 0.1);
+    expect(levels.at(-1)!.peakDb).toBeCloseTo(-40, 1);
+    expect(levels.at(-1)!.stopThresholdDb).toBe(-26);
+
+    recorder.setStartThresholdDb(-30);
+    await until(() => levels.at(-1)!.startThresholdDb === -30);
+    expect(levels.at(-1)!.stopThresholdDb).toBe(-36);
+    expect(recorder.isArmed).toBe(true);
+    expect(() => recorder.setStartThresholdDb(NaN)).toThrow(RangeError);
+    recorder.setStartThresholdDb(-45);
+    await until(() => recorder.isRecording);
+    expect(analyser).toHaveBeenCalledOnce();
+    expect(connect).toHaveBeenCalledOnce();
+    recorder.cancel();
+    const count = levels.length;
+    await wait(80);
+    expect(levels).toHaveLength(count);
+    await ctx.close();
+  });
+
+  it('keeps an explicit stop threshold fixed when sensitivity changes', async () => {
+    const { ctx, recorder, input } = await setup({ level: 0 });
+    const levels: RecorderEvents['record:level'][] = [];
+    recorder.onMessage('record:level', (level) => levels.push(level));
+    await recorder.arm({ input, stopOnSilence: { thresholdDb: -50 }, metering: true });
+    recorder.setStartThresholdDb(-40);
+    expect(() => recorder.setStartThresholdDb(-55)).toThrow(RangeError);
+    await until(() => levels.length > 0);
+    expect(levels.at(-1)!.startThresholdDb).toBe(-40);
+    expect(levels.at(-1)!.stopThresholdDb).toBe(-50);
+    recorder.dispose();
+    const count = levels.length;
+    await wait(80);
+    expect(levels).toHaveLength(count);
+    expect(() => recorder.setStartThresholdDb(-30)).toThrow('waiting for sound');
+    await ctx.close();
+  });
+
+  it('adjusts sensitivity while input is pending', async () => {
+    const { ctx, source, recorder } = await setup({ level: 0.01 });
+    const destination = ctx.createMediaStreamDestination();
+    source.connect(destination);
+    const gum = deferred<MediaStream>();
+    vi.spyOn(navigator.mediaDevices, 'getUserMedia').mockReturnValue(gum.promise);
+    const pending = recorder.arm({ startThresholdDb: -20 });
+    recorder.setStartThresholdDb(-45);
+    gum.resolve(destination.stream);
+    await pending;
+    await until(() => recorder.isRecording);
+    recorder.cancel();
+    await ctx.close();
+  });
+
+  it('metering is opt-in and works without silence stopping', async () => {
+    const { ctx, recorder, input } = await setup({ level: 0.25 });
+    const analyser = vi.spyOn(ctx, 'createAnalyser');
+    const levels: RecorderEvents['record:level'][] = [];
+    recorder.onMessage('record:level', (level) => levels.push(level));
+    await recorder.start({ input, stopOnSilence: false });
+    await wait(80);
+    expect(levels).toHaveLength(0);
+    expect(analyser).not.toHaveBeenCalled();
+    recorder.cancel();
+
+    await recorder.start({ input, metering: true });
+    await until(() => Math.abs((levels.at(-1)?.rmsDb ?? 0) + 12.0412) < 0.1);
+    expect(levels.at(-1)!.peakDb).toBeCloseTo(-12.0412, 1);
+    expect(levels.at(-1)!.stopThresholdDb).toBeNull();
+    await recorder.stop();
+    const count = levels.length;
+    await wait(80);
+    expect(levels).toHaveLength(count);
+    await ctx.close();
+  });
+
+  it('a meter handler can cancel before sound triggers recording', async () => {
+    const { ctx, recorder, input } = await setup();
+    const starts = vi.fn();
+    recorder.onMessage('record:start', starts);
+    recorder.onMessage('record:level', () => recorder.cancel());
+    await recorder.arm({ input, metering: true });
+    await until(() => recorder.state === 'IDLE');
+    expect(starts).not.toHaveBeenCalled();
     await ctx.close();
   });
 
