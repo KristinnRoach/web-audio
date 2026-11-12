@@ -149,7 +149,7 @@ describe('scheduled sample start', () => {
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
 
-  it('does not acknowledge a host-requested stop', async () => {
+  it('reports a host-requested stop once it has faded out', async () => {
     const processor = await createProcessor(0);
     processor.port.postMessage.mockClear();
 
@@ -157,8 +157,10 @@ describe('scheduled sample start', () => {
     processor.process([], [[new Float32Array(BLOCK_SIZE)]], makeParameters());
 
     expect(processor.engine.isPlaying).toBe(false);
-    const types = processor.port.postMessage.mock.calls.map(([message]) => message.type);
-    expect(types.filter((type) => type.startsWith('voice:'))).toEqual([]);
+    const lifecycle = processor.port.postMessage.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type.startsWith('voice:'));
+    expect(lifecycle).toEqual([{ type: 'voice:ended', triggerId: TEST_TRIGGER_ID }]);
   });
 
   it('reports when playback reaches the sample boundary', async () => {

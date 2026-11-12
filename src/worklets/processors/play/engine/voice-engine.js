@@ -269,9 +269,9 @@ export class VoiceEngine {
   }
 
   /**
-   * Fades out from the frame of `timestamp`, then ends the note without
-   * posting anything. A passed (or missing) timestamp fades from the next
-   * rendered frame; a stop at or before a pending start ends the note silently.
+   * Fades out from the frame of `timestamp`, then ends the note. A passed (or
+   * missing) timestamp fades from the next rendered frame; a stop at or before
+   * a pending start ends the note silently.
    */
   stop(timestamp) {
     const frame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
@@ -285,7 +285,9 @@ export class VoiceEngine {
     this.stopFadeFrames = 0;
   }
 
+  // Every note that ends, by stop or at the playback boundary, reports it once.
   #halt() {
+    this.post({ type: 'voice:ended', triggerId: this.triggerId });
     this.isPlaying = false;
     this.pendingStartFrame = 0;
     this.#clearStop();
@@ -1028,13 +1030,7 @@ export class VoiceEngine {
         this.playbackPosition <= loopWindow.end;
 
       if (leftPlaybackRange && !isWithinLoop) {
-        const endedTriggerId = this.triggerId;
-        this.#halt();
-        this.post({
-          type: 'voice:ended',
-          triggerId: endedTriggerId,
-        });
-        return;
+        return this.#halt();
       }
 
       // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail

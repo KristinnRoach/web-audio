@@ -228,7 +228,7 @@ describe('SampleVoice state', () => {
     voice.release();
     expect(voice.state).toBe(VoiceState.RELEASING);
 
-    vi.runAllTimers();
+    endPlayback(1);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
     expect(voice.midiNote).toBeNull();
     expect(events).toEqual(['voice:started', 'voice:releasing', 'voice:stopped']);
@@ -256,25 +256,18 @@ describe('SampleVoice state', () => {
 
     expect(voice.envelopes.get('pitch')!.releaseDuration()).toBeGreaterThan(voice.releaseTime);
     expect(releaseDuration).toBe(voice.releaseTime);
-    const stopAfterMs = voice.releaseTime * 1000 + 50;
-    vi.advanceTimersByTime(stopAfterMs - 1);
-    expect(voice.state).toBe(VoiceState.RELEASING);
-    vi.advanceTimersByTime(1);
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
+    expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: voice.releaseTime });
   });
 
-  it('waits for the scheduled release and amplitude tail before stopping', async () => {
+  it('schedules the processor stop after the release and amplitude tail', async () => {
     const voice = await loadedVoice();
     trigger(voice);
 
     voice.release({ secondsFromNow: 2 });
 
-    const stopAfterMs = (2 + voice.releaseTime) * 1000 + 50;
-    vi.advanceTimersByTime(stopAfterMs - 1);
+    expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: 2 + voice.releaseTime });
     expect(voice.state).toBe(VoiceState.RELEASING);
-    expect(sentTypes()).not.toContain('voice:stop');
-
-    vi.advanceTimersByTime(1);
+    endPlayback(1);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
@@ -296,11 +289,10 @@ describe('SampleVoice state', () => {
 
       expect(cancel).not.toHaveBeenCalled();
       expect(target).not.toHaveBeenCalled();
-      const stopAfterMs = (secondsFromNow + releaseDuration) * 1000 + 50;
-      vi.advanceTimersByTime(stopAfterMs - 1);
-      expect(voice.state).toBe(VoiceState.RELEASING);
-      vi.advanceTimersByTime(1);
-      expect(voice.state).toBe(VoiceState.AVAILABLE);
+      expect(audio.posted.at(-1)).toEqual({
+        type: 'voice:stop',
+        timestamp: secondsFromNow + releaseDuration,
+      });
     },
   );
 
@@ -310,7 +302,7 @@ describe('SampleVoice state', () => {
     voice.setEnvelopeConfig('amp', { ...config, enabled });
     const gain = voice.getParam('envGain')!;
     const peak = vi.spyOn(gain, 'exponentialRampToValueAtTime');
-    const gate = vi.spyOn(gain, 'setTargetAtTime');
+    const gate = vi.spyOn(gain, 'setValueAtTime');
     const velocity = vi.spyOn(voice.getParam('velocity')!, 'setValueAtTime');
 
     voice.trigger({ midiNote: 60, velocity: 64 });
@@ -318,7 +310,7 @@ describe('SampleVoice state', () => {
     expect(velocity).toHaveBeenCalledWith(64, expect.any(Number));
     const presetPeak = Math.max(...config.shape.points.map((point) => point.value));
     if (enabled) expect(peak).toHaveBeenCalledWith(presetPeak, expect.any(Number));
-    else expect(gate).toHaveBeenCalledWith(1, 0, expect.any(Number));
+    else expect(gate).toHaveBeenCalledWith(1, 0);
   });
 
   it.each(['pitch', 'filter'] as const)(
@@ -417,12 +409,12 @@ describe('SampleVoice state', () => {
     const voice = await loadedVoice();
     trigger(voice);
     voice.release();
+    audio.posted = [];
     voice.stop();
     voice.stop();
-    vi.runAllTimers();
 
     expect(voice.state).toBe(VoiceState.AVAILABLE);
-    expect(sentTypes().filter((t) => t === 'voice:stop')).toHaveLength(1);
+    expect(sentTypes()).toEqual(['voice:stop']);
   });
 
   it('sends a synchronous stop and retrigger in order', async () => {
