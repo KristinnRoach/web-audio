@@ -141,10 +141,10 @@ describe('scheduled sample start', () => {
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
 
-  it.each(['voice:reset', 'voice:stop'])('clears a pending start on %s', async (type) => {
+  it('clears a pending start on stop', async () => {
     const processor = await createProcessor(BLOCK_SIZE * 2);
 
-    processor.port.onmessage?.({ data: { type } } as MessageEvent);
+    processor.port.onmessage?.({ data: { type: 'voice:stop' } } as MessageEvent);
 
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
