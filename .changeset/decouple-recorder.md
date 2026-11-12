@@ -2,16 +2,35 @@
 '@kidlib/web-audio': minor
 ---
 
-Decouple `Recorder` from `SamplePlayer`. `record:stop` now carries the recorded `buffer`, so auto-stopped takes reach consumers without a destination.
+Decouple `Recorder` from `SamplePlayer` and rework its start/stop controls. `record:stop` carries the recorded `buffer`, so auto-stopped takes reach consumers without a destination.
 
-Breaking: remove `Recorder.connect()`, `Recorder.disconnect()`, `Recorder.destination`, and the `SampleLoader` type. `record:armed` and `record:start` no longer include `destination`. Replace `recorder.connect(player)` with:
+Breaking: remove `Recorder.connect()`, `Recorder.disconnect()`, `Recorder.destination`, and the `SampleLoader` type. Replace `recorder.connect(player)` with:
 
 ```ts
 recorder.onMessage('record:stop', ({ buffer }) => player.loadAudio(buffer));
 ```
 
-Recorder API cleanups:
+Breaking: `start()` records immediately. Waiting for sound moves to `arm()`, and `forceStart()` is gone (call `start()` while armed). The `useThreshold`, `startThreshold`, `autoStop`, `stopThreshold` and `silenceTimeoutMs` options are replaced:
 
+| Before                                                                  | After                                                            |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `start()` (threshold on by default)                                     | `arm()`                                                          |
+| `start({ useThreshold: false })`                                        | `start()`                                                        |
+| `start({ startThreshold: -40 })`                                        | `arm({ startThresholdDb: -40 })`                                 |
+| `start({ autoStop: true, stopThreshold: -50, silenceTimeoutMs: 1000 })` | `arm({ stopOnSilence: { thresholdDb: -50, durationMs: 1000 } })` |
+| `forceStart()`                                                          | `start()` while armed                                            |
+
+Other changes:
+
+- `stop()` resolves `AudioBuffer | null`. It resolves `null` when idle, and when armed or still requesting input, which cancels the take. Calls while finalizing share one result. Capture and decode failures still reject and emit `record:error`.
+- `cancel()` also discards a take that is requesting input or finalizing. Pending startup calls settle without waiting for permission, and a pending `stop()` resolves `null` without waiting for decoding. Late input is released.
+- Repeated `start()`/`arm()` calls share a pending startup and leave an active take alone. `start()` after `dispose()` rejects.
+- States are `IDLE`, `REQUESTING_INPUT`, `ARMED`, `RECORDING` and `FINALIZING`; `STOPPED` is gone, a finished take returns to `IDLE`. `state-change` fires on every transition with `{ state, previousState }`, no longer `event`. `record:stopping` is removed, use `state-change` to `FINALIZING`. `record:armed` reports `thresholdDb` instead of `threshold`. New `record:error` reports failures, including ones after `start()` resolved.
+- `record:stop` fires once per take, after the take's input is released, so a handler can start the next take.
+- New `{ type: 'stream', stream }` input records a caller-supplied `MediaStream` without stopping its tracks. Microphone input takes `constraints`, merged over the music-friendly defaults (echo cancellation, gain control and noise suppression off).
+- The format is no longer forced to `audio/webm`; the browser picks one unless `mediaRecorderOptions.mimeType` is set, which is checked with `MediaRecorder.isTypeSupported()`.
+- `start()`/`arm()` reject before acquiring input for non-finite or positive dB values, a non-positive or non-finite `durationMs`, `stopOnSilence.thresholdDb` at or above `startThresholdDb`, an unsupported `mimeType`, an `AudioNode` from another context, or a stream without a live audio track. Display capture without an audio track rejects and releases the capture.
 - `createAudioRecorder()` returns the `Recorder` directly instead of a promise. Existing `await` calls keep working.
-- `start()` rejects with a `RangeError` when `startThreshold` is outside -60..0, before acquiring input. It previously resolved, warned, and never armed. The range is now inclusive, so the -60 display-capture default arms.
-- `onMessage()` is typed per event, so `record:stop` handlers get `buffer: AudioBuffer` and `state-change` handlers get `state: AudioRecorderState`. Unknown event names are a type error. `AudioRecorderState` and `RecorderEvents` are exported.
+- `onMessage()` is typed per event. `AudioRecorderState`, `RecorderEvents` and `RecorderArmOptions` are exported.
+
+Recording still goes through `MediaRecorder` and a decode, so lossless capture is not guaranteed and the initial attack before a trigger can be missed. Tracked in https://github.com/KristinnRoach/web-audio/issues/166.

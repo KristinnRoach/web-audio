@@ -9,6 +9,7 @@ export { SamplePlayer } from './nodes/instruments/Sample/SamplePlayer';
 export type {
   AudioRecorderState,
   Recorder,
+  RecorderArmOptions,
   RecorderEvents,
   RecorderInput,
   RecorderStartOptions,

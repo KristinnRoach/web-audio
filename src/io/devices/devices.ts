@@ -24,14 +24,19 @@ export async function getMIDIAccess(): Promise<MIDIAccess> {
   return navigator.requestMIDIAccess();
 }
 
+type MicrophoneConstraints = MediaTrackConstraints & { voiceIsolation?: ConstrainBoolean };
+
+// Voice processing off, so instruments are captured as played.
+export const MUSIC_MIC_CONSTRAINTS: MicrophoneConstraints = {
+  echoCancellation: false,
+  autoGainControl: false,
+  noiseSuppression: false,
+  voiceIsolation: false,
+};
+
 // Audio Input (Microphone)
 export async function getMicrophone(
-  constraints: MediaTrackConstraints & { voiceIsolation?: ConstrainBoolean } = {
-    echoCancellation: false,
-    autoGainControl: false,
-    noiseSuppression: false,
-    voiceIsolation: false,
-  },
+  constraints: MicrophoneConstraints = MUSIC_MIC_CONSTRAINTS,
   deviceId = '',
 ): Promise<MediaStream> {
   try {
