@@ -221,9 +221,11 @@ describe('audio-rate loop movement smoothing', () => {
       // Reusing the voice must not carry a previous note's correction into its attack.
       render(0, 1);
       processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
-      const restarted = render(0, 1);
-      expect(restarted[0][0]).toBeCloseTo(0.4);
-      expect(restarted[1][0]).toBeCloseTo(-0.2);
+      const restarted = render(0, 17);
+      expect(restarted[0][0]).toBe(0);
+      expect(restarted[1][0]).toBeCloseTo(0, 6);
+      expect(restarted[0][16]).toBeCloseTo(0.4);
+      expect(restarted[1][16]).toBeCloseTo(-0.2);
     },
   );
 });

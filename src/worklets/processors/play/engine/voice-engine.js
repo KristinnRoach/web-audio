@@ -32,6 +32,8 @@ const LOOP_TURN_CROSSFADE = true;
 const TAIL_FADE_SAMPLES = 64;
 // De-click fade for a host stop, in output frames (~1.3 ms at 48 kHz).
 const STOP_FADE_FRAMES = 64;
+// Tiny opening ramp in output frames (~0.33 ms at 48 kHz).
+const START_FADE_FRAMES = 16;
 // Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
 function tailGainAt(position, audioEndSamples) {
@@ -200,6 +202,7 @@ export class VoiceEngine {
     // Frame this note should sound at. A timestamp that has already passed
     // by the time the message arrives starts the note now.
     this.pendingStartFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
+    this.startFadeFrames = 0;
     this.#clearStop(); // a new note supersedes the previous note's stop
   }
 
@@ -891,6 +894,8 @@ export class VoiceEngine {
     // ===== AUDIO PROCESSING =====
 
     for (let sample = startOffset; sample < outputChannels[0].length; sample++) {
+      const startGain =
+        this.startFadeFrames < START_FADE_FRAMES ? this.startFadeFrames++ / START_FADE_FRAMES : 1;
       let stopGain = 1;
       if (this.pendingStopFrame !== null && blockFrame + sample >= this.pendingStopFrame) {
         stopGain = 1 - ++this.stopFadeFrames / STOP_FADE_FRAMES;
@@ -1056,6 +1061,7 @@ export class VoiceEngine {
           velocityGain *
           envelopeGain *
           masterGain *
+          startGain *
           stopGain;
 
         // Apply pan (only affects stereo output)

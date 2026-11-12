@@ -52,6 +52,7 @@ describe('loop window coordinate transitions', () => {
   it('starts a reused voice at trim rather than the preceding window origin', async () => {
     const { render, send } = await setup();
     send({ type: 'voice:start' });
-    expect(render(0.5)).toBeCloseTo(0.125 / 2, 7);
+    expect(render(0.5)).toBe(0); // first frame of the opening ramp
+    expect(render(0.5)).toBeCloseTo((0.125 + 1 / TEST_SAMPLE_RATE) / 2 / 16, 7);
   });
 });

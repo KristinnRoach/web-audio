@@ -74,7 +74,7 @@ describe('loop jump crossfade', () => {
     );
 
     // A constant source stays constant through the crossfade
-    expect(Math.min(...output)).toBeCloseTo(1, 4);
+    expect(Math.min(...output.subarray(16))).toBeCloseTo(1, 4);
   });
 });
 
@@ -97,9 +97,11 @@ describe('loop turn crossfade', () => {
     );
 
     // Second difference: a bare turn reverses the slope in one frame (~0.056 here)
-    const curvature = output
+    // Measure loop turns after the opening ramp.
+    const settled = output.subarray(16);
+    const curvature = settled
       .slice(2)
-      .map((value, i) => Math.abs(value - 2 * output[i + 1] + output[i]));
+      .map((value, i) => Math.abs(value - 2 * settled[i + 1] + settled[i]));
     expect(Math.max(...curvature)).toBeLessThan(0.01);
   });
 });

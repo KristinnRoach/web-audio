@@ -114,7 +114,8 @@ it('keeps an outgoing head inside its saved trim when the current trim moves', (
   engine.loopCrossfade.start(99, -1, 32, false, 400, 100);
   const output = new Float32Array(1);
   engine.render([output], makeParameters({ startPoint: 200 / SR, endPoint: 500 / SR }), 1, 1 / SR);
-  expect(output[0]).toBeCloseTo(0.5, 6);
+  // Second output frame has opening gain 1/16.
+  expect(output[0] * 16).toBeCloseTo(0.5, 6);
 });
 
 describe('host stop', () => {
@@ -142,7 +143,7 @@ describe('host stop', () => {
     const engine = playing();
     engine.stop(STOP_FRAME / SR);
     const output = renderBlocks(engine, 3);
-    const full = output[0];
+    const full = output[16];
 
     expect(output[STOP_FRAME - 1]).toBe(full);
     expect(output[STOP_FRAME]).toBeCloseTo(full * (1 - 1 / FADE), 6);
@@ -153,11 +154,12 @@ describe('host stop', () => {
 
   it('lets a following start supersede the stop', () => {
     const engine = playing();
-    const full = renderBlocks(engine, 1)[0];
+    const full = renderBlocks(engine, 1)[16];
     engine.stop();
     engine.start(2, 0);
     const output = renderBlocks(engine, 2);
-    expect(output.every((value) => value === full)).toBe(true);
+    expect(output[0]).toBe(0);
+    expect(output.subarray(16).every((value) => value === full)).toBe(true);
   });
 
   it('ends a note silently when stopped before its scheduled start', () => {
@@ -166,4 +168,30 @@ describe('host stop', () => {
     engine.stop(QUANTUM / SR);
     expect(engine.isPlaying).toBe(false);
   });
+});
+
+it('fades a scheduled stereo start over 16 output frames across blocks at any playback rate', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5), new Float32Array(SR).fill(-0.25)]);
+  const start = QUANTUM - 8;
+  engine.start(1, start / SR);
+  const output = [new Float32Array(2 * QUANTUM), new Float32Array(2 * QUANTUM)];
+  for (let block = 0; block < 2; block++) {
+    const frame = block * QUANTUM;
+    engine.render(
+      output.map((channel) => channel.subarray(frame, frame + QUANTUM)),
+      makeParameters({ playbackRate: 2 }),
+      frame,
+      frame / SR,
+    );
+  }
+  for (const channel of output) {
+    const full = channel[start + 16];
+    expect(full).not.toBe(0);
+    expect(channel.subarray(0, start).every((value) => value === 0)).toBe(true);
+    for (let frame = 0; frame <= 16; frame++) {
+      expect(channel[start + frame]).toBeCloseTo((full * frame) / 16, 6);
+    }
+    expect(channel.subarray(start + 16).every((value) => value === full)).toBe(true);
+  }
 });
