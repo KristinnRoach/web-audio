@@ -803,18 +803,17 @@ export class SampleVoice {
             return;
           }
           if (type === 'loop:range') this.#isInPitchLoop = data.isInPitchLoop ?? false;
-          const { triggerId: _, ...range } = data;
-          data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           if (type === 'loop:cycle') {
             this.#onLoopCycleStart(data.loopSeconds, data.time);
+            return;
           }
+          const { triggerId: _, ...range } = data;
+          data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           break;
         }
 
         // Forwarded upstream by the tail call, nothing to do here.
         case 'loop:enabled':
-        case 'voice:reset':
-        case 'voice:playbackDirectionChange':
           break;
 
         default:
