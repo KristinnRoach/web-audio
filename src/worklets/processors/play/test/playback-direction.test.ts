@@ -7,7 +7,7 @@ const RAMP = Float32Array.from({ length: 1000 }, (_, i) => i / TEST_SAMPLE_RATE)
 const toSeconds = (samples: number) => samples / TEST_SAMPLE_RATE;
 
 type DirectionProcessor = {
-  engine: { enableLoopCrossfade: boolean; isPlaying: boolean };
+  engine: { enableLoopCrossfade: boolean; isPlaying: boolean; startFadeFrames: number };
   port: { onmessage: ((event: MessageEvent) => void) | null };
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: unknown): boolean;
 };
@@ -29,6 +29,8 @@ async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPon
   send({ type: 'setInterpolation', value: 'linear' });
   send({ type: 'voice:setPlaybackDirection', playbackDirection: direction });
   send({ type: 'voice:start' });
+  // Isolate source positions from the opening gain ramp.
+  processor.engine.startFadeFrames = Infinity;
   return { processor, send };
 }
 

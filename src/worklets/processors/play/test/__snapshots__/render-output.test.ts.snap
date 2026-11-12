@@ -1,9 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`pins rendered stereo output for looped stretch 1`] = `"7cab181c6a168b89e7937f8578cf8a1770f46d2aa8118407dec4b69675be55dc"`;
+exports[`pins rendered stereo output for looped stretch 1`] = `"c585a27b507dd55485a2230019b8971aed3c79ca04a47eda426f127d1e052978"`;
 
-exports[`pins rendered stereo output for moving quantized loop 1`] = `"6c59cc7eb71593b6bbed5f5747e71cb165d475c44ff46ec1c2bc9e887d03e982"`;
+exports[`pins rendered stereo output for moving quantized loop 1`] = `"2bfd5ee21426c9909c43caf7cb02a91d63cb0670cc66526b51e6cd8c175a0b27"`;
 
-exports[`pins rendered stereo output for ping-pong 1`] = `"285cedb802b61385d9b06b47e1b9b76dc55feb41777bf37b1ca0028cbf64572f"`;
+exports[`pins rendered stereo output for ping-pong 1`] = `"e7697a503799af402ca7383305bc097edb355746b66b2561513739ff37966528"`;
 
-exports[`pins rendered stereo output for stretch 1`] = `"d86ce4d1785c205cf05e246b89bf3b71fb59a26e87f555a3aa0494f74068aa62"`;
+exports[`pins rendered stereo output for stretch 1`] = `"85598c3115469f60e8eae2a67b41fe7602b5caaa80a1147f78c3818182ac3c97"`;

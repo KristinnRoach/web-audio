@@ -123,7 +123,8 @@ describe('scheduled sample start', () => {
     expect(Array.from(output.slice(0, startOffset))).toEqual(
       Array.from(new Float32Array(startOffset)),
     );
-    expect(output[startOffset]).toBeGreaterThan(0);
+    expect(output[startOffset]).toBe(0);
+    expect(output[startOffset + 1]).toBeGreaterThan(0);
     expect(output[BLOCK_SIZE - 1]).toBeGreaterThan(0);
     expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE - startOffset);
     expect(processor.engine.pendingStartFrame).toBe(0);
@@ -136,7 +137,8 @@ describe('scheduled sample start', () => {
 
     processor.process([], [[output]], makeParameters());
 
-    expect(output[0]).toBeGreaterThan(0);
+    expect(output[0]).toBe(0);
+    expect(output[1]).toBeGreaterThan(0);
     expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE);
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
