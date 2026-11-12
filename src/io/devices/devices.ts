@@ -1,9 +1,8 @@
 import { DeviceInfo, AudioInputDevice, AudioOutputDevice, VideoInputDevice } from './types';
 
-// Get list of available devices
+// Lists devices without requesting capture access. Labels may be empty before permission.
 export async function getDevices(): Promise<DeviceInfo[]> {
   try {
-    await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     const devices = await navigator.mediaDevices.enumerateDevices();
     return devices.map((device) => ({
       deviceId: device.deviceId,
@@ -34,28 +33,19 @@ export const MUSIC_MIC_CONSTRAINTS: MicrophoneConstraints = {
   voiceIsolation: false,
 };
 
-// Audio Input (Microphone)
+// Opens the requested microphone; explicit device failures are left to the caller.
 export async function getMicrophone(
   constraints: MicrophoneConstraints = MUSIC_MIC_CONSTRAINTS,
   deviceId = '',
 ): Promise<MediaStream> {
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: deviceId
-        ? {
-            ...constraints,
-            deviceId: { exact: deviceId },
-          }
-        : constraints,
-    });
-  } catch (error) {
-    // Selected device unplugged/disabled -> fall back to default input
-    if (deviceId && (error as DOMException).name === 'OverconstrainedError') {
-      console.warn('Requested audio input device unavailable, falling back to default');
-      return navigator.mediaDevices.getUserMedia({ audio: constraints });
-    }
-    throw error;
-  }
+  return navigator.mediaDevices.getUserMedia({
+    audio: deviceId
+      ? {
+          ...constraints,
+          deviceId: { exact: deviceId },
+        }
+      : constraints,
+  });
 }
 
 // Video Input (Camera)

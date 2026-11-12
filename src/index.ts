@@ -10,8 +10,12 @@ export type {
   AudioRecorderState,
   Recorder,
   RecorderArmOptions,
+  RecorderDisplayOptions,
   RecorderEvents,
   RecorderInput,
+  RecorderMonitorOptions,
+  RecorderNoiseMeasurement,
+  RecorderNoiseOptions,
   RecorderStartOptions,
 } from './nodes/recorder';
 export type { AudioInput, GainStages } from './nodes';
