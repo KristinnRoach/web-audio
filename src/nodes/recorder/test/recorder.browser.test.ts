@@ -441,16 +441,21 @@ describe('Recorder', () => {
     await ctx.close();
   });
 
-  it.each([false, true])(
-    'replacing a measurement releases its input (different input: %s)',
-    async (differentInput) => {
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    'replacement releases input (different input: %s, sampling started: %s)',
+    async (differentInput, samplingStarted) => {
       const { ctx, recorder, input } = await setup({ level: 0.01 });
       const stop = vi.spyOn(MediaStreamTrack.prototype, 'stop');
       const other = new ConstantSourceNode(ctx, { offset: 0.02 });
       other.start();
       const replacement = differentInput ? ({ type: 'audio-node', node: other } as const) : input;
       const first = recorder.measureNoiseFloor({ input, durationMs: 5000 });
-      await wait(80);
+      if (samplingStarted) await wait(80);
       const second = recorder.measureNoiseFloor({ input: replacement, durationMs: 100 });
       expect(await first).toBeNull();
       expect((await second)!.noiseFloorDb).toBeCloseTo(differentInput ? -33.98 : -40, 1);
@@ -459,6 +464,16 @@ describe('Recorder', () => {
       await ctx.close();
     },
   );
+
+  it('keeps monitoring explicitly requested while calibration is starting', async () => {
+    const { ctx, recorder, input } = await setup({ level: 0.01 });
+    const measurement = recorder.measureNoiseFloor({ input, durationMs: 100 });
+    await recorder.monitor();
+    expect(await measurement).not.toBeNull();
+    expect(recorder.isMonitoring).toBe(true);
+    recorder.cancel();
+    await ctx.close();
+  });
 
   it('does not attach a cancelled measurement to new monitoring', async () => {
     const { ctx, recorder, input } = await setup();

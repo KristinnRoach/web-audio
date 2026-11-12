@@ -96,7 +96,6 @@ type Measure = {
   peaks: number[];
   endsAt: number;
   marginDb: number;
-  keepMonitoring: boolean;
   resolve: (measurement: RecorderNoiseMeasurement | null) => void;
 };
 
@@ -106,6 +105,8 @@ type Take = {
   armed: boolean;
   /** Holds input for metering only, until start() or arm() turns it into a real take. */
   monitorOnly: boolean;
+  /** Explicit monitor() keeps input open; calibration alone does not. */
+  keepMonitoring: boolean;
   measure?: Measure;
   /** Set when the take stops on silence with `trim`. */
   trimSeconds?: number;
@@ -203,24 +204,26 @@ export class Recorder implements LibNode {
     if (this.#take && !this.#take.monitorOnly) {
       throw new Error('Cannot measure noise while a take is active');
     }
-    const wasMonitoring = this.#take?.measure?.keepMonitoring ?? this.#take?.monitorOnly === true;
-    const ready = this.#begin({ input: options.input }, 'monitor');
+    const ready = this.#begin(
+      { input: options.input },
+      'monitor',
+      this.#take?.keepMonitoring ?? false,
+    );
     const take = this.#take;
     await ready;
     if (take !== this.#take || !take?.monitorOnly || this.#state !== MONITORING) return null;
 
-    const keepMonitoring = take.measure?.keepMonitoring ?? wasMonitoring;
     take.measure?.resolve(null);
     const measurement = await new Promise<RecorderNoiseMeasurement | null>((resolve) => {
       take.measure = {
         peaks: [],
         endsAt: performance.now() + durationMs,
         marginDb,
-        keepMonitoring,
         resolve,
       };
     });
-    if (measurement && !keepMonitoring && take === this.#take && take.monitorOnly) this.cancel();
+    if (measurement && !take.keepMonitoring && take === this.#take && take.monitorOnly)
+      this.cancel();
     return measurement;
   }
 
@@ -243,7 +246,11 @@ export class Recorder implements LibNode {
     return this;
   }
 
-  async #begin(options: RecorderArmOptions, mode: 'start' | 'arm' | 'monitor'): Promise<this> {
+  async #begin(
+    options: RecorderArmOptions,
+    mode: 'start' | 'arm' | 'monitor',
+    keepMonitoring = true,
+  ): Promise<this> {
     if (this.#disposed) throw new Error('Recorder is disposed');
     const armed = mode === 'arm';
     const current = this.#take;
@@ -271,10 +278,11 @@ export class Recorder implements LibNode {
     } else if (current) {
       if (this.#state === FINALIZING) {
         await current.result!.catch(() => {});
-        return this.#begin(options, mode);
+        return this.#begin(options, mode, keepMonitoring);
       }
       if (mode === 'monitor') {
         if (!current.monitorOnly) throw new Error('Cannot monitor while a take is active');
+        current.keepMonitoring ||= keepMonitoring;
       } else if (!armed) {
         current.armed = false;
         if (this.#state === ARMED) this.#recordOrFail(current);
@@ -293,6 +301,7 @@ export class Recorder implements LibNode {
       options: resolved,
       armed,
       monitorOnly: mode === 'monitor',
+      keepMonitoring: mode === 'monitor' && keepMonitoring,
       ready: Promise.resolve(),
       cancelled,
       cancel,
