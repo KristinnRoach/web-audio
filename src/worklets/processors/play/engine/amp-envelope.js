@@ -1,7 +1,7 @@
 // Audio-thread amp envelope prototype: walks an EnvelopeShape (see
 // nodes/modulators/envelope/envelope-shape.ts) one sample at a time.
-// ponytail: no timeScale, depth/base, sustain glide or loop catch-up yet; the
-// main-thread Envelope still owns those until this one is ear-tested.
+// ponytail: no sustain glide or loop restart bridge yet; a loop restart that cuts
+// a pass mid-shape steps to point 0.
 
 // Exponential segments can't start or end at zero.
 const MIN_EXP_VALUE = 1e-4;
@@ -11,6 +11,8 @@ export class AmpEnvelope {
     this.sampleRate = sampleRate;
     // Read at every segment start, so a new shape takes effect at the next point.
     this.shape = null;
+    // Playback speed, read at every segment start like the shape. 2 plays twice as fast.
+    this.timeScale = 1;
     this.value = 0;
     this.released = false;
     this.done = false;
@@ -69,7 +71,10 @@ export class AmpEnvelope {
 
     const from = points[index];
     const to = points[index + 1];
-    const frames = Math.max(1, Math.round((to.time - from.time) * this.sampleRate));
+    const frames = Math.max(
+      1,
+      Math.round(((to.time - from.time) * this.sampleRate) / this.timeScale),
+    );
     this.curve = from.curve ?? 'linear';
     this.target = to.value;
     this.remaining = frames;

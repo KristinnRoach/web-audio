@@ -55,6 +55,8 @@ export class SampleVoice {
   #envelopes = new Map<SampleEnvelopeId, Envelope>();
   /** Host policy the envelope does not know about: `enabled`, `timeScale`, `playbackRateSync` and `loopSync`. */
   #envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
+  /** Experimental: the processor plays the amp envelope instead of `#envelopes.get('amp')`. */
+  #audioThreadAmp = false;
 
   #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
@@ -238,6 +240,7 @@ export class SampleVoice {
       this.#envelopes.set(type, new Envelope(this.context, param, config.shape));
       this.#envelopeConfigs.set(type, config);
     }
+    this.#sendAmpConfig();
   }
 
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
@@ -416,6 +419,9 @@ export class SampleVoice {
       return;
     }
 
+    // The processor triggers its own amp envelope on voice:start.
+    if (this.#isAudioThreadAmp(envType)) return;
+
     const config = this.#envelopeConfigs.get(envType)!;
     const resolved = resolveSampleEnvelopeTrigger(
       envType,
@@ -480,7 +486,7 @@ export class SampleVoice {
 
     // Release all enabled envelopes
     this.#envelopes.forEach((env, envType) => {
-      if (this.#isEnvEnabled(envType)) env.release(timestamp);
+      if (this.#isEnvEnabled(envType) && !this.#isAudioThreadAmp(envType)) env.release(timestamp);
     });
 
     const releaseDuration = this.releaseTime;
@@ -492,7 +498,11 @@ export class SampleVoice {
     });
 
     // The processor stops at the end of the amp tail and reports it as voice:ended.
-    this.sendToProcessor({ type: 'voice:stop', timestamp: timestamp + releaseDuration });
+    if (this.#isAudioThreadAmp('amp') && this.#isEnvEnabled('amp')) {
+      this.sendToProcessor({ type: 'voice:release', timestamp });
+    } else {
+      this.sendToProcessor({ type: 'voice:stop', timestamp: timestamp + releaseDuration });
+    }
     return this;
   }
 
@@ -582,6 +592,8 @@ export class SampleVoice {
 
     this.#envelopeConfigs.set(envType, config);
     envelope.shape = config.shape;
+    // ponytail: the processor applies a new shape at its next point; live-edit rules are undecided.
+    if (this.#isAudioThreadAmp(envType)) return this.#sendAmpConfig();
     if (config.shape.mode.type === 'sustain') {
       envelope.setSustainValue(config.shape.points[config.shape.sustainPoint].value);
     }
@@ -620,13 +632,36 @@ export class SampleVoice {
 
     this.#envelopes.forEach((env, envType) => {
       if (!this.#isEnvEnabled(envType) || env.shape.mode.type !== 'loop') return;
-      if (!this.#envelopeConfigs.get(envType)?.loopSync) return;
+      if (!this.#envelopeConfigs.get(envType)?.loopSync || this.#isAudioThreadAmp(envType)) return;
       this.#triggerEnvelope(envType, env, timestamp, playbackRate, 0, true);
     });
   }
 
   get envelopes() {
     return this.#envelopes;
+  }
+
+  /**
+   * Experimental: plays the amp envelope on the audio thread, sample-accurate and
+   * restarting on the processor's own loop wraps under loopSync. Takes effect from the next note.
+   */
+  setAudioThreadAmpEnvelope(enabled: boolean): this {
+    if (this.#audioThreadAmp === enabled) return this;
+    this.#audioThreadAmp = enabled;
+    this.#envelopes.get('amp')?.stop();
+    this.#resetEnvTarget('amp');
+    this.#sendAmpConfig();
+    return this;
+  }
+
+  #isAudioThreadAmp(envType: SampleEnvelopeId) {
+    return envType === 'amp' && this.#audioThreadAmp;
+  }
+
+  #sendAmpConfig() {
+    const config = this.#envelopeConfigs.get('amp');
+    const value = this.#audioThreadAmp && config?.enabled ? config : null;
+    this.sendToProcessor({ type: 'setAmpEnvelope', value });
   }
 
   setParam(

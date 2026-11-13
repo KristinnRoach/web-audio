@@ -40,6 +40,9 @@ const STOP_FADE_FRAMES = 64;
 const START_FADE_FRAMES = 16;
 // Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
+// One-pole on the audio-thread amp envelope: rounds off vertical segments, step
+// curves and loop-sync cuts. Also softens the fastest attack by about this much.
+const AMP_SMOOTHING_SECONDS = 0.001;
 function tailGainAt(position, audioEndSamples) {
   return Math.max(0, Math.min(1, (audioEndSamples - position) / TAIL_FADE_SAMPLES));
 }
@@ -97,8 +100,12 @@ export class VoiceEngine {
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlaybackPosition = false;
-    // With a shape set, replaces the envGain param (prototype, see amp-envelope.js).
+    // With a config set, replaces the envGain param (prototype, see amp-envelope.js).
     this.ampEnvelope = new AmpEnvelope(sampleRate);
+    this.ampConfig = null;
+    this.ampTriggerPending = false;
+    this.ampSmoothed = 0;
+    this.ampSmoothingCoefficient = glideCoefficient(AMP_SMOOTHING_SECONDS, sampleRate);
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
     this.enableLoopCrossfade = true; // Crossfade between loop points
@@ -210,17 +217,45 @@ export class VoiceEngine {
     this.pendingStartFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
     this.startFadeFrames = 0;
     this.#clearStop(); // a new note supersedes the previous note's stop
-    this.ampEnvelope.trigger();
+    // Triggered on the note's first audible sample, once its playback rate is known.
+    this.ampTriggerPending = this.ampConfig !== null;
   }
 
-  /** Shape for the audio-thread amp envelope, or null to follow the envGain param. */
-  setAmpEnvelope(shape) {
-    this.ampEnvelope.shape = shape ?? null;
+  /**
+   * Config for the audio-thread amp envelope, or null to follow the envGain param:
+   * `{ shape, depth = 1, timeScale = 1, playbackRateSync, loopSync }`, as in
+   * the sampler's EnvelopeConfig. A new shape takes effect at its next point.
+   */
+  setAmpEnvelope(config) {
+    // Without an envelope a pending or running release would never end the note.
+    const releasing = this.ampEnvelope.released || this.pendingReleaseFrame !== null;
+    if (!config && this.ampConfig && this.isPlaying && releasing) this.stop(0);
+    this.ampConfig = config ?? null;
+    this.ampEnvelope.shape = config?.shape ?? null;
+  }
+
+  // Loop sync fits the full buffer to one sample loop, cutting at each wrap.
+  #ampLoopSyncActive() {
+    return (
+      this.ampConfig.loopSync &&
+      this.loopEnabled &&
+      this.ampConfig.shape.mode.type === 'loop' &&
+      this.ampEnvelope.released === false
+    );
+  }
+
+  #ampTimeScale(playbackRate, loopWindow) {
+    const { timeScale = 1, playbackRateSync } = this.ampConfig;
+    const rate = Math.abs(playbackRate);
+    if (this.#ampLoopSyncActive() && loopWindow.length > 0) {
+      return (timeScale * this.buffer[0].length * rate) / loopWindow.length;
+    }
+    return timeScale * (playbackRateSync ? rate : 1);
   }
 
   /** Releases the amp envelope at `timestamp`; the note ends when its tail does. */
   release(timestamp) {
-    if (!this.ampEnvelope.shape) return this.stop(timestamp);
+    if (!this.ampConfig) return this.stop(timestamp);
     this.pendingReleaseFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
   }
 
@@ -922,22 +957,6 @@ export class VoiceEngine {
         if (stopGain <= 0) return this.#halt();
       }
 
-      let envelopeGain;
-      const ampEnvelope = this.ampEnvelope;
-      if (ampEnvelope.shape) {
-        if (this.pendingReleaseFrame !== null && blockFrame + sample >= this.pendingReleaseFrame) {
-          this.pendingReleaseFrame = null;
-          ampEnvelope.release();
-        }
-        envelopeGain = ampEnvelope.next();
-        // The stop fade covers a tail that doesn't end at zero.
-        if (ampEnvelope.done && this.pendingStopFrame === null) {
-          this.pendingStopFrame = blockFrame + sample;
-        }
-      } else {
-        // Use getSafeParam for a-rate params
-        envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
-      }
       const basePlaybackRate = this.#getSafeParam(
         parameters.playbackRate,
         sample,
@@ -988,7 +1007,8 @@ export class VoiceEngine {
       }
 
       // Report the incoming range after its drift is resolved, keeping the wrap time.
-      if (this.pendingLoopCycleTime !== null) {
+      const loopWrapped = this.pendingLoopCycleTime !== null;
+      if (loopWrapped) {
         this.post({
           type: 'loop:cycle',
           loopSeconds: loopWindow.length / sampleRate,
@@ -996,6 +1016,34 @@ export class VoiceEngine {
           triggerId: this.triggerId,
         });
         this.pendingLoopCycleTime = null;
+      }
+
+      let envelopeGain;
+      const ampEnvelope = this.ampEnvelope;
+      if (this.ampConfig) {
+        if (this.pendingReleaseFrame !== null && blockFrame + sample >= this.pendingReleaseFrame) {
+          this.pendingReleaseFrame = null;
+          ampEnvelope.release();
+        }
+        const restart = this.ampTriggerPending || (loopWrapped && this.#ampLoopSyncActive());
+        if (restart || this.#ampLoopSyncActive()) {
+          ampEnvelope.timeScale = this.#ampTimeScale(basePlaybackRate, loopWindow);
+        }
+        if (restart) {
+          // A new note starts on the shape; only loop-sync restarts glide from the old value.
+          if (this.ampTriggerPending) this.ampSmoothed = ampEnvelope.shape.points[0].value;
+          this.ampTriggerPending = false;
+          ampEnvelope.trigger();
+        }
+        this.ampSmoothed += (ampEnvelope.next() - this.ampSmoothed) * this.ampSmoothingCoefficient;
+        envelopeGain = this.ampSmoothed * (this.ampConfig.depth ?? 1);
+        // The stop fade covers a tail that doesn't end at zero.
+        if (ampEnvelope.done && this.pendingStopFrame === null) {
+          this.pendingStopFrame = blockFrame + sample;
+        }
+      } else {
+        // Use getSafeParam for a-rate params
+        envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
       }
 
       // Set per sample, not in #calculateLoopWindow: direction follows a-rate points

@@ -259,6 +259,23 @@ describe('SampleVoice state', () => {
     expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: voice.releaseTime });
   });
 
+  it('hands the amp envelope to the processor when audio-thread amp is on', async () => {
+    const voice = await loadedVoice();
+    voice.setAudioThreadAmpEnvelope(true);
+    expect(audio.posted.at(-1)).toMatchObject({
+      type: 'setAmpEnvelope',
+      value: { enabled: true, shape: expect.any(Object) },
+    });
+
+    trigger(voice);
+    voice.release({ secondsFromNow: 2 });
+
+    expect(voice.envelopes.get('amp')!.position()).toBeNull(); // never triggered here
+    expect(audio.posted.at(-1)).toEqual({ type: 'voice:release', timestamp: 2 });
+    endPlayback(1);
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+  });
+
   it('schedules the processor stop after the release and amplitude tail', async () => {
     const voice = await loadedVoice();
     trigger(voice);

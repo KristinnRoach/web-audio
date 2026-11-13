@@ -108,6 +108,7 @@ export class SamplePlayer {
 
   #useZeroCrossings = true;
   #interpolationMode: InterpolationMode | null = null;
+  #audioThreadAmp = false;
   #timestretchMode: TimestretchMode = 'off';
   #pitchPeriodsSent = false;
   #preprocessAudio = true;
@@ -164,6 +165,9 @@ export class SamplePlayer {
           this.#voicePool = null as unknown as SampleVoicePool;
         }
         this.#assertNotDisposed();
+        if (this.#audioThreadAmp) {
+          this.#voicePool.applyToAllVoices((voice) => voice.setAudioThreadAmpEnvelope(true));
+        }
         const interpolationMode = this.#interpolationMode;
         if (interpolationMode !== null) {
           this.#voicePool.applyToAllVoices((voice) => voice.setInterpolation(interpolationMode));
@@ -907,6 +911,13 @@ export class SamplePlayer {
     this.#timestretchMode = mode;
     this.#sendPitchPeriods();
     this.#voicePool.applyToAllVoices((voice) => voice.setTimestretchMode(mode));
+    return this;
+  };
+
+  /** Experimental: plays the amp envelope on the audio thread. Takes effect from the next note. */
+  setAudioThreadAmpEnvelope = (enabled: boolean) => {
+    this.#audioThreadAmp = enabled;
+    this.#voicePool?.applyToAllVoices((voice) => voice.setAudioThreadAmpEnvelope(enabled));
     return this;
   };
 
