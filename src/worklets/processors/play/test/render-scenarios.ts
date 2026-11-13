@@ -41,7 +41,8 @@ export async function createRenderScenario(scenario: RenderScenario, voice = 0) 
   return {
     processor,
     parameters,
-    output: [[new Float32Array(QUANTUM), new Float32Array(QUANTUM)]],
+    // Stereo audio plus the filter envelope output, as SampleVoice creates the node.
+    output: [[new Float32Array(QUANTUM), new Float32Array(QUANTUM)], [new Float32Array(QUANTUM)]],
     render(block: number) {
       if (scenario === 'moving quantized loop') {
         for (let i = 0; i < QUANTUM; i++) {
