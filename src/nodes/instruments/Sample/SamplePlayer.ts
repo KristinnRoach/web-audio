@@ -12,7 +12,7 @@ import {
   PreProcessResults,
 } from '@/nodes/preprocessor/Preprocessor';
 
-import { isValidAudioBuffer, isMidiValue } from '@/utils';
+import { frequencyToMidi, isValidAudioBuffer, isMidiValue } from '@/utils';
 import { GainStages, type AudioInput } from '@/nodes/LibNode';
 
 import {
@@ -677,6 +677,30 @@ export class SamplePlayer {
     this.#applyPitchOffset();
     this.#sendUpstreamMessage('pitch:committed', { semitones });
     return loaded;
+  }
+
+  /**
+   * Detects the loaded sample's pitch with autotune's detector on throwaway copies,
+   * using a fixed 30 Hz highpass instead of autotune's auto one: nothing is
+   * resampled, and the result ignores transpose() and fineTune().
+   * Silence and noise still return a frequency, so gate on `periodicity`.
+   * Returns null if there is no sample.
+   */
+  async detectPitch(): Promise<{
+    midiFloat: number;
+    frequency: number;
+    periodicity: number;
+  } | null> {
+    if (!this.#buffer) return null;
+    const { detectedPitch } = await preProcessAudioBuffer(this.context, this.#buffer, {
+      normalize: { enabled: false },
+      tune: { detectPitch: true, autotune: false },
+      hpf: { cutoff: 30 },
+      getZeroCrossings: false,
+    });
+    if (!detectedPitch) return null;
+    const { fundamentalHz: frequency, periodicity } = detectedPitch;
+    return { midiFloat: frequencyToMidi(frequency, 'none'), frequency, periodicity };
   }
 
   get transposedBySemitones() {
