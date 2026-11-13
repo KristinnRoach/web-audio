@@ -100,13 +100,14 @@
         numberOfOutputs: 1,
         outputChannelCount: [2],
       });
-      node.connect(ctx.destination);
+      const mainGain = new GainNode(ctx);
+      node.connect(mainGain).connect(ctx.destination);
       const param = (name) => node.parameters.get(name);
       const post = (msg) => node.port.postMessage(msg);
 
-      // Old path for A/B: the main-thread Envelope on the envGain param.
+      // Old path for A/B: the main-thread Envelope on a separate gain stage.
       let shape = readShape();
-      const oldEnv = new Envelope(ctx, param('envGain'), shape);
+      const oldEnv = new Envelope(ctx, mainGain.gain, shape);
 
       function readShape() {
         const ms = (id) => Number($(id).value) / 1000;
@@ -132,6 +133,11 @@
         }
         shape = readShape();
         oldEnv.shape = shape;
+        if ($('engine').value === 'audio') {
+          oldEnv.stop(ctx.currentTime);
+          mainGain.gain.cancelScheduledValues(ctx.currentTime);
+          mainGain.gain.setValueAtTime(1, ctx.currentTime);
+        }
         post({
           type: 'setEnvelope',
           target: 'gain',

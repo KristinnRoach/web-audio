@@ -254,7 +254,9 @@ export class VoiceEngine {
   /** Releases the envelopes at `timestamp`; the note ends when the gain tail does. */
   release(timestamp) {
     if (!this.envelopes.gain.active) return this.stop(timestamp);
-    this.envelopes.release(timestamp ? Math.round(timestamp * this.sampleRate) : 0);
+    const frame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
+    if (this.pendingStartFrame && frame <= this.pendingStartFrame) return this.stop(timestamp);
+    this.envelopes.release(frame);
   }
 
   setPanDriftEnabled(enabled) {

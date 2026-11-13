@@ -106,6 +106,57 @@ it('drives the engine output and ends the note when the release tail does', () =
   expect(posts.some((m) => 'type' in m && m.type === 'voice:ended')).toBe(true);
 });
 
+it.each([0, 0.03, 0.064])(
+  'cancels a pending note released at %s before or at its start',
+  (releaseTime) => {
+    const post = vi.fn();
+    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post });
+    engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+    engine.loopEnabled = true;
+    engine.setEnvelope('gain', { shape: adsr('sustain') });
+    engine.start(7, 0.064);
+
+    engine.release(releaseTime);
+    const output = new Float32Array(128);
+    const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+    // The processor renders only while canRender is true.
+    for (let block = 0; block < 2; block++) {
+      if (engine.canRender) engine.render([output], parameters, block * 128, (block * 128) / SR);
+    }
+
+    expect(output.every((sample) => sample === 0)).toBe(true);
+    expect(engine.isPlaying).toBe(false);
+    expect(engine.pendingStartFrame).toBe(0);
+    expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
+      [{ type: 'voice:ended', triggerId: 7 }],
+    ]);
+  },
+);
+
+it('plays a pending note and its tail when release is scheduled after its start', () => {
+  const post = vi.fn();
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  engine.loopEnabled = true;
+  engine.setEnvelope('gain', { shape: adsr('sustain') });
+  engine.start(7, 0.064);
+  engine.release(0.09);
+
+  expect(engine.isPlaying).toBe(true);
+  const output = new Float32Array(128);
+  engine.render([output], makeParameters({ endPoint: 1, loopEnd: 1 }), 0, 0);
+
+  expect(output.slice(0, 64).every((sample) => sample === 0)).toBe(true);
+  expect(output[85]).toBeGreaterThan(0);
+  expect(output[95]).toBeGreaterThan(0);
+  for (let block = 1; block < 4 && engine.canRender; block++)
+    engine.render([output.fill(0)], makeParameters({ endPoint: 1, loopEnd: 1 }), block * 128, 0);
+  expect(engine.isPlaying).toBe(false);
+  expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
+    [{ type: 'voice:ended', triggerId: 7 }],
+  ]);
+});
+
 it('a release without a gain envelope stops the note', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
