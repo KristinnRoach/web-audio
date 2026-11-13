@@ -1,21 +1,15 @@
-import {
-  envelopePresets,
-  setDuration,
-  type EnvelopeShape,
-  type EnvelopeTriggerOptions,
-} from '@/nodes/modulators/envelope';
+import { envelopePresets, setDuration, type EnvelopeShape } from '@/nodes/modulators/envelope';
 import type { EnvelopeConfig } from './envelope-config';
 
 /**
- * Sampler defaults, parameter mapping and trigger options.
- * Envelope owns scheduling; unfinished behavior is tracked in envelopes/KNOWN-ISSUES.md.
+ * Sampler defaults and units for the envelopes the sample-player processor plays.
  */
 
-export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter'] as const;
+export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter', 'pan'] as const;
 export type SampleEnvelopeId = (typeof SAMPLE_ENVELOPE_IDS)[number];
 
 export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEnvelopeId[] {
-  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch'];
+  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch', 'pan'];
 }
 
 /**
@@ -32,8 +26,8 @@ const PITCH_ENVELOPE_SEMITONES = 12;
  */
 const FILTER_ENVELOPE_OCTAVES = 10;
 
-/** Flat at 0, so the pitch env is an identity until someone edits it. */
-function flatPitchShape(durationSeconds: number): EnvelopeShape {
+/** Flat at 0, so a bipolar env (pitch, pan) is an identity until someone edits it. */
+function flatBipolarShape(durationSeconds: number): EnvelopeShape {
   return {
     mode: { type: 'once' },
     sustainPoint: 0,
@@ -52,72 +46,63 @@ export function createDefaultSampleEnvelopeConfig(
   id: SampleEnvelopeId,
   durationSeconds: number,
 ): EnvelopeConfig {
-  switch (id) {
-    case 'amp':
-      return {
-        depth: 1,
-        enabled: true,
-        timeScale: 1,
-        playbackRateSync: false,
-        loopSync: false,
-        shape: envelopePresets.amplitude(durationSeconds),
-      };
-    case 'pitch':
-      return {
-        depth: 1,
-        enabled: true,
-        timeScale: 1,
-        playbackRateSync: false,
-        loopSync: false,
-        shape: flatPitchShape(durationSeconds),
-      };
-    case 'filter':
-      return {
-        depth: 0.5,
-        enabled: true,
-        timeScale: 1,
-        playbackRateSync: false,
-        loopSync: false,
-        shape: envelopePresets.filter(durationSeconds),
-      };
-  }
+  return {
+    depth: id === 'filter' ? 0.5 : 1,
+    enabled: true,
+    timeScale: 1,
+    playbackRateSync: false,
+    loopSync: false,
+    shape:
+      id === 'amp'
+        ? envelopePresets.amplitude(durationSeconds)
+        : id === 'filter'
+          ? envelopePresets.filter(durationSeconds)
+          : flatBipolarShape(durationSeconds),
+  };
 }
 
-export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
-  switch (id) {
-    case 'amp':
-      return 'envGain';
-    case 'pitch':
-      return 'detune';
-    case 'filter':
-      return 'lpfDetune';
-  }
-}
-
-/** Amp rests at unity; velocity is applied once by the processor. Detune rests at zero. */
-export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
-  return id === 'amp' ? 1 : 0;
+/** Processor target; 'filter' goes out on the processor's second output to lpf.detune. */
+export function getSampleEnvelopeProcessorTarget(
+  id: SampleEnvelopeId,
+): 'gain' | 'detune' | 'pan' | 'filter' {
+  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : id;
 }
 
 /**
- * Resolve sampler units and timing before handing a run to the generic scheduler.
- * `loopTimeScale`, when present, includes playback rate and overrides playbackRateSync.
+ * Per-target units. `scale` maps shape units to the target's units; `rest` is the shape
+ * value that leaves the target unmodulated. Depth mixes from rest (0) to the full shape (1).
+ * `linear` replaces non-step curves: pitch and filter are cents, already exponential in Hz,
+ * and pan is bipolar, which exponential curves can't cross.
  */
-export function resolveSampleEnvelopeTrigger(
+const SAMPLE_ENVELOPE_UNITS: Record<
+  SampleEnvelopeId,
+  { scale: number; rest: number; linear: boolean }
+> = {
+  amp: { scale: 1, rest: 1, linear: false },
+  pan: { scale: 1, rest: 0, linear: true },
+  pitch: { scale: PITCH_ENVELOPE_SEMITONES * 100, rest: 0, linear: true },
+  filter: { scale: FILTER_ENVELOPE_OCTAVES * 1200, rest: 0, linear: true },
+};
+
+/**
+ * Config in the processor target's units, `base + depth * shape`, with any curve override
+ * applied. Timing stays unresolved; the processor applies it per note.
+ */
+export function resolveSampleEnvelopeForProcessor(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,
-  playbackRate: number,
-  loopTimeScale?: number,
-): Pick<EnvelopeTriggerOptions, 'depth' | 'curve' | 'timeScale'> {
-  const options = {
-    depth: config.depth ?? 1,
-    timeScale:
-      config.timeScale * (loopTimeScale ?? (config.playbackRateSync ? Math.abs(playbackRate) : 1)),
+): EnvelopeConfig & { base: number } {
+  const { scale, rest, linear } = SAMPLE_ENVELOPE_UNITS[id];
+  const depth = config.depth ?? 1;
+  const points = linear
+    ? config.shape.points.map((point) =>
+        point.curve === 'step' ? point : { ...point, curve: 'linear' as const },
+      )
+    : config.shape.points;
+  return {
+    ...config,
+    base: scale * rest * (1 - depth),
+    depth: scale * depth,
+    shape: { ...config.shape, points },
   };
-  if (id === 'amp') return options;
-  // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
-  if (id === 'pitch') {
-    return { ...options, depth: PITCH_ENVELOPE_SEMITONES * 100 * options.depth, curve: 'linear' };
-  }
-  return { ...options, depth: FILTER_ENVELOPE_OCTAVES * 1200 * options.depth, curve: 'linear' };
 }

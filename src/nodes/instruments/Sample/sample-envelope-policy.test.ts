@@ -2,8 +2,7 @@ import { expect, it } from 'vite-plus/test';
 import type { EnvelopeConfig } from './envelope-config';
 import {
   createDefaultSampleEnvelopeConfig,
-  getSampleEnvelopeRestValue,
-  resolveSampleEnvelopeTrigger,
+  resolveSampleEnvelopeForProcessor,
   SAMPLE_ENVELOPE_IDS,
 } from './sample-envelope-policy';
 import { cloneEnvelopeConfig, assertValidEnvelopeConfig } from './envelope-config';
@@ -35,44 +34,34 @@ it('accepts configs with valid defaults and without depth, rejects non-finite de
   }
 });
 
+const pitchBase = (depth: number) =>
+  resolveSampleEnvelopeForProcessor('pitch', { ...config, depth }).base;
+
 it('scales amplitude by depth and pitch and filter detune in cents, without changing the shape', () => {
   for (const depth of [0, 0.5, 1, -1]) {
-    const amp = resolveSampleEnvelopeTrigger('amp', { ...config, depth }, 1);
+    const amp = resolveSampleEnvelopeForProcessor('amp', { ...config, depth });
     expect(amp.depth).toBe(depth);
-    const pitch = resolveSampleEnvelopeTrigger('pitch', { ...config, depth }, 1);
-    expect(pitch).toEqual({
-      timeScale: 1,
-      depth: 1200 * depth,
-      curve: 'linear',
-    });
-    const filter = resolveSampleEnvelopeTrigger('filter', { ...config, depth }, 1);
-    expect(filter).toEqual({
-      timeScale: 1,
-      depth: 12000 * depth,
-      curve: 'linear',
-    });
+    expect(amp.base).toBe(1 - depth);
+    expect(pitchBase(depth)).toBe(0);
+    const pitch = resolveSampleEnvelopeForProcessor('pitch', { ...config, depth });
+    expect(pitch.depth).toBe(1200 * depth);
+    expect(pitch.shape.points.every((point) => point.curve === 'linear')).toBe(true);
+    expect(resolveSampleEnvelopeForProcessor('filter', { ...config, depth }).depth).toBe(
+      12000 * depth,
+    );
   }
   expect(config.shape.points[1].value).toBe(0.25);
-});
-
-it('leaves velocity scaling to the processor while envelopes are disabled', () => {
-  expect(getSampleEnvelopeRestValue('amp')).toBe(1);
-  expect(getSampleEnvelopeRestValue('pitch')).toBe(0);
-  expect(getSampleEnvelopeRestValue('filter')).toBe(0);
+  expect(config.shape.points[1].curve).toBeUndefined();
 });
 
 it('clones signed depth without adding legacy fields', () => {
   const snapshot = cloneEnvelopeConfig({ ...config, depth: -0.5 });
   expect(snapshot.depth).toBe(-0.5);
   expect(snapshot).not.toHaveProperty('amount');
-  expect(resolveSampleEnvelopeTrigger('pitch', { ...config, depth: -0.5 }, 1)).toEqual({
-    timeScale: 1,
-    depth: -600,
-    curve: 'linear',
-  });
+  expect(resolveSampleEnvelopeForProcessor('pitch', snapshot).depth).toBe(-600);
 });
 
-it('validates loopSync and applies playback rate only once when a loop scale is supplied', () => {
+it('validates loopSync', () => {
   expect(() => assertValidEnvelopeConfig({ ...config, loopSync: true })).not.toThrow();
   expect(() =>
     assertValidEnvelopeConfig({
@@ -80,18 +69,4 @@ it('validates loopSync and applies playback rate only once when a loop scale is 
       loopSync: 'yes' as unknown as boolean,
     }),
   ).toThrow('Invalid envelope settings');
-  for (const playbackRateSync of [false, true]) {
-    expect(
-      resolveSampleEnvelopeTrigger(
-        'amp',
-        {
-          ...config,
-          timeScale: 3,
-          playbackRateSync,
-        },
-        2,
-        4,
-      ).timeScale,
-    ).toBe(12);
-  }
 });

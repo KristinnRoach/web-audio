@@ -11,20 +11,6 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 2,
     automationRate: 'k-rate',
   },
-  envGain: {
-    name: 'envGain',
-    defaultValue: 0,
-    minValue: 0,
-    maxValue: 1,
-    automationRate: 'a-rate',
-  },
-  velocity: {
-    name: 'velocity',
-    defaultValue: 100,
-    minValue: 0,
-    maxValue: 127,
-    automationRate: 'k-rate',
-  },
   pan: {
     name: 'pan',
     defaultValue: 0,
@@ -32,6 +18,7 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 1, // 1 hard right
     automationRate: 'k-rate',
   },
+  // Multiplies the note's own rate, sent with voice:start; 1 plays the note's pitch.
   playbackRate: {
     name: 'playbackRate',
     defaultValue: 1,

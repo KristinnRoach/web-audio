@@ -211,8 +211,9 @@ current sample.
 shape values are unitless. Negative depth inverts the shape around `base`.
 Depth and base must be finite.
 
-Sampler envelope configs instead expose a unitless depth multiplier: 1 maps to
-1 gain unit, 1200 cents for pitch, or 12000 cents for filter detune.
+Sampler envelope configs instead expose a unitless depth that mixes from the
+unmodulated value (0) to the full shape (1). Shape value 1 maps to unity gain,
+1200 cents for pitch, or 12000 cents for filter detune.
 
 LFO depth also uses destination units, but its signal adds to the AudioParam's
 existing value; Envelope writes the parameter's automation directly. Sampler AM

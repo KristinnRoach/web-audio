@@ -7,8 +7,6 @@ it('applies a loop-end step within a real render quantum', async () => {
   const node = new AudioWorkletNode(context, 'sample-player-processor', {
     outputChannelCount: [1],
     parameterData: {
-      envGain: 1,
-      velocity: 127,
       loopStart: 0,
       loopEnd: 192 / 48_000,
       // Pin everything that moves wrap positions or gain, so a default change

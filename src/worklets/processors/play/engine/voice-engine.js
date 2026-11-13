@@ -9,6 +9,7 @@ import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import { LoopWindow } from './loop-window.js';
 import { getKeytrackedValue } from './keytrack.js';
 import { ClampedSourceReader } from './source-reader.js';
+import { VoiceEnvelopes } from './voice-envelopes.js';
 import { readSource, SincKernel } from './interpolation-kernels.js';
 import {
   driftLoopEnd,
@@ -96,6 +97,17 @@ export class VoiceEngine {
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlaybackPosition = false;
+
+    // Per-note values from voice:start. The playbackRate param multiplies noteRate.
+    this.noteRate = 1;
+    this.noteRateTarget = 1;
+    this.noteRateCoefficient = 1;
+    this.velocityGain = 1;
+    // Retunes waiting for their frames (voice:setRate), in timestamp order.
+    this.pendingRates = [];
+
+    // Gain is unity unless its slot is active; detune adds to the param (see voice-envelopes.js).
+    this.envelopes = new VoiceEnvelopes(sampleRate);
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
     this.enableLoopCrossfade = true; // Crossfade between loop points
@@ -192,7 +204,18 @@ export class VoiceEngine {
     this.timestretch.setPeriods(periods, hopSamples);
   }
 
-  start(triggerId, timestamp) {
+  /**
+   * `note.playbackRate` is the note's rate, gliding there from `glideFrom` over
+   * `glideSeconds` (a time constant, as setTargetAtTime). `velocity` is 0-127.
+   */
+  start(triggerId, timestamp, note = {}) {
+    const { playbackRate = 1, velocity = 127, glideFrom, glideSeconds = 0 } = note;
+    this.noteRateTarget = playbackRate;
+    this.noteRate = glideSeconds > 0 && glideFrom !== undefined ? glideFrom : playbackRate;
+    this.noteRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
+    this.pendingRates.length = 0;
+    this.velocityGain = Math.max(0, Math.min(1, velocity / 127));
+
     this.isPlaying = true;
     this.triggerId = triggerId;
     this.#resetNoteLoop();
@@ -207,6 +230,34 @@ export class VoiceEngine {
     this.pendingStartFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
     this.startFadeFrames = 0;
     this.#clearStop(); // a new note supersedes the previous note's stop
+    // Envelopes start on the note's first audible sample.
+    this.envelopes.trigger(playbackRate);
+  }
+
+  /** Retunes the sounding note at `timestamp`, gliding with a `glideSeconds` time constant. */
+  setNoteRate(timestamp, playbackRate, glideSeconds = 0) {
+    this.pendingRates.push({
+      frame: timestamp ? Math.round(timestamp * this.sampleRate) : 0,
+      rate: playbackRate,
+      coefficient: glideCoefficient(glideSeconds, this.sampleRate),
+    });
+    this.pendingRates.sort((a, b) => a.frame - b.frame);
+  }
+
+  /** Routes an envelope config to 'gain' or 'detune', or null to follow that param. */
+  setEnvelope(target, config) {
+    // Without a gain envelope a pending or running release would never end the note.
+    const endsRelease = target === 'gain' && !config && this.envelopes.gain.active;
+    if (endsRelease && this.isPlaying && this.envelopes.releasing) this.stop(0);
+    this.envelopes.set(target, config);
+  }
+
+  /** Releases the envelopes at `timestamp`; the note ends when the gain tail does. */
+  release(timestamp) {
+    if (!this.envelopes.gain.active) return this.stop(timestamp);
+    const frame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
+    if (this.pendingStartFrame && frame <= this.pendingStartFrame) return this.stop(timestamp);
+    this.envelopes.release(frame);
   }
 
   setPanDriftEnabled(enabled) {
@@ -234,6 +285,7 @@ export class VoiceEngine {
 
   reset() {
     this.isPlaying = false;
+    this.pendingRates.length = 0;
     this.pendingStartFrame = 0;
     this.startFadeFrames = 0;
     this.#clearStop();
@@ -253,8 +305,9 @@ export class VoiceEngine {
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
     this.loopCount = 0;
-    this.pendingLoopCycleTime = null;
+    this.loopWrapped = false;
     this.loopWindow = null;
+    this.loopRate = 1;
     this.loopCrossfade.reset();
     this.#resetLoopGlides(); // new notes start on the target range
 
@@ -288,6 +341,7 @@ export class VoiceEngine {
   }
 
   #clearStop() {
+    this.envelopes.pendingReleaseFrame = null;
     this.pendingStopFrame = null;
     this.stopFadeFrames = 0;
   }
@@ -296,6 +350,7 @@ export class VoiceEngine {
   #halt() {
     this.post({ type: 'voice:ended', triggerId: this.triggerId });
     this.isPlaying = false;
+    this.pendingRates.length = 0;
     this.pendingStartFrame = 0;
     this.#clearStop();
     this.playbackPosition = 0;
@@ -313,7 +368,7 @@ export class VoiceEngine {
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopWindow, silencePadTail, cycleTime, timestretchActive) {
+  #passLoopEdge(approachDirection, loopWindow, silencePadTail, timestretchActive) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { start: loopStart, end: loopEnd } = loopWindow;
     const turns = this.loopPingPong || this.loopTurned !== loopWindow.direction < 0;
@@ -340,7 +395,7 @@ export class VoiceEngine {
     this.playbackPosition = nextPosition;
     if (timestretchActive) this.timestretch.reset(nextPosition);
     this.loopCount++;
-    this.pendingLoopCycleTime = cycleTime;
+    this.loopWrapped = true;
 
     // Reset drift flag to generate new drift for next loop iteration
     this.loopDriftRolled = false;
@@ -445,15 +500,6 @@ export class VoiceEngine {
   #samplesToNormalized(sampleIndex) {
     if (!this.buffer || !this.buffer[0]) return 0;
     return sampleIndex / this.buffer[0].length;
-  }
-
-  /**
-   * Convert MIDI velocity (0-127) to gain multiplier (0-1)
-   * @param {number} midiVelocity - MIDI velocity 0-127
-   * @returns {number} - Gain multiplier 0-1
-   */
-  #midiVelocityToGain(midiVelocity) {
-    return Math.max(0, Math.min(1, midiVelocity / 127));
   }
 
   /**
@@ -704,12 +750,10 @@ export class VoiceEngine {
 
   #getConstantFlags(parameters) {
     this.constantFlags ??= {
-      envGain: true,
       playbackRate: true,
       detune: true,
     };
 
-    this.constantFlags.envGain = parameters.envGain.length === 1;
     this.constantFlags.playbackRate = parameters.playbackRate.length === 1;
     this.constantFlags.detune = parameters.detune.length === 1;
 
@@ -824,7 +868,7 @@ export class VoiceEngine {
    * `blockFrame`/`blockTime`. Check `canRender` first; while it is false, call
    * `reportIdle()` instead.
    */
-  render(outputChannels, parameters, blockFrame, blockTime) {
+  render(outputChannels, parameters, blockFrame, blockTime, filterOutput) {
     const { sampleRate } = this;
 
     // ===== Scheduled start =====
@@ -856,7 +900,7 @@ export class VoiceEngine {
     let loopWindow;
     let previousPlaybackRate;
 
-    const velocityGain = this.#midiVelocityToGain(parameters.velocity[0]);
+    const velocityGain = this.velocityGain;
 
     const basePan = parameters.pan[0];
     const numChannels = outputChannels.length; // Always process all output channels
@@ -906,14 +950,37 @@ export class VoiceEngine {
         if (stopGain <= 0) return this.#halt();
       }
 
-      // Use getSafeParam for a-rate params
-      const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
-      const basePlaybackRate = this.#getSafeParam(
-        parameters.playbackRate,
-        sample,
-        isConstant.playbackRate,
+      const frame = blockFrame + sample;
+      while (this.pendingRates.length > 0 && frame >= this.pendingRates[0].frame) {
+        const retune = this.pendingRates.shift();
+        this.noteRateTarget = retune.rate;
+        this.envelopes.noteRate = retune.rate;
+        this.noteRateCoefficient = retune.coefficient;
+      }
+      this.noteRate += (this.noteRateTarget - this.noteRate) * this.noteRateCoefficient;
+      const basePlaybackRate =
+        this.noteRate *
+        this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
+
+      // Before the rate: a detune envelope bends it. A wrap at the end of the previous
+      // sample restarts loop-synced envelopes here, on the loop's first sample.
+      const envelopes = this.envelopes;
+      envelopes.advance(
+        blockFrame + sample,
+        this.loopRate,
+        this.loopEnabled,
+        this.loopWrapped,
+        this.loopWindow,
+        this.buffer[0].length,
       );
-      const detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
+      if (envelopes.gainDone && this.pendingStopFrame === null) {
+        // The stop fade covers a tail that doesn't end at zero.
+        this.pendingStopFrame = blockFrame + sample;
+      }
+
+      let detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
+      if (envelopes.detune.active) detune += envelopes.detune.value;
+      if (filterOutput && envelopes.filter.active) filterOutput[sample] = envelopes.filter.value;
       const playbackRate =
         detune === 0 ? basePlaybackRate : basePlaybackRate * 2 ** (detune / 1200);
 
@@ -957,16 +1024,9 @@ export class VoiceEngine {
         previousPlaybackRate = playbackRate;
       }
 
-      // Report the incoming range after its drift is resolved, keeping the wrap time.
-      if (this.pendingLoopCycleTime !== null) {
-        this.post({
-          type: 'loop:cycle',
-          loopSeconds: loopWindow.length / sampleRate,
-          time: this.pendingLoopCycleTime,
-          triggerId: this.triggerId,
-        });
-        this.pendingLoopCycleTime = null;
-      }
+      this.loopWrapped = false;
+
+      const envelopeGain = envelopes.gain.active ? envelopes.gain.value : 1;
 
       // Set per sample, not in #calculateLoopWindow: direction follows a-rate points
       // even when a time window's bounds resolve once per block. Turns wait for an edge.
@@ -975,7 +1035,8 @@ export class VoiceEngine {
 
       this.smoothedPanDrift +=
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
-      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift));
+      const envelopePan = envelopes.pan.active ? envelopes.pan.value : 0;
+      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
 
       // Loop rules apply once head and timeline are in the loop, not on the way to it.
       const approachingLoop =
@@ -997,19 +1058,15 @@ export class VoiceEngine {
       const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
       this.loopMessage.isInPitchLoop = canWrapLoop && inLoop && loopWindow.isPitchLoop;
       if (canWrapLoop) {
-        this.#passLoopEdge(
-          approachDirection,
-          loopWindow,
-          silencePadTail,
-          blockTime + sample / sampleRate,
-          timestretchActive,
-        );
+        this.#passLoopEdge(approachDirection, loopWindow, silencePadTail, timestretchActive);
       }
       // Out of loop passes (the edge just passed may have been the last), or
       // loop off: play out in the approach direction
       if (!this.loopEnabled || this.loopCount >= maxLoopCount) this.loopTurned = false;
       const direction = this.loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(playbackRate);
+      // Next sample's envelope timing uses the transport rate that produced its loop state.
+      this.loopRate = timestretchActive ? 1 : Math.abs(playbackStep);
 
       const timestretchJumpTarget = this.timestretch.prepareJump(
         timestretchActive,

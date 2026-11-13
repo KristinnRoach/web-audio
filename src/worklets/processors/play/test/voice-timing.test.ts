@@ -8,6 +8,18 @@ import { createRenderScenario, QUANTUM, renderScenarios } from './render-scenari
 setupProcessorGlobals();
 
 const interpolation = process.env.SAMPLE_PLAYER_INTERPOLATION ?? 'hermite';
+// Set to time all four audio-thread envelopes, loop-synced so they also restart on wraps.
+const envelopes = !!process.env.SAMPLE_PLAYER_ENVELOPES;
+const loopShape = {
+  points: [
+    { time: 0, value: 0 },
+    { time: 0.25, value: 1, curve: 'exponential' },
+    { time: 1, value: 0 },
+  ],
+  mode: { type: 'loop' },
+  sustainPoint: 0,
+  releasePoint: 1,
+};
 
 it.skipIf(!process.env.SAMPLE_PLAYER_TIMING).each(renderScenarios)(
   'times 16 voices: %s',
@@ -19,6 +31,12 @@ it.skipIf(!process.env.SAMPLE_PLAYER_TIMING).each(renderScenarios)(
       processor.port.onmessage?.({
         data: { type: 'setInterpolation', value: interpolation },
       } as MessageEvent);
+      if (!envelopes) continue;
+      for (const target of ['gain', 'detune', 'pan', 'filter']) {
+        processor.port.onmessage?.({
+          data: { type: 'setEnvelope', target, value: { shape: loopShape, loopSync: true } },
+        } as MessageEvent);
+      }
     }
     // Do not time mock call recording or retain messages from thousands of cycles.
     for (const { processor } of voices) Object.assign(processor.port, { postMessage() {} });
@@ -42,6 +60,7 @@ it.skipIf(!process.env.SAMPLE_PLAYER_TIMING).each(renderScenarios)(
       JSON.stringify({
         scenario,
         interpolation,
+        envelopes,
         voices: 16,
         sampleRate: TEST_SAMPLE_RATE,
         quantum: QUANTUM,

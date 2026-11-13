@@ -32,8 +32,6 @@ type Parameters = Record<string, Float32Array>;
 function makeParameters(driftAmount = 0): Parameters {
   return {
     masterGain: new Float32Array([1]),
-    envGain: new Float32Array([1]),
-    velocity: new Float32Array([127]),
     pan: new Float32Array([0]),
     playbackRate: new Float32Array([1]),
     detune: new Float32Array([0]),

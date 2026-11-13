@@ -38,6 +38,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       hopSamples,
       playbackDirection,
       triggerId,
+      target,
     } = event.data;
     const engine = this.engine;
 
@@ -66,11 +67,23 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:start':
-        engine.start(triggerId, timestamp);
+        engine.start(triggerId, timestamp, event.data);
+        break;
+
+      case 'voice:setRate':
+        engine.setNoteRate(timestamp, value, event.data.glideSeconds);
         break;
 
       case 'voice:stop':
         engine.stop(timestamp);
+        break;
+
+      case 'voice:release':
+        engine.release(timestamp);
+        break;
+
+      case 'setEnvelope':
+        engine.setEnvelope(target, value);
         break;
 
       case 'setLoopEnabled':
@@ -150,7 +163,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    this.engine.render(outputChannels, parameters, currentFrame, currentTime);
+    // Optional second output: the filter envelope in cents, silent (0) when inactive.
+    const filterOutput = outputs[1]?.[0];
+    this.engine.render(outputChannels, parameters, currentFrame, currentTime, filterOutput);
     return true;
   }
 }

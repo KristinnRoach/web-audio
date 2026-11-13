@@ -601,6 +601,7 @@ export class SamplePlayer {
 
   /* === PITCH === */
 
+  /** Off plays every note at the sample's own pitch; the pitch envelope still bends it. */
   setPitchEnabled(enabled: boolean): this {
     this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
     return this;
@@ -1121,8 +1122,8 @@ export class SamplePlayer {
   }
 
   /** Envelope ids on the current voices; empty until the pool is initialized. */
-  get envelopeIds(): SampleEnvelopeId[] {
-    return [...(this.#voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
+  get envelopeIds(): readonly SampleEnvelopeId[] {
+    return this.#voicePool?.allVoices[0]?.envelopeIds ?? [];
   }
 
   /**
