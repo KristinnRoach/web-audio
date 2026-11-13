@@ -30,7 +30,6 @@ type Parameters = Record<string, Float32Array>;
 export function makeParameters(overrides: Record<string, number> = {}): Parameters {
   const values: Record<string, number> = {
     masterGain: 1,
-    envGain: 1,
     velocity: 127,
     pan: 0,
     playbackRate: 1,

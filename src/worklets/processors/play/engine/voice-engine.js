@@ -97,7 +97,7 @@ export class VoiceEngine {
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlaybackPosition = false;
-    // Active slots replace the envGain and detune params (prototype, see voice-envelopes.js).
+    // Gain is unity unless its slot is active; detune adds to the param (see voice-envelopes.js).
     this.envelopes = new VoiceEnvelopes(sampleRate);
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
@@ -272,7 +272,7 @@ export class VoiceEngine {
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
     this.loopCount = 0;
-    this.pendingLoopCycleTime = null;
+    this.loopWrapped = false;
     this.loopWindow = null;
     this.loopCrossfade.reset();
     this.#resetLoopGlides(); // new notes start on the target range
@@ -333,7 +333,7 @@ export class VoiceEngine {
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
-  #passLoopEdge(approachDirection, loopWindow, silencePadTail, cycleTime, timestretchActive) {
+  #passLoopEdge(approachDirection, loopWindow, silencePadTail, timestretchActive) {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { start: loopStart, end: loopEnd } = loopWindow;
     const turns = this.loopPingPong || this.loopTurned !== loopWindow.direction < 0;
@@ -360,7 +360,7 @@ export class VoiceEngine {
     this.playbackPosition = nextPosition;
     if (timestretchActive) this.timestretch.reset(nextPosition);
     this.loopCount++;
-    this.pendingLoopCycleTime = cycleTime;
+    this.loopWrapped = true;
 
     // Reset drift flag to generate new drift for next loop iteration
     this.loopDriftRolled = false;
@@ -724,12 +724,10 @@ export class VoiceEngine {
 
   #getConstantFlags(parameters) {
     this.constantFlags ??= {
-      envGain: true,
       playbackRate: true,
       detune: true,
     };
 
-    this.constantFlags.envGain = parameters.envGain.length === 1;
     this.constantFlags.playbackRate = parameters.playbackRate.length === 1;
     this.constantFlags.detune = parameters.detune.length === 1;
 
@@ -939,7 +937,7 @@ export class VoiceEngine {
         blockFrame + sample,
         basePlaybackRate,
         this.loopEnabled,
-        this.pendingLoopCycleTime !== null,
+        this.loopWrapped,
         this.loopWindow,
         this.buffer[0].length,
       );
@@ -994,20 +992,9 @@ export class VoiceEngine {
         previousPlaybackRate = playbackRate;
       }
 
-      // Report the incoming range after its drift is resolved, keeping the wrap time.
-      if (this.pendingLoopCycleTime !== null) {
-        this.post({
-          type: 'loop:cycle',
-          loopSeconds: loopWindow.length / sampleRate,
-          time: this.pendingLoopCycleTime,
-          triggerId: this.triggerId,
-        });
-        this.pendingLoopCycleTime = null;
-      }
+      this.loopWrapped = false;
 
-      const envelopeGain = envelopes.gain.active
-        ? envelopes.gain.value
-        : this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
+      const envelopeGain = envelopes.gain.active ? envelopes.gain.value : 1;
 
       // Set per sample, not in #calculateLoopWindow: direction follows a-rate points
       // even when a time window's bounds resolve once per block. Turns wait for an edge.
@@ -1039,13 +1026,7 @@ export class VoiceEngine {
       const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
       this.loopMessage.isInPitchLoop = canWrapLoop && inLoop && loopWindow.isPitchLoop;
       if (canWrapLoop) {
-        this.#passLoopEdge(
-          approachDirection,
-          loopWindow,
-          silencePadTail,
-          blockTime + sample / sampleRate,
-          timestretchActive,
-        );
+        this.#passLoopEdge(approachDirection, loopWindow, silencePadTail, timestretchActive);
       }
       // Out of loop passes (the edge just passed may have been the last), or
       // loop off: play out in the approach direction

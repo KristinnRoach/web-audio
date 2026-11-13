@@ -11,13 +11,6 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 2,
     automationRate: 'k-rate',
   },
-  envGain: {
-    name: 'envGain',
-    defaultValue: 0,
-    minValue: 0,
-    maxValue: 1,
-    automationRate: 'a-rate',
-  },
   velocity: {
     name: 'velocity',
     defaultValue: 100,

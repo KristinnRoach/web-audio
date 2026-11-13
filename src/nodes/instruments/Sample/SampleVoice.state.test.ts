@@ -10,7 +10,7 @@ const SAMPLE_RATE = 48000;
  * its import graph subclass AudioWorkletNode at load time.
  */
 const audio = vi.hoisted(() => {
-  const PARAM_NAMES = ['envGain', 'playbackRate', 'detune', 'velocity', 'loopStart', 'loopEnd'];
+  const PARAM_NAMES = ['playbackRate', 'detune', 'velocity', 'loopStart', 'loopEnd'];
 
   const noop = () => {};
   const fakeParam = () =>
@@ -410,25 +410,6 @@ describe('SampleVoice state', () => {
       loopEnd: 1,
     });
     expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
-  });
-
-  it('keeps idle reports and loop wraps inside the voice', async () => {
-    const voice = await loadedVoice();
-    const ranges = vi.fn();
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    voice.onMessage('loop:range', ranges);
-    voice.onMessage('loop:cycle', ranges);
-    audio.port.onmessage({
-      data: { type: 'loop:range', loopStart: 0.01, loopEnd: 0.49, idle: true },
-    });
-    trigger(voice);
-    audio.port.onmessage({
-      data: { type: 'loop:cycle', loopSeconds: 0.48, time: 1, triggerId: 1 },
-    });
-    expect(ranges).not.toHaveBeenCalled();
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
-    voice.stop();
   });
 
   it('forwards only the current note’s position, tagged with voice and note', async () => {

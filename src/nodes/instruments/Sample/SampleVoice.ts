@@ -657,12 +657,10 @@ export class SampleVoice {
         }
 
         case 'loop:range':
-        case 'loop:cycle':
         case 'trim:range':
         case 'voice:position': {
-          // Idle reports (the steady loop for the next note) and loop wraps stay internal.
-          // ponytail: the processor still posts loop:cycle; nothing here uses it anymore.
-          if (data.idle || type === 'loop:cycle') return;
+          // Idle report: the steady loop for the next note, not a playing range.
+          if (data.idle) return;
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
@@ -894,8 +892,6 @@ export class SampleVoice {
         return this.#hpf?.Q ?? null;
       case 'lpfQ':
         return this.#lpf?.Q ?? null;
-      case 'lpfDetune':
-        return this.#lpf?.detune ?? null;
       default:
         return null;
     }

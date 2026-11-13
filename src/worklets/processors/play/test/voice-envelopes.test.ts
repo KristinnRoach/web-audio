@@ -61,10 +61,10 @@ it('drives the engine output and ends the note when the release tail does', () =
   engine.setEnvelope('gain', { shape: adsr('sustain') });
   engine.start(1, 0);
 
-  const parameters = makeParameters({ envGain: 0, endPoint: 1, loopEnd: 1 });
+  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
   const output = new Float32Array(128);
   engine.render([output], parameters, 0, 0);
-  expect(output[64]).toBeGreaterThan(0); // envGain is 0, so this is the new envelope
+  expect(output[64]).toBeGreaterThan(0);
 
   engine.release(0);
   for (let block = 1; block < 4; block++)
@@ -73,12 +73,7 @@ it('drives the engine output and ends the note when the release tail does', () =
 });
 
 it('loop sync restarts on every sample loop wrap, fitted to the loop length', () => {
-  const posts: { type?: string }[] = [];
-  const engine = new VoiceEngine({
-    sampleRate: SR,
-    random: () => 0.5,
-    post: (m: object) => void posts.push(m),
-  });
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
   engine.loopEnabled = true;
   engine.setEnvelope('gain', { shape: adsr('loop'), loopSync: true });
@@ -86,13 +81,12 @@ it('loop sync restarts on every sample loop wrap, fitted to the loop length', ()
   engine.start(1, 0);
 
   // A 0.25 s loop: the full-buffer timeline plays 4x faster, once per wrap.
-  const parameters = makeParameters({ envGain: 0, endPoint: 1, loopEnd: 0.25 });
+  const parameters = makeParameters({ endPoint: 1, loopEnd: 0.25 });
   for (let block = 0; block < 8; block++) {
     engine.render([new Float32Array(128)], parameters, block * 128, (block * 128) / SR);
   }
-  const wraps = posts.filter((m) => m.type === 'loop:cycle').length;
-  expect(wraps).toBeGreaterThan(2);
-  expect(trigger).toHaveBeenCalledTimes(1 + wraps);
+  expect(engine.loopCount).toBeGreaterThan(2);
+  expect(trigger).toHaveBeenCalledTimes(1 + engine.loopCount!);
   expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(4);
 });
 
@@ -116,7 +110,7 @@ it('smooths a vertical segment instead of stepping in one sample', () => {
   engine.start(1, 0);
 
   const output = new Float32Array(256);
-  engine.render([output], makeParameters({ envGain: 0, endPoint: 1 }), 0, 0);
+  engine.render([output], makeParameters({ endPoint: 1 }), 0, 0);
   // After the start fade, unsmoothed the jump is 0.5 * 0.8 = 0.4 in one sample.
   let maxStep = 0;
   for (let i = 32; i < output.length; i++) {
