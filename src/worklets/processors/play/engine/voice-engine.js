@@ -97,6 +97,17 @@ export class VoiceEngine {
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlaybackPosition = false;
+
+    // Per-note values from voice:start. The playbackRate param multiplies noteRate.
+    this.noteRate = 1;
+    this.noteRateTarget = 1;
+    this.noteRateCoefficient = 1;
+    this.velocityGain = 1;
+    // A retune waiting for its frame (voice:setRate).
+    this.pendingRateFrame = null;
+    this.pendingRate = 1;
+    this.pendingRateCoefficient = 1;
+
     // Gain is unity unless its slot is active; detune adds to the param (see voice-envelopes.js).
     this.envelopes = new VoiceEnvelopes(sampleRate);
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
@@ -195,7 +206,18 @@ export class VoiceEngine {
     this.timestretch.setPeriods(periods, hopSamples);
   }
 
-  start(triggerId, timestamp) {
+  /**
+   * `note.playbackRate` is the note's rate, gliding there from `glideFrom` over
+   * `glideSeconds` (a time constant, as setTargetAtTime). `velocity` is 0-127.
+   */
+  start(triggerId, timestamp, note = {}) {
+    const { playbackRate = 1, velocity = 127, glideFrom, glideSeconds = 0 } = note;
+    this.noteRateTarget = playbackRate;
+    this.noteRate = glideSeconds > 0 && glideFrom !== undefined ? glideFrom : playbackRate;
+    this.noteRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
+    this.pendingRateFrame = null;
+    this.velocityGain = Math.max(0, Math.min(1, velocity / 127));
+
     this.isPlaying = true;
     this.triggerId = triggerId;
     this.#resetNoteLoop();
@@ -210,8 +232,15 @@ export class VoiceEngine {
     this.pendingStartFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
     this.startFadeFrames = 0;
     this.#clearStop(); // a new note supersedes the previous note's stop
-    // Envelopes start on the note's first audible sample, once its playback rate is known.
-    this.envelopes.trigger();
+    // Envelopes start on the note's first audible sample.
+    this.envelopes.trigger(playbackRate);
+  }
+
+  /** Retunes the sounding note at `timestamp`, gliding with a `glideSeconds` time constant. */
+  setNoteRate(timestamp, playbackRate, glideSeconds = 0) {
+    this.pendingRateFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
+    this.pendingRate = playbackRate;
+    this.pendingRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
   }
 
   /** Routes an envelope config to 'gain' or 'detune', or null to follow that param. */
@@ -465,15 +494,6 @@ export class VoiceEngine {
   #samplesToNormalized(sampleIndex) {
     if (!this.buffer || !this.buffer[0]) return 0;
     return sampleIndex / this.buffer[0].length;
-  }
-
-  /**
-   * Convert MIDI velocity (0-127) to gain multiplier (0-1)
-   * @param {number} midiVelocity - MIDI velocity 0-127
-   * @returns {number} - Gain multiplier 0-1
-   */
-  #midiVelocityToGain(midiVelocity) {
-    return Math.max(0, Math.min(1, midiVelocity / 127));
   }
 
   /**
@@ -874,7 +894,7 @@ export class VoiceEngine {
     let loopWindow;
     let previousPlaybackRate;
 
-    const velocityGain = this.#midiVelocityToGain(parameters.velocity[0]);
+    const velocityGain = this.velocityGain;
 
     const basePan = parameters.pan[0];
     const numChannels = outputChannels.length; // Always process all output channels
@@ -924,11 +944,16 @@ export class VoiceEngine {
         if (stopGain <= 0) return this.#halt();
       }
 
-      const basePlaybackRate = this.#getSafeParam(
-        parameters.playbackRate,
-        sample,
-        isConstant.playbackRate,
-      );
+      const frame = blockFrame + sample;
+      if (this.pendingRateFrame !== null && frame >= this.pendingRateFrame) {
+        this.pendingRateFrame = null;
+        this.noteRateTarget = this.pendingRate;
+        this.noteRateCoefficient = this.pendingRateCoefficient;
+      }
+      this.noteRate += (this.noteRateTarget - this.noteRate) * this.noteRateCoefficient;
+      const basePlaybackRate =
+        this.noteRate *
+        this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
 
       // Before the rate: a detune envelope bends it. A wrap at the end of the previous
       // sample restarts loop-synced envelopes here, on the loop's first sample.

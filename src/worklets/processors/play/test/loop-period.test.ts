@@ -16,7 +16,6 @@ type TestProcessor = {
 function makeParameters(overrides: Record<string, number>): Parameters {
   const values: Record<string, number> = {
     masterGain: 1,
-    velocity: 127,
     pan: 0,
     playbackRate: 1,
     detune: 0,

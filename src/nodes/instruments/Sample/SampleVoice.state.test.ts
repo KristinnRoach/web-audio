@@ -114,17 +114,14 @@ describe('SampleVoice state', () => {
     voice.setPitchOffset(12);
     trigger(voice, 60);
     audio.posted = [];
-    const velocity = vi.spyOn(voice.getParam('velocity')!, 'setValueAtTime');
-    const glide = vi.spyOn(voice.getParam('playbackRate')!, 'setTargetAtTime');
     const timestamp = voice.triggerTimestamp;
 
     expect(voice.retune(72, 0.2, 0.3)).toBe(72);
-    expect(glide).toHaveBeenCalledWith(4, 0.2, 0.3);
+    expect(audio.posted).toEqual([
+      { type: 'voice:setRate', value: 4, timestamp: 0.2, glideSeconds: 0.3 },
+    ]);
     expect(voice.midiNote).toBe(72);
     expect(voice.triggerTimestamp).toBe(timestamp);
-    expect(sentTypes()).not.toContain('setEnvelope');
-    expect(velocity).not.toHaveBeenCalled();
-    expect(sentTypes()).not.toContain('voice:start');
     voice.release();
     expect(voice.retune(60)).toBeNull();
     voice.stop();
@@ -158,14 +155,12 @@ describe('SampleVoice state', () => {
 
   it('adds the pitch offset to new notes and retunes a held one', async () => {
     const voice = await loadedVoice();
-    const set = vi.spyOn(voice.getParam('playbackRate')!, 'setValueAtTime');
     voice.setPitchOffset(12);
     trigger(voice, 60);
-    expect(set).toHaveBeenLastCalledWith(2, 0.001);
+    expect(audio.posted.find((m) => m.type === 'voice:start')).toMatchObject({ playbackRate: 2 });
 
-    const glide = vi.spyOn(voice.getParam('playbackRate')!, 'setTargetAtTime');
     voice.setPitchOffset(-12);
-    expect(glide.mock.calls.at(-1)?.[0]).toBe(0.5);
+    expect(audio.posted.at(-1)).toMatchObject({ type: 'voice:setRate', value: 0.5 });
     expect(voice.midiNote).toBe(60);
   });
 
@@ -254,18 +249,18 @@ describe('SampleVoice state', () => {
     expect(audio.posted.at(-1)).toEqual({ type: 'setEnvelope', target: 'detune', value: null });
   });
 
-  it('leaves the end of the amp release to the processor and reports its length', async () => {
+  it('sends the note with its start and leaves the end of the release to the processor', async () => {
     const voice = await loadedVoice();
-    const amp = createDefaultSampleEnvelopeConfig('amp', 1);
-    voice.setEnvelopeConfig('amp', { ...amp, timeScale: 2, playbackRateSync: true });
-    let releaseDuration: number | undefined;
-    voice.onMessage('voice:releasing', (msg: any) => (releaseDuration = msg.releaseDuration));
+    trigger(voice, 72);
+    expect(audio.posted.at(-1)).toEqual({
+      type: 'voice:start',
+      timestamp: 0,
+      triggerId: 1,
+      playbackRate: 2,
+      velocity: 100,
+    });
 
-    trigger(voice, 72); // Playback rate 2, so the release runs at 4x.
     voice.release({ secondsFromNow: 2 });
-
-    const { points, releasePoint } = amp.shape;
-    expect(releaseDuration).toBeCloseTo((points.at(-1)!.time - points[releasePoint].time) / 4, 9);
     expect(audio.posted.at(-1)).toEqual({ type: 'voice:release', timestamp: 2 });
     expect(voice.state).toBe(VoiceState.RELEASING);
     endPlayback(1);
@@ -281,7 +276,6 @@ describe('SampleVoice state', () => {
     trigger(voice);
     voice.release({ secondsFromNow: 2 });
 
-    expect(voice.releaseTime).toBe(0);
     expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: 2 });
   });
 

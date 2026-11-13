@@ -67,7 +67,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:start':
-        engine.start(triggerId, timestamp);
+        engine.start(triggerId, timestamp, event.data);
+        break;
+
+      case 'voice:setRate':
+        engine.setNoteRate(timestamp, value, event.data.glideSeconds);
         break;
 
       case 'voice:stop':

@@ -14,7 +14,6 @@ async function measureRate(playbackRate: number, envCents: number, lfoCents: num
   const node = new AudioWorkletNode(context, 'sample-player-processor', {
     outputChannelCount: [1],
     parameterData: {
-      velocity: 127,
       loopDurationDriftAmount: 0,
       playbackRate,
       detune: envCents,

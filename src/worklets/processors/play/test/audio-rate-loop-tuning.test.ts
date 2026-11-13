@@ -37,7 +37,6 @@ function makeParameters(
 ): Parameters {
   return {
     masterGain: new Float32Array([1]),
-    velocity: new Float32Array([127]),
     pan: new Float32Array([0]),
     playbackRate: new Float32Array([playbackRate]),
     detune: new Float32Array([0]),

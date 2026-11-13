@@ -13,7 +13,6 @@ import {
   durationToTimeConstant,
   maxSafeHz,
 } from '@/nodes/params/audioparam-utils';
-import { getDuration } from '@/nodes/modulators/envelope';
 import type { EnvelopeConfig } from './envelope-config';
 import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
@@ -65,8 +64,6 @@ export class SampleVoice {
 
   #sampleDurationSeconds = 0;
   #loopEnabled = false;
-  /** Target playback rate of the current note, for the release estimate. */
-  #playbackRate = 1;
 
   /** Semitones added to the played note for everything that tracks pitch. */
   #pitchOffset = 0;
@@ -276,21 +273,17 @@ export class SampleVoice {
   #applyPitch(midiNote: MidiValue, timestamp: number, glideSeconds: number) {
     const soundingNote = midiNote + this.#pitchOffset;
     const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
-    if (!this.#pitchDisabled && glideSeconds > 0) {
-      const param = this.getParam('playbackRate')!;
-      if (timestamp <= this.now) cancelAndPinParamValue(param, timestamp);
-      else param.cancelScheduledValues(timestamp);
-      param.setTargetAtTime(playbackRate, timestamp, glideSeconds);
-    } else {
-      this.setParam('playbackRate', playbackRate, timestamp);
-    }
+    this.#setNoteRate(playbackRate, timestamp, this.#pitchDisabled ? 0 : glideSeconds);
     this.#feedback?.setPitch(soundingNote, 0, timestamp, glideSeconds);
     this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
       timestamp,
       glideTime: glideSeconds,
     });
     this.#midiNote = midiNote;
-    this.#playbackRate = playbackRate;
+  }
+
+  #setNoteRate(playbackRate: number, timestamp: number, glideSeconds: number) {
+    this.sendToProcessor({ type: 'voice:setRate', value: playbackRate, timestamp, glideSeconds });
   }
 
   #isInPitchLoop = false;
@@ -326,28 +319,20 @@ export class SampleVoice {
     const soundingNote = midiNote + this.#pitchOffset;
     const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
 
-    if (!this.#pitchDisabled && glideFrom !== null) {
-      const rateParam = this.getParam('playbackRate')!;
-      rateParam.setValueAtTime(midiToPlaybackRate(glideFrom), timestamp);
-      rateParam.setTargetAtTime(playbackRate, timestamp, glideSeconds);
-    } else {
-      this.setParam('playbackRate', playbackRate, timestamp);
-    }
-
-    this.setParam('velocity', velocity, timestamp);
-
-    // Start playback
+    // Everything the note needs travels with it, so nothing races its first sample.
+    const glides = !this.#pitchDisabled && glideFrom !== null;
     this.sendToProcessor({
       type: 'voice:start',
       timestamp,
       triggerId: this.#triggerId,
+      playbackRate,
+      velocity,
+      ...(glides && { glideFrom: midiToPlaybackRate(glideFrom), glideSeconds }),
     });
     this.#sendUpstreamMessage('voice:started', {
       voiceId: this.nodeId,
       midiNote: this.#midiNote,
     });
-
-    this.#playbackRate = playbackRate;
 
     // Trigger effects
     this.#feedback?.trigger(soundingNote, {
@@ -401,12 +386,9 @@ export class SampleVoice {
     this.#transitionTo(VoiceState.RELEASING);
     const timestamp = this.now + secondsFromNow;
 
-    const releaseDuration = this.releaseTime;
-
     this.#sendUpstreamMessage('voice:releasing', {
       voiceId: this.nodeId,
       midiNote: this.#midiNote,
-      releaseDuration,
     });
 
     // The processor stops at the end of the amp tail and reports it as voice:ended.
@@ -559,20 +541,15 @@ export class SampleVoice {
 
   disablePitch = () => {
     this.#pitchDisabled = true;
-    const timestamp = this.now;
-    const glideTime = 0.1;
-
-    this.getParam('playbackRate')?.linearRampToValueAtTime(1, timestamp + glideTime);
+    // Time constant: about 95% there after 0.1 s.
+    this.#setNoteRate(1, this.now, 0.1 / 3);
   };
 
   enablePitch = () => {
     this.#pitchDisabled = false;
     if (this.#midiNote !== null) {
       const playbackRate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
-      this.getParam('playbackRate')?.linearRampToValueAtTime(
-        playbackRate,
-        this.context.currentTime + 0.01,
-      );
+      this.#setNoteRate(playbackRate, this.now, 0.01 / 3);
     }
   };
 
@@ -735,21 +712,6 @@ export class SampleVoice {
 
   get endPoint() {
     return this.getParam('endPoint')!.value;
-  }
-
-  /**
-   * Amp release duration, or 0 while the amp envelope is off. An estimate for listeners:
-   * the processor ends the note itself and reports it as voice:ended.
-   * ponytail: ignores loopSync timing; ask the processor if an exact figure is needed.
-   */
-  get releaseTime() {
-    const config = this.#envelopeConfigs.get('amp');
-    if (!config?.enabled) return 0;
-    const rate = config.playbackRateSync ? Math.abs(this.#playbackRate) : 1;
-    return getDuration(config.shape.points, {
-      fromIndex: config.shape.releasePoint,
-      timeScale: config.timeScale * rate,
-    });
   }
 
   // Setters

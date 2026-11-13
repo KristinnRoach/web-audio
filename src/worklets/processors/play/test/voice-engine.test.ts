@@ -13,7 +13,6 @@ it('renders from injected time, randomness and message sink', () => {
   const parameters = Object.fromEntries(
     Object.entries({
       masterGain: 1,
-      velocity: 127,
       pan: 0,
       playbackRate: 1,
       detune: 0,

@@ -184,3 +184,37 @@ it('a filter envelope renders cents to the control output and leaves the audio a
   expect(withFilter.filter[10]).toBeGreaterThan(1000); // near the attack peak, in cents
   expect(withFilter.audio).toEqual(without.audio);
 });
+
+it('takes rate and velocity from voice:start, so the first note is synced and scaled', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
+  // The playbackRate param is a multiplier now; a stale 1 must not leak into the note.
+  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+
+  engine.start(1, 0, { playbackRate: 2, velocity: 127 });
+  engine.render([new Float32Array(128)], parameters, 0, 0);
+  expect(engine.envelopes.gain.envelope.timeScale).toBe(2);
+  expect(engine.noteRate).toBe(2);
+
+  engine.start(2, 0, { playbackRate: 0.5, velocity: 0 });
+  const output = new Float32Array(128);
+  engine.render([output], parameters, 128, 0);
+  expect(engine.envelopes.gain.envelope.timeScale).toBe(0.5);
+  expect(output.every((v) => v === 0)).toBe(true); // velocity 0 from this note, not the last
+});
+
+it('glides the note rate from glideFrom and retunes on voice:setRate', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+
+  engine.start(1, 0, { playbackRate: 2, glideFrom: 1, glideSeconds: 0.05 });
+  engine.render([new Float32Array(128)], parameters, 0, 0);
+  expect(engine.noteRate).toBeGreaterThan(1.9); // 128 ms at a 50 ms time constant
+  expect(engine.noteRate).toBeLessThan(2);
+
+  engine.setNoteRate(0, 4);
+  engine.render([new Float32Array(128)], parameters, 128, 0);
+  expect(engine.noteRate).toBe(4);
+});

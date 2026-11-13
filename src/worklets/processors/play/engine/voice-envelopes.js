@@ -38,6 +38,7 @@ export class VoiceEnvelopes {
     this.filter = new EnvelopeSlot(sampleRate);
     this.slots = [this.gain, this.detune, this.pan, this.filter];
     this.pendingReleaseFrame = null;
+    this.noteRate = 1;
   }
 
   /** A new shape takes effect at its next point; a running note keeps its trigger. */
@@ -49,8 +50,9 @@ export class VoiceEnvelopes {
     slot.envelope.shape = config?.shape ?? null;
   }
 
-  /** Starts every active envelope on the next advance(). */
-  trigger() {
+  /** Starts every active envelope on the next advance(); `noteRate` drives playbackRateSync. */
+  trigger(noteRate = 1) {
+    this.noteRate = noteRate;
     this.pendingReleaseFrame = null;
     for (const slot of this.slots) slot.triggerPending = slot.active;
   }
@@ -91,13 +93,13 @@ export class VoiceEnvelopes {
         slot.smoothed = config.shape.points[0].value;
       } else {
         if (restart || loopSync) {
-          const rate = Math.abs(playbackRate);
+          // Loop sync follows the sounding rate; playbackRateSync the note's own rate.
           envelope.timeScale =
             (config.timeScale ?? 1) *
             (loopSync && loopWindow.length > 0
-              ? (bufferLength * rate) / loopWindow.length
+              ? (bufferLength * Math.abs(playbackRate)) / loopWindow.length
               : config.playbackRateSync
-                ? rate
+                ? Math.abs(this.noteRate)
                 : 1);
         }
         if (restart) {
