@@ -9,6 +9,7 @@ import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
 import { LoopWindow } from './loop-window.js';
 import { getKeytrackedValue } from './keytrack.js';
 import { ClampedSourceReader } from './source-reader.js';
+import { AmpEnvelope } from './amp-envelope.js';
 import { readSource, SincKernel } from './interpolation-kernels.js';
 import {
   driftLoopEnd,
@@ -96,6 +97,8 @@ export class VoiceEngine {
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlaybackPosition = false;
+    // With a shape set, replaces the envGain param (prototype, see amp-envelope.js).
+    this.ampEnvelope = new AmpEnvelope(sampleRate);
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
     this.enableLoopCrossfade = true; // Crossfade between loop points
@@ -207,6 +210,18 @@ export class VoiceEngine {
     this.pendingStartFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
     this.startFadeFrames = 0;
     this.#clearStop(); // a new note supersedes the previous note's stop
+    this.ampEnvelope.trigger();
+  }
+
+  /** Shape for the audio-thread amp envelope, or null to follow the envGain param. */
+  setAmpEnvelope(shape) {
+    this.ampEnvelope.shape = shape ?? null;
+  }
+
+  /** Releases the amp envelope at `timestamp`; the note ends when its tail does. */
+  release(timestamp) {
+    if (!this.ampEnvelope.shape) return this.stop(timestamp);
+    this.pendingReleaseFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
   }
 
   setPanDriftEnabled(enabled) {
@@ -288,6 +303,7 @@ export class VoiceEngine {
   }
 
   #clearStop() {
+    this.pendingReleaseFrame = null;
     this.pendingStopFrame = null;
     this.stopFadeFrames = 0;
   }
@@ -906,8 +922,22 @@ export class VoiceEngine {
         if (stopGain <= 0) return this.#halt();
       }
 
-      // Use getSafeParam for a-rate params
-      const envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
+      let envelopeGain;
+      const ampEnvelope = this.ampEnvelope;
+      if (ampEnvelope.shape) {
+        if (this.pendingReleaseFrame !== null && blockFrame + sample >= this.pendingReleaseFrame) {
+          this.pendingReleaseFrame = null;
+          ampEnvelope.release();
+        }
+        envelopeGain = ampEnvelope.next();
+        // The stop fade covers a tail that doesn't end at zero.
+        if (ampEnvelope.done && this.pendingStopFrame === null) {
+          this.pendingStopFrame = blockFrame + sample;
+        }
+      } else {
+        // Use getSafeParam for a-rate params
+        envelopeGain = this.#getSafeParam(parameters.envGain, sample, isConstant.envGain);
+      }
       const basePlaybackRate = this.#getSafeParam(
         parameters.playbackRate,
         sample,

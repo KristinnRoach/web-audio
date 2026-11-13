@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Amp envelope prototype</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      body {
+        max-width: 420px;
+        margin: 10vh auto;
+        padding: 0 16px;
+      }
+      label {
+        display: grid;
+        grid-template-columns: 90px 1fr 60px;
+        align-items: center;
+        gap: 8px;
+      }
+      fieldset {
+        display: grid;
+        gap: 6px;
+        margin: 16px 0;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      #status {
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Amp envelope prototype</h1>
+    <p id="status">Click anywhere, then play A W S E D F T G Y H U J K. Z / X shift octave.</p>
+
+    <div class="row">
+      <input id="file" type="file" accept="audio/*" />
+      <button id="rec">Record</button>
+    </div>
+
+    <fieldset>
+      <legend>Envelope</legend>
+      <label
+        >Engine
+        <select id="engine">
+          <option value="audio">audio thread (new)</option>
+          <option value="main">main thread (old)</option></select
+        ><span></span>
+      </label>
+      <label
+        >Mode
+        <select id="mode">
+          <option>sustain</option>
+          <option>loop</option>
+          <option>once</option></select
+        ><span></span>
+      </label>
+      <label
+        >Curve
+        <select id="curve">
+          <option>exponential</option>
+          <option>linear</option></select
+        ><span></span>
+      </label>
+      <label
+        >Attack <input id="a" type="range" min="1" max="2000" value="10" /><output></output
+      ></label>
+      <label
+        >Decay <input id="d" type="range" min="1" max="2000" value="200" /><output></output
+      ></label>
+      <label
+        >Sustain <input id="s" type="range" min="0" max="100" value="60" /><output></output
+      ></label>
+      <label
+        >Release <input id="r" type="range" min="1" max="4000" value="400" /><output></output
+      ></label>
+    </fieldset>
+
+    <label class="row"><input id="loop" type="checkbox" /> Loop sample</label>
+
+    <script type="module">
+      import { initProcessors } from '../../src/worklets/init-processors.ts';
+      import { Envelope } from '../../src/nodes/modulators/envelope/index.ts';
+      import { createAudioRecorder } from '../../src/index.ts';
+
+      const $ = (id) => document.getElementById(id);
+      const ctx = new AudioContext();
+      await initProcessors(ctx);
+
+      const node = new AudioWorkletNode(ctx, 'sample-player-processor', {
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      node.connect(ctx.destination);
+      const param = (name) => node.parameters.get(name);
+      const post = (msg) => node.port.postMessage(msg);
+
+      // Old path for A/B: the main-thread Envelope on the envGain param.
+      let shape = readShape();
+      const oldEnv = new Envelope(ctx, param('envGain'), shape);
+
+      function readShape() {
+        const ms = (id) => Number($(id).value) / 1000;
+        const a = ms('a');
+        const d = a + ms('d');
+        const curve = $('curve').value;
+        return {
+          points: [
+            { time: 0, value: 0 },
+            { time: a, value: 1, curve },
+            { time: d, value: Number($('s').value) / 100, curve },
+            { time: d + ms('r'), value: 0 },
+          ],
+          mode: { type: $('mode').value },
+          sustainPoint: 2,
+          releasePoint: 2,
+        };
+      }
+
+      function applyShape() {
+        for (const out of document.querySelectorAll('output')) {
+          out.value = out.previousElementSibling.value;
+        }
+        shape = readShape();
+        oldEnv.shape = shape;
+        post({ type: 'setAmpEnvelope', value: $('engine').value === 'audio' ? shape : null });
+      }
+      document.querySelector('fieldset').addEventListener('input', applyShape);
+      applyShape();
+
+      function load(buffer) {
+        post({
+          type: 'voice:setBuffer',
+          buffer: Array.from({ length: buffer.numberOfChannels }, (_, i) =>
+            buffer.getChannelData(i),
+          ),
+          durationSeconds: buffer.duration,
+        });
+        const now = ctx.currentTime;
+        param('endPoint').setValueAtTime(buffer.duration, now);
+        param('loopEnd').setValueAtTime(buffer.duration, now);
+        $('status').textContent = `Loaded ${buffer.duration.toFixed(2)} s`;
+      }
+
+      // A plain saw so there's something to play before loading a sample.
+      const saw = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      saw
+        .getChannelData(0)
+        .forEach((_, i, data) => (data[i] = (((i * 220) / ctx.sampleRate) % 1) - 0.5));
+      load(saw);
+
+      $('file').onchange = async () => {
+        const file = $('file').files[0];
+        if (file) load(await ctx.decodeAudioData(await file.arrayBuffer()));
+      };
+
+      const recorder = createAudioRecorder(ctx);
+      $('rec').onclick = async () => {
+        if (recorder.state === 'RECORDING') {
+          $('rec').textContent = 'Record';
+          const buffer = await recorder.stop();
+          if (buffer) load(buffer);
+        } else {
+          await recorder.start();
+          $('rec').textContent = 'Stop';
+        }
+      };
+
+      $('loop').onchange = () => post({ type: 'setLoopEnabled', value: $('loop').checked });
+
+      const KEYS = 'awsedftgyhujk';
+      let octave = 0;
+      let held = null;
+      let triggerId = 0;
+
+      function noteOn(note) {
+        const t = ctx.currentTime;
+        held = note;
+        param('playbackRate').setValueAtTime(2 ** ((note - 60) / 12), t);
+        post({ type: 'voice:start', triggerId: ++triggerId, timestamp: t });
+        if ($('engine').value === 'main') oldEnv.trigger(t);
+      }
+
+      function noteOff(note) {
+        if (note !== held) return;
+        held = null;
+        const t = ctx.currentTime;
+        if ($('engine').value === 'audio') return post({ type: 'voice:release', timestamp: t });
+        oldEnv.release(t);
+        post({ type: 'voice:stop', timestamp: t + oldEnv.releaseDuration() });
+      }
+
+      addEventListener('pointerdown', () => ctx.resume());
+      addEventListener('keydown', (e) => {
+        if (e.repeat || e.target.tagName === 'SELECT') return;
+        ctx.resume();
+        if (e.key === 'z') octave--;
+        if (e.key === 'x') octave++;
+        const i = KEYS.indexOf(e.key);
+        if (i >= 0) noteOn(60 + i + octave * 12);
+      });
+      addEventListener('keyup', (e) => {
+        const i = KEYS.indexOf(e.key);
+        if (i >= 0) noteOff(60 + i + octave * 12);
+      });
+    </script>
+  </body>
+</html>

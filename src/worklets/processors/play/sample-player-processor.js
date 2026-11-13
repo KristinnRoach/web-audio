@@ -73,6 +73,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         engine.stop(timestamp);
         break;
 
+      case 'voice:release':
+        engine.release(timestamp);
+        break;
+
+      case 'setAmpEnvelope':
+        engine.setAmpEnvelope(value);
+        break;
+
       case 'setLoopEnabled':
         engine.loopEnabled = value;
 
