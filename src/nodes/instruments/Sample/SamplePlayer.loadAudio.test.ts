@@ -186,7 +186,8 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
         numberOfChannels: 1,
         duration: length / sampleRate,
         getChannelData: () => data,
-        copyFromChannel: (destination: Float32Array) => destination.set(data),
+        copyFromChannel: (destination: Float32Array, _channel: number, start = 0) =>
+          destination.set(data.subarray(start, start + destination.length)),
       } as unknown as AudioBuffer;
     };
     Object.assign(context, { createBuffer });

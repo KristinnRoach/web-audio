@@ -78,7 +78,7 @@ export function needsCompression(buffer: AudioBuffer): boolean {
   const samplesToCheck = Math.min(buffer.length * 0.1, 44100); // Max 1 second
 
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-    const data = copyChannelData(buffer, ch);
+    const data = copyChannelData(buffer, ch, 0, Math.ceil(samplesToCheck));
     // Clamp to actual data length to prevent out-of-bounds access
     const samplesInChannel = Math.min(samplesToCheck, data.length);
     for (let i = 0; i < samplesInChannel; i++) {

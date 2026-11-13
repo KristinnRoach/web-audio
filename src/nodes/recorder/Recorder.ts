@@ -673,7 +673,7 @@ export class Recorder implements LibNode {
     if (length <= 0 || length >= buffer.length) return buffer;
     const trimmed = this.#context.createBuffer(buffer.numberOfChannels, length, buffer.sampleRate);
     for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-      trimmed.copyToChannel(copyChannelData(buffer, channel).subarray(0, length), channel);
+      trimmed.copyToChannel(copyChannelData(buffer, channel, 0, length), channel);
     }
     return trimmed;
   }

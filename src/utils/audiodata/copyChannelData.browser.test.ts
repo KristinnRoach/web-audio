@@ -91,6 +91,15 @@ it('copies both channels into independent arrays using the native API', () => {
   expect(get).not.toHaveBeenCalled();
 });
 
+it('copies only the requested frames, clamped to the buffer', () => {
+  const { buffer } = braveBuffer();
+  const copy = copyChannelData(buffer, 0, 100, 200);
+  expect(copy.length).toBe(100);
+  expect(copy[0]).toBeCloseTo(copyChannelData(buffer, 0)[100], 6);
+  expect(copyChannelData(buffer, 0, 4790, 5000).length).toBe(10);
+  expect(copyChannelData(buffer, 0, 5000).length).toBe(0);
+});
+
 it.each([
   ['normalization', (buffer: AudioBuffer) => normalizeAudioBuffer(context, buffer)],
   ['compression', (buffer: AudioBuffer) => compressAudioBuffer(context, buffer)],
