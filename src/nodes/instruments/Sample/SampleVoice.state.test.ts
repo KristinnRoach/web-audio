@@ -272,6 +272,10 @@ describe('SampleVoice state', () => {
     expect(audio.posted.some((m) => m.target === undefined && m.type === 'setEnvelope')).toBe(
       false,
     );
+    // Pan has no main-thread envelope: it reaches the processor only with the flag on.
+    expect(audio.posted.find((m) => m.target === 'pan').value.depth).toBe(1);
+    expect(voice.envelopes.has('pan')).toBe(false);
+    expect(voice.envelopeIds).toContain('pan');
 
     trigger(voice);
     voice.release({ secondsFromNow: 2 });

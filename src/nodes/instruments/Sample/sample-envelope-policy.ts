@@ -11,11 +11,11 @@ import type { EnvelopeConfig } from './envelope-config';
  * Envelope owns scheduling; unfinished behavior is tracked in envelopes/KNOWN-ISSUES.md.
  */
 
-export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter'] as const;
+export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter', 'pan'] as const;
 export type SampleEnvelopeId = (typeof SAMPLE_ENVELOPE_IDS)[number];
 
 export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEnvelopeId[] {
-  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch'];
+  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch', 'pan'];
 }
 
 /**
@@ -32,8 +32,8 @@ const PITCH_ENVELOPE_SEMITONES = 12;
  */
 const FILTER_ENVELOPE_OCTAVES = 10;
 
-/** Flat at 0, so the pitch env is an identity until someone edits it. */
-function flatPitchShape(durationSeconds: number): EnvelopeShape {
+/** Flat at 0, so a bipolar env (pitch, pan) is an identity until someone edits it. */
+function flatBipolarShape(durationSeconds: number): EnvelopeShape {
   return {
     mode: { type: 'once' },
     sustainPoint: 0,
@@ -69,7 +69,16 @@ export function createDefaultSampleEnvelopeConfig(
         timeScale: 1,
         playbackRateSync: false,
         loopSync: false,
-        shape: flatPitchShape(durationSeconds),
+        shape: flatBipolarShape(durationSeconds),
+      };
+    case 'pan':
+      return {
+        depth: 1,
+        enabled: true,
+        timeScale: 1,
+        playbackRateSync: false,
+        loopSync: false,
+        shape: flatBipolarShape(durationSeconds),
       };
     case 'filter':
       return {
@@ -83,7 +92,8 @@ export function createDefaultSampleEnvelopeConfig(
   }
 }
 
-export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
+/** Param a main-thread Envelope drives, or null for audio-thread-only envelopes. */
+export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string | null {
   switch (id) {
     case 'amp':
       return 'envGain';
@@ -91,6 +101,8 @@ export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string {
       return 'detune';
     case 'filter':
       return 'lpfDetune';
+    case 'pan':
+      return null;
   }
 }
 
@@ -103,8 +115,10 @@ export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
  * Processor target for audio-thread envelopes, or null where the processor can't reach
  * the param: the filter is a BiquadFilterNode after the worklet.
  */
-export function getSampleEnvelopeProcessorTarget(id: SampleEnvelopeId): 'gain' | 'detune' | null {
-  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : null;
+export function getSampleEnvelopeProcessorTarget(
+  id: SampleEnvelopeId,
+): 'gain' | 'detune' | 'pan' | null {
+  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : id === 'pan' ? 'pan' : null;
 }
 
 /**
@@ -138,6 +152,8 @@ export function resolveSampleEnvelopeTrigger(
       config.timeScale * (loopTimeScale ?? (config.playbackRateSync ? Math.abs(playbackRate) : 1)),
   };
   if (id === 'amp') return options;
+  // Bipolar, -1..1 is hard left..right; exponential curves can't cross zero.
+  if (id === 'pan') return { ...options, curve: 'linear' };
   // Linear in cents is exponential in Hz, so the preset's exponential curves would bend it twice.
   if (id === 'pitch') {
     return { ...options, depth: PITCH_ENVELOPE_SEMITONES * 100 * options.depth, curve: 'linear' };

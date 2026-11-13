@@ -1015,7 +1015,8 @@ export class VoiceEngine {
 
       this.smoothedPanDrift +=
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
-      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift));
+      const envelopePan = envelopes.pan.active ? envelopes.pan.value : 0;
+      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
 
       // Loop rules apply once head and timeline are in the loop, not on the way to it.
       const approachingLoop =

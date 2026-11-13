@@ -237,7 +237,13 @@ export class SampleVoice {
       // Envelopes start from defaults; SamplePlayer pushes the real state down as soon
       // as it has one, which is also what keeps every voice on the same shape.
       const config = createDefaultSampleEnvelopeConfig(type, durationSeconds);
-      const param = this.getParam(getSampleEnvelopeParamName(type));
+      const paramName = getSampleEnvelopeParamName(type);
+      // ponytail: audio-thread-only envelopes keep just a config, inactive with the flag off.
+      if (paramName === null) {
+        this.#envelopeConfigs.set(type, config);
+        continue;
+      }
+      const param = this.getParam(paramName);
       if (!param) continue;
       this.#envelopes.set(type, new Envelope(this.context, param, config.shape));
       this.#envelopeConfigs.set(type, config);
@@ -569,7 +575,8 @@ export class SampleVoice {
 
   /** Moves a param to where it rests while its envelope is off. */
   #resetEnvTarget = (envType: SampleEnvelopeId, time = this.now, smooth = true) => {
-    const param = this.getParam(getSampleEnvelopeParamName(envType));
+    const paramName = getSampleEnvelopeParamName(envType);
+    const param = paramName === null ? null : this.getParam(paramName);
     const smoothing = envType === 'amp' ? AMP_GATE_SMOOTHING_SEC : DEFAULT.CUTOFF_SMOOTHING_SEC;
     param?.cancelScheduledValues(time);
     const value = getSampleEnvelopeRestValue(envType);
@@ -583,7 +590,11 @@ export class SampleVoice {
    */
   setEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
     const envelope = this.#envelopes.get(envType);
-    if (!envelope) return;
+    if (!envelope) {
+      if (!this.#envelopeConfigs.has(envType)) return;
+      this.#envelopeConfigs.set(envType, config);
+      return this.#sendProcessorEnvelope(envType);
+    }
     const wasEnabled = this.#isEnvEnabled(envType);
     // Read the current run before replacing its stored shape.
     const fromPoint =
@@ -643,8 +654,13 @@ export class SampleVoice {
     return this.#envelopes;
   }
 
+  /** Every envelope this voice takes configs for, including audio-thread-only ones. */
+  get envelopeIds(): SampleEnvelopeId[] {
+    return [...this.#envelopeConfigs.keys()];
+  }
+
   /**
-   * Experimental: plays the amp and pitch envelopes on the audio thread, sample-accurate
+   * Experimental: plays the amp, pitch and pan envelopes on the audio thread, sample-accurate
    * and restarting on the processor's own loop wraps under loopSync. The filter envelope
    * stays on the main thread. Takes effect from the next note.
    */

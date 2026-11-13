@@ -145,3 +145,26 @@ it('a detune envelope bends the playback rate the loop and read step use', () =>
   engine.render([new Float32Array(128)], makeParameters({ endPoint: 1 }), 0, 0);
   expect(engine.playbackPosition).toBeCloseTo(256, 0);
 });
+
+it('a pan envelope adds to the pan param, clamped to hard right', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  engine.setPanDriftEnabled(false);
+  const hardRight: EnvelopeShape = {
+    points: [
+      { time: 0, value: 1 },
+      { time: 1, value: 1 },
+    ],
+    mode: { type: 'once' },
+    sustainPoint: 0,
+    releasePoint: 0,
+  };
+  engine.setEnvelope('pan', { shape: hardRight });
+  engine.start(1, 0);
+
+  const left = new Float32Array(128);
+  const right = new Float32Array(128);
+  engine.render([left, right], makeParameters({ pan: 0.5, endPoint: 1 }), 0, 0);
+  expect(right[64]).toBeGreaterThan(0);
+  expect(left[64]).toBe(0);
+});

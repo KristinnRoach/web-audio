@@ -914,7 +914,7 @@ export class SamplePlayer {
     return this;
   };
 
-  /** Experimental: plays the amp and pitch envelopes on the audio thread. Takes effect from the next note. */
+  /** Experimental: plays the amp, pitch and pan envelopes on the audio thread; pan is inactive while off. Takes effect from the next note. */
   setAudioThreadEnvelopes = (enabled: boolean) => {
     this.#audioThreadEnvelopes = enabled;
     this.#voicePool?.applyToAllVoices((voice) => voice.setAudioThreadEnvelopes(enabled));
@@ -1132,7 +1132,7 @@ export class SamplePlayer {
 
   /** Envelope ids on the current voices; empty until the pool is initialized. */
   get envelopeIds(): SampleEnvelopeId[] {
-    return [...(this.#voicePool?.allVoices[0]?.envelopes.keys() ?? [])];
+    return this.#voicePool?.allVoices[0]?.envelopeIds ?? [];
   }
 
   /**
