@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vite-plus/test';
 import { BreakpointEnvelope } from '../engine/breakpoint-envelope.js';
 import { VoiceEngine } from '../engine/voice-engine.js';
+import { VoiceEnvelopes } from '../engine/voice-envelopes.js';
 import { makeParameters } from './range-test-helpers';
 import type { EnvelopeShape } from '../../../../nodes/modulators/envelope';
 
@@ -227,6 +228,47 @@ it('a release without a gain envelope stops the note', () => {
   engine.start(1, 0);
   engine.release(0.5);
   expect(engine.pendingStopFrame).toBe(0.5 * SR);
+});
+
+it.each(['once', 'loop'] as const)(
+  'uses edited timing at the next segment in %s mode, leaving the running segment alone',
+  (mode) => {
+    const envelopes = new VoiceEnvelopes(SR);
+    const shape = adsr(mode);
+    envelopes.set('gain', { shape, timeScale: 1 });
+    envelopes.trigger();
+    const advance = (frame: number) => envelopes.advance(frame, 1, false, false, null, SR);
+    for (let frame = 0; frame < 5; frame++) advance(frame);
+
+    envelopes.set('gain', { shape, timeScale: 2 });
+    for (let frame = 5; frame < 10; frame++) advance(frame);
+    const envelope = envelopes.gain.envelope;
+    expect(envelope.value).toBe(1); // original 10 ms attack finishes on time
+    expect(envelope.remaining).toBe(5); // next 10 ms segment now takes 5 ms
+    for (let frame = 10; frame < 20; frame++) advance(frame);
+    expect(envelope.done).toBe(mode === 'once');
+    if (mode === 'loop') {
+      expect(envelope.index).toBe(0);
+      expect(envelope.remaining).toBe(5); // subsequent loop uses the edited timing too
+    }
+  },
+);
+
+it('updates timing with playback sync and gives loop sync precedence', () => {
+  const envelopes = new VoiceEnvelopes(SR);
+  const shape = adsr('loop');
+  envelopes.set('gain', { shape, playbackRateSync: true });
+  envelopes.trigger(2);
+  envelopes.advance(0, 3, true, false, { length: 250 }, SR);
+  expect(envelopes.gain.envelope.timeScale).toBe(2);
+
+  envelopes.set('gain', { shape, timeScale: 2, playbackRateSync: true });
+  envelopes.advance(1, 3, true, false, { length: 250 }, SR);
+  expect(envelopes.gain.envelope.timeScale).toBe(4);
+
+  envelopes.set('gain', { shape, timeScale: 2, playbackRateSync: true, loopSync: true });
+  envelopes.advance(2, 3, true, false, { length: 250 }, SR);
+  expect(envelopes.gain.envelope.timeScale).toBe(24);
 });
 
 it('loop sync restarts on every sample loop wrap, fitted to the loop length', () => {

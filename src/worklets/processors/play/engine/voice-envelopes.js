@@ -97,16 +97,15 @@ export class VoiceEnvelopes {
         // Wait one sample for the loop length; hold the opening value meanwhile.
         slot.smoothed = config.shape.points[0].value;
       } else {
-        if (restart || loopSync) {
-          // Loop sync follows the sounding rate; playbackRateSync the note's own rate.
-          envelope.timeScale =
-            (config.timeScale ?? 1) *
-            (loopSync && loopWindow.length > 0
-              ? (bufferLength * Math.abs(playbackRate)) / loopWindow.length
-              : config.playbackRateSync
-                ? Math.abs(this.noteRate)
-                : 1);
-        }
+        // Each new segment uses current timing. Loop sync follows the sounding rate;
+        // playbackRateSync follows the note's own rate.
+        envelope.timeScale =
+          (config.timeScale ?? 1) *
+          (loopSync && loopWindow.length > 0
+            ? (bufferLength * Math.abs(playbackRate)) / loopWindow.length
+            : config.playbackRateSync
+              ? Math.abs(this.noteRate)
+              : 1);
         if (restart) {
           // A new note starts on the shape; only loop-sync restarts glide from the old value.
           if (slot.triggerPending) slot.smoothed = config.shape.points[0].value;
