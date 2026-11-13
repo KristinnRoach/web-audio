@@ -1,12 +1,13 @@
-// Audio-thread amp envelope prototype: walks an EnvelopeShape (see
-// nodes/modulators/envelope/envelope-shape.ts) one sample at a time.
+// Audio-thread breakpoint envelope: walks an EnvelopeShape (see
+// nodes/modulators/envelope/envelope-shape.ts) one sample at a time, as unitless
+// values. Routing and units belong to voice-envelopes.js.
 // ponytail: no sustain glide or loop restart bridge yet; a loop restart that cuts
 // a pass mid-shape steps to point 0.
 
-// Exponential segments can't start or end at zero.
+// Exponential segments can't start or end at zero, so they suit positive shapes only.
 const MIN_EXP_VALUE = 1e-4;
 
-export class AmpEnvelope {
+export class BreakpointEnvelope {
   constructor(sampleRate) {
     this.sampleRate = sampleRate;
     // Read at every segment start, so a new shape takes effect at the next point.

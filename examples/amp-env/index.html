@@ -132,7 +132,11 @@
         }
         shape = readShape();
         oldEnv.shape = shape;
-        post({ type: 'setAmpEnvelope', value: $('engine').value === 'audio' ? { shape } : null });
+        post({
+          type: 'setEnvelope',
+          target: 'gain',
+          value: $('engine').value === 'audio' ? { shape } : null,
+        });
       }
       document.querySelector('fieldset').addEventListener('input', applyShape);
       applyShape();

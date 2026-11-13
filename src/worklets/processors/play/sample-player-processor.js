@@ -38,6 +38,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       hopSamples,
       playbackDirection,
       triggerId,
+      target,
     } = event.data;
     const engine = this.engine;
 
@@ -77,8 +78,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         engine.release(timestamp);
         break;
 
-      case 'setAmpEnvelope':
-        engine.setAmpEnvelope(value);
+      case 'setEnvelope':
+        engine.setEnvelope(target, value);
         break;
 
       case 'setLoopEnabled':

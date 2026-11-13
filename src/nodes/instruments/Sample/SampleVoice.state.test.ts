@@ -259,13 +259,19 @@ describe('SampleVoice state', () => {
     expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: voice.releaseTime });
   });
 
-  it('hands the amp envelope to the processor when audio-thread amp is on', async () => {
+  it('hands amp and pitch envelopes to the processor when audio-thread envelopes are on', async () => {
     const voice = await loadedVoice();
-    voice.setAudioThreadAmpEnvelope(true);
-    expect(audio.posted.at(-1)).toMatchObject({
-      type: 'setAmpEnvelope',
-      value: { enabled: true, shape: expect.any(Object) },
-    });
+    voice.setAudioThreadEnvelopes(true);
+    expect(audio.posted).toContainEqual(
+      expect.objectContaining({ type: 'setEnvelope', target: 'gain', value: expect.any(Object) }),
+    );
+    // Pitch in cents with linear curves, as the main-thread run resolves it.
+    const pitch = audio.posted.find((m) => m.target === 'detune');
+    expect(pitch.value.depth).toBe(1200);
+    expect(pitch.value.shape.points.every((p: any) => p.curve === 'linear')).toBe(true);
+    expect(audio.posted.some((m) => m.target === undefined && m.type === 'setEnvelope')).toBe(
+      false,
+    );
 
     trigger(voice);
     voice.release({ secondsFromNow: 2 });

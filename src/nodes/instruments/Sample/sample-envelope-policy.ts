@@ -100,6 +100,29 @@ export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
 }
 
 /**
+ * Processor target for audio-thread envelopes, or null where the processor can't reach
+ * the param: the filter is a BiquadFilterNode after the worklet.
+ */
+export function getSampleEnvelopeProcessorTarget(id: SampleEnvelopeId): 'gain' | 'detune' | null {
+  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : null;
+}
+
+/**
+ * Config in the processor target's units: depth resolved and any curve override
+ * applied to the shape. Timing stays unresolved; the processor applies it per note.
+ */
+export function resolveSampleEnvelopeForProcessor(
+  id: SampleEnvelopeId,
+  config: EnvelopeConfig,
+): EnvelopeConfig {
+  const { depth, curve } = resolveSampleEnvelopeTrigger(id, config, 1);
+  const points = curve
+    ? config.shape.points.map((point) => (point.curve === 'step' ? point : { ...point, curve }))
+    : config.shape.points;
+  return { ...config, depth, shape: { ...config.shape, points } };
+}
+
+/**
  * Resolve sampler units and timing before handing a run to the generic scheduler.
  * `loopTimeScale`, when present, includes playback rate and overrides playbackRateSync.
  */

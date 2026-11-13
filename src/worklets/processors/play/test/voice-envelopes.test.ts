@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vite-plus/test';
-import { AmpEnvelope } from '../engine/amp-envelope.js';
+import { BreakpointEnvelope } from '../engine/breakpoint-envelope.js';
 import { VoiceEngine } from '../engine/voice-engine.js';
 import { makeParameters } from './range-test-helpers';
 import type { EnvelopeShape } from '../../../../nodes/modulators/envelope';
@@ -18,10 +18,11 @@ const adsr = (mode: EnvelopeShape['mode']['type']): EnvelopeShape => ({
   releasePoint: 2,
 });
 
-const run = (env: AmpEnvelope, frames: number) => Array.from({ length: frames }, () => env.next());
+const run = (env: BreakpointEnvelope, frames: number) =>
+  Array.from({ length: frames }, () => env.next());
 
 it('attacks, decays to sustain, holds, then releases to done', () => {
-  const env = new AmpEnvelope(SR);
+  const env = new BreakpointEnvelope(SR);
   env.shape = adsr('sustain');
   env.trigger();
   const held = run(env, 100);
@@ -40,7 +41,7 @@ it('attacks, decays to sustain, holds, then releases to done', () => {
 });
 
 it('loops the whole shape until release', () => {
-  const env = new AmpEnvelope(SR);
+  const env = new BreakpointEnvelope(SR);
   env.shape = adsr('loop');
   env.trigger();
   const out = run(env, 70);
@@ -57,7 +58,7 @@ it('drives the engine output and ends the note when the release tail does', () =
     post: (m: object) => void posts.push(m),
   });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.setAmpEnvelope({ shape: adsr('sustain') });
+  engine.setEnvelope('gain', { shape: adsr('sustain') });
   engine.start(1, 0);
 
   const parameters = makeParameters({ envGain: 0, endPoint: 1, loopEnd: 1 });
@@ -80,8 +81,8 @@ it('loop sync restarts on every sample loop wrap, fitted to the loop length', ()
   });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
   engine.loopEnabled = true;
-  engine.setAmpEnvelope({ shape: adsr('loop'), loopSync: true });
-  const trigger = vi.spyOn(engine.ampEnvelope, 'trigger');
+  engine.setEnvelope('gain', { shape: adsr('loop'), loopSync: true });
+  const trigger = vi.spyOn(engine.envelopes.gain.envelope, 'trigger');
   engine.start(1, 0);
 
   // A 0.25 s loop: the full-buffer timeline plays 4x faster, once per wrap.
@@ -92,14 +93,14 @@ it('loop sync restarts on every sample loop wrap, fitted to the loop length', ()
   const wraps = posts.filter((m) => m.type === 'loop:cycle').length;
   expect(wraps).toBeGreaterThan(2);
   expect(trigger).toHaveBeenCalledTimes(1 + wraps);
-  expect(engine.ampEnvelope.timeScale).toBeCloseTo(4);
+  expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(4);
 });
 
 it('smooths a vertical segment instead of stepping in one sample', () => {
   const rate = 48_000;
   const engine = new VoiceEngine({ sampleRate: rate, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(rate).fill(0.5)]);
-  engine.setAmpEnvelope({
+  engine.setEnvelope('gain', {
     shape: {
       points: [
         { time: 0, value: 1 },
@@ -122,4 +123,25 @@ it('smooths a vertical segment instead of stepping in one sample', () => {
     maxStep = Math.max(maxStep, Math.abs(output[i] - output[i - 1]));
   }
   expect(maxStep).toBeLessThan(0.02);
+});
+
+it('a detune envelope bends the playback rate the loop and read step use', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR)]);
+  engine.setEnvelope('detune', {
+    shape: {
+      points: [
+        { time: 0, value: 1 },
+        { time: 1, value: 1 },
+      ],
+      mode: { type: 'once' },
+      sustainPoint: 0,
+      releasePoint: 0,
+    },
+    depth: 1200, // cents: one octave up
+  });
+  engine.start(1, 0);
+
+  engine.render([new Float32Array(128)], makeParameters({ endPoint: 1 }), 0, 0);
+  expect(engine.playbackPosition).toBeCloseTo(256, 0);
 });
