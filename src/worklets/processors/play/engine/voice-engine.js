@@ -953,6 +953,7 @@ export class VoiceEngine {
       while (this.pendingRates.length > 0 && frame >= this.pendingRates[0].frame) {
         const retune = this.pendingRates.shift();
         this.noteRateTarget = retune.rate;
+        this.envelopes.noteRate = retune.rate;
         this.noteRateCoefficient = retune.coefficient;
       }
       this.noteRate += (this.noteRateTarget - this.noteRate) * this.noteRateCoefficient;

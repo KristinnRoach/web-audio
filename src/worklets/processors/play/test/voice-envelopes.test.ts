@@ -449,6 +449,22 @@ it('renders queued retunes in timestamp order, keeping same-frame arrival order 
   expect(engine.noteRate).toBeCloseTo(4 + 4 * (1 - Math.exp(-0.1)));
 });
 
+it('uses a due retune target for subsequent playback-synced envelope segments', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
+  engine.start(1, 0);
+  engine.setNoteRate(0.005, 2, 0.05);
+  const parameters = makeParameters({ endPoint: 1 });
+  engine.render([new Float32Array(5)], parameters, 0, 0);
+  expect(engine.envelopes.gain.envelope.timeScale).toBe(1);
+  engine.render([new Float32Array(5)], parameters, 5, 0.005);
+  expect(engine.envelopes.gain.envelope.remaining).toBe(5);
+  expect(engine.envelopes.gain.envelope.value).toBe(1);
+  expect(engine.envelopes.gain.envelope.timeScale).toBe(2);
+  expect(engine.noteRate).toBeLessThan(2); // timing follows the target, not the glide
+});
+
 it('discards the previous note’s queued retunes when a new note starts', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
