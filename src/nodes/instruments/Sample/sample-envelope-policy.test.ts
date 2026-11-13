@@ -70,3 +70,38 @@ it('validates loopSync', () => {
     }),
   ).toThrow('Invalid envelope settings');
 });
+
+it('maps bipolar shapes piecewise onto the range, keeping 0 unmodulated', () => {
+  const pitch = resolveSampleEnvelopeForProcessor('pitch', {
+    ...config,
+    depth: 0.5,
+    range: [-1200, 2400],
+  });
+  expect(pitch.base).toBe(0);
+  expect(pitch.depth).toBe(1200); // shape 1 -> half of +2400 cents
+  expect(pitch.negativeDepth).toBe(600); // shape -1 -> half of -1200 cents
+});
+
+it('maps unipolar shapes linearly onto the range, mixing from rest by depth', () => {
+  const filter = resolveSampleEnvelopeForProcessor('filter', { ...config, range: [-1200, 2400] });
+  expect(filter.base).toBe(-1200);
+  expect(filter.depth).toBe(3600);
+  expect(filter.negativeDepth).toBeUndefined();
+  const amp = resolveSampleEnvelopeForProcessor('amp', { ...config, depth: 0.5, range: [0, 2] });
+  expect(amp.base).toBe(0.5); // shape 0 -> halfway from rest 1 to 0
+  expect(amp.depth).toBe(1); // shape 1 -> halfway from rest 1 to 2
+});
+
+it('validates and clones range', () => {
+  expect(() => assertValidEnvelopeConfig({ ...config, range: [-1, 2] })).not.toThrow();
+  for (const range of [[1, 0], [0, NaN], [0], 'wide']) {
+    expect(() =>
+      assertValidEnvelopeConfig({ ...config, range: range as unknown as [number, number] }),
+    ).toThrow('Invalid envelope settings');
+  }
+  const range = [-1, 2] as const;
+  const snapshot = cloneEnvelopeConfig({ ...config, range });
+  expect(snapshot.range).toEqual(range);
+  expect(snapshot.range).not.toBe(range);
+  expect(cloneEnvelopeConfig(config)).not.toHaveProperty('range');
+});
