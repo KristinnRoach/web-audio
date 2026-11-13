@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { SampleVoice } from './SampleVoice';
 import { VoiceState } from '../VoiceState';
 import { createDefaultSampleEnvelopeConfig } from './sample-envelope-policy';
-import type { EnvelopeConfig } from './envelope-config';
 
 const SAMPLE_RATE = 48000;
 
@@ -115,7 +114,6 @@ describe('SampleVoice state', () => {
     voice.setPitchOffset(12);
     trigger(voice, 60);
     audio.posted = [];
-    const envelopes = vi.spyOn(voice, 'triggerEnvelopes');
     const velocity = vi.spyOn(voice.getParam('velocity')!, 'setValueAtTime');
     const glide = vi.spyOn(voice.getParam('playbackRate')!, 'setTargetAtTime');
     const timestamp = voice.triggerTimestamp;
@@ -124,7 +122,7 @@ describe('SampleVoice state', () => {
     expect(glide).toHaveBeenCalledWith(4, 0.2, 0.3);
     expect(voice.midiNote).toBe(72);
     expect(voice.triggerTimestamp).toBe(timestamp);
-    expect(envelopes).not.toHaveBeenCalled();
+    expect(sentTypes()).not.toContain('setEnvelope');
     expect(velocity).not.toHaveBeenCalled();
     expect(sentTypes()).not.toContain('voice:start');
     voice.release();
@@ -234,193 +232,57 @@ describe('SampleVoice state', () => {
     expect(events).toEqual(['voice:started', 'voice:releasing', 'voice:stopped']);
   });
 
-  it('reports and stops after the amplitude release even when pitch releases longer', async () => {
-    const voice = await loadedVoice();
-    const pitchConfig = createDefaultSampleEnvelopeConfig('pitch', 1);
+  it('sends every envelope to the processor in its target units', async () => {
+    const voice = newVoice(true);
+    await voice.init();
+    const targets = audio.posted.filter((m) => m.type === 'setEnvelope').map((m) => m.target);
+    expect(targets).toEqual(['gain', 'detune', 'filter', 'pan']);
+    expect(voice.envelopeIds).toEqual(['amp', 'pitch', 'filter', 'pan']);
+
+    audio.posted = [];
+    voice.setEnvelopeConfig('pitch', createDefaultSampleEnvelopeConfig('pitch', 1));
+    // Pitch in cents with linear curves.
+    const [pitch] = audio.posted;
+    expect(pitch).toMatchObject({ type: 'setEnvelope', target: 'detune' });
+    expect(pitch.value.depth).toBe(1200);
+    expect(pitch.value.shape.points.every((p: any) => p.curve === 'linear')).toBe(true);
+
     voice.setEnvelopeConfig('pitch', {
-      ...pitchConfig,
-      enabled: true,
-      shape: {
-        ...pitchConfig.shape,
-        points: [
-          { time: 0, value: 0 },
-          { time: 5, value: 1 },
-        ],
-      },
+      ...createDefaultSampleEnvelopeConfig('pitch', 1),
+      enabled: false,
     });
+    expect(audio.posted.at(-1)).toEqual({ type: 'setEnvelope', target: 'detune', value: null });
+  });
+
+  it('leaves the end of the amp release to the processor and reports its length', async () => {
+    const voice = await loadedVoice();
+    const amp = createDefaultSampleEnvelopeConfig('amp', 1);
+    voice.setEnvelopeConfig('amp', { ...amp, timeScale: 2, playbackRateSync: true });
     let releaseDuration: number | undefined;
     voice.onMessage('voice:releasing', (msg: any) => (releaseDuration = msg.releaseDuration));
 
-    trigger(voice);
-    voice.release();
-
-    expect(voice.envelopes.get('pitch')!.releaseDuration()).toBeGreaterThan(voice.releaseTime);
-    expect(releaseDuration).toBe(voice.releaseTime);
-    expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: voice.releaseTime });
-  });
-
-  it('hands amp and pitch envelopes to the processor when audio-thread envelopes are on', async () => {
-    const voice = await loadedVoice();
-    voice.setAudioThreadEnvelopes(true);
-    expect(audio.posted).toContainEqual(
-      expect.objectContaining({ type: 'setEnvelope', target: 'gain', value: expect.any(Object) }),
-    );
-    // Pitch in cents with linear curves, as the main-thread run resolves it.
-    const pitch = audio.posted.find((m) => m.target === 'detune');
-    expect(pitch.value.depth).toBe(1200);
-    expect(pitch.value.shape.points.every((p: any) => p.curve === 'linear')).toBe(true);
-    expect(audio.posted.some((m) => m.target === undefined && m.type === 'setEnvelope')).toBe(
-      false,
-    );
-    // Pan has no main-thread envelope: it reaches the processor only with the flag on.
-    expect(audio.posted.find((m) => m.target === 'pan').value.depth).toBe(1);
-    expect(voice.envelopes.has('pan')).toBe(false);
-    expect(voice.envelopeIds).toContain('pan');
-
-    trigger(voice);
+    trigger(voice, 72); // Playback rate 2, so the release runs at 4x.
     voice.release({ secondsFromNow: 2 });
 
-    expect(voice.envelopes.get('amp')!.position()).toBeNull(); // never triggered here
+    const { points, releasePoint } = amp.shape;
+    expect(releaseDuration).toBeCloseTo((points.at(-1)!.time - points[releasePoint].time) / 4, 9);
     expect(audio.posted.at(-1)).toEqual({ type: 'voice:release', timestamp: 2 });
-    endPlayback(1);
-    expect(voice.state).toBe(VoiceState.AVAILABLE);
-  });
-
-  it('schedules the processor stop after the release and amplitude tail', async () => {
-    const voice = await loadedVoice();
-    trigger(voice);
-
-    voice.release({ secondsFromNow: 2 });
-
-    expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: 2 + voice.releaseTime });
     expect(voice.state).toBe(VoiceState.RELEASING);
     endPlayback(1);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
-  it.each([0, 2])(
-    'preserves the amp release when disabled after note-off scheduled %s seconds ahead',
-    async (secondsFromNow) => {
-      const voice = await loadedVoice();
-      trigger(voice);
-      const releaseDuration = voice.releaseTime;
-      voice.release({ secondsFromNow });
-      const gain = voice.getParam('envGain')!;
-      const cancel = vi.spyOn(gain, 'cancelScheduledValues');
-      const target = vi.spyOn(gain, 'setTargetAtTime');
-
-      voice.setEnvelopeConfig('amp', {
-        ...createDefaultSampleEnvelopeConfig('amp', 1),
-        enabled: false,
-      });
-
-      expect(cancel).not.toHaveBeenCalled();
-      expect(target).not.toHaveBeenCalled();
-      expect(audio.posted.at(-1)).toEqual({
-        type: 'voice:stop',
-        timestamp: secondsFromNow + releaseDuration,
-      });
-    },
-  );
-
-  it.each([true, false])('keeps velocity out of amp gain when enabled=%s', async (enabled) => {
+  it('stops at note-off while the amp envelope is off', async () => {
     const voice = await loadedVoice();
-    const config = createDefaultSampleEnvelopeConfig('amp', 1);
-    voice.setEnvelopeConfig('amp', { ...config, enabled });
-    const gain = voice.getParam('envGain')!;
-    const peak = vi.spyOn(gain, 'exponentialRampToValueAtTime');
-    const gate = vi.spyOn(gain, 'setValueAtTime');
-    const velocity = vi.spyOn(voice.getParam('velocity')!, 'setValueAtTime');
+    voice.setEnvelopeConfig('amp', {
+      ...createDefaultSampleEnvelopeConfig('amp', 1),
+      enabled: false,
+    });
+    trigger(voice);
+    voice.release({ secondsFromNow: 2 });
 
-    voice.trigger({ midiNote: 60, velocity: 64 });
-
-    expect(velocity).toHaveBeenCalledWith(64, expect.any(Number));
-    const presetPeak = Math.max(...config.shape.points.map((point) => point.value));
-    if (enabled) expect(peak).toHaveBeenCalledWith(presetPeak, expect.any(Number));
-    else expect(gate).toHaveBeenCalledWith(1, 0);
-  });
-
-  it.each(['pitch', 'filter'] as const)(
-    'resets inactive %s detune immediately at note start but smooths live disable',
-    async (id) => {
-      const voice = await loadedVoice(id === 'filter');
-      const config = createDefaultSampleEnvelopeConfig(id, 1);
-      voice.setEnvelopeConfig(id, {
-        ...config,
-        enabled: true,
-        shape: {
-          ...config.shape,
-          sustainPoint: 0,
-          releasePoint: 0,
-          points: [
-            { time: 0, value: 1 },
-            { time: 1, value: 0 },
-          ],
-        },
-      });
-      trigger(voice);
-      const detune = voice.getParam(id === 'pitch' ? 'detune' : 'lpfDetune')!;
-      const set = vi.spyOn(detune, 'setValueAtTime');
-      const target = vi.spyOn(detune, 'setTargetAtTime');
-      voice.setEnvelopeConfig(id, { ...config, enabled: false });
-      expect(target).toHaveBeenCalledWith(0, 0, expect.any(Number));
-      voice.stop();
-      detune.value = 1200;
-      set.mockClear();
-      target.mockClear();
-
-      voice.trigger({ midiNote: 60, velocity: 100, secondsFromNow: 2 });
-
-      expect(set).toHaveBeenCalledWith(0, 2);
-      expect(target).not.toHaveBeenCalled();
-    },
-  );
-
-  it('preserves sustain glides and loop edits with the note’s depth and rate mapping', async () => {
-    const voice = await loadedVoice();
-    const config: EnvelopeConfig = {
-      enabled: true,
-      depth: 0.5,
-      timeScale: 0.75,
-      playbackRateSync: true,
-      shape: {
-        mode: { type: 'sustain' },
-        sustainPoint: 1,
-        releasePoint: 1,
-        points: [
-          { time: 0, value: 0 },
-          { time: 0.5, value: 1 },
-          { time: 1, value: 0 },
-        ],
-      },
-    };
-    voice.setEnvelopeConfig('pitch', config);
-    const detune = voice.getParam('detune')!;
-    const ramp = vi.spyOn(detune, 'linearRampToValueAtTime');
-    const set = vi.spyOn(detune, 'setValueAtTime');
-    const envelope = voice.envelopes.get('pitch')!;
-
-    trigger(voice, 72); // Playback rate 2, so the envelope runs at 1.5x.
-    expect(ramp).toHaveBeenCalledWith(600, expect.closeTo(1 / 3, 6));
-
-    Object.assign(envelope.clock, { currentTime: 0.5 });
-    const shape = {
-      ...config.shape,
-      points: config.shape.points.map((p) => ({ ...p, value: p.value / 2 })),
-    };
-    voice.setEnvelopeConfig('pitch', { ...config, shape });
-    expect(ramp).toHaveBeenCalledWith(300, 0.52);
-
-    Object.assign(envelope.clock, { currentTime: 0.55 });
-    const loop = { ...shape, mode: { type: 'loop' as const } };
-    voice.setEnvelopeConfig('pitch', { ...config, shape: loop });
-    expect(set).toHaveBeenCalledWith(300, 0.55); // Pick up at sustain, without a new attack.
-    const boundary = 0.55 + 1 / 3;
-    expect(ramp).toHaveBeenCalledWith(0, expect.closeTo(boundary, 6));
-
-    voice.setEnvelopeConfig('pitch', { ...config, shape: loop, depth: 0.25, timeScale: 1.25 });
-    expect(ramp).toHaveBeenCalledWith(150, expect.closeTo(boundary + 0.2, 6));
-    voice.stop();
+    expect(voice.releaseTime).toBe(0);
+    expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: 2 });
   });
 
   it('stops rather than retriggering an active voice', async () => {
@@ -550,123 +412,23 @@ describe('SampleVoice state', () => {
     expect(ranges.mock.calls[0][0]).not.toHaveProperty('triggerId');
   });
 
-  it('leaves disabled loop-synced targets alone at sample loop boundaries', async () => {
+  it('keeps idle reports and loop wraps inside the voice', async () => {
     const voice = await loadedVoice();
-    voice.setLoopEnabled(true);
-    for (const id of ['amp', 'pitch'] as const) {
-      const config = createDefaultSampleEnvelopeConfig(id, 1);
-      voice.setEnvelopeConfig(id, {
-        ...config,
-        enabled: false,
-        loopSync: true,
-        shape: { ...config.shape, mode: { type: 'loop' } },
-      });
-    }
+    const ranges = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    voice.onMessage('loop:range', ranges);
+    voice.onMessage('loop:cycle', ranges);
+    audio.port.onmessage({
+      data: { type: 'loop:range', loopStart: 0.01, loopEnd: 0.49, idle: true },
+    });
     trigger(voice);
-    const targets = ['envGain', 'detune'].map((name) => {
-      const param = voice.getParam(name)!;
-      return [
-        vi.spyOn(param, 'cancelScheduledValues'),
-        vi.spyOn(param, 'setTargetAtTime'),
-        vi.spyOn(param, 'setValueAtTime'),
-      ];
+    audio.port.onmessage({
+      data: { type: 'loop:cycle', loopSeconds: 0.48, time: 1, triggerId: 1 },
     });
-    for (const time of [0.5, 1]) {
-      audio.port.onmessage({
-        data: { type: 'loop:cycle', loopSeconds: 0.5, time, triggerId: 1 },
-      });
-    }
-    for (const writes of targets) {
-      for (const write of writes) expect(write).not.toHaveBeenCalled();
-    }
+    expect(ranges).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
     voice.stop();
-  });
-
-  it('scales loop envelopes against the processed loop length', async () => {
-    const loopTimeScale = async (
-      idleReport: boolean,
-      keytrackAmount = 0,
-      midiNote = 60,
-      overrides: Partial<EnvelopeConfig> = {},
-      sampleLoop = true,
-    ) => {
-      const voice = await loadedVoice();
-      const ranges = vi.fn();
-      voice.onMessage('loop:range', ranges);
-      voice.setLoopEnabled(sampleLoop);
-      const config = createDefaultSampleEnvelopeConfig('pitch', 1);
-      voice.setEnvelopeConfig('pitch', {
-        ...config,
-        enabled: true,
-        loopSync: true,
-        shape: { ...config.shape, mode: { type: 'loop' } },
-        ...overrides,
-      });
-      if (idleReport) {
-        audio.port.onmessage({
-          data: {
-            type: 'loop:range',
-            loopStart: 0.01,
-            loopEnd: 0.49,
-            keytrackAmount,
-            idle: true,
-          },
-        });
-      }
-      const envTrigger = vi.spyOn(voice.envelopes.get('pitch')!, 'trigger');
-      trigger(voice, midiNote);
-      const scale = envTrigger.mock.calls[0][1]!.timeScale ?? 1;
-      const duration = voice.envelopes.get('pitch')!.duration();
-      audio.port.onmessage({
-        data: { type: 'loop:cycle', loopSeconds: 0.48, time: 1, triggerId: 1 },
-      });
-      const syncActive =
-        sampleLoop &&
-        (overrides.loopSync ?? true) &&
-        (overrides.shape?.mode.type ?? 'loop') === 'loop';
-      expect(envTrigger).toHaveBeenCalledTimes(syncActive ? 2 : 1);
-      voice.stop();
-      expect(ranges).not.toHaveBeenCalled(); // idle reports stay inside the voice
-      return { scale, duration };
-    };
-
-    const { scale: withoutProcessedLoop } = await loopTimeScale(false);
-    const { scale: withProcessedLoop } = await loopTimeScale(true);
-    expect(withProcessedLoop).toBeCloseTo(1 / 0.48, 9);
-    expect(withProcessedLoop).toBeGreaterThan(withoutProcessedLoop);
-
-    // Rate always applies under sync; keytrack stretches the buffer-time loop length.
-    expect((await loopTimeScale(true, 0, 72)).scale).toBeCloseTo(withProcessedLoop * 2, 9);
-    expect((await loopTimeScale(true, 1, 72)).scale).toBeCloseTo(withProcessedLoop, 9);
-    expect((await loopTimeScale(true, 0, 72, { playbackRateSync: true })).scale).toBeCloseTo(
-      withProcessedLoop * 2,
-      9,
-    );
-
-    // Unsynced timing has no correction for snapping or loop length.
-    expect((await loopTimeScale(true, 0, 72, { loopSync: false })).scale).toBe(1);
-    expect(
-      (
-        await loopTimeScale(true, 0, 72, {
-          loopSync: false,
-          playbackRateSync: true,
-          timeScale: 3,
-        })
-      ).scale,
-    ).toBe(6);
-    expect((await loopTimeScale(true, 0, 72, {}, false)).scale).toBe(1);
-    expect((await loopTimeScale(true, 0, 72, { playbackRateSync: true }, false)).scale).toBe(2);
-    const once = createDefaultSampleEnvelopeConfig('pitch', 1).shape;
-    expect((await loopTimeScale(true, 0, 72, { shape: once })).scale).toBe(1);
-    expect((await loopTimeScale(true, 0, 72, { shape: once, playbackRateSync: true })).scale).toBe(
-      2,
-    );
-
-    const halfShape = createDefaultSampleEnvelopeConfig('pitch', 0.5).shape;
-    const half = await loopTimeScale(true, 0, 72, {
-      shape: { ...halfShape, mode: { type: 'loop' } },
-    });
-    expect(half.duration).toBeCloseTo(0.12, 9); // Two envelope passes per 0.24 s sample loop.
   });
 
   it('forwards only the current note’s position, tagged with voice and note', async () => {

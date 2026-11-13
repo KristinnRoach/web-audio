@@ -7,8 +7,7 @@ import {
 import type { EnvelopeConfig } from './envelope-config';
 
 /**
- * Sampler defaults, parameter mapping and trigger options.
- * Envelope owns scheduling; unfinished behavior is tracked in envelopes/KNOWN-ISSUES.md.
+ * Sampler defaults and units for the envelopes the sample-player processor plays.
  */
 
 export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter', 'pan'] as const;
@@ -92,33 +91,11 @@ export function createDefaultSampleEnvelopeConfig(
   }
 }
 
-/** Param a main-thread Envelope drives, or null for audio-thread-only envelopes. */
-export function getSampleEnvelopeParamName(id: SampleEnvelopeId): string | null {
-  switch (id) {
-    case 'amp':
-      return 'envGain';
-    case 'pitch':
-      return 'detune';
-    case 'filter':
-      return 'lpfDetune';
-    case 'pan':
-      return null;
-  }
-}
-
-/** Amp rests at unity; velocity is applied once by the processor. Detune rests at zero. */
-export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
-  return id === 'amp' ? 1 : 0;
-}
-
-/**
- * Processor target for audio-thread envelopes. 'filter' goes out on the processor's second
- * output to lpf.detune. ponytail: still nullable until the main-thread wiring is removed.
- */
+/** Processor target; 'filter' goes out on the processor's second output to lpf.detune. */
 export function getSampleEnvelopeProcessorTarget(
   id: SampleEnvelopeId,
-): 'gain' | 'detune' | 'pan' | 'filter' | null {
-  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : id === 'pan' ? 'pan' : 'filter';
+): 'gain' | 'detune' | 'pan' | 'filter' {
+  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : id;
 }
 
 /**
@@ -129,28 +106,19 @@ export function resolveSampleEnvelopeForProcessor(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,
 ): EnvelopeConfig {
-  const { depth, curve } = resolveSampleEnvelopeTrigger(id, config, 1);
+  const { depth, curve } = resolveSampleEnvelopeUnits(id, config);
   const points = curve
     ? config.shape.points.map((point) => (point.curve === 'step' ? point : { ...point, curve }))
     : config.shape.points;
   return { ...config, depth, shape: { ...config.shape, points } };
 }
 
-/**
- * Resolve sampler units and timing before handing a run to the generic scheduler.
- * `loopTimeScale`, when present, includes playback rate and overrides playbackRateSync.
- */
-export function resolveSampleEnvelopeTrigger(
+/** Resolve sampler units: depth in the target's units and any curve override. */
+function resolveSampleEnvelopeUnits(
   id: SampleEnvelopeId,
   config: EnvelopeConfig,
-  playbackRate: number,
-  loopTimeScale?: number,
-): Pick<EnvelopeTriggerOptions, 'depth' | 'curve' | 'timeScale'> {
-  const options = {
-    depth: config.depth ?? 1,
-    timeScale:
-      config.timeScale * (loopTimeScale ?? (config.playbackRateSync ? Math.abs(playbackRate) : 1)),
-  };
+): Pick<EnvelopeTriggerOptions, 'depth' | 'curve'> {
+  const options = { depth: config.depth ?? 1 };
   if (id === 'amp') return options;
   // Bipolar, -1..1 is hard left..right; exponential curves can't cross zero.
   if (id === 'pan') return { ...options, curve: 'linear' };

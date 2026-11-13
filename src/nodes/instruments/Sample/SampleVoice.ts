@@ -13,7 +13,7 @@ import {
   durationToTimeConstant,
   maxSafeHz,
 } from '@/nodes/params/audioparam-utils';
-import { Envelope } from '@/nodes/modulators/envelope';
+import { getDuration } from '@/nodes/modulators/envelope';
 import type { EnvelopeConfig } from './envelope-config';
 import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
@@ -21,12 +21,9 @@ import { samplerParams } from './sampler-params';
 import type { PitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   createDefaultSampleEnvelopeConfig,
-  getSampleEnvelopeRestValue,
   getSampleEnvelopeIds,
-  getSampleEnvelopeParamName,
   getSampleEnvelopeProcessorTarget,
   resolveSampleEnvelopeForProcessor,
-  resolveSampleEnvelopeTrigger,
   type SampleEnvelopeId,
 } from './sample-envelope-policy';
 
@@ -36,9 +33,6 @@ export type TimestretchMode = 'off' | 'period';
 export type InterpolationMode = 'linear' | 'hermite' | 'sinc';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
-
-/** Time constant for envGain returning to rest when the amp envelope is disabled mid-note. */
-const AMP_GATE_SMOOTHING_SEC = 0.002;
 
 export class SampleVoice {
   readonly nodeId: NodeID;
@@ -54,11 +48,8 @@ export class SampleVoice {
   #am_gain: GainNode | null = null;
   #feedback: HarmonicFeedback | null = null;
 
-  #envelopes = new Map<SampleEnvelopeId, Envelope>();
-  /** Host policy the envelope does not know about: `enabled`, `timeScale`, `playbackRateSync` and `loopSync`. */
+  /** The processor plays these; kept here to resend on load and to size the release. */
   #envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
-  /** Experimental: the processor plays envelopes it has a target for, instead of `#envelopes`. */
-  #audioThreadEnvelopes = false;
 
   #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
@@ -74,13 +65,8 @@ export class SampleVoice {
 
   #sampleDurationSeconds = 0;
   #loopEnabled = false;
-  /**
-   * Buffer-time loop length after snapping, pitch quantization and minimum lengths.
-   * Reported while idle for the next note; 0 until the processor reports it.
-   */
-  #processedLoopSeconds = 0;
-  /** Loop keytrack in effect for the idle length, which is resolved at playback rate 1. */
-  #idleLoopKeytrack = 0;
+  /** Target playback rate of the current note, for the release estimate. */
+  #playbackRate = 1;
 
   /** Semitones added to the played note for everything that tracks pitch. */
   #pitchOffset = 0;
@@ -131,8 +117,7 @@ export class SampleVoice {
         // Connect nodes
         this.#connectAudioChain();
 
-        // Create envelopes
-        this.#createEnvelopes();
+        this.#resetEnvelopeConfigs();
 
         // Setup message handling
         this.#setupWorkletMessageHandling();
@@ -228,30 +213,15 @@ export class SampleVoice {
     }
   }
 
-  #createEnvelopes() {
-    this.#envelopes.forEach((env) => env.stop());
-    this.#envelopes.clear();
+  #resetEnvelopeConfigs() {
     this.#envelopeConfigs.clear();
-
     const durationSeconds = this.#sampleDurationSeconds || 1;
-    const types = getSampleEnvelopeIds(this.#chainIncludes('lpf'));
-
-    for (const type of types) {
-      // Envelopes start from defaults; SamplePlayer pushes the real state down as soon
-      // as it has one, which is also what keeps every voice on the same shape.
-      const config = createDefaultSampleEnvelopeConfig(type, durationSeconds);
-      const paramName = getSampleEnvelopeParamName(type);
-      // ponytail: audio-thread-only envelopes keep just a config, inactive with the flag off.
-      if (paramName === null) {
-        this.#envelopeConfigs.set(type, config);
-        continue;
-      }
-      const param = this.getParam(paramName);
-      if (!param) continue;
-      this.#envelopes.set(type, new Envelope(this.context, param, config.shape));
-      this.#envelopeConfigs.set(type, config);
+    // Envelopes start from defaults; SamplePlayer pushes the real state down as soon
+    // as it has one, which is also what keeps every voice on the same shape.
+    for (const type of getSampleEnvelopeIds(this.#chainIncludes('lpf'))) {
+      this.#envelopeConfigs.set(type, createDefaultSampleEnvelopeConfig(type, durationSeconds));
+      this.#sendProcessorEnvelope(type);
     }
-    this.#sendProcessorEnvelopes();
   }
 
   async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
@@ -320,7 +290,7 @@ export class SampleVoice {
       glideTime: glideSeconds,
     });
     this.#midiNote = midiNote;
-    if (this.#lastTrigger) this.#lastTrigger.playbackRate = playbackRate;
+    this.#playbackRate = playbackRate;
   }
 
   #isInPitchLoop = false;
@@ -377,16 +347,7 @@ export class SampleVoice {
       midiNote: this.#midiNote,
     });
 
-    // Trigger amp, filter and pitch envelopes if enabled
-
-    // Todo: On initial trigger, if loop does not start at right away, we should defer scaling envelopes to the loop until entering the loop range, or until the processor reports the first wrap or turn
-    // TODO: This initial estimate omits period-stretch inversion, so loop-synced
-    // envelopes can start at the wrong speed until the first loop-cycle report.
-    // Moving envelopes to the audio thread will remove the need for this estimate.
-    const loopSeconds =
-      this.#processedLoopSeconds * Math.abs(playbackRate) ** this.#idleLoopKeytrack;
-    this.#lastTrigger = { playbackRate, loopSeconds };
-    this.triggerEnvelopes(timestamp, playbackRate);
+    this.#playbackRate = playbackRate;
 
     // Trigger effects
     this.#feedback?.trigger(soundingNote, {
@@ -406,68 +367,13 @@ export class SampleVoice {
     return this.#midiNote;
   }
 
-  /**
-   * Trigger inputs of the current note, kept so a config edit can restart from them.
-   * `loopSeconds` starts at the idle loop length and follows each sample loop cycle while held.
-   */
-  #lastTrigger: { playbackRate: number; loopSeconds: number } | null = null;
-
   #isEnvEnabled(envType: SampleEnvelopeId) {
     return this.#envelopeConfigs.get(envType)?.enabled ?? false;
-  }
-
-  #triggerEnvelope(
-    envType: SampleEnvelopeId,
-    env: Envelope,
-    timestamp: number,
-    playbackRate: number,
-    fromPoint = 0,
-    catchUp = false,
-  ) {
-    assert(Number.isFinite(timestamp), 'SampleVoice envelope timestamp must be finite');
-    if (!this.#isEnvEnabled(envType)) {
-      this.#resetEnvTarget(envType, timestamp, false);
-      return;
-    }
-
-    // The processor triggers its own envelopes on voice:start.
-    if (this.#onAudioThread(envType)) return;
-
-    const config = this.#envelopeConfigs.get(envType)!;
-    const resolved = resolveSampleEnvelopeTrigger(
-      envType,
-      config,
-      playbackRate,
-      this.#loopTimeScale(config, env),
-    );
-
-    env.trigger(timestamp, { ...resolved, fromPoint, catchUp });
-  }
-
-  /** Fit the full buffer timeline to one audible sample loop; otherwise use ordinary timing. */
-  #loopTimeScale(config: EnvelopeConfig, env: Envelope) {
-    const trigger = this.#lastTrigger;
-    if (!trigger || !config.loopSync || !this.#loopEnabled || env.shape.mode.type !== 'loop')
-      return undefined;
-    return trigger.loopSeconds > 0 && this.#sampleDurationSeconds > 0
-      ? (this.#sampleDurationSeconds * Math.abs(trigger.playbackRate)) / trigger.loopSeconds
-      : undefined;
-  }
-
-  triggerEnvelopes(timestamp: number, playbackRate: number) {
-    this.#envelopes.forEach((env, envType) => {
-      this.#triggerEnvelope(envType, env, timestamp, playbackRate);
-    });
-  }
-
-  #stopEnvelopes() {
-    this.#envelopes.forEach((env) => env.stop());
   }
 
   #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
     switch (state) {
       case VoiceState.AVAILABLE:
-        this.#stopEnvelopes();
         this.#midiNote = null;
         break;
 
@@ -495,11 +401,6 @@ export class SampleVoice {
     this.#transitionTo(VoiceState.RELEASING);
     const timestamp = this.now + secondsFromNow;
 
-    // Release all enabled envelopes
-    this.#envelopes.forEach((env, envType) => {
-      if (this.#isEnvEnabled(envType) && !this.#onAudioThread(envType)) env.release(timestamp);
-    });
-
     const releaseDuration = this.releaseTime;
 
     this.#sendUpstreamMessage('voice:releasing', {
@@ -509,11 +410,10 @@ export class SampleVoice {
     });
 
     // The processor stops at the end of the amp tail and reports it as voice:ended.
-    if (this.#onAudioThread('amp') && this.#isEnvEnabled('amp')) {
-      this.sendToProcessor({ type: 'voice:release', timestamp });
-    } else {
-      this.sendToProcessor({ type: 'voice:stop', timestamp: timestamp + releaseDuration });
-    }
+    this.sendToProcessor({
+      type: this.#isEnvEnabled('amp') ? 'voice:release' : 'voice:stop',
+      timestamp,
+    });
     return this;
   }
 
@@ -576,126 +476,25 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  /** Moves a param to where it rests while its envelope is off. */
-  #resetEnvTarget = (envType: SampleEnvelopeId, time = this.now, smooth = true) => {
-    const paramName = getSampleEnvelopeParamName(envType);
-    const param = paramName === null ? null : this.getParam(paramName);
-    const smoothing = envType === 'amp' ? AMP_GATE_SMOOTHING_SEC : DEFAULT.CUTOFF_SMOOTHING_SEC;
-    param?.cancelScheduledValues(time);
-    const value = getSampleEnvelopeRestValue(envType);
-    if (smooth) param?.setTargetAtTime(value, time, smoothing);
-    else param?.setValueAtTime(value, time);
-  };
-
-  /**
-   * Receives the config owned by SamplePlayer. The sampler policy chooses when to
-   * retrigger; Envelope keeps the active run separate from its stored shape.
-   */
+  /** Receives the config owned by SamplePlayer; the processor applies a new shape at its next point. */
   setEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
-    const envelope = this.#envelopes.get(envType);
-    if (!envelope) {
-      if (!this.#envelopeConfigs.has(envType)) return;
-      this.#envelopeConfigs.set(envType, config);
-      return this.#sendProcessorEnvelope(envType);
-    }
-    const wasEnabled = this.#isEnvEnabled(envType);
-    // Read the current run before replacing its stored shape.
-    const fromPoint =
-      config.shape.mode.type === 'loop' && envelope.shape.mode.type !== 'loop'
-        ? envelope.currentPoint()
-        : null;
-    const retriggerAt = fromPoint !== null ? this.now : envelope.nextCycleTime();
-
+    if (!this.#envelopeConfigs.has(envType)) return;
     this.#envelopeConfigs.set(envType, config);
-    envelope.shape = config.shape;
-    // ponytail: the processor applies a new shape at its next point; live-edit rules are undecided.
-    if (this.#onAudioThread(envType)) return this.#sendProcessorEnvelope(envType);
-    if (config.shape.mode.type === 'sustain') {
-      envelope.setSustainValue(config.shape.points[config.shape.sustainPoint].value);
-    }
-
-    if (wasEnabled && !config.enabled) {
-      // Keep an already scheduled amp release; switching it off must not reopen the gate.
-      if (envType === 'amp' && this.#state === VoiceState.RELEASING) return;
-      envelope.stop();
-      this.#resetEnvTarget(envType);
-      return;
-    }
-
-    if (retriggerAt !== null && this.#lastTrigger) {
-      this.#triggerEnvelope(
-        envType,
-        envelope,
-        retriggerAt,
-        this.#lastTrigger.playbackRate,
-        fromPoint ?? 0,
-      );
-    }
+    this.#sendProcessorEnvelope(envType);
   };
 
-  #onLoopCycleStart(processedSeconds: number, timestamp: number) {
-    const trigger = this.#lastTrigger;
-    if (!trigger || !(processedSeconds > 0)) return;
-
-    trigger.loopSeconds = processedSeconds;
-
-    // Re-trigger loop-synced envelopes at the sample loop cycle boundary
-    this.#retriggerLoopingEnvelopes(timestamp, trigger.playbackRate);
-  }
-
-  #retriggerLoopingEnvelopes(timestamp: number, playbackRate: number) {
-    if (this.#state === VoiceState.RELEASING || !this.#loopEnabled) return;
-
-    this.#envelopes.forEach((env, envType) => {
-      if (!this.#isEnvEnabled(envType) || env.shape.mode.type !== 'loop') return;
-      if (!this.#envelopeConfigs.get(envType)?.loopSync || this.#onAudioThread(envType)) return;
-      this.#triggerEnvelope(envType, env, timestamp, playbackRate, 0, true);
-    });
-  }
-
-  get envelopes() {
-    return this.#envelopes;
-  }
-
-  /** Every envelope this voice takes configs for, including audio-thread-only ones. */
+  /** Every envelope this voice takes configs for. */
   get envelopeIds(): SampleEnvelopeId[] {
     return [...this.#envelopeConfigs.keys()];
   }
 
-  /**
-   * Experimental: plays the amp, pitch, pan and filter envelopes on the audio thread,
-   * sample-accurate and restarting on the processor's own loop wraps under loopSync.
-   * Takes effect from the next note.
-   */
-  setAudioThreadEnvelopes(enabled: boolean): this {
-    if (this.#audioThreadEnvelopes === enabled) return this;
-    this.#audioThreadEnvelopes = enabled;
-    this.#envelopes.forEach((env, envType) => {
-      if (!getSampleEnvelopeProcessorTarget(envType)) return;
-      env.stop();
-      this.#resetEnvTarget(envType);
-    });
-    this.#sendProcessorEnvelopes();
-    return this;
-  }
-
-  #onAudioThread(envType: SampleEnvelopeId) {
-    return this.#audioThreadEnvelopes && getSampleEnvelopeProcessorTarget(envType) !== null;
-  }
-
-  #sendProcessorEnvelopes() {
-    this.#envelopeConfigs.forEach((_, envType) => this.#sendProcessorEnvelope(envType));
-  }
-
   #sendProcessorEnvelope(envType: SampleEnvelopeId) {
-    const target = getSampleEnvelopeProcessorTarget(envType);
-    if (!target) return;
     const config = this.#envelopeConfigs.get(envType);
-    const value =
-      this.#audioThreadEnvelopes && config?.enabled
-        ? resolveSampleEnvelopeForProcessor(envType, config)
-        : null;
-    this.sendToProcessor({ type: 'setEnvelope', target, value });
+    this.sendToProcessor({
+      type: 'setEnvelope',
+      target: getSampleEnvelopeProcessorTarget(envType),
+      value: config?.enabled ? resolveSampleEnvelopeForProcessor(envType, config) : null,
+    });
   }
 
   setParam(
@@ -839,8 +638,7 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
-            this.#processedLoopSeconds = 0;
-            this.#createEnvelopes(); // Todo: move to init and only update env duration IF needed
+            this.#resetEnvelopeConfigs(); // Todo: move to init and only update env duration IF needed
           }
           break;
 
@@ -862,20 +660,13 @@ export class SampleVoice {
         case 'loop:cycle':
         case 'trim:range':
         case 'voice:position': {
-          // Idle report: the steady loop length for the next note. Not a playing range.
-          if (data.idle) {
-            this.#processedLoopSeconds = data.loopEnd - data.loopStart;
-            this.#idleLoopKeytrack = data.keytrackAmount ?? 0;
-            return;
-          }
+          // Idle reports (the steady loop for the next note) and loop wraps stay internal.
+          // ponytail: the processor still posts loop:cycle; nothing here uses it anymore.
+          if (data.idle || type === 'loop:cycle') return;
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
           }
           if (type === 'loop:range') this.#isInPitchLoop = data.isInPitchLoop ?? false;
-          if (type === 'loop:cycle') {
-            this.#onLoopCycleStart(data.loopSeconds, data.time);
-            return;
-          }
           const { triggerId: _, ...range } = data;
           data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
           break;
@@ -948,10 +739,19 @@ export class SampleVoice {
     return this.getParam('endPoint')!.value;
   }
 
-  /** Amp release duration, or 0 while the amp envelope is off; drives voice cleanup. */
+  /**
+   * Amp release duration, or 0 while the amp envelope is off. An estimate for listeners:
+   * the processor ends the note itself and reports it as voice:ended.
+   * ponytail: ignores loopSync timing; ask the processor if an exact figure is needed.
+   */
   get releaseTime() {
-    if (!this.#isEnvEnabled('amp')) return 0;
-    return this.#envelopes.get('amp')!.releaseDuration();
+    const config = this.#envelopeConfigs.get('amp');
+    if (!config?.enabled) return 0;
+    const rate = config.playbackRateSync ? Math.abs(this.#playbackRate) : 1;
+    return getDuration(config.shape.points, {
+      fromIndex: config.shape.releasePoint,
+      timeScale: config.timeScale * rate,
+    });
   }
 
   // Setters
@@ -1074,7 +874,6 @@ export class SampleVoice {
     this.stop();
     this.disconnect();
     this.#cleanupAmpModLFO();
-    this.#envelopes.forEach((env) => env.stop());
     this.#playerWorklet.port.close();
     unregisterNode(this.nodeId);
   }
