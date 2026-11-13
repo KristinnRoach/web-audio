@@ -158,6 +158,32 @@ it('plays a pending note and its tail when release is scheduled after its start'
   ]);
 });
 
+it.each(['sustain', 'loop'] as const)(
+  'preserves an already-due release when the first render starts late in %s mode',
+  (mode) => {
+    const post = vi.fn();
+    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post });
+    engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+    engine.loopEnabled = true;
+    engine.setEnvelope('gain', { shape: adsr(mode), loopSync: true });
+    engine.start(7, 0.01);
+    engine.release(0.02);
+
+    for (let frame = 128; frame < 1024 && engine.canRender; frame += 128)
+      engine.render(
+        [new Float32Array(128)],
+        makeParameters({ endPoint: 1, loopEnd: 0.05 }),
+        frame,
+        frame / SR,
+      );
+
+    expect(engine.isPlaying).toBe(false);
+    expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
+      [{ type: 'voice:ended', triggerId: 7 }],
+    ]);
+  },
+);
+
 it('starts gain from the beginning when first enabled during a note, preserving later toggles', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);

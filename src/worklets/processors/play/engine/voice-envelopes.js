@@ -86,11 +86,13 @@ export class VoiceEnvelopes {
     for (const slot of this.slots) {
       if (!slot.active) continue;
       const { envelope, config } = slot;
-      if (released) envelope.release();
-
       // Loop sync fits the full buffer to one sample loop, restarting at each wrap.
       const loopSync =
-        config.loopSync && loopEnabled && config.shape.mode.type === 'loop' && !envelope.released;
+        config.loopSync &&
+        loopEnabled &&
+        config.shape.mode.type === 'loop' &&
+        !released &&
+        !envelope.released;
       const restart = slot.triggerPending || (loopWrapped && loopSync);
 
       if (restart && loopSync && !loopWindow) {
@@ -112,6 +114,8 @@ export class VoiceEnvelopes {
           slot.triggerPending = false;
           envelope.trigger();
         }
+        // A trigger clears release state, so an already-due note-off must follow it.
+        if (released) envelope.release();
         slot.smoothed += (envelope.next() - slot.smoothed) * this.smoothingCoefficient;
       }
       slot.value = (config.base ?? 0) + (config.depth ?? 1) * slot.smoothed;
