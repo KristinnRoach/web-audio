@@ -1,3 +1,4 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
 // SamplePlayer.ts - Refactored with Composition Pattern
 
 import { Message, MessageHandler } from '@/events';
@@ -924,7 +925,7 @@ export class SamplePlayer {
   #sendPitchPeriods() {
     const buffer = this.#buffer;
     if (this.#timestretchMode !== 'period' || !buffer || this.#pitchPeriodsSent) return;
-    const pitchPeriods = detectPitchPeriods(buffer.getChannelData(0), buffer.sampleRate);
+    const pitchPeriods = detectPitchPeriods(copyChannelData(buffer, 0), buffer.sampleRate);
     this.#voicePool.applyToAllVoices((voice) => voice.setPitchPeriods(pitchPeriods));
     this.#pitchPeriodsSent = true;
   }

@@ -63,6 +63,8 @@ describe('trimAudioBuffer fade options', () => {
         length,
         sampleRate,
         getChannelData: (i: number) => channels[i],
+        copyFromChannel: (destination: Float32Array, channel: number) =>
+          destination.set(channels[channel]),
       };
     },
   } as unknown as AudioContext;
@@ -73,6 +75,8 @@ describe('trimAudioBuffer fade options', () => {
       length,
       sampleRate,
       getChannelData: () => new Float32Array(length).fill(1),
+      copyFromChannel: (destination: Float32Array) =>
+        destination.set(new Float32Array(length).fill(1)),
     }) as unknown as AudioBuffer;
 
   it('defaults both sides to the shortest safe fade', () => {
@@ -112,6 +116,8 @@ describe('trimAudioBuffer fade fitting', () => {
         length,
         sampleRate,
         getChannelData: (i: number) => channels[i],
+        copyFromChannel: (destination: Float32Array, channel: number) =>
+          destination.set(channels[channel]),
       };
     },
   } as unknown as AudioContext;
@@ -122,6 +128,8 @@ describe('trimAudioBuffer fade fitting', () => {
       length,
       sampleRate,
       getChannelData: () => new Float32Array(length).fill(1),
+      copyFromChannel: (destination: Float32Array) =>
+        destination.set(new Float32Array(length).fill(1)),
     }) as unknown as AudioBuffer;
 
   // 4800 samples @ 48kHz = 100ms

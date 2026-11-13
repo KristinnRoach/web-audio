@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 /**
  * Simple dynamic range compressor that makes quiet parts louder
  * without increasing the peak level (prevents clipping)
@@ -13,11 +15,12 @@ export function compressAudioBuffer(
   const numChannels = buffer.numberOfChannels;
   const length = buffer.length;
   const sampleRate = buffer.sampleRate;
+  const channels = Array.from({ length: numChannels }, (_, ch) => copyChannelData(buffer, ch));
 
   // First, analyze the input to determine safe makeup gain
   let inputPeak = 0;
   for (let ch = 0; ch < numChannels; ch++) {
-    const data = buffer.getChannelData(ch);
+    const data = channels[ch];
     for (let i = 0; i < length; i++) {
       const abs = Math.abs(data[i]);
       if (abs > inputPeak) inputPeak = abs;
@@ -46,7 +49,7 @@ export function compressAudioBuffer(
 
   // Process each channel
   for (let ch = 0; ch < numChannels; ch++) {
-    const input = buffer.getChannelData(ch);
+    const input = channels[ch];
     const output = compressed.getChannelData(ch);
 
     // Simple compressor implementation
@@ -118,7 +121,7 @@ export function compressAudioBufferRMS(
 
   // Process each channel
   for (let ch = 0; ch < numChannels; ch++) {
-    const input = buffer.getChannelData(ch);
+    const input = copyChannelData(buffer, ch);
     const output = compressed.getChannelData(ch);
 
     // Calculate RMS envelope

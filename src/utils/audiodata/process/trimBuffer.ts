@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 /**
  * Ramp `lengthSamples` of `channelData` in place, starting at `startSample`.
  *
@@ -63,11 +65,10 @@ export function trimAudioBuffer(
   const fadeOutSamples = toSamples(fadeMs.out);
 
   for (let ch = 0; ch < numChannels; ch++) {
-    const input = buffer.getChannelData(ch);
     const output = trimmedBuffer.getChannelData(ch);
 
     // Unfilled frames remain zero when the requested range exceeds the input.
-    output.set(input.subarray(start, end));
+    output.set(copyChannelData(buffer, ch, start, end));
 
     // Fade only if the ramps fit. Equal is fine: they abut, they don't overlap,
     // and a disabled side contributes 0, so one fade may fill the whole buffer.

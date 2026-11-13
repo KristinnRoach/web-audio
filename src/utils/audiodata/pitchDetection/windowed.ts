@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 interface PitchCandidate {
   frequency: number;
   confidence: number;
@@ -10,7 +12,7 @@ const MIN_Hz = 80;
 export async function detectPitchWindowed(
   audioBuffer: AudioBuffer,
 ): Promise<{ frequency: number; confidence: number }> {
-  const data = audioBuffer.getChannelData(0);
+  const data = copyChannelData(audioBuffer, 0);
   const sampleRate = audioBuffer.sampleRate;
 
   // Window parameters

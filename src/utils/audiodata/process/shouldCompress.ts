@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 /**
  * Analyzes an audio buffer to determine if it needs compression
  * Returns compression settings or null if compression should be skipped
@@ -17,7 +19,7 @@ export function shouldCompress(buffer: AudioBuffer): {
   let sampleCount = 0;
 
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-    const data = buffer.getChannelData(ch);
+    const data = copyChannelData(buffer, ch);
     for (let i = 0; i < data.length; i++) {
       const sample = Math.abs(data[i]);
       if (sample > peak) peak = sample;
@@ -76,7 +78,7 @@ export function needsCompression(buffer: AudioBuffer): boolean {
   const samplesToCheck = Math.min(buffer.length * 0.1, 44100); // Max 1 second
 
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-    const data = buffer.getChannelData(ch);
+    const data = copyChannelData(buffer, ch, 0, Math.ceil(samplesToCheck));
     // Clamp to actual data length to prevent out-of-bounds access
     const samplesInChannel = Math.min(samplesToCheck, data.length);
     for (let i = 0; i < samplesInChannel; i++) {

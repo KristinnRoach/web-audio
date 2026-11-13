@@ -8,6 +8,12 @@ class MockAudioBuffer {
     public data: number[],
     public sampleRate = 44100,
   ) {}
+  get length() {
+    return this.data.length;
+  }
+  copyFromChannel(destination: Float32Array, _channel: number) {
+    destination.set(this.data);
+  }
   getChannelData(channel: number) {
     return Float32Array.from(this.data);
   }

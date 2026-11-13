@@ -1,3 +1,4 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
 import { LibAudioNode, Destination, NodeType } from '@/nodes';
 import { DEFAULT } from '@/constants';
 import { registerNode, NodeID, unregisterNode } from '@/nodes/node-store';
@@ -247,9 +248,9 @@ export class SampleVoice {
       );
       return false;
     }
-    // postMessage structured-clones each channel, so no local copy needed.
+    // Copy source channels without changing the shared buffer in Brave.
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
-      buffer.getChannelData(i),
+      copyChannelData(buffer, i),
     );
 
     // The processor drops isPlaying when it swaps audio data and never echoes a

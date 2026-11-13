@@ -19,6 +19,8 @@ describe('shouldCompress edge cases', () => {
           sampleRate,
           duration: length / sampleRate,
           getChannelData: (channel: number) => channels[channel],
+          copyFromChannel: (destination: Float32Array, channel: number, start = 0) =>
+            destination.set(channels[channel].subarray(start, start + destination.length)),
         } as AudioBuffer;
       },
     } as unknown as AudioContext;

@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 const MIN_Hz = 30;
 const MAX_Hz = 1000; // ac only works below 1000Hz
 
@@ -33,7 +35,7 @@ export async function detectSinglePitchAC(
   audioBuffer: AudioBuffer,
   noiseReduction: keyof typeof clipThresholds = 'medium',
 ) {
-  const rawData = audioBuffer.getChannelData(0);
+  const rawData = copyChannelData(audioBuffer, 0);
   const clipThreshold = clipThresholds[noiseReduction];
 
   // Sorted ascending, so index (n - 1) * quantile is the reference amplitude.

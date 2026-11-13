@@ -1,3 +1,4 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
 import { findWaveCycles } from '@/utils/audiodata/wavecycles/findWaveCycles';
 
 export function createPitchDivideEffect(
@@ -12,7 +13,7 @@ export function createPitchDivideEffect(
     sampleRate: audioBuffer.sampleRate,
   });
 
-  const inputData = audioBuffer.getChannelData(0);
+  const inputData = copyChannelData(audioBuffer, 0);
   const outputData = outputBuffer.getChannelData(0);
 
   for (let i = 0; i < cycles.length; i += divider) {

@@ -11,6 +11,8 @@ const ctx = {
       sampleRate,
       numberOfChannels: channels,
       getChannelData: (channel: number) => data[channel],
+      copyFromChannel: (destination: Float32Array, channel: number) =>
+        destination.set(data[channel]),
     };
   },
 } as unknown as AudioContext;
