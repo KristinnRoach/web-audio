@@ -103,10 +103,8 @@ export class VoiceEngine {
     this.noteRateTarget = 1;
     this.noteRateCoefficient = 1;
     this.velocityGain = 1;
-    // A retune waiting for its frame (voice:setRate).
-    this.pendingRateFrame = null;
-    this.pendingRate = 1;
-    this.pendingRateCoefficient = 1;
+    // Retunes waiting for their frames (voice:setRate), in timestamp order.
+    this.pendingRates = [];
 
     // Gain is unity unless its slot is active; detune adds to the param (see voice-envelopes.js).
     this.envelopes = new VoiceEnvelopes(sampleRate);
@@ -215,7 +213,7 @@ export class VoiceEngine {
     this.noteRateTarget = playbackRate;
     this.noteRate = glideSeconds > 0 && glideFrom !== undefined ? glideFrom : playbackRate;
     this.noteRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
-    this.pendingRateFrame = null;
+    this.pendingRates.length = 0;
     this.velocityGain = Math.max(0, Math.min(1, velocity / 127));
 
     this.isPlaying = true;
@@ -238,9 +236,12 @@ export class VoiceEngine {
 
   /** Retunes the sounding note at `timestamp`, gliding with a `glideSeconds` time constant. */
   setNoteRate(timestamp, playbackRate, glideSeconds = 0) {
-    this.pendingRateFrame = timestamp ? Math.round(timestamp * this.sampleRate) : 0;
-    this.pendingRate = playbackRate;
-    this.pendingRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
+    this.pendingRates.push({
+      frame: timestamp ? Math.round(timestamp * this.sampleRate) : 0,
+      rate: playbackRate,
+      coefficient: glideCoefficient(glideSeconds, this.sampleRate),
+    });
+    this.pendingRates.sort((a, b) => a.frame - b.frame);
   }
 
   /** Routes an envelope config to 'gain' or 'detune', or null to follow that param. */
@@ -284,6 +285,7 @@ export class VoiceEngine {
 
   reset() {
     this.isPlaying = false;
+    this.pendingRates.length = 0;
     this.pendingStartFrame = 0;
     this.startFadeFrames = 0;
     this.#clearStop();
@@ -347,6 +349,7 @@ export class VoiceEngine {
   #halt() {
     this.post({ type: 'voice:ended', triggerId: this.triggerId });
     this.isPlaying = false;
+    this.pendingRates.length = 0;
     this.pendingStartFrame = 0;
     this.#clearStop();
     this.playbackPosition = 0;
@@ -947,10 +950,10 @@ export class VoiceEngine {
       }
 
       const frame = blockFrame + sample;
-      if (this.pendingRateFrame !== null && frame >= this.pendingRateFrame) {
-        this.pendingRateFrame = null;
-        this.noteRateTarget = this.pendingRate;
-        this.noteRateCoefficient = this.pendingRateCoefficient;
+      while (this.pendingRates.length > 0 && frame >= this.pendingRates[0].frame) {
+        const retune = this.pendingRates.shift();
+        this.noteRateTarget = retune.rate;
+        this.noteRateCoefficient = retune.coefficient;
       }
       this.noteRate += (this.noteRateTarget - this.noteRate) * this.noteRateCoefficient;
       const basePlaybackRate =

@@ -403,6 +403,37 @@ it('takes rate and velocity from voice:start, so the first note is synced and sc
   expect(output.every((v) => v === 0)).toBe(true); // velocity 0 from this note, not the last
 });
 
+it('renders queued retunes in timestamp order, keeping same-frame arrival order and glide', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  engine.start(1, 0);
+  engine.setNoteRate(0.02, 3);
+  engine.setNoteRate(0.01, 2);
+  engine.setNoteRate(0.02, 4);
+  engine.setNoteRate(0.021, 8, 0.01);
+  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+
+  engine.render([new Float32Array(10)], parameters, 0, 0);
+  expect(engine.playbackPosition).toBeCloseTo(10);
+  engine.render([new Float32Array(10)], parameters, 10, 0.01);
+  expect(engine.playbackPosition).toBeCloseTo(30);
+  engine.render([new Float32Array(1)], parameters, 20, 0.02);
+  expect(engine.playbackPosition).toBeCloseTo(34);
+  engine.render([new Float32Array(1)], parameters, 21, 0.021);
+  expect(engine.noteRate).toBeCloseTo(4 + 4 * (1 - Math.exp(-0.1)));
+});
+
+it('discards the previous note’s queued retunes when a new note starts', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  engine.start(1, 0);
+  engine.setNoteRate(0.01, 4);
+  engine.start(2, 0, { playbackRate: 2 });
+  engine.render([new Float32Array(128)], makeParameters({ endPoint: 1 }), 0, 0);
+  expect(engine.noteRate).toBe(2);
+  expect(engine.playbackPosition).toBeCloseTo(256);
+});
+
 it('glides the note rate from glideFrom and retunes on voice:setRate', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
