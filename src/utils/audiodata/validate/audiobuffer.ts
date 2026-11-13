@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 export function isValidAudioBuffer(
   buffer: AudioBuffer | null | undefined,
   logInfo = false,
@@ -37,7 +39,7 @@ export function isValidAudioBuffer(
 
   for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
     try {
-      const channelData = buffer.getChannelData(channel);
+      const channelData = copyChannelData(buffer, channel);
       if (!channelData || channelData.length === 0) {
         return false;
       }

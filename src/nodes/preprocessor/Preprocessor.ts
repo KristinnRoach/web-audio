@@ -1,3 +1,4 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
 // Preprocessor.ts
 import { normalizeAudioBuffer } from '@/utils/audiodata/process/normalizeAudioBuffer';
 import { compressAudioBuffer } from '@/utils/audiodata/process/compressAudioBuffer';
@@ -69,7 +70,7 @@ export async function preProcessAudioBuffer(
     const finalResults: PreProcessResults = { audiobuffer: buffer };
     if (getZeroCrossings) {
       // ? Consider running zero detection on all channels and returning array of arrays
-      const zeroes = findZeroCrossings(buffer.getChannelData(0), {
+      const zeroes = findZeroCrossings(copyChannelData(buffer, 0), {
         unit: 'seconds',
         sampleRate: buffer.sampleRate,
       });
@@ -205,7 +206,7 @@ export async function preProcessAudioBuffer(
   }
 
   if (getZeroCrossings) {
-    const zeroes = findZeroCrossings(processed.getChannelData(0), {
+    const zeroes = findZeroCrossings(copyChannelData(processed, 0), {
       unit: 'seconds',
       sampleRate: processed.sampleRate,
     });
@@ -276,7 +277,7 @@ export function resampleForPitch(
   }
 
   for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-    const oldData = buffer.getChannelData(channel);
+    const oldData = copyChannelData(buffer, channel);
     const newData = newBuffer.getChannelData(channel);
 
     for (let i = 0; i < newLength; i++) {

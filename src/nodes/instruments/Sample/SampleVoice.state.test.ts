@@ -81,8 +81,10 @@ const fakeBuffer = () =>
   ({
     sampleRate: SAMPLE_RATE,
     duration: 1,
+    length: 8,
     numberOfChannels: 1,
     getChannelData: () => new Float32Array(8),
+    copyFromChannel: (destination: Float32Array) => destination.set(new Float32Array(8)),
   }) as unknown as AudioBuffer;
 
 /** Keep effects out of state tests unless the filter is needed. */
@@ -659,4 +661,39 @@ describe('SampleVoice state', () => {
       expect.objectContaining({ voiceId: voice.nodeId, midiNote: 60, position: 0.2 }),
     ]);
   });
+});
+
+it('loads identical audio into multiple voices without altering the shared Brave buffer', async () => {
+  const channels = [new Float32Array(1024).fill(0.5), new Float32Array(1024).fill(-0.25)];
+  const originals = channels.map((data) => data.slice());
+  const scale = 0.999;
+  const getChannelData = vi.fn((channel: number) => {
+    const data = channels[channel];
+    for (let i = 0; i < data.length; i++) data[i] *= scale;
+    return data;
+  });
+  const copyFromChannel = vi.fn((destination: Float32Array, channel: number) => {
+    destination.set(channels[channel].map((sample) => sample * scale));
+  });
+  const buffer = {
+    length: 1024,
+    duration: 1024 / SAMPLE_RATE,
+    sampleRate: SAMPLE_RATE,
+    numberOfChannels: 2,
+    getChannelData,
+    copyFromChannel,
+  } as unknown as AudioBuffer;
+  const messages: Float32Array[][] = [];
+  for (let i = 0; i < 16; i++) {
+    const voice = newVoice();
+    await voice.init();
+    await voice.loadBuffer(buffer);
+    messages.push(audio.posted.find((message) => message.type === 'voice:setBuffer').buffer);
+  }
+  for (const message of messages) {
+    expect(message).toEqual(originals.map((data) => data.map((sample) => sample * scale)));
+  }
+  expect(channels).toEqual(originals);
+  expect(getChannelData).not.toHaveBeenCalled();
+  expect(copyFromChannel).toHaveBeenCalledTimes(32);
 });

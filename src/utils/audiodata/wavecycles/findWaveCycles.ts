@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 const DEFAULT_THRESHOLD = 0.0001;
 
 export function findWaveCycles(
@@ -9,7 +11,7 @@ export function findWaveCycles(
   startSample: number;
   endSample: number;
 }> {
-  const channel = audioBuffer.getChannelData(0);
+  const channel = copyChannelData(audioBuffer, 0);
   const sr = audioBuffer.sampleRate;
   // Build zero crossings with direction (+ going up through zero, - going down)
   const zc: Array<{ t: number; dir: 1 | -1 }> = [];
@@ -90,7 +92,7 @@ export function duplicateWaveCycles(audioBuffer: AudioBuffer, numCycles: number)
 
   // Process each channel
   for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-    const sourceData = audioBuffer.getChannelData(ch);
+    const sourceData = copyChannelData(audioBuffer, ch);
     const targetData = newBuffer.getChannelData(ch);
 
     let writeIndex = 0;

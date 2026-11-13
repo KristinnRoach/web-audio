@@ -1,3 +1,5 @@
+import { copyChannelData } from '@/utils/audiodata/copyChannelData';
+
 export function detectThresholdCrossing(
   audioBuffer: AudioBuffer,
   silenceThreshold: number,
@@ -5,7 +7,7 @@ export function detectThresholdCrossing(
 ): { start: number; end: number } {
   const numChannels = audioBuffer.numberOfChannels;
   const sampleRate = audioBuffer.sampleRate;
-  const samples = Array.from({ length: numChannels }, (_, i) => audioBuffer.getChannelData(i));
+  const samples = Array.from({ length: numChannels }, (_, i) => copyChannelData(audioBuffer, i));
 
   if (samples.length === 0 || !samples[0]) {
     throw new Error('AudioBuffer must contain at least one audio channel');

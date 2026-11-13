@@ -68,10 +68,12 @@ it.each(['resampling', 'preprocessing', 'processor acknowledgement'])(
     const unsubscribe = vi.fn();
     const pool = await initTestPlayer(player, { setBuffer, onMessage: () => unsubscribe });
     const buffer = {
+      length: 1,
       duration: 1,
       numberOfChannels: 1,
       sampleRate: 48000,
       getChannelData: () => new Float32Array([0.5]),
+      copyFromChannel: (destination: Float32Array) => destination.set(new Float32Array([0.5])),
     } as unknown as AudioBuffer;
 
     const loading = player.loadAudio(buffer);
@@ -105,10 +107,12 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
   const context = Object.assign(new EventTarget(), { sampleRate: 48000, currentTime: 0 });
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
   const first = {
+    length: 1,
     duration: 1,
     numberOfChannels: 1,
     sampleRate: 48000,
     getChannelData: () => new Float32Array([0.5]),
+    copyFromChannel: (destination: Float32Array) => destination.set(new Float32Array([0.5])),
   };
   const laterData = { ...first, sampleRate: 44100 };
   const firstBuffer = first as unknown as AudioBuffer;
@@ -182,6 +186,7 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
         numberOfChannels: 1,
         duration: length / sampleRate,
         getChannelData: () => data,
+        copyFromChannel: (destination: Float32Array) => destination.set(data),
       } as unknown as AudioBuffer;
     };
     Object.assign(context, { createBuffer });
@@ -251,10 +256,13 @@ it('sends pitch periods once per load, only in period mode', async () => {
   const context = Object.assign(new EventTarget(), { sampleRate: 48000, currentTime: 0 });
   const player = new SamplePlayer({ context: context as unknown as AudioContext });
   const buffer = {
+    length: 48000,
     duration: 1,
     numberOfChannels: 1,
     sampleRate: 48000,
     getChannelData: () => new Float32Array(48000).fill(0.5),
+    copyFromChannel: (destination: Float32Array) =>
+      destination.set(new Float32Array(48000).fill(0.5)),
   } as unknown as AudioBuffer;
   let loaded = () => {};
   const setPitchPeriods = vi.fn();

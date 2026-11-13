@@ -10,9 +10,9 @@ function createMockAudioBuffer(data: Float32Array, sampleRate = SAMPLE_RATE): Au
     length: data.length,
     numberOfChannels: 1,
     duration: data.length / sampleRate,
-    getChannelData: (channel: number) => {
+    copyFromChannel: (destination: Float32Array, channel: number) => {
       if (channel !== 0) throw new Error('Only channel 0 supported in mock');
-      return data;
+      destination.set(data);
     },
   } as AudioBuffer;
 }
