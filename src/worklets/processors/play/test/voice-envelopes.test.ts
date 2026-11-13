@@ -168,3 +168,25 @@ it('a pan envelope adds to the pan param, clamped to hard right', () => {
   expect(right[64]).toBeGreaterThan(0);
   expect(left[64]).toBe(0);
 });
+
+it('a filter envelope renders cents to the control output and leaves the audio alone', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  const parameters = makeParameters({ endPoint: 1 });
+  const render = () => {
+    const audio = new Float32Array(128);
+    const filter = new Float32Array(128);
+    engine.render([audio], parameters, 0, 0, filter);
+    return { audio, filter };
+  };
+
+  engine.start(1, 0);
+  const without = render();
+  expect(without.filter.every((value) => value === 0)).toBe(true); // inactive slot: 0 cents
+
+  engine.setEnvelope('filter', { shape: adsr('sustain'), depth: 1200 });
+  engine.start(2, 0);
+  const withFilter = render();
+  expect(withFilter.filter[10]).toBeGreaterThan(1000); // near the attack peak, in cents
+  expect(withFilter.audio).toEqual(without.audio);
+});

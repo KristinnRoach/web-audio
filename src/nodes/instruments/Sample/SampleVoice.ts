@@ -112,8 +112,9 @@ export class SampleVoice {
 
     this.#playerWorklet = new AudioWorkletNode(context, 'sample-player-processor', {
       numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2], // Force stereo output
+      numberOfOutputs: 2,
+      // Stereo audio, plus the audio-thread filter envelope in cents for lpf.detune
+      outputChannelCount: [2, 1],
       processorOptions: options.processorOptions || {},
     });
 
@@ -173,6 +174,8 @@ export class SampleVoice {
       { name: 'out', in: this.#outputNode as AudioNode, out: this.#outputNode as AudioNode },
     ];
     for (let i = 0; i < stages.length - 1; i++) stages[i].out.connect(stages[i + 1].in);
+    // Sums with lpf.detune's own value, so it stays 0 while the filter envelope is off.
+    if (this.#lpf) this.#playerWorklet.connect(this.#lpf.detune, 1);
   }
 
   /**
@@ -660,9 +663,9 @@ export class SampleVoice {
   }
 
   /**
-   * Experimental: plays the amp, pitch and pan envelopes on the audio thread, sample-accurate
-   * and restarting on the processor's own loop wraps under loopSync. The filter envelope
-   * stays on the main thread. Takes effect from the next note.
+   * Experimental: plays the amp, pitch, pan and filter envelopes on the audio thread,
+   * sample-accurate and restarting on the processor's own loop wraps under loopSync.
+   * Takes effect from the next note.
    */
   setAudioThreadEnvelopes(enabled: boolean): this {
     if (this.#audioThreadEnvelopes === enabled) return this;

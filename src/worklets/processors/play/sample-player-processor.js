@@ -159,7 +159,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    this.engine.render(outputChannels, parameters, currentFrame, currentTime);
+    // Optional second output: the filter envelope in cents, silent (0) when inactive.
+    const filterOutput = outputs[1]?.[0];
+    this.engine.render(outputChannels, parameters, currentFrame, currentTime, filterOutput);
     return true;
   }
 }

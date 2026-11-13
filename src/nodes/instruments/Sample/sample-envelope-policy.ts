@@ -112,13 +112,13 @@ export function getSampleEnvelopeRestValue(id: SampleEnvelopeId): number {
 }
 
 /**
- * Processor target for audio-thread envelopes, or null where the processor can't reach
- * the param: the filter is a BiquadFilterNode after the worklet.
+ * Processor target for audio-thread envelopes. 'filter' goes out on the processor's second
+ * output to lpf.detune. ponytail: still nullable until the main-thread wiring is removed.
  */
 export function getSampleEnvelopeProcessorTarget(
   id: SampleEnvelopeId,
-): 'gain' | 'detune' | 'pan' | null {
-  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : id === 'pan' ? 'pan' : null;
+): 'gain' | 'detune' | 'pan' | 'filter' | null {
+  return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : id === 'pan' ? 'pan' : 'filter';
 }
 
 /**

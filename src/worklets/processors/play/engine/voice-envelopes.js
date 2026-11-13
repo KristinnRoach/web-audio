@@ -1,13 +1,13 @@
 // A voice's envelopes, one fixed slot per engine target, stepped on the processor
 // clock. Configs follow the sampler's EnvelopeConfig, `{ shape, depth = 1,
 // timeScale = 1, playbackRateSync, loopSync }`, plus `base = 0`, in the target's
-// units: gain for 'gain', cents for 'detune', -1..1 for 'pan'. A slot without a config is inactive
+// units: gain for 'gain', cents for 'detune' and 'filter', -1..1 for 'pan'. A slot without a config is inactive
 // and the engine falls back to the matching AudioParam.
 
 import { BreakpointEnvelope } from './breakpoint-envelope.js';
 import { glideCoefficient } from './loop-length.js';
 
-export const ENVELOPE_TARGETS = ['gain', 'detune', 'pan'];
+export const ENVELOPE_TARGETS = ['gain', 'detune', 'pan', 'filter'];
 
 // One-pole on every envelope output: rounds off vertical segments, step curves and
 // loop-sync cuts. Also softens the fastest attack by about this much.
@@ -34,7 +34,9 @@ export class VoiceEnvelopes {
     this.gain = new EnvelopeSlot(sampleRate);
     this.detune = new EnvelopeSlot(sampleRate);
     this.pan = new EnvelopeSlot(sampleRate);
-    this.slots = [this.gain, this.detune, this.pan];
+    // Not applied by the engine: rendered to a control output for the voice's filter.
+    this.filter = new EnvelopeSlot(sampleRate);
+    this.slots = [this.gain, this.detune, this.pan, this.filter];
     this.pendingReleaseFrame = null;
   }
 

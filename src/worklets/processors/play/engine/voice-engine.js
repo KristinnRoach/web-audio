@@ -844,7 +844,7 @@ export class VoiceEngine {
    * `blockFrame`/`blockTime`. Check `canRender` first; while it is false, call
    * `reportIdle()` instead.
    */
-  render(outputChannels, parameters, blockFrame, blockTime) {
+  render(outputChannels, parameters, blockFrame, blockTime, filterOutput) {
     const { sampleRate } = this;
 
     // ===== Scheduled start =====
@@ -950,6 +950,7 @@ export class VoiceEngine {
 
       let detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
       if (envelopes.detune.active) detune += envelopes.detune.value;
+      if (filterOutput && envelopes.filter.active) filterOutput[sample] = envelopes.filter.value;
       const playbackRate =
         detune === 0 ? basePlaybackRate : basePlaybackRate * 2 ** (detune / 1200);
 
