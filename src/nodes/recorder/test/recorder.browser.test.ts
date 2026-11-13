@@ -628,7 +628,10 @@ describe('Recorder', () => {
     recorder.cancel();
 
     await recorder.start({ input, metering: true });
+    const startedAt = ctx.currentTime;
     await until(() => Math.abs((levels.at(-1)?.rmsDb ?? 0) + 12.0412) < 0.1);
+    // Stopping on the first level can leave a take too short to decode.
+    await until(() => ctx.currentTime - startedAt >= 0.2);
     expect(levels.at(-1)!.peakDb).toBeCloseTo(-12.0412, 1);
     expect(levels.at(-1)!.stopThresholdDb).toBeNull();
     await recorder.stop();
