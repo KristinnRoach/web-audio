@@ -1,5 +1,18 @@
 # @kidlib/web-audio
 
+## 0.11.0
+
+### Minor Changes
+
+- 6b9eb00: Add a pan envelope through `getEnvelope('pan')` and `updateEnvelope('pan', config)`, with shape values from -1 (left) to 1 (right). Loop-synced envelopes now stay aligned with sample loops when the main thread is busy. Live value edits reshape the current segment or held sustain; timing edits apply from the next point.
+
+  Amp envelope `depth` now blends from unity gain at 0 to the full shape at 1. If the app used `depth` to control loudness, use `setVolume()` instead. `envelopeIds` now includes `'pan'` and returns a readonly array; copy it before modifying it.
+
+### Patch Changes
+
+- 2dace5c: Fix sample loading, analysis, and recording trims in Brave so they preserve the original audio and produce consistent results on repeated use.
+- 3044d66: Reduce clicks at sample note starts and stops. Scheduled stops stay accurate when the main thread is busy, and released voices become available as soon as their amp tail and de-click fade finish.
+
 ## 0.10.0
 
 ### Minor Changes
