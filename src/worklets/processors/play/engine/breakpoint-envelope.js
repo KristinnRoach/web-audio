@@ -1,8 +1,8 @@
 // Audio-thread breakpoint envelope: walks an EnvelopeShape (see
 // nodes/modulators/envelope/envelope-shape.ts) one sample at a time, as unitless
 // values. Routing and units belong to voice-envelopes.js.
-// ponytail: no sustain glide or loop restart bridge yet; a loop restart that cuts
-// a pass mid-shape steps to point 0.
+// ponytail: no loop restart bridge yet; a loop restart that cuts a pass mid-shape
+// steps to point 0.
 
 // Exponential segments can't start or end at zero, so they suit positive shapes only.
 const MIN_EXP_VALUE = 1e-4;
@@ -22,6 +22,10 @@ export class BreakpointEnvelope {
     this.curve = 'linear';
     this.step = 0;
     this.target = 0;
+    // A held sustain follows its point's value in the current shape, so edits apply live.
+    this.holding = false;
+    // ponytail: fixed ~10 ms glide, so sustain edits don't click
+    this.holdGlide = 1 - Math.exp(-1 / (0.01 * sampleRate));
   }
 
   trigger() {
@@ -42,6 +46,9 @@ export class BreakpointEnvelope {
   /** Value for the current sample, then advances one sample. */
   next() {
     const value = this.value;
+    if (this.holding) {
+      this.value += (this.shape.points[this.index].value - this.value) * this.holdGlide;
+    }
     if (this.remaining > 0) {
       if (this.curve === 'exponential') this.value *= this.step;
       else if (this.curve === 'linear') this.value += this.step;
@@ -58,6 +65,7 @@ export class BreakpointEnvelope {
     const last = points.length - 1;
     this.index = index;
     this.remaining = 0;
+    this.holding = false;
 
     if (index >= last) {
       if (mode.type === 'loop' && !this.released) {
@@ -68,7 +76,10 @@ export class BreakpointEnvelope {
       return;
     }
     // Hold until release.
-    if (mode.type === 'sustain' && !this.released && index === sustainPoint) return;
+    if (mode.type === 'sustain' && !this.released && index === sustainPoint) {
+      this.holding = true;
+      return;
+    }
 
     const from = points[index];
     const to = points[index + 1];

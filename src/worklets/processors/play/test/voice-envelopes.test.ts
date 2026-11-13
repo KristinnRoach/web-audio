@@ -40,6 +40,23 @@ it('attacks, decays to sustain, holds, then releases to done', () => {
   expect(env.done).toBe(true);
 });
 
+it('a held sustain glides to an edited sustain value', () => {
+  const env = new BreakpointEnvelope(SR);
+  env.shape = adsr('sustain');
+  env.trigger();
+  run(env, 30); // holding at 0.5
+
+  const shape = adsr('sustain');
+  env.shape = {
+    ...shape,
+    points: shape.points.map((p, i) => (i === 2 ? { ...p, value: 0.8 } : p)),
+  };
+  const glide = run(env, 100);
+  expect(glide[1]).toBeGreaterThan(0.5);
+  expect(glide[1]).toBeLessThan(0.6); // no step
+  expect(glide[99]).toBeCloseTo(0.8, 3);
+});
+
 it('loops the whole shape until release', () => {
   const env = new BreakpointEnvelope(SR);
   env.shape = adsr('loop');
