@@ -58,8 +58,8 @@ export class VoiceEnvelopes {
   trigger(noteRate = 1) {
     this.noteRate = noteRate;
     this.pendingReleaseFrame = null;
-    // Keep gain's first trigger pending if it is enabled later in this note.
-    for (const slot of this.slots) slot.triggerPending = slot.active || slot === this.gain;
+    // Inactive slots keep the trigger pending, so one enabled later in the note starts fresh.
+    for (const slot of this.slots) slot.triggerPending = true;
   }
 
   release(frame) {

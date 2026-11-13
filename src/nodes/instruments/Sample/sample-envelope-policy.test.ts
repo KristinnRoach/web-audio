@@ -34,9 +34,15 @@ it('accepts configs with valid defaults and without depth, rejects non-finite de
   }
 });
 
+const pitchBase = (depth: number) =>
+  resolveSampleEnvelopeForProcessor('pitch', { ...config, depth }).base;
+
 it('scales amplitude by depth and pitch and filter detune in cents, without changing the shape', () => {
   for (const depth of [0, 0.5, 1, -1]) {
-    expect(resolveSampleEnvelopeForProcessor('amp', { ...config, depth }).depth).toBe(depth);
+    const amp = resolveSampleEnvelopeForProcessor('amp', { ...config, depth });
+    expect(amp.depth).toBe(depth);
+    expect(amp.base).toBe(1 - depth);
+    expect(pitchBase(depth)).toBe(0);
     const pitch = resolveSampleEnvelopeForProcessor('pitch', { ...config, depth });
     expect(pitch.depth).toBe(1200 * depth);
     expect(pitch.shape.points.every((point) => point.curve === 'linear')).toBe(true);

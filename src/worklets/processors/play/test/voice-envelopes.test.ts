@@ -188,6 +188,19 @@ it('starts gain from the beginning when first enabled during a note, preserving 
   expect(trigger).toHaveBeenCalledTimes(1);
 });
 
+it('starts any envelope first enabled during a note', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  const parameters = makeParameters({ endPoint: 1 });
+  engine.start(1, 0);
+  engine.render([new Float32Array(128)], parameters, 0, 0);
+
+  const trigger = vi.spyOn(engine.envelopes.detune.envelope, 'trigger');
+  engine.setEnvelope('detune', { shape: adsr('sustain') });
+  engine.render([new Float32Array(128)], parameters, 128, 128 / SR);
+  expect(trigger).toHaveBeenCalledTimes(1);
+});
+
 it('keeps a scheduled stop when gain is first enabled after note-off', () => {
   const post = vi.fn();
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post });
