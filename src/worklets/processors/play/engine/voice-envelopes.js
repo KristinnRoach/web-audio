@@ -78,8 +78,9 @@ export class VoiceEnvelopes {
   /**
    * Steps every active envelope one sample. `loopWindow` is the last resolved loop
    * (null before the note's first), `loopWrapped` true on the sample after a wrap.
+   * `loopRate` is the transport's source samples per output sample (1 under period stretch).
    */
-  advance(frame, playbackRate, loopEnabled, loopWrapped, loopWindow, bufferLength) {
+  advance(frame, loopRate, loopEnabled, loopWrapped, loopWindow, bufferLength) {
     const released = this.pendingReleaseFrame !== null && frame >= this.pendingReleaseFrame;
     if (released) this.pendingReleaseFrame = null;
 
@@ -99,12 +100,14 @@ export class VoiceEnvelopes {
         // Wait one sample for the loop length; hold the opening value meanwhile.
         slot.smoothed = config.shape.points[0].value;
       } else {
-        // Each new segment uses current timing. Loop sync follows the sounding rate;
+        // Each new segment uses current timing. Loop sync follows the loop transport;
         // playbackRateSync follows the note's own rate.
+        // shortcut: fast rate changes within a segment are corrected at the next wrap;
+        // fractional envelope progress would be needed for continuous tracking.
         envelope.timeScale =
           (config.timeScale ?? 1) *
           (loopSync && loopWindow.length > 0
-            ? (bufferLength * Math.abs(playbackRate)) / loopWindow.length
+            ? (bufferLength * Math.abs(loopRate)) / loopWindow.length
             : config.playbackRateSync
               ? Math.abs(this.noteRate)
               : 1);

@@ -307,6 +307,7 @@ export class VoiceEngine {
     this.loopCount = 0;
     this.loopWrapped = false;
     this.loopWindow = null;
+    this.loopRate = 1;
     this.loopCrossfade.reset();
     this.#resetLoopGlides(); // new notes start on the target range
 
@@ -966,7 +967,7 @@ export class VoiceEngine {
       const envelopes = this.envelopes;
       envelopes.advance(
         blockFrame + sample,
-        basePlaybackRate,
+        this.loopRate,
         this.loopEnabled,
         this.loopWrapped,
         this.loopWindow,
@@ -1064,6 +1065,8 @@ export class VoiceEngine {
       if (!this.loopEnabled || this.loopCount >= maxLoopCount) this.loopTurned = false;
       const direction = this.loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(playbackRate);
+      // Next sample's envelope timing uses the transport rate that produced its loop state.
+      this.loopRate = timestretchActive ? 1 : Math.abs(playbackStep);
 
       const timestretchJumpTarget = this.timestretch.prepareJump(
         timestretchActive,

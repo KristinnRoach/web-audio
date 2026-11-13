@@ -297,23 +297,51 @@ it('updates timing with playback sync and gives loop sync precedence', () => {
   expect(envelopes.gain.envelope.timeScale).toBe(24);
 });
 
-it('loop sync restarts on every sample loop wrap, fitted to the loop length', () => {
-  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
-  engine.loopEnabled = true;
-  engine.setEnvelope('gain', { shape: adsr('loop'), loopSync: true });
-  const trigger = vi.spyOn(engine.envelopes.gain.envelope, 'trigger');
-  engine.start(1, 0);
+it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)(
+  'fits loop sync to the loop transport with %s',
+  (source) => {
+    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+    engine.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
+    engine.loopEnabled = true;
+    if (source === 'detune envelope') {
+      const shape = adsr('loop');
+      engine.setEnvelope('detune', {
+        shape: { ...shape, points: shape.points.map((point) => ({ ...point, value: 1 })) },
+        depth: 1200,
+        loopSync: true,
+      });
+    }
+    if (source === 'period stretch') {
+      engine.setPitchPeriods(Float32Array.of(10), SR);
+      engine.setTimestretchMode('period');
+    }
+    engine.setEnvelope('gain', { shape: adsr('loop'), loopSync: true });
+    const trigger = vi.spyOn(engine.envelopes.gain.envelope, 'trigger');
+    engine.start(1, 0, { playbackRate: source === 'period stretch' ? 2 : 1 });
 
-  // A 0.25 s loop: the full-buffer timeline plays 4x faster, once per wrap.
-  const parameters = makeParameters({ endPoint: 1, loopEnd: 0.25 });
-  for (let block = 0; block < 8; block++) {
-    engine.render([new Float32Array(128)], parameters, block * 128, (block * 128) / SR);
-  }
-  expect(engine.loopCount).toBeGreaterThan(2);
-  expect(trigger).toHaveBeenCalledTimes(1 + engine.loopCount!);
-  expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(4);
-});
+    // A 0.25 s loop: the full-buffer timeline plays 4x faster, once per wrap.
+    const parameters = makeParameters({
+      endPoint: 1,
+      loopEnd: 0.25,
+      detune: source === 'detune param' ? 1200 : 0,
+    });
+    for (let block = 0; block < 8; block++) {
+      engine.render([new Float32Array(128)], parameters, block * 128, (block * 128) / SR);
+    }
+    expect(engine.loopCount).toBeGreaterThan(2);
+    expect(trigger).toHaveBeenCalledTimes(1 + engine.loopCount!);
+    const loopRate = source === 'detune param' || source === 'detune envelope' ? 2 : 1;
+    expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(
+      (SR * loopRate) / engine.loopWindow!.length,
+    );
+    if (source === 'detune envelope')
+      expect(engine.envelopes.detune.envelope.timeScale).toBeCloseTo(
+        engine.envelopes.gain.envelope.timeScale,
+      );
+    if (source === 'period stretch')
+      expect(engine.timestretch.isActive(true, engine.loopWindow!.isPitchLoop)).toBe(true);
+  },
+);
 
 it('smooths a vertical segment instead of stepping in one sample', () => {
   const rate = 48_000;
