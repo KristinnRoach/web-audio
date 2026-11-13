@@ -339,6 +339,30 @@ it('a detune envelope bends the playback rate the loop and read step use', () =>
   expect(engine.playbackPosition).toBeCloseTo(256, 0);
 });
 
+it('applies negativeDepth to negative shape values', () => {
+  const valueAt = (value: number) => {
+    const envelopes = new VoiceEnvelopes(SR);
+    envelopes.set('detune', {
+      shape: {
+        points: [
+          { time: 0, value },
+          { time: 1, value },
+        ],
+        mode: { type: 'once' },
+        sustainPoint: 0,
+        releasePoint: 0,
+      },
+      depth: 2400,
+      negativeDepth: 1200,
+    });
+    envelopes.trigger();
+    envelopes.advance(0, 1, false, false, null, SR);
+    return envelopes.detune.value;
+  };
+  expect(valueAt(-0.5)).toBe(-600);
+  expect(valueAt(0.5)).toBe(1200);
+});
+
 it('a pan envelope adds to the pan param, clamped to hard right', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);

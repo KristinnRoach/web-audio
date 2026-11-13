@@ -1,7 +1,7 @@
 // A voice's envelopes, one fixed slot per engine target, stepped on the processor
 // clock. Configs follow the sampler's EnvelopeConfig, `{ shape, depth = 1,
-// timeScale = 1, playbackRateSync, loopSync }`, plus `base = 0`, in the target's
-// units: gain for 'gain', cents for 'detune' and 'filter', -1..1 for 'pan'. A slot without a config is inactive
+// timeScale = 1, playbackRateSync, loopSync }`, plus `base = 0` and `negativeDepth = depth`
+// (applied to negative shape values), in the target's units: gain for 'gain', cents for 'detune' and 'filter', -1..1 for 'pan'. A slot without a config is inactive
 // and the engine falls back to the matching AudioParam.
 
 import { BreakpointEnvelope } from './breakpoint-envelope.js';
@@ -19,7 +19,8 @@ class EnvelopeSlot {
     this.config = null;
     this.triggerPending = false;
     this.smoothed = 0;
-    // base + depth * smoothed envelope, in the target's units. Read by the engine.
+    // base + depth (or negativeDepth below 0) * smoothed envelope, in the target's units.
+    // Read by the engine.
     this.value = 0;
   }
 
@@ -114,7 +115,10 @@ export class VoiceEnvelopes {
         }
         slot.smoothed += (envelope.next() - slot.smoothed) * this.smoothingCoefficient;
       }
-      slot.value = (config.base ?? 0) + (config.depth ?? 1) * slot.smoothed;
+      const depth = config.depth ?? 1;
+      slot.value =
+        (config.base ?? 0) +
+        (slot.smoothed < 0 ? (config.negativeDepth ?? depth) : depth) * slot.smoothed;
     }
   }
 }
