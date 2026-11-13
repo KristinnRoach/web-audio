@@ -1121,7 +1121,7 @@ export class SamplePlayer {
   }
 
   /** Envelope ids on the current voices; empty until the pool is initialized. */
-  get envelopeIds(): SampleEnvelopeId[] {
+  get envelopeIds(): readonly SampleEnvelopeId[] {
     return this.#voicePool?.allVoices[0]?.envelopeIds ?? [];
   }
 

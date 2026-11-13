@@ -230,8 +230,8 @@ describe('SampleVoice state', () => {
   it('sends every envelope to the processor in its target units', async () => {
     const voice = newVoice(true);
     await voice.init();
-    const targets = audio.posted.filter((m) => m.type === 'setEnvelope').map((m) => m.target);
-    expect(targets).toEqual(['gain', 'detune', 'filter', 'pan']);
+    // SamplePlayer owns the configs, so a fresh voice sends none of its own.
+    expect(audio.posted.some((m) => m.type === 'setEnvelope')).toBe(false);
     expect(voice.envelopeIds).toEqual(['amp', 'pitch', 'filter', 'pan']);
 
     audio.posted = [];
@@ -267,7 +267,7 @@ describe('SampleVoice state', () => {
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 
-  it('stops at note-off while the amp envelope is off', async () => {
+  it('leaves note-off to the processor while the amp envelope is off', async () => {
     const voice = await loadedVoice();
     voice.setEnvelopeConfig('amp', {
       ...createDefaultSampleEnvelopeConfig('amp', 1),
@@ -276,7 +276,8 @@ describe('SampleVoice state', () => {
     trigger(voice);
     voice.release({ secondsFromNow: 2 });
 
-    expect(audio.posted.at(-1)).toEqual({ type: 'voice:stop', timestamp: 2 });
+    // The processor stops a release with no gain envelope.
+    expect(audio.posted.at(-1)).toEqual({ type: 'voice:release', timestamp: 2 });
   });
 
   it('stops rather than retriggering an active voice', async () => {

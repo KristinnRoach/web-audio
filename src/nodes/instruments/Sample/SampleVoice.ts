@@ -19,7 +19,6 @@ import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/g
 import { samplerParams } from './sampler-params';
 import type { PitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
-  createDefaultSampleEnvelopeConfig,
   getSampleEnvelopeIds,
   getSampleEnvelopeProcessorTarget,
   resolveSampleEnvelopeForProcessor,
@@ -48,7 +47,6 @@ export class SampleVoice {
   #feedback: HarmonicFeedback | null = null;
 
   /** The processor plays these; kept here to resend on load and to size the release. */
-  #envelopeConfigs = new Map<SampleEnvelopeId, EnvelopeConfig>();
 
   #state: VoiceState = VoiceState.AVAILABLE;
   #isInitialized = false;
@@ -113,8 +111,6 @@ export class SampleVoice {
 
         // Connect nodes
         this.#connectAudioChain();
-
-        this.#resetEnvelopeConfigs();
 
         // Setup message handling
         this.#setupWorkletMessageHandling();
@@ -207,17 +203,6 @@ export class SampleVoice {
         frequency: this.#lpfHz,
         Q: this.#lpfQ,
       });
-    }
-  }
-
-  #resetEnvelopeConfigs() {
-    this.#envelopeConfigs.clear();
-    const durationSeconds = this.#sampleDurationSeconds || 1;
-    // Envelopes start from defaults; SamplePlayer pushes the real state down as soon
-    // as it has one, which is also what keeps every voice on the same shape.
-    for (const type of getSampleEnvelopeIds(this.#chainIncludes('lpf'))) {
-      this.#envelopeConfigs.set(type, createDefaultSampleEnvelopeConfig(type, durationSeconds));
-      this.#sendProcessorEnvelope(type);
     }
   }
 
@@ -352,10 +337,6 @@ export class SampleVoice {
     return this.#midiNote;
   }
 
-  #isEnvEnabled(envType: SampleEnvelopeId) {
-    return this.#envelopeConfigs.get(envType)?.enabled ?? false;
-  }
-
   #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
     switch (state) {
       case VoiceState.AVAILABLE:
@@ -391,11 +372,8 @@ export class SampleVoice {
       midiNote: this.#midiNote,
     });
 
-    // The processor stops at the end of the amp tail and reports it as voice:ended.
-    this.sendToProcessor({
-      type: this.#isEnvEnabled('amp') ? 'voice:release' : 'voice:stop',
-      timestamp,
-    });
+    // The processor stops at the end of the amp tail, or now without one, and reports voice:ended.
+    this.sendToProcessor({ type: 'voice:release', timestamp });
     return this;
   }
 
@@ -458,25 +436,19 @@ export class SampleVoice {
 
   // === ENVELOPES ===
 
-  /** Receives the config owned by SamplePlayer; the processor applies a new shape at its next point. */
+  /** Forwards a config owned by SamplePlayer; the processor applies a new shape at its next point. */
   setEnvelopeConfig = (envType: SampleEnvelopeId, config: EnvelopeConfig) => {
-    if (!this.#envelopeConfigs.has(envType)) return;
-    this.#envelopeConfigs.set(envType, config);
-    this.#sendProcessorEnvelope(envType);
-  };
-
-  /** Every envelope this voice takes configs for. */
-  get envelopeIds(): SampleEnvelopeId[] {
-    return [...this.#envelopeConfigs.keys()];
-  }
-
-  #sendProcessorEnvelope(envType: SampleEnvelopeId) {
-    const config = this.#envelopeConfigs.get(envType);
+    if (!this.envelopeIds.includes(envType)) return;
     this.sendToProcessor({
       type: 'setEnvelope',
       target: getSampleEnvelopeProcessorTarget(envType),
-      value: config?.enabled ? resolveSampleEnvelopeForProcessor(envType, config) : null,
+      value: config.enabled ? resolveSampleEnvelopeForProcessor(envType, config) : null,
     });
+  };
+
+  /** Every envelope this voice takes configs for. */
+  get envelopeIds(): readonly SampleEnvelopeId[] {
+    return getSampleEnvelopeIds(this.#chainIncludes('lpf'));
   }
 
   setParam(
@@ -615,7 +587,6 @@ export class SampleVoice {
         case 'voice:loaded':
           if (data.durationSeconds) {
             this.#sampleDurationSeconds = data.durationSeconds;
-            this.#resetEnvelopeConfigs(); // Todo: move to init and only update env duration IF needed
           }
           break;
 

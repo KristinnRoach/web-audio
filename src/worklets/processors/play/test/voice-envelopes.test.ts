@@ -72,6 +72,14 @@ it('drives the engine output and ends the note when the release tail does', () =
   expect(posts.some((m) => 'type' in m && m.type === 'voice:ended')).toBe(true);
 });
 
+it('a release without a gain envelope stops the note', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  engine.start(1, 0);
+  engine.release(0.5);
+  expect(engine.pendingStopFrame).toBe(0.5 * SR);
+});
+
 it('loop sync restarts on every sample loop wrap, fitted to the loop length', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
