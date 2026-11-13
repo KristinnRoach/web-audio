@@ -600,6 +600,7 @@ export class SamplePlayer {
 
   /* === PITCH === */
 
+  /** Off plays every note at the sample's own pitch; the pitch envelope still bends it. */
   setPitchEnabled(enabled: boolean): this {
     this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
     return this;
