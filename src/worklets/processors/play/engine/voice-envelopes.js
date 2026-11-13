@@ -41,13 +41,17 @@ export class VoiceEnvelopes {
     this.noteRate = 1;
   }
 
-  /** A new shape takes effect at its next point; a running note keeps its trigger. */
+  /**
+   * A new shape's values apply now: the running segment re-aims and a held sustain
+   * glides. Its times take effect at the next point; a running note keeps its trigger.
+   */
   set(target, config) {
     if (!ENVELOPE_TARGETS.includes(target))
       throw new RangeError(`Unknown envelope target ${target}`);
     const slot = this[target];
     slot.config = config ?? null;
     slot.envelope.shape = config?.shape ?? null;
+    slot.envelope.retarget();
   }
 
   /** Starts every active envelope on the next advance(); `noteRate` drives playbackRateSync. */

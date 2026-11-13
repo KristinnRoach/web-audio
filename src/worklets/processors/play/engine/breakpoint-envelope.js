@@ -43,12 +43,25 @@ export class BreakpointEnvelope {
     this.#beginSegment(this.shape.releasePoint);
   }
 
+  /**
+   * Aims the running segment at its end point's value in the current shape, keeping
+   * its remaining time and curve, so a value edit lands without a step.
+   */
+  retarget() {
+    const to = this.remaining > 0 && this.shape?.points[this.index + 1];
+    if (!to) return;
+    this.target = to.value;
+    this.step =
+      this.curve === 'exponential'
+        ? (Math.max(to.value, MIN_EXP_VALUE) / this.value) ** (1 / this.remaining)
+        : (to.value - this.value) / this.remaining;
+  }
+
   /** Value for the current sample, then advances one sample. */
   next() {
     const value = this.value;
-    if (this.holding) {
-      this.value += (this.shape.points[this.index].value - this.value) * this.holdGlide;
-    }
+    const held = this.holding && this.shape?.points[this.index];
+    if (held) this.value += (held.value - this.value) * this.holdGlide;
     if (this.remaining > 0) {
       if (this.curve === 'exponential') this.value *= this.step;
       else if (this.curve === 'linear') this.value += this.step;

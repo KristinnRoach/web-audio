@@ -57,6 +57,23 @@ it('a held sustain glides to an edited sustain value', () => {
   expect(glide[99]).toBeCloseTo(0.8, 3);
 });
 
+it('a sustain edit mid-decay re-aims the decay without a step', () => {
+  const env = new BreakpointEnvelope(SR);
+  env.shape = adsr('sustain');
+  env.trigger();
+  const before = run(env, 15).at(-1)!; // halfway down the decay to 0.5
+
+  const shape = adsr('sustain');
+  env.shape = {
+    ...shape,
+    points: shape.points.map((p, i) => (i === 2 ? { ...p, value: 0.2 } : p)),
+  };
+  env.retarget();
+  const after = run(env, 10);
+  expect(Math.abs(after[0] - before)).toBeLessThan(0.1);
+  expect(after[6]).toBeCloseTo(0.2); // decay ends on the new value
+});
+
 it('loops the whole shape until release', () => {
   const env = new BreakpointEnvelope(SR);
   env.shape = adsr('loop');
