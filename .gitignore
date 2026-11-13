@@ -31,3 +31,6 @@ AGENTS.md
 
 # vitest browser failure screenshots
 **/__screenshots__/
+
+
+.playwright-mcp//
