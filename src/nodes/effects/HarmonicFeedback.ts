@@ -5,6 +5,12 @@ import { clamp, interpolate, mapToRange } from '@/utils';
 import { createFeedbackDelay } from '@/worklets/worklet-factory';
 import { FbDelayWorklet } from '@/worklets/worklet-types';
 
+// Auto-gain strength: above feedback 0.8 the output scales by
+// 1 - (feedback - 0.8) * strength, so 2.5 bottoms out at 0.5 (-6 dB) at max feedback.
+// Measured on a decaying C3 tone, this holds the top of the knob to a 1-3 dB rise
+// instead of 7.5 dB. Keep below 5: past that the gain goes negative.
+const AUTO_GAIN_STRENGTH = 2.5;
+
 export class HarmonicFeedback implements ILibAudioNode {
   readonly nodeId: NodeID;
   readonly nodeType: NodeType = 'harmonic-feedback';
@@ -41,6 +47,8 @@ export class HarmonicFeedback implements ILibAudioNode {
 
     // Signal path: preGain -> delay ->  postGain
     this.#preGain.connect(this.#delay).connect(this.#postGain);
+
+    this.setAutoGain(true, AUTO_GAIN_STRENGTH);
 
     const initDelayTime = this.setPitch(60);
     this.#baseDelayTime = initDelayTime;
