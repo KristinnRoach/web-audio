@@ -134,7 +134,9 @@ export class SamplePlayer {
     this.context = options.context;
     this.#messages = createMessageBus<Message>(this.nodeId);
     this.context.addEventListener('statechange', this.#onContextStateChange);
-    this.#masterOut = new GainNode(this.context, { gain: 0.5 });
+    this.#masterOut = new GainNode(this.context, {
+      gain: samplerParams.volume.defaultValue,
+    });
 
     // Store configuration for async init
     this.#polyphony = options.polyphony ?? 16;
