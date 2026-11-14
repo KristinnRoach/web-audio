@@ -51,7 +51,7 @@ export async function initTestPlayer(
   const busFactory = await import('../../../master/createInstrumentBus');
   const poolSpy = vi.spyOn(factory, 'createSampleVoicePool').mockResolvedValue(pool);
   const busSpy = vi.spyOn(busFactory, 'createInstrumentBus').mockResolvedValue({
-    input: { gain: {} },
+    input: { gain: { setValueAtTime: vi.fn() } },
     connect() {},
     releaseAll() {},
     dispose() {},

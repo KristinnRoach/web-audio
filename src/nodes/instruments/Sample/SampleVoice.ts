@@ -413,7 +413,9 @@ export class SampleVoice {
     });
 
     if (modType === 'AM') {
-      this.#am_lfo?.setDepth(safeDepth);
+      // Dips below unity instead of boosting above it: gain stays in [1 - depth, 1].
+      this.#am_gain?.gain.setValueAtTime(1 - safeDepth / 2, this.context.currentTime);
+      this.#am_lfo?.setDepth(safeDepth / 2);
     } else if (modType === 'FM') {
       console.warn('SampleVoice: FM modulation not implemented yet');
     }

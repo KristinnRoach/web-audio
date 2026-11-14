@@ -8,6 +8,18 @@
 // https://www.w3.org/TR/webaudio/#DynamicsCompressorNode
 // https://developer.mozilla.org/en-US/docs/Web/API/DynamicsCompressorNode
 
+// Headroom at the voice sum: voices arrive peak-normalized near 0 dBFS and add up.
+// ~-9 dB keeps a full-velocity 4-note chord under the limiter, which should only
+// catch rare peaks. Tune by ear with monitorLevels (`@kidlib/web-audio/debug`).
+export const VOICE_SUM_GAIN = 0.35;
+
+// Level trim at full distortion macro, scaled linearly in dB with the amount.
+// Measured RMS rise at full macro: ~15 dB in the app (metered), ~19 dB on a
+// synthetic decaying chord. The rise is roughly linear in dB, so one number covers
+// the range. Clipping makes it depend on input level, so this is a typical-case
+// match: raise toward 0 if full distortion sounds too quiet, lower if too loud.
+export const DISTORTION_MACRO_TRIM_DB = -15;
+
 export const DEFAULT_COMPRESSOR_SETTINGS = {
   threshold: -16.0, // -24..-12 (lower = more makeup gain, see above)
   knee: 12.0, // 6..30 (soft knee hides the onset; hard knee audibly grabs)

@@ -27,6 +27,7 @@ import {
 import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
+import { VOICE_SUM_GAIN } from '@/nodes/master/defaults';
 import { SampleVoicePool, type LegatoSettings } from './SampleVoicePool';
 import { getDuration, setDuration } from '@/nodes/modulators/envelope';
 import {
@@ -133,7 +134,9 @@ export class SamplePlayer {
     this.context = options.context;
     this.#messages = createMessageBus<Message>(this.nodeId);
     this.context.addEventListener('statechange', this.#onContextStateChange);
-    this.#masterOut = new GainNode(this.context, { gain: 0.5 });
+    this.#masterOut = new GainNode(this.context, {
+      gain: samplerParams.volume.defaultValue,
+    });
 
     // Store configuration for async init
     this.#polyphony = options.polyphony ?? 16;
@@ -1354,7 +1357,10 @@ export class SamplePlayer {
   }
 
   setGainLFODepth(depth: number): void {
-    this.#gainLFO?.setDepth(depth);
+    // Dips below the bus input's headroom gain instead of boosting above it.
+    const safeDepth = clamp(depth, 0, 1);
+    this.#outBus?.input.gain.setValueAtTime(VOICE_SUM_GAIN * (1 - safeDepth / 2), this.now);
+    this.#gainLFO?.setDepth((VOICE_SUM_GAIN * safeDepth) / 2);
   }
 
   /** Set the pitch LFO rate in Hz. */

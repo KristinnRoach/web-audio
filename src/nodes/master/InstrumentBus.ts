@@ -10,7 +10,12 @@ import { clamp, mapToRange } from '@/utils';
 import { clampHz, maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import { DEFAULT } from '@/constants';
-import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from './defaults';
+import {
+  DEFAULT_COMPRESSOR_SETTINGS,
+  DEFAULT_LIMITER_SETTINGS,
+  DISTORTION_MACRO_TRIM_DB,
+  VOICE_SUM_GAIN,
+} from './defaults';
 
 import { DattorroReverb } from '@/nodes/effects/DattorroReverb';
 import { HarmonicFeedback } from '../effects/HarmonicFeedback';
@@ -98,7 +103,7 @@ export class InstrumentBus implements ILibAudioNode {
     this.#initPromise = (async () => {
       try {
         // Create nodes
-        const input = this.createGainNode(this.#context, { initialGain: 1 });
+        const input = this.createGainNode(this.#context, { initialGain: VOICE_SUM_GAIN });
         const dryMix = this.createGainNode(this.#context, { initialGain: 1 });
         const wetMix = this.createGainNode(this.#context, { initialGain: 1 });
         const output = this.createGainNode(this.#context, { initialGain: 1 });
@@ -141,6 +146,7 @@ export class InstrumentBus implements ILibAudioNode {
           createDistortion(this.#context),
           this.#context,
           'distortion',
+          { createIOGains: true }, // output gain carries the macro's level trim
         );
 
         const delay = new LibAudioNode<DelayWorklet>(
@@ -208,8 +214,9 @@ export class InstrumentBus implements ILibAudioNode {
     this.#connectChain(['wetMix', 'distortion']);
     this.#connectFromTo('dryMix', 'distortion');
 
-    // Shared output chain
-    this.#connectChain(['distortion', 'compressor', 'lpf', 'limiter', 'output']);
+    // Shared output chain. The compressor is left unrouted: its automatic makeup
+    // gain (~+6 dB, not adjustable) pushed every chord into the limiter.
+    this.#connectChain(['distortion', 'lpf', 'limiter', 'output']);
   }
 
   #connectFromTo(from: BusNodeName | BusSendName, to: BusNodeName | BusSendName): this {
@@ -497,6 +504,15 @@ export class InstrumentBus implements ILibAudioNode {
 
     const tamedForClip = mapToRange(safeAmount, 0, 1, 0, 0.95);
     this.setClippingMacro(tamedForClip);
+
+    // Drive and clipping flatten the waveform, so loudness climbs even though the
+    // peak is capped. Trim it back so the knob changes tone, not volume.
+    const trim = Math.pow(10, (DISTORTION_MACRO_TRIM_DB * safeAmount) / 20);
+    (this.getNode('distortion')?.output as GainNode | undefined)?.gain.setTargetAtTime(
+      trim,
+      this.now,
+      0.01,
+    );
   }
 
   setDrive(amount: number) {
