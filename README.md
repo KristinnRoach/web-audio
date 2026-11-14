@@ -180,3 +180,15 @@ async function setSampleRate(sampleRate: number) {
 
 The output device set with `setAudioOutputDevice` does not carry over to the new
 context.
+
+To share a context you already have, such as Tone.js's, make it the global one
+before anything uses the global context:
+
+```ts
+import * as Tone from 'tone';
+import { setGlobalAudioContext } from '@kidlib/web-audio';
+
+const ctx = new AudioContext();
+Tone.setContext(ctx); // before creating any Tone node
+setGlobalAudioContext(ctx); // throws while a different global context is open
+```
