@@ -1357,7 +1357,7 @@ export class SamplePlayer {
   setGainLFODepth(depth: number): void {
     // Dips below the bus input's headroom gain instead of boosting above it.
     const safeDepth = clamp(depth, 0, 1);
-    this.#outBus.input.gain.setValueAtTime(VOICE_SUM_GAIN * (1 - safeDepth / 2), this.now);
+    this.#outBus?.input.gain.setValueAtTime(VOICE_SUM_GAIN * (1 - safeDepth / 2), this.now);
     this.#gainLFO?.setDepth((VOICE_SUM_GAIN * safeDepth) / 2);
   }
 

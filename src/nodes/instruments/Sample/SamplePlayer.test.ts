@@ -196,6 +196,10 @@ it('keeps LFO routing and parameter mappings behind player controls', async () =
     expect(gainLFO.setFrequency).toHaveBeenLastCalledWith(50.1);
     // Half the depth, scaled to the bus input's headroom gain.
     expect(gainLFO.setDepth).toHaveBeenLastCalledWith((VOICE_SUM_GAIN * 0.75) / 2);
+    const inputGain = player.input.gain.setValueAtTime as ReturnType<typeof vi.fn>;
+    expect(inputGain).toHaveBeenLastCalledWith(VOICE_SUM_GAIN * (1 - 0.75 / 2), player.now);
+    player.applyParams({ gainLFODepth: 0 });
+    expect(inputGain).toHaveBeenLastCalledWith(VOICE_SUM_GAIN, player.now);
     expect(pitchLFO.setFrequency).toHaveBeenLastCalledWith(25.1);
 
     player.applyParams({ pitchLFODepth: 1 });
