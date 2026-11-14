@@ -10,7 +10,7 @@ import { clamp, mapToRange } from '@/utils';
 import { clampHz, maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import { DEFAULT } from '@/constants';
-import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS } from './defaults';
+import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS, VOICE_SUM_GAIN } from './defaults';
 
 import { DattorroReverb } from '@/nodes/effects/DattorroReverb';
 import { HarmonicFeedback } from '../effects/HarmonicFeedback';
@@ -98,7 +98,7 @@ export class InstrumentBus implements ILibAudioNode {
     this.#initPromise = (async () => {
       try {
         // Create nodes
-        const input = this.createGainNode(this.#context, { initialGain: 1 });
+        const input = this.createGainNode(this.#context, { initialGain: VOICE_SUM_GAIN });
         const dryMix = this.createGainNode(this.#context, { initialGain: 1 });
         const wetMix = this.createGainNode(this.#context, { initialGain: 1 });
         const output = this.createGainNode(this.#context, { initialGain: 1 });
@@ -208,8 +208,9 @@ export class InstrumentBus implements ILibAudioNode {
     this.#connectChain(['wetMix', 'distortion']);
     this.#connectFromTo('dryMix', 'distortion');
 
-    // Shared output chain
-    this.#connectChain(['distortion', 'compressor', 'lpf', 'limiter', 'output']);
+    // Shared output chain. The compressor is left unrouted: its automatic makeup
+    // gain (~+6 dB, not adjustable) pushed every chord into the limiter.
+    this.#connectChain(['distortion', 'lpf', 'limiter', 'output']);
   }
 
   #connectFromTo(from: BusNodeName | BusSendName, to: BusNodeName | BusSendName): this {
