@@ -21,7 +21,7 @@ export class SampleVoicePool implements LibNode {
   readonly nodeId: NodeID;
   readonly nodeType = 'pool';
   #messages: MessageBus<Message>;
-  #context: AudioContext;
+  #context: BaseAudioContext;
   #initialized = false;
   #initPromise: Promise<void> | null = null;
   #polyphony: number;
@@ -33,7 +33,7 @@ export class SampleVoicePool implements LibNode {
   #heldNotes = new Map<SampleVoice, { notes: MidiValue[]; glideTime: number }>();
 
   constructor(
-    context: AudioContext,
+    context: BaseAudioContext,
     polyphony: number,
     voiceSignalChain?: readonly SampleVoiceChainNode[],
   ) {

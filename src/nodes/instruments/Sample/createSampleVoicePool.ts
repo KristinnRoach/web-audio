@@ -3,7 +3,7 @@ import { SampleVoicePool } from './SampleVoicePool';
 import type { SampleVoiceChainNode } from './SampleVoice';
 
 export async function createSampleVoicePool(
-  context: AudioContext,
+  context: BaseAudioContext,
   polyphony: number,
   voiceSignalChain?: readonly SampleVoiceChainNode[],
 ): Promise<SampleVoicePool> {

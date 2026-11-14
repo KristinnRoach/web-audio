@@ -7,7 +7,7 @@ export class WorkletNode<
   private _messageQueue: TConfig['message'][] = [];
 
   constructor(
-    audioContext: AudioContext,
+    audioContext: BaseAudioContext,
     processorName: string,
     options?: AudioWorkletNodeOptions,
   ) {

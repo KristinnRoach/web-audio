@@ -21,7 +21,7 @@ export interface ILibAudioNode<T extends AudioNode | AudioWorkletNode = AudioNod
   // Convenience getters
   readonly now: number;
   readonly audioNode: T;
-  readonly context: AudioContext | BaseAudioContext;
+  readonly context: BaseAudioContext;
 
   readonly connections: {
     outgoing: NodeID[];
@@ -63,7 +63,7 @@ export class LibAudioNode<
 
   constructor(
     node: T,
-    context: AudioContext,
+    context: BaseAudioContext,
     nodeType: NodeType,
     options: LibAudioNodeOptions = {},
   ) {

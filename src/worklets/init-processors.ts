@@ -9,9 +9,9 @@ type InitResult = {
 
 // Worklet scope is per-context, and addModule is async: a shared in-flight promise
 // keeps concurrent calls from registering the same processor twice.
-const initialized = new WeakMap<AudioContext, Promise<InitResult>>();
+const initialized = new WeakMap<BaseAudioContext, Promise<InitResult>>();
 
-export function initProcessors(context: AudioContext): Promise<InitResult> {
+export function initProcessors(context: BaseAudioContext): Promise<InitResult> {
   const existing = initialized.get(context);
   if (existing) return existing;
 
@@ -23,7 +23,7 @@ export function initProcessors(context: AudioContext): Promise<InitResult> {
   return pending;
 }
 
-async function load(context: AudioContext): Promise<InitResult> {
+async function load(context: BaseAudioContext): Promise<InitResult> {
   // Check if AudioWorklet is supported
   if (!context.audioWorklet) {
     // This is a known issue on some Android browsers where AudioWorkletNode exists

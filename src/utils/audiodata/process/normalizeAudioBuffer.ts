@@ -1,7 +1,7 @@
 import { copyChannelData } from '@/utils/audiodata/copyChannelData';
 
 export function normalizeAudioBuffer(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   buffer: AudioBuffer,
   targetPeak = 0.9,
 ): AudioBuffer {

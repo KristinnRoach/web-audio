@@ -61,7 +61,7 @@ export class InstrumentBus implements ILibAudioNode {
   readonly nodeId: NodeID;
   readonly nodeType = 'InstrumentBus';
   #messages: MessageBus<Message>;
-  #context: AudioContext;
+  #context: BaseAudioContext;
   #initialized = false;
   #initPromise: Promise<void> | null = null;
 
@@ -77,14 +77,14 @@ export class InstrumentBus implements ILibAudioNode {
   #outgoingConnections = new Set<NodeID>();
   #incomingConnections = new Set<NodeID>();
 
-  constructor(context: AudioContext) {
+  constructor(context: BaseAudioContext) {
     this.nodeId = registerNode(this.nodeType, this);
     this.#context = context;
     this.#messages = createMessageBus(this.nodeId);
   }
 
   createGainNode(
-    context: AudioContext,
+    context: BaseAudioContext,
     options: { initialGain?: number } = {},
   ): ILibAudioNode<GainNode> {
     const { initialGain = 1 } = options;
@@ -697,7 +697,7 @@ export class InstrumentBus implements ILibAudioNode {
     return this.getNode('output').audioNode;
   }
 
-  get context(): AudioContext {
+  get context(): BaseAudioContext {
     return this.#context;
   }
 

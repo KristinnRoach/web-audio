@@ -10,7 +10,7 @@ export class DattorroReverb implements ILibAudioNode {
   readonly nodeId: NodeID;
   readonly nodeType: NodeType = 'dattorro-reverb';
   #initialized = false;
-  #context: AudioContext;
+  #context: BaseAudioContext;
 
   #connections = new Set<NodeID>();
   #incoming = new Set<NodeID>();
@@ -88,7 +88,7 @@ export class DattorroReverb implements ILibAudioNode {
     // },
   } as const;
 
-  constructor(context: AudioContext) {
+  constructor(context: BaseAudioContext) {
     this.nodeId = registerNode(this.nodeType, this);
     this.#context = context;
 

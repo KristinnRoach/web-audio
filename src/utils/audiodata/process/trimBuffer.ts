@@ -46,7 +46,7 @@ export type FadeMs = { in: number | 'default'; out: number | 'default' };
  * If the two fades would overlap in the trimmed length, neither is applied.
  */
 export function trimAudioBuffer(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   buffer: AudioBuffer,
   start: number,
   end: number,

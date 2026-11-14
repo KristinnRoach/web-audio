@@ -54,7 +54,7 @@ export async function monitorLevels(
     sources: Array.isArray(node) ? node : [node],
   }));
 
-  const context = points[0]?.sources[0]?.context as AudioContext | undefined;
+  const context = points[0]?.sources[0]?.context as BaseAudioContext | undefined;
   if (!context) throw new Error('monitorLevels: no stages to monitor');
 
   await initProcessors(context);

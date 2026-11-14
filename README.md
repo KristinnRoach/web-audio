@@ -192,3 +192,18 @@ const ctx = new AudioContext();
 Tone.setContext(ctx); // before creating any Tone node
 setGlobalAudioContext(ctx); // throws while a different global context is open
 ```
+
+Factories also accept an `OfflineAudioContext` for faster-than-real-time renders.
+Play notes while rendering is suspended, so they reach the audio thread in time:
+
+```ts
+const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: 48000 * 4, sampleRate: 48000 });
+const player = await createSamplePlayer({ context: ctx, audio: sampleData });
+void ctx.suspend(0).then(() => {
+  player.play(60);
+  void ctx.resume();
+});
+const rendered = await ctx.startRendering();
+```
+
+The recorder and output-device helpers still need a real-time `AudioContext`.

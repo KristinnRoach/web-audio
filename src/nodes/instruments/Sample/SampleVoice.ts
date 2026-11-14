@@ -78,7 +78,7 @@ export class SampleVoice {
   #lpfQ: number = DEFAULT.LPF_Q;
 
   constructor(
-    private context: AudioContext,
+    private context: BaseAudioContext,
     options: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] } = {},
   ) {
     const signalChain = options.internalSignalChain ?? DEFAULT_CHAIN_ORDER;

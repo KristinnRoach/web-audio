@@ -51,7 +51,7 @@ import {
 const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
 
 export type SamplePlayerOptions = {
-  context: AudioContext;
+  context: BaseAudioContext;
   polyphony?: number;
   audio?: AudioInput;
   voiceSignalChain?: readonly SampleVoiceChainNode[];
@@ -60,7 +60,7 @@ export type SamplePlayerOptions = {
 export class SamplePlayer {
   public readonly nodeId: NodeID;
   readonly nodeType = 'sample-player' as const;
-  readonly context: AudioContext;
+  readonly context: BaseAudioContext;
   #messages: MessageBus<Message>;
 
   #initialized = false;
@@ -123,7 +123,11 @@ export class SamplePlayer {
   // Nodes on a closed context go silent without throwing
   #onContextStateChange = () => {
     if (this.context.state !== 'closed') return;
-    console.warn(`[SamplePlayer ${this.nodeId}] AudioContext closed; player is silent.`);
+    // An offline context closes when its render finishes; that's expected
+    const isOffline =
+      typeof OfflineAudioContext !== 'undefined' && this.context instanceof OfflineAudioContext;
+    if (!isOffline)
+      console.warn(`[SamplePlayer ${this.nodeId}] AudioContext closed; player is silent.`);
     this.#sendUpstreamMessage('context:closed', {});
   };
 
