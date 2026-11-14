@@ -10,7 +10,12 @@ import { clamp, mapToRange } from '@/utils';
 import { clampHz, maxSafeHz } from '@/nodes/params/audioparam-utils';
 
 import { DEFAULT } from '@/constants';
-import { DEFAULT_COMPRESSOR_SETTINGS, DEFAULT_LIMITER_SETTINGS, VOICE_SUM_GAIN } from './defaults';
+import {
+  DEFAULT_COMPRESSOR_SETTINGS,
+  DEFAULT_LIMITER_SETTINGS,
+  DISTORTION_MACRO_TRIM_DB,
+  VOICE_SUM_GAIN,
+} from './defaults';
 
 import { DattorroReverb } from '@/nodes/effects/DattorroReverb';
 import { HarmonicFeedback } from '../effects/HarmonicFeedback';
@@ -141,6 +146,7 @@ export class InstrumentBus implements ILibAudioNode {
           createDistortion(this.#context),
           this.#context,
           'distortion',
+          { createIOGains: true }, // output gain carries the macro's level trim
         );
 
         const delay = new LibAudioNode<DelayWorklet>(
@@ -498,6 +504,15 @@ export class InstrumentBus implements ILibAudioNode {
 
     const tamedForClip = mapToRange(safeAmount, 0, 1, 0, 0.95);
     this.setClippingMacro(tamedForClip);
+
+    // Drive and clipping flatten the waveform, so loudness climbs even though the
+    // peak is capped. Trim it back so the knob changes tone, not volume.
+    const trim = Math.pow(10, (DISTORTION_MACRO_TRIM_DB * safeAmount) / 20);
+    (this.getNode('distortion')?.output as GainNode | undefined)?.gain.setTargetAtTime(
+      trim,
+      this.now,
+      0.01,
+    );
   }
 
   setDrive(amount: number) {
