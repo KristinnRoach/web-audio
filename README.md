@@ -167,13 +167,13 @@ can't move between contexts, so a later change means rebuilding:
 ```ts
 import { createGlobalAudioContext, createSamplePlayer } from '@kidlib/web-audio';
 
-createGlobalAudioContext({ sampleRate: savedRate }); // at startup
+let context = createGlobalAudioContext({ sampleRate: savedRate }); // at startup
 let player = await createSamplePlayer({ audio: sampleData });
 
 async function setSampleRate(sampleRate: number) {
   player.dispose();
-  await player.context.close(); // state is only 'closed' once this resolves
-  createGlobalAudioContext({ sampleRate });
+  await context.close(); // state is only 'closed' once this resolves
+  context = createGlobalAudioContext({ sampleRate });
   player = await createSamplePlayer({ audio: sampleData });
 }
 ```

@@ -3,25 +3,13 @@ import { WorkletConfig, DefaultWorkletConfig } from './worklet-types';
 export class WorkletNode<
   TConfig extends WorkletConfig = DefaultWorkletConfig,
 > extends AudioWorkletNode {
-  private _processorReady = false;
-  private _messageQueue: TConfig['message'][] = [];
-
   constructor(
     audioContext: BaseAudioContext,
     processorName: string,
     options?: AudioWorkletNodeOptions,
   ) {
     super(audioContext, processorName, options);
-    // Listen for processor handshake
     this.port.onmessage = (event: MessageEvent<any>) => {
-      if (event.data && event.data.type === 'initialized') {
-        this._processorReady = true;
-        // Flush queued messages
-        for (const msg of this._messageQueue) {
-          this.port.postMessage(msg);
-        }
-        this._messageQueue = [];
-      }
       // Allow user to listen for other messages
       if (this._onProcessorMessage) {
         this._onProcessorMessage(event);
@@ -57,11 +45,8 @@ export class WorkletNode<
 
   // Message passing
   sendProcessorMessage(message: TConfig['message']): this {
-    if (this._processorReady) {
-      this.port.postMessage(message);
-    } else {
-      this._messageQueue.push(message);
-    }
+    // MessagePort queues until the processor listens; no main-thread round trip is needed.
+    this.port.postMessage(message);
     return this;
   }
 

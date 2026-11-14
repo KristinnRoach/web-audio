@@ -17,13 +17,13 @@ function createNode() {
 }
 
 describe('WorkletNode', () => {
-  it('queues messages until the processor handshake, then flushes in order', () => {
+  it('posts messages in order without waiting for the processor handshake', () => {
     const { node, port, receive } = createNode();
     const onMessage = vi.fn();
     node.onProcessorMessage(onMessage);
 
     node.sendProcessorMessage({ type: 'a' }).sendProcessorMessage({ type: 'b' });
-    expect(port.postMessage).not.toHaveBeenCalled();
+    expect(port.postMessage.mock.calls.map(([m]) => m.type)).toEqual(['a', 'b']);
 
     receive({ type: 'initialized' });
     node.sendProcessorMessage({ type: 'c' });
