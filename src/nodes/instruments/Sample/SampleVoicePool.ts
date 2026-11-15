@@ -207,6 +207,7 @@ export class SampleVoicePool implements LibNode {
                 glide: { fromMidiNote: this.prevMidiNote, seconds: decision.glideTime },
               });
         if (success === null) return null;
+        decision.commit();
       }
     }
     this.prevMidiNote = midiNote;

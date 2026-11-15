@@ -40,11 +40,12 @@ describe('VoiceAllocator', () => {
     const a = voice();
     allocator.voices = [a, voice()];
 
-    allocator.noteOn(60, 0.1);
+    allocator.noteOn(60, 0.1)!.commit();
     Object.assign(a, { state: 'PLAYING', midiNote: 60 });
     const second = allocator.noteOn(64, 0.1)!;
     expect(second.retuned).toBe(true);
     expect(second.actions).toEqual([{ type: 'retune', voice: a, midiNote: 64, glideTime: 0.1 }]);
+    second.commit();
     a.midiNote = 64;
 
     expect(allocator.noteOff(64)).toEqual([
