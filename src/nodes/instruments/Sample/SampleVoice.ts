@@ -808,6 +808,7 @@ export class SampleVoice {
     this.stop();
     this.disconnect();
     this.#cleanupAmpModLFO();
+    this.#feedback?.dispose();
     this.#playerWorklet.port.close();
     unregisterNode(this.nodeId);
   }

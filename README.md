@@ -209,6 +209,7 @@ void ctx.suspend(0).then(() => {
   void ctx.resume();
 });
 const rendered = await ctx.startRendering();
+player.dispose(); // after the render; nodes stay registered until disposed
 ```
 
 The recorder and output-device helpers still need a real-time `AudioContext`.

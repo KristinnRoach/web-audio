@@ -684,6 +684,10 @@ export class InstrumentBus implements ILibAudioNode {
       this.#disconnectFromTo(name);
     }
 
+    // Children register themselves in the node store; dispose them so they're released
+    for (const node of Object.values(this.#nodes)) node?.dispose();
+    for (const node of this.#sendNodes.values()) node.dispose();
+
     // Clear all maps
     this.#nodes = {};
     this.#internalRouting.clear();

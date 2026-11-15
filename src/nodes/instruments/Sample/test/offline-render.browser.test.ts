@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { getAllNodeIds } from '@/nodes/node-store';
 import { createSamplePlayer } from '../createSamplePlayer';
 
 describe('SamplePlayer on an OfflineAudioContext', () => {
-  it('renders a played note', async () => {
+  it('renders a played note and releases the player once disposed', async () => {
     const sampleRate = 48000;
+    const registered = getAllNodeIds().length;
     const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: sampleRate, sampleRate });
     const audio = ctx.createBuffer(1, sampleRate, sampleRate);
     audio.getChannelData(0).forEach((_, i, data) => {
@@ -20,5 +22,8 @@ describe('SamplePlayer on an OfflineAudioContext', () => {
 
     const peak = rendered.getChannelData(0).reduce((max, v) => Math.max(max, Math.abs(v)), 0);
     expect(peak).toBeGreaterThan(0.01);
+
+    player.dispose();
+    expect(getAllNodeIds()).toHaveLength(registered);
   });
 });
