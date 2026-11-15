@@ -193,8 +193,13 @@ Tone.setContext(ctx); // before creating any Tone node
 setGlobalAudioContext(ctx); // throws while a different global context is open
 ```
 
+The library resumes it on the next user gesture if it is suspended. If it is
+closed later, `getGlobalAudioContext()` creates a new context rather than reusing
+it, so call `setGlobalAudioContext` again with the replacement.
+
 Factories also accept an `OfflineAudioContext` for faster-than-real-time renders.
-Play notes while rendering is suspended, so they reach the audio thread in time:
+Play notes and change settings while rendering is suspended. Messages sent before
+`startRendering()` can reach the audio thread after the first frames have rendered:
 
 ```ts
 const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: 48000 * 4, sampleRate: 48000 });

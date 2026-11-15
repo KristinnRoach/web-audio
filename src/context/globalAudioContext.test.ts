@@ -197,4 +197,12 @@ describe('setGlobalAudioContext', () => {
     setGlobalAudioContext(own);
     expect(getGlobalAudioContext()).toBe(own);
   });
+
+  it('rejects a closed context', async () => {
+    const { setGlobalAudioContext, FakeAudioContext } = await loadWithSinkId('');
+    const own = new FakeAudioContext() as unknown as AudioContext;
+    await own.close();
+
+    expect(() => setGlobalAudioContext(own)).toThrow('closed');
+  });
 });

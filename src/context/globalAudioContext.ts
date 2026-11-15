@@ -22,8 +22,11 @@ export function createGlobalAudioContext(options: AudioContextOptions = {}): Aud
 }
 
 /** Makes an existing context the global one, e.g. to share it with Tone.js or your own
- *  graph. Throws while a different global context is open, like createGlobalAudioContext. */
+ *  graph. Throws while a different global context is open, like createGlobalAudioContext.
+ *  The library resumes it on the next user gesture if suspended. If it is later closed,
+ *  getGlobalAudioContext() creates a new context rather than reusing it. */
 export function setGlobalAudioContext(context: AudioContext): AudioContext {
+  assert(context.state !== 'closed', 'Cannot set a closed AudioContext as the global one.');
   assert(
     !globalAudioContext || globalAudioContext === context || globalAudioContext.state === 'closed',
     'A different global AudioContext is already open. Await its close() before setting another.',
