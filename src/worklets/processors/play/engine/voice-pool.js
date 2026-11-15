@@ -9,6 +9,8 @@ export class PoolVoice {
   state = 'AVAILABLE';
   midiNote = null;
   triggerTimestamp = -1;
+  /** Which buffer load this voice has received; see `VoicePool.bufferId`. */
+  bufferId;
   #inPitchLoop = false;
 
   /** `post` reaches this voice's node. */
@@ -61,6 +63,9 @@ export class PoolVoice {
  */
 export class VoicePool {
   allocator = new VoiceAllocator();
+  // Buffers reach each voice on its own port and notes on one, in no promised
+  // order between ports. Notes wait until every voice has the announced buffer.
+  bufferId;
   #queue = [];
 
   addVoice(voice) {
@@ -69,6 +74,10 @@ export class VoicePool {
 
   /** `pool:noteOn`, `pool:noteOff` or `pool:allNotesOff`, each with a `timestamp` in seconds. */
   schedule(event) {
+    if (event.type === 'pool:expectBuffer') {
+      this.bufferId = event.bufferId;
+      return;
+    }
     if (event.type === 'pool:allNotesOff') {
       // Takes notes that have not sounded yet with it.
       this.#queue.length = 0;
@@ -84,6 +93,7 @@ export class VoicePool {
 
   /** Applies every event due before `time`. Call at the top of each render block. */
   advance(time) {
+    if (this.allocator.voices.some((voice) => voice.bufferId !== this.bufferId)) return;
     while (this.#queue.length && this.#queue[0].timestamp < time) this.#apply(this.#queue.shift());
   }
 
@@ -104,6 +114,9 @@ export class VoicePool {
     const { glideTime } = decision;
 
     for (const { type, voice } of decision.actions) {
+      // ponytail: the start that follows replaces the stolen note from the top of this
+      // block, up to one block (~3 ms) before `timestamp`. Exact once the engine can
+      // hold a pending note while the old one plays out.
       if (type === 'steal') voice.stop(timestamp);
       else if (type === 'release') this.#release(voice, timestamp);
       else {

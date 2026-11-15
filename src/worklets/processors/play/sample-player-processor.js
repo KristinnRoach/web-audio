@@ -72,6 +72,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           this.port.postMessage(ended);
         }
         engine.setBuffer(buffer);
+        this.voice.bufferId = event.data.bufferId;
 
         this.port.postMessage({
           type: 'voice:loaded',
@@ -108,6 +109,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'pool:noteOn':
       case 'pool:noteOff':
       case 'pool:allNotesOff':
+      case 'pool:expectBuffer':
         this.pool?.schedule(event.data);
         break;
 

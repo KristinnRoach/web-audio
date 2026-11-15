@@ -31,6 +31,7 @@ export class SampleVoicePool implements LibNode {
   #loaded = new Set<NodeID>();
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
+  #bufferId = 0;
 
   constructor(
     context: BaseAudioContext,
@@ -157,7 +158,11 @@ export class SampleVoicePool implements LibNode {
     // Reset loaded voices tracking for new buffer
     this.#loaded.clear();
     this.allNotesOff(); // notes scheduled on the old buffer go with it
-    this.#allVoices.forEach((voice) => voice.loadBuffer(buffer, zeroCrossings));
+    // A rejected buffer reaches no voice, so the audio thread must not wait for it.
+    const accepted = buffer.sampleRate === this.#context.sampleRate;
+    const bufferId = accepted ? ++this.#bufferId : this.#bufferId;
+    if (accepted) this.#post({ type: 'pool:expectBuffer', bufferId });
+    this.#allVoices.forEach((voice) => voice.loadBuffer(buffer, zeroCrossings, bufferId));
     return this;
   }
 

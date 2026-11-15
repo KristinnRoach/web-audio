@@ -207,7 +207,12 @@ export class SampleVoice {
     }
   }
 
-  async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
+  /** `bufferId` is the pool's name for this load, so it can wait for every voice to have it. */
+  async loadBuffer(
+    buffer: AudioBuffer,
+    zeroCrossings?: number[],
+    bufferId?: number,
+  ): Promise<boolean> {
     if (buffer.sampleRate !== this.context.sampleRate) {
       console.warn(
         `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
@@ -227,6 +232,7 @@ export class SampleVoice {
       type: 'voice:setBuffer',
       buffer: channels,
       durationSeconds: buffer.duration,
+      bufferId,
     });
     this.#hasLoadedAudio = true;
 

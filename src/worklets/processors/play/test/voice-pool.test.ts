@@ -120,6 +120,26 @@ describe('pooled sample-player processors', () => {
     expect(started(second)).toEqual([64]);
     expect(first.engine.isPlaying && second.engine.isPlaying).toBe(true);
 
+    // A reload is announced on one port; notes wait until every voice has it.
+    const load = (processor: any) =>
+      processor.port.onmessage({
+        data: {
+          type: 'voice:setBuffer',
+          bufferId: 1,
+          buffer: [new Float32Array(TEST_SAMPLE_RATE)],
+        },
+      });
+    first.port.onmessage({ data: { type: 'pool:expectBuffer', bufferId: 1 } });
+    load(first);
+    send(67);
+    send(72);
+    first.process([], outputs(), makeParameters());
+    expect(started(second)).toEqual([64]);
+    load(second);
+    first.process([], outputs(), makeParameters());
+    expect(started(first)).toEqual([60, 67]);
+    expect(started(second)).toEqual([64, 72]);
+
     first.port.onmessage({ data: { type: 'pool:dispose' } });
   });
 });
