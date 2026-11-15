@@ -193,6 +193,12 @@ Tone.setContext(ctx); // before creating any Tone node
 setGlobalAudioContext(ctx); // throws while a different global context is open
 ```
 
+After `setContext`, use `Tone.getTransport()` and `Tone.getDestination()`: the
+`Tone.Transport` and `Tone.Destination` constants stay bound to Tone's import-time
+context. Tone effects take Tone nodes as input, so wire into them with
+`Tone.connect(player.output, effect)`. [examples/tone-interop](examples/tone-interop/index.html)
+sequences a looping SamplePlayer with Tone's Transport through a Tone reverb.
+
 The library resumes it on the next user gesture if it is suspended. If it is
 closed later, `getGlobalAudioContext()` creates a new context rather than reusing
 it, so call `setGlobalAudioContext` again with the replacement.
