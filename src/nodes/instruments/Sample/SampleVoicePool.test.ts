@@ -273,6 +273,20 @@ describe('SampleVoicePool', () => {
     pool.dispose();
   });
 
+  it('keeps earlier held notes when a reassigned note fails to start', async () => {
+    const pool = await setup();
+    pool.legato = { mode: 'always', interval: [1, 12] };
+    const [first, second] = pool.allVoices;
+    pool.noteOn(60);
+    pool.noteOn(64);
+    vi.spyOn(second, 'trigger').mockReturnValueOnce(null);
+
+    expect(pool.noteOn(60)).toBeNull();
+    expect(pool.noteOff(64)).toEqual({ midiNote: 60, glideTime: 0 });
+    expect(first.midiNote).toBe(60);
+    pool.dispose();
+  });
+
   it('glides only legato notes in legato glide mode', async () => {
     const pool = await setup();
     const [first, second] = pool.allVoices;
