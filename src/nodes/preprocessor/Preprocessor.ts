@@ -56,7 +56,7 @@ export type PreProcessResults = {
 };
 
 export async function preProcessAudioBuffer(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   buffer: AudioBuffer,
   options: Partial<PreProcessOptions> = {},
 ): Promise<PreProcessResults> {
@@ -251,7 +251,7 @@ function besselI0(x: number) {
  * @returns A new audio buffer with adjusted pitch
  */
 export function resampleForPitch(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   buffer: AudioBuffer,
   semitones: number,
 ): AudioBuffer {

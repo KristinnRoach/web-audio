@@ -16,7 +16,7 @@ const NOISE_WAVEFORMS: ReadonlySet<string> = new Set([
 const DEFAULT_NOISE_HARMONICS = 64;
 
 export class LFO {
-  #context: AudioContext;
+  #context: BaseAudioContext;
   #oscillator: OscillatorNode;
   #gain: GainNode;
   #targets: Set<AudioParam> = new Set();
@@ -34,7 +34,7 @@ export class LFO {
    */
   #rateDivisor = 1;
 
-  constructor(context: AudioContext) {
+  constructor(context: BaseAudioContext) {
     this.#context = context;
     this.#gain = context.createGain();
     this.#gain.gain.value = 0; // No mod

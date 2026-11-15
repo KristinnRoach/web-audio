@@ -15,7 +15,7 @@ export class HarmonicFeedback implements ILibAudioNode {
   readonly nodeId: NodeID;
   readonly nodeType: NodeType = 'harmonic-feedback';
   #initialized = false;
-  #context: AudioContext;
+  #context: BaseAudioContext;
 
   #delay: FbDelayWorklet;
 
@@ -36,7 +36,7 @@ export class HarmonicFeedback implements ILibAudioNode {
   #MIN_DELAY_TIME = 0.00012656238799684143; // B8 natural (H) in seconds
   #MAX_DELAY_TIME = 2;
 
-  constructor(context: AudioContext) {
+  constructor(context: BaseAudioContext) {
     this.nodeId = registerNode(this.nodeType, this);
     this.#context = context;
 

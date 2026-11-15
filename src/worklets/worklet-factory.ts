@@ -7,15 +7,15 @@ import {
 } from './worklet-types';
 import { WorkletNode } from './WorkletNode';
 
-function createFeedbackDelay(context: AudioContext) {
+function createFeedbackDelay(context: BaseAudioContext) {
   return new WorkletNode<FbDelayConfig>(context, 'feedback-delay-processor');
 }
 
-function createDistortion(context: AudioContext) {
+function createDistortion(context: BaseAudioContext) {
   return new WorkletNode<DistortionConfig>(context, 'distortion-processor') as DistortionWorklet;
 }
 
-function createDelay(context: AudioContext) {
+function createDelay(context: BaseAudioContext) {
   return new WorkletNode<DelayConfig>(context, 'delay-processor') as DelayWorklet;
 }
 

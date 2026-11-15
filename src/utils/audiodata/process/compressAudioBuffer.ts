@@ -6,7 +6,7 @@ import { copyChannelData } from '@/utils/audiodata/copyChannelData';
  * Automatically adjusts makeup gain based on input level to prevent clipping
  */
 export function compressAudioBuffer(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   buffer: AudioBuffer,
   threshold = 0.5, // Level above which compression starts
   ratio = 4, // Compression ratio (4:1 means 4dB input = 1dB output above threshold)
@@ -86,7 +86,7 @@ export function compressAudioBuffer(
  * Uses RMS (Root Mean Square) detection for more natural compression
  */
 export function compressAudioBufferRMS(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   buffer: AudioBuffer,
   options: {
     threshold?: number; // RMS level where compression starts (0-1)

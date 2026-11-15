@@ -167,16 +167,49 @@ can't move between contexts, so a later change means rebuilding:
 ```ts
 import { createGlobalAudioContext, createSamplePlayer } from '@kidlib/web-audio';
 
-createGlobalAudioContext({ sampleRate: savedRate }); // at startup
+let context = createGlobalAudioContext({ sampleRate: savedRate }); // at startup
 let player = await createSamplePlayer({ audio: sampleData });
 
 async function setSampleRate(sampleRate: number) {
   player.dispose();
-  await player.context.close(); // state is only 'closed' once this resolves
-  createGlobalAudioContext({ sampleRate });
+  await context.close(); // state is only 'closed' once this resolves
+  context = createGlobalAudioContext({ sampleRate });
   player = await createSamplePlayer({ audio: sampleData });
 }
 ```
 
 The output device set with `setAudioOutputDevice` does not carry over to the new
 context.
+
+To share a context you already have, such as Tone.js's, make it the global one
+before anything uses the global context:
+
+```ts
+import * as Tone from 'tone';
+import { setGlobalAudioContext } from '@kidlib/web-audio';
+
+const ctx = new AudioContext();
+Tone.setContext(ctx); // before creating any Tone node
+setGlobalAudioContext(ctx); // throws while a different global context is open
+```
+
+The library resumes it on the next user gesture if it is suspended. If it is
+closed later, `getGlobalAudioContext()` creates a new context rather than reusing
+it, so call `setGlobalAudioContext` again with the replacement.
+
+Factories also accept an `OfflineAudioContext` for faster-than-real-time renders.
+Play notes and change settings while rendering is suspended. Messages sent before
+`startRendering()` can reach the audio thread after the first frames have rendered:
+
+```ts
+const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: 48000 * 4, sampleRate: 48000 });
+const player = await createSamplePlayer({ context: ctx, audio: sampleData });
+void ctx.suspend(0).then(() => {
+  player.play(60);
+  void ctx.resume();
+});
+const rendered = await ctx.startRendering();
+player.dispose(); // after the render; nodes stay registered until disposed
+```
+
+The recorder and output-device helpers still need a real-time `AudioContext`.

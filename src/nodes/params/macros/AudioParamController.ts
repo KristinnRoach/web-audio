@@ -4,7 +4,7 @@ import { unregisterNode, registerNode } from '@/nodes/node-store';
 export class AudioParamController implements LibNode {
   readonly nodeId: NodeID;
   readonly nodeType = 'audio-param-controller';
-  #context: AudioContext;
+  #context: BaseAudioContext;
   #constantSignal: ConstantSourceNode;
   #targets: Array<{ param: AudioParam; scaler?: GainNode }> = [];
   #initialized: boolean = false;
@@ -17,7 +17,7 @@ export class AudioParamController implements LibNode {
     context: BaseAudioContext,
     initialValue: number = AudioParamController.MIN_EXPONENTIAL_RAMP_VALUE,
   ) {
-    this.#context = context as AudioContext;
+    this.#context = context as BaseAudioContext;
     this.nodeId = registerNode(this.nodeType, this);
 
     this.#constantSignal = context.createConstantSource();

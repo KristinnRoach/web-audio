@@ -78,7 +78,7 @@ export class SampleVoice {
   #lpfQ: number = DEFAULT.LPF_Q;
 
   constructor(
-    private context: AudioContext,
+    private context: BaseAudioContext,
     options: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] } = {},
   ) {
     const signalChain = options.internalSignalChain ?? DEFAULT_CHAIN_ORDER;
@@ -808,6 +808,7 @@ export class SampleVoice {
     this.stop();
     this.disconnect();
     this.#cleanupAmpModLFO();
+    this.#feedback?.dispose();
     this.#playerWorklet.port.close();
     unregisterNode(this.nodeId);
   }

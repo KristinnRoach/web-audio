@@ -163,3 +163,46 @@ describe('createGlobalAudioContext', () => {
     expect(getGlobalAudioContext().sampleRate).toBe(44_100);
   });
 });
+
+describe('setGlobalAudioContext', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('adopts an existing context as the global one', async () => {
+    const { setGlobalAudioContext, getGlobalAudioContext, created, FakeAudioContext } =
+      await loadWithSinkId('');
+    const own = new FakeAudioContext() as unknown as AudioContext;
+
+    setGlobalAudioContext(own);
+
+    expect(getGlobalAudioContext()).toBe(own);
+    expect(created).toHaveLength(1);
+  });
+
+  it('throws while a different global context is open, and allows it once closed', async () => {
+    const { setGlobalAudioContext, getGlobalAudioContext, FakeAudioContext } =
+      await loadWithSinkId('');
+    const first = getGlobalAudioContext();
+    const own = new FakeAudioContext() as unknown as AudioContext;
+
+    expect(() => setGlobalAudioContext(own)).toThrow();
+    expect(() => setGlobalAudioContext(first)).not.toThrow();
+
+    await first.close();
+    setGlobalAudioContext(own);
+    expect(getGlobalAudioContext()).toBe(own);
+  });
+
+  it('rejects a closed context', async () => {
+    const { setGlobalAudioContext, FakeAudioContext } = await loadWithSinkId('');
+    const own = new FakeAudioContext() as unknown as AudioContext;
+    await own.close();
+
+    expect(() => setGlobalAudioContext(own)).toThrow('closed');
+  });
+});

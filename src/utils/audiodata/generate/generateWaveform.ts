@@ -90,7 +90,7 @@ export interface WaveformOptions {
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createWave(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   type: CustomLibWaveform,
   options: WaveformOptions = {},
 ): PeriodicWave {
@@ -178,7 +178,7 @@ export function createWave(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createPulseWave(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     dutyCycle?: number;
     harmonics?: number;
@@ -209,7 +209,7 @@ export function createPulseWave(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createBandlimitedSawtooth(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     harmonics?: number;
     rolloff?: number;
@@ -241,7 +241,7 @@ export function createBandlimitedSawtooth(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createSupersaw(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     voices?: number;
     detune?: number;
@@ -284,7 +284,7 @@ export function createSupersaw(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createWarmPad(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     brightness?: number;
     harmonics?: number;
@@ -323,7 +323,7 @@ export function createWarmPad(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createMetallicWave(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     inharmonicity?: number;
     harmonics?: number;
@@ -363,7 +363,7 @@ export function createMetallicWave(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createFormantWave(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     formantFreqs?: number[];
     formantBandwidths?: number[];
@@ -412,7 +412,7 @@ export function createFormantWave(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createWaveFromFunction(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   waveFunction: (phase: number) => number,
   options: {
     harmonics?: number;
@@ -460,7 +460,7 @@ export function createWaveFromFunction(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createWhiteNoise(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     harmonics?: number;
     seed?: number;
@@ -500,7 +500,7 @@ export function createWhiteNoise(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createPinkNoise(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     harmonics?: number;
     seed?: number;
@@ -540,7 +540,7 @@ export function createPinkNoise(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createBrownNoise(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     harmonics?: number;
     seed?: number;
@@ -581,7 +581,7 @@ export function createBrownNoise(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createColoredNoise(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     harmonics?: number;
     seed?: number;
@@ -624,7 +624,7 @@ export function createColoredNoise(
  * @returns PeriodicWave for use with OscillatorNode
  */
 export function createRandomHarmonicWave(
-  audioContext: AudioContext,
+  audioContext: BaseAudioContext,
   options: {
     harmonics?: number;
     seed?: number;
