@@ -199,19 +199,25 @@ it, so call `setGlobalAudioContext` again with the replacement.
 
 To bounce a phrase to an `AudioBuffer` faster than real time, for export, a waveform
 preview or a resampled sample, use `renderOffline`. Build the graph and schedule notes
-inside the callback; it runs before the first frame renders:
+inside the callback; it runs before the first frame renders. Dispose what you
+created once the render settles, as the library keeps nodes registered until then:
 
 ```ts
-import { renderOffline, createSamplePlayer } from '@kidlib/web-audio';
+import { renderOffline, createSamplePlayer, type SamplePlayer } from '@kidlib/web-audio';
 
-const buffer = await renderOffline(
-  async (ctx) => {
-    const player = await createSamplePlayer({ context: ctx, audio: sampleData });
-    player.play(60); // now
-    player.play(64, 100, 0, 0.5); // 0.5 s in (velocity, glide, secondsFromNow)
-  },
-  { duration: 2 },
-);
+let player: SamplePlayer | undefined;
+try {
+  const buffer = await renderOffline(
+    async (ctx) => {
+      player = await createSamplePlayer({ context: ctx, audio: sampleData });
+      player.play(60); // now
+      player.play(64, 100, 0, 0.5); // 0.5 s in (velocity, glide, secondsFromNow)
+    },
+    { duration: 2 },
+  );
+} finally {
+  player?.dispose();
+}
 ```
 
 Factories also accept an `OfflineAudioContext` you manage yourself. Messages sent
