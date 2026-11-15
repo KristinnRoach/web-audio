@@ -92,7 +92,7 @@ Features add files only when they arrive, such as `engine/morph.js`, `engine/gra
 
 Not needed until we reach them:
 
-- **The processor owns its voices:** Each `SamplePlayer` would get one audio-thread engine that owns the voice pool, allocation and voice lifecycle, which are on the main thread today. Each voice keeps its own effects chain inside the engine, and the stages can still be enabled, disabled and reordered. `InstrumentBus` stays outside and processes the mixed output. With one engine per player, sample memory is one store per processor and needs no `SharedArrayBuffer`.
+- **The processor owns its voices:** Each `SamplePlayer` would get one audio-thread engine that owns the voice pool, allocation and voice lifecycle, which are on the main thread today. Each voice keeps its own effects chain inside the engine, and the stages can still be enabled, disabled and reordered. `InstrumentBus` stays outside and processes the mixed output. With one engine per player, sample memory is one store per processor and needs no `SharedArrayBuffer`. First step done: `engine/voice-allocator.js` decides and returns voice actions, and `SampleVoicePool` applies them on the main thread until the per-voice effects move too.
 - Morph frame spacing and whether it snaps to the quantized period
 - Anti-aliasing method and memory budget
 - Grain count and envelope
