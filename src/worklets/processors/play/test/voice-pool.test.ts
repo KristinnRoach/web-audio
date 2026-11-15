@@ -89,7 +89,7 @@ describe('VoicePool', () => {
   });
 });
 
-describe('pooled sample-player processors', () => {
+describe('sample-player processor voices', () => {
   setupProcessorGlobals();
 
   it('drops a rate answering a pitch decision the voice has moved on from', async () => {
@@ -123,7 +123,7 @@ describe('pooled sample-player processors', () => {
     expect(ended()).toEqual([]);
 
     load();
-    expect(ended()).toEqual([{ type: 'voice:ended', triggerId: 42 }]);
+    expect(ended()).toEqual([{ type: 'voice:ended', triggerId: 42, voice: 0 }]);
     expect(processor.engine.isPlaying).toBe(false);
 
     // Loading again while idle must not duplicate the completion.
@@ -131,55 +131,38 @@ describe('pooled sample-player processors', () => {
     expect(ended()).toHaveLength(1);
   });
 
-  it('share one pool by id and start the note on the voice it picks', async () => {
+  it('renders every voice from one buffer, each to its own outputs', async () => {
     const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
-    const create = () =>
-      new (SamplePlayerProcessor as any)({ processorOptions: { poolId: 'test-pool' } });
-    const [first, second] = [create(), create()];
-    for (const processor of [first, second]) {
-      processor.port.onmessage({
-        data: { type: 'voice:setBuffer', buffer: [new Float32Array(TEST_SAMPLE_RATE)] },
-      });
-    }
-    const send = (midiNote: number) =>
-      first.port.onmessage({
-        data: { type: 'pool:noteOn', triggerId: midiNote, midiNote, timestamp: 0, glideTime: 0 },
-      });
-    const outputs = () => [[new Float32Array(128), new Float32Array(128)], [new Float32Array(128)]];
-    const started = (processor: any) =>
+    const processor = new (SamplePlayerProcessor as any)({ processorOptions: { voiceCount: 2 } });
+    const send = (data: object) => processor.port.onmessage({ data });
+    const buffer = new Float32Array(TEST_SAMPLE_RATE).fill(0.5);
+    // No `voice` index: one copy reaches both engines.
+    send({ type: 'voice:setBuffer', buffer: [buffer] });
+    const noteOn = (midiNote: number) =>
+      send({ type: 'pool:noteOn', triggerId: midiNote, midiNote, timestamp: 0, glideTime: 0 });
+    const reports = (type: string) =>
       processor.port.postMessage.mock.calls
         .map(([message]: any) => message)
-        .filter((message: any) => message.type === 'voice:started')
-        .map((message: any) => message.midiNote);
+        .filter((message: any) => message.type === type);
 
-    // Both events arrive on the first voice's port; the second voice takes the second note.
-    send(60);
-    send(64);
-    second.process([], outputs(), makeParameters());
-    expect(started(first)).toEqual([60]);
-    expect(started(second)).toEqual([64]);
-    expect(first.engine.isPlaying && second.engine.isPlaying).toBe(true);
+    noteOn(60);
+    const stereo = () => [new Float32Array(128), new Float32Array(128)];
+    const outputs = [stereo(), [new Float32Array(128)], stereo(), [new Float32Array(128)]];
+    processor.process([], outputs, makeParameters());
 
-    // A reload is announced on one port; notes wait until every voice has it.
-    const load = (processor: any) =>
-      processor.port.onmessage({
-        data: {
-          type: 'voice:setBuffer',
-          bufferId: 1,
-          buffer: [new Float32Array(TEST_SAMPLE_RATE)],
-        },
-      });
-    first.port.onmessage({ data: { type: 'pool:expectBuffer', bufferId: 1 } });
-    load(first);
-    send(67);
-    send(72);
-    first.process([], outputs(), makeParameters());
-    expect(started(second)).toEqual([64]);
-    load(second);
-    first.process([], outputs(), makeParameters());
-    expect(started(first)).toEqual([60, 67]);
-    expect(started(second)).toEqual([64, 72]);
+    // One note: the first voice sounds on its outputs, the second stays silent.
+    expect(reports('voice:loaded').map((message: any) => message.voice)).toEqual([0, 1]);
+    expect(reports('voice:started')).toEqual([expect.objectContaining({ voice: 0, midiNote: 60 })]);
+    expect(outputs[0][0].some((sample) => sample !== 0)).toBe(true);
+    expect(outputs[2][0].every((sample) => sample === 0)).toBe(true);
 
-    first.port.onmessage({ data: { type: 'pool:dispose' } });
+    noteOn(64);
+    processor.process([], outputs, makeParameters());
+    expect(reports('voice:started')[1]).toMatchObject({ voice: 1, midiNote: 64 });
+    expect(outputs[2][0].some((sample) => sample !== 0)).toBe(true);
+
+    // A message with an index reaches only that voice.
+    send({ type: 'voice:stop', voice: 1, timestamp: 0 });
+    expect(processor.voices.map(({ voice }: any) => voice.state)).toEqual(['PLAYING', 'AVAILABLE']);
   });
 });

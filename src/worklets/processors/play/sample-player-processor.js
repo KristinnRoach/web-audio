@@ -2,10 +2,14 @@ import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-pa
 import { VoiceEngine } from './engine/voice-engine.js';
 import { PoolVoice, VoicePool } from './engine/voice-pool.js';
 
-// Every processor in a context shares this scope, which is how the voices of
-// one player meet: each joins the pool named in its options.
-const pools = new Map();
-
+/**
+ * One processor per player. It owns every voice: `processorOptions.voiceCount`
+ * engines sharing one `VoicePool` and one set of AudioParams. Voice `i` renders
+ * to output `2i` (stereo) and `2i + 1` (its filter envelope in cents).
+ *
+ * A message with a `voice` index goes to that voice, and one without goes to
+ * all of them. Every report carries the index of the voice it came from.
+ */
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== PARAMETER DESCRIPTORS =====
   static get parameterDescriptors() {
@@ -17,22 +21,23 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
 
-    this.engine = new VoiceEngine({
-      sampleRate,
-      random: () => Math.random(),
-      post: (message) => {
-        this.voice.observe(message);
-        this.port.postMessage(message);
-      },
+    this.pool = new VoicePool();
+    this.voices = Array.from({ length: options?.processorOptions?.voiceCount ?? 1 }, (_, index) => {
+      const post = (message) => this.port.postMessage({ ...message, voice: index });
+      const engine = new VoiceEngine({
+        sampleRate,
+        random: () => Math.random(),
+        post: (message) => {
+          voice.observe(message);
+          post(message);
+        },
+      });
+      const voice = new PoolVoice(engine, post);
+      this.pool.addVoice(voice);
+      return { engine, voice, post };
     });
-    this.voice = new PoolVoice(this.engine, (message) => this.port.postMessage(message));
-
-    this.poolId = options?.processorOptions?.poolId;
-    if (this.poolId !== undefined) {
-      if (!pools.has(this.poolId)) pools.set(this.poolId, new VoicePool());
-      this.pool = pools.get(this.poolId);
-      this.pool.addVoice(this.voice);
-    }
+    // The first voice, for a processor that has only one.
+    ({ engine: this.engine, voice: this.voice } = this.voices[0]);
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -43,6 +48,27 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== MESSAGE HANDLING =====
 
   #handleMessage(event) {
+    const { type, value } = event.data;
+
+    switch (type) {
+      case 'pool:noteOn':
+      case 'pool:noteOff':
+      case 'pool:allNotesOff':
+        this.pool.schedule(event.data);
+        return;
+
+      case 'pool:setLegato':
+        this.pool.allocator.legato = value;
+        return;
+    }
+
+    const index = event.data.voice;
+    for (const target of index === undefined ? this.voices : [this.voices[index]]) {
+      this.#handleVoiceMessage(target, event.data);
+    }
+  }
+
+  #handleVoiceMessage({ engine, voice, post }, data) {
     const {
       type,
       value,
@@ -55,8 +81,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       playbackDirection,
       triggerId,
       target,
-    } = event.data;
-    const engine = this.engine;
+    } = data;
 
     switch (type) {
       case 'setLoopQuantizePeriods':
@@ -69,13 +94,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // Allocation can already be available while a scheduled stop is still pending.
         if (engine.isPlaying) {
           const ended = { type: 'voice:ended', triggerId: engine.triggerId };
-          this.voice.observe(ended);
-          this.port.postMessage(ended);
+          voice.observe(ended);
+          post(ended);
         }
         engine.setBuffer(buffer);
-        this.voice.bufferId = event.data.bufferId;
 
-        this.port.postMessage({
+        post({
           type: 'voice:loaded',
           durationSeconds,
           time: currentTime,
@@ -92,36 +116,21 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:start':
-        this.voice.start(triggerId, timestamp, event.data);
+        voice.start(triggerId, timestamp, data);
         break;
 
       case 'voice:setRate':
         // An answer to a fallback the pool has since moved on from.
-        if (event.data.pitchId !== undefined && event.data.pitchId !== this.voice.pitchId) break;
-        engine.setNoteRate(timestamp, value, event.data.glideSeconds);
+        if (data.pitchId !== undefined && data.pitchId !== voice.pitchId) break;
+        engine.setNoteRate(timestamp, value, data.glideSeconds);
         break;
 
       case 'voice:stop':
-        this.voice.stop(timestamp);
+        voice.stop(timestamp);
         break;
 
       case 'voice:release':
-        this.voice.release(timestamp);
-        break;
-
-      case 'pool:noteOn':
-      case 'pool:noteOff':
-      case 'pool:allNotesOff':
-      case 'pool:expectBuffer':
-        this.pool?.schedule(event.data);
-        break;
-
-      case 'pool:setLegato':
-        if (this.pool) this.pool.allocator.legato = value;
-        break;
-
-      case 'pool:dispose':
-        pools.delete(this.poolId);
+        voice.release(timestamp);
         break;
 
       case 'setEnvelope':
@@ -131,7 +140,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'setLoopEnabled':
         engine.loopEnabled = value;
 
-        this.port.postMessage({
+        post({
           type: 'loop:enabled',
           enabled: value,
         });
@@ -180,37 +189,15 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== MAIN PROCESS METHOD =====
 
   process(inputs, outputs, parameters) {
-    const output = outputs[0];
+    this.pool.advance(currentTime + (outputs[0]?.[0]?.length ?? 128) / sampleRate);
 
-    // Whichever voice renders first settles the notes due in this block for all of them.
-    this.pool?.advance(currentTime + (output?.[0]?.length ?? 128) / sampleRate);
-
-    if (!output || !this.engine.canRender) {
-      if (output) this.engine.reportIdle(parameters, currentTime);
-      return true;
-    }
-
-    // Handle different output structures
-    let outputChannels;
-    if (output instanceof Float32Array) {
-      // Case 1: output is a single Float32Array (mono output - legacy)
-      outputChannels = [output];
-    } else if (Array.isArray(output) && output.every((ch) => ch instanceof Float32Array)) {
-      // Case 2: output is array of Float32Arrays (stereo/multi-channel output)
-      outputChannels = output;
-    } else {
-      console.error('Unexpected output structure:', {
-        outputType: typeof output,
-        isArray: Array.isArray(output),
-        constructor: output?.constructor?.name,
-        length: output?.length,
-      });
-      return true;
-    }
-
-    // Optional second output: the filter envelope in cents, silent (0) when inactive.
-    const filterOutput = outputs[1]?.[0];
-    this.engine.render(outputChannels, parameters, currentFrame, currentTime, filterOutput);
+    this.voices.forEach(({ engine }, index) => {
+      const output = outputs[index * 2];
+      if (!output) return;
+      if (!engine.canRender) return engine.reportIdle(parameters, currentTime);
+      // Second output: the filter envelope in cents, silent (0) when inactive.
+      engine.render(output, parameters, currentFrame, currentTime, outputs[index * 2 + 1]?.[0]);
+    });
     return true;
   }
 }

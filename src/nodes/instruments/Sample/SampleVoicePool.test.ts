@@ -56,7 +56,7 @@ vi.mock('./createSampleVoice', async () => {
     /** Every event is due at once, so a test reads the decision on the next line. */
     sendToProcessor(message: any) {
       if (message.type === 'pool:setLegato') this.pool.allocator.legato = message.value;
-      else if (message.type !== 'pool:dispose') {
+      else {
         this.pool.schedule(message);
         this.pool.advance(Infinity);
       }

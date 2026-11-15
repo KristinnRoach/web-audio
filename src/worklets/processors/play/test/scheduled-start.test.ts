@@ -160,7 +160,7 @@ describe('scheduled sample start', () => {
     const lifecycle = processor.port.postMessage.mock.calls
       .map(([message]) => message)
       .filter((message) => message.type.startsWith('voice:'));
-    expect(lifecycle).toEqual([{ type: 'voice:ended', triggerId: TEST_TRIGGER_ID }]);
+    expect(lifecycle).toEqual([{ type: 'voice:ended', triggerId: TEST_TRIGGER_ID, voice: 0 }]);
   });
 
   it('reports when playback reaches the sample boundary', async () => {
@@ -174,6 +174,7 @@ describe('scheduled sample start', () => {
     expect(processor.port.postMessage).toHaveBeenCalledWith({
       type: 'voice:ended',
       triggerId: TEST_TRIGGER_ID,
+      voice: 0,
     });
   });
 });
