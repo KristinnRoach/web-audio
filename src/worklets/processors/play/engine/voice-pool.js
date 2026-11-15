@@ -11,6 +11,8 @@ export class PoolVoice {
   triggerTimestamp = -1;
   /** Which buffer load this voice has received; see `VoicePool.bufferId`. */
   bufferId;
+  /** Counts pitch decisions, so a rate the node sends back for an older one can be dropped. */
+  pitchId = 0;
   #inPitchLoop = false;
 
   /** `post` reaches this voice's node. */
@@ -27,6 +29,7 @@ export class PoolVoice {
     this.state = 'PLAYING';
     this.midiNote = note.midiNote ?? null;
     this.triggerTimestamp = timestamp ?? 0;
+    this.pitchId++;
     this.#inPitchLoop = false;
     this.engine.start(triggerId, timestamp, note);
   }
@@ -67,6 +70,7 @@ export class VoicePool {
   // order between ports. Notes wait until every voice has the announced buffer.
   bufferId;
   #queue = [];
+  #lastNoteId;
 
   addVoice(voice) {
     this.allocator.voices.push(voice);
@@ -109,6 +113,7 @@ export class VoicePool {
       return;
     }
 
+    this.#lastNoteId = event.triggerId;
     const decision = this.allocator.noteOn(midiNote, event.glideTime);
     if (!decision) return;
     const { glideTime } = decision;
@@ -150,9 +155,20 @@ export class VoicePool {
 
   #retune(voice, { midiNote, timestamp, velocity, playbackRate }, glideTime) {
     voice.midiNote = midiNote;
+    voice.pitchId++;
     const fallback = playbackRate === undefined;
     if (!fallback) voice.engine.setNoteRate(timestamp, playbackRate, glideTime);
-    voice.post({ type: 'voice:retuned', midiNote, velocity, timestamp, glideTime, fallback });
+    voice.post({
+      type: 'voice:retuned',
+      midiNote,
+      velocity,
+      timestamp,
+      glideTime,
+      fallback,
+      // Let the node tell whether its answer, or the glide origin, is already out of date.
+      pitchId: voice.pitchId,
+      noteId: this.#lastNoteId,
+    });
   }
 
   #release(voice, timestamp) {

@@ -83,13 +83,26 @@ describe('VoicePool', () => {
 
     expect(voices[0].engine.setNoteRate.mock.calls).toEqual([[1, 2, 0]]);
     expect(voices[0].post).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: 'voice:retuned', midiNote: 60, fallback: true }),
+      // Third pitch decision on this voice: start, retune, fallback.
+      expect.objectContaining({ type: 'voice:retuned', midiNote: 60, fallback: true, pitchId: 3 }),
     );
   });
 });
 
 describe('pooled sample-player processors', () => {
   setupProcessorGlobals();
+
+  it('drops a rate answering a pitch decision the voice has moved on from', async () => {
+    const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
+    const processor = new (SamplePlayerProcessor as any)();
+    const setNoteRate = vi.spyOn(processor.engine, 'setNoteRate');
+    processor.voice.pitchId = 2;
+    processor.port.onmessage({ data: { type: 'voice:setRate', value: 2, pitchId: 1 } });
+    expect(setNoteRate).not.toHaveBeenCalled();
+    processor.port.onmessage({ data: { type: 'voice:setRate', value: 2, pitchId: 2 } });
+    processor.port.onmessage({ data: { type: 'voice:setRate', value: 2 } });
+    expect(setNoteRate).toHaveBeenCalledTimes(2);
+  });
 
   it('reports completion when a buffer swap clears playback with a scheduled stop', async () => {
     const { SamplePlayerProcessor } = await import('../sample-player-processor.js');

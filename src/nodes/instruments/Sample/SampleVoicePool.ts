@@ -32,6 +32,7 @@ export class SampleVoicePool implements LibNode {
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
   #bufferId = 0;
+  #initAttempt = 0;
 
   constructor(
     context: BaseAudioContext,
@@ -54,7 +55,9 @@ export class SampleVoicePool implements LibNode {
         this.#allVoices = await createSampleVoices(this.#polyphony, this.#context, {
           internalSignalChain: this.#voiceSignalChain,
           // Voices sharing an id form one pool on the audio thread, which allocates.
-          processorOptions: { poolId: this.nodeId },
+          // ponytail: a new id per attempt keeps voices orphaned by a failed init out of
+          // the retry's pool; their pool leaks until one processor owns all the voices.
+          processorOptions: { poolId: `${this.nodeId}:${++this.#initAttempt}` },
         });
         this.#post({ type: 'pool:setLegato', value: this.#legato });
 
@@ -148,7 +151,10 @@ export class SampleVoicePool implements LibNode {
           }
           return null;
         }
-        if (msg.type === 'voice:retuned' && msg.fallback) this.prevMidiNote = msg.midiNote;
+        // A fallback decided before a later noteOn must not take the glide origin back.
+        if (msg.type === 'voice:retuned' && msg.fallback && msg.noteId === this.#noteId) {
+          this.prevMidiNote = msg.midiNote;
+        }
         return msg;
       },
     );

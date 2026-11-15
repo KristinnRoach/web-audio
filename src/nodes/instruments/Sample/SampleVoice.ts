@@ -262,11 +262,23 @@ export class SampleVoice {
   }
 
   /** Moves a sounding note: playback rate, feedback and the AM LFO follow. */
-  #applyPitch(midiNote: MidiValue, timestamp: number, glideSeconds: number, sendRate = true) {
+  #applyPitch(
+    midiNote: MidiValue,
+    timestamp: number,
+    glideSeconds: number,
+    sendRate = true,
+    pitchId?: number,
+  ) {
     const soundingNote = midiNote + this.#pitchOffset;
     const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
     if (sendRate) {
-      this.#setNoteRate(playbackRate, timestamp, this.#pitchDisabled ? 0 : glideSeconds);
+      this.sendToProcessor({
+        type: 'voice:setRate',
+        value: playbackRate,
+        timestamp,
+        glideSeconds: this.#pitchDisabled ? 0 : glideSeconds,
+        pitchId,
+      });
     }
     this.#feedback?.setPitch(soundingNote, 0, timestamp, glideSeconds);
     this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
@@ -649,7 +661,13 @@ export class SampleVoice {
         case 'voice:retuned':
           if (this.#state !== VoiceState.PLAYING) return;
           // The pool set the rate itself unless the voice fell back to an earlier held note.
-          this.#applyPitch(data.midiNote, data.timestamp, data.glideTime, data.fallback);
+          this.#applyPitch(
+            data.midiNote,
+            data.timestamp,
+            data.glideTime,
+            data.fallback,
+            data.pitchId,
+          );
           data = { voiceId: this.nodeId, ...data };
           break;
 

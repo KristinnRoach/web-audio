@@ -96,6 +96,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:setRate':
+        // An answer to a fallback the pool has since moved on from.
+        if (event.data.pitchId !== undefined && event.data.pitchId !== this.voice.pitchId) break;
         engine.setNoteRate(timestamp, value, event.data.glideSeconds);
         break;
 
