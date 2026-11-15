@@ -1,7 +1,7 @@
 /**
  * Decides which voices a note event touches. It reads voice state and
- * returns actions for the owner to apply in order, so the same code can run on
- * the main thread (today) or inside the processor.
+ * returns actions for the owner to apply in order. `VoicePool` runs it on the
+ * audio thread.
  *
  * A voice is anything with `state` ('AVAILABLE' | 'PLAYING' | 'RELEASING'),
  * `midiNote`, `triggerTimestamp` and `isInPitchLoop`.

@@ -258,14 +258,48 @@ describe('SampleVoice state', () => {
       type: 'voice:start',
       timestamp: 0,
       triggerId: 1,
+      midiNote: 72,
       playbackRate: 2,
       velocity: 100,
+      glideTime: 0,
+      glideFromNote: null,
     });
 
     voice.release({ secondsFromNow: 2 });
     expect(audio.posted.at(-1)).toEqual({ type: 'voice:release', timestamp: 2 });
     expect(voice.state).toBe(VoiceState.RELEASING);
     endPlayback(1);
+    expect(voice.state).toBe(VoiceState.AVAILABLE);
+  });
+
+  it('follows a pool that started, retuned and released it on the audio thread', async () => {
+    const voice = await loadedVoice();
+    const stopped = vi.fn();
+    voice.onMessage('voice:stopped', stopped);
+    const report = (data: object) => audio.port.onmessage({ data });
+    const started = { type: 'voice:started', velocity: 100, timestamp: 0, glideTime: 0 };
+
+    report({ ...started, triggerId: 7, midiNote: 60, glideFromNote: null });
+    expect(voice.state).toBe(VoiceState.PLAYING);
+    expect(voice.midiNote).toBe(60);
+    expect(audio.posted).toEqual([]); // the pool already started the engine
+
+    // Only a fallback leaves the rate to the node.
+    report({ type: 'voice:retuned', midiNote: 64, timestamp: 0, glideTime: 0, fallback: false });
+    expect(audio.posted).toEqual([]);
+    report({ type: 'voice:retuned', midiNote: 72, timestamp: 0, glideTime: 0, fallback: true });
+    expect(audio.posted.at(-1)).toMatchObject({ type: 'voice:setRate', value: 2 });
+
+    // Stolen for a new note: the old one stops without a processor report.
+    report({ ...started, triggerId: 8, midiNote: 67, glideFromNote: null });
+    expect(stopped).toHaveBeenCalledWith(expect.objectContaining({ midiNote: 72 }));
+    expect(voice.midiNote).toBe(67);
+
+    report({ type: 'voice:releasing' });
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    endPlayback(7); // a stale end changes nothing
+    expect(voice.state).toBe(VoiceState.RELEASING);
+    endPlayback(8);
     expect(voice.state).toBe(VoiceState.AVAILABLE);
   });
 

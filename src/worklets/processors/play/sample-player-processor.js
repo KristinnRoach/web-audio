@@ -1,5 +1,10 @@
 import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
 import { VoiceEngine } from './engine/voice-engine.js';
+import { PoolVoice, VoicePool } from './engine/voice-pool.js';
+
+// Every processor in a context shares this scope, which is how the voices of
+// one player meet: each joins the pool named in its options.
+const pools = new Map();
 
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== PARAMETER DESCRIPTORS =====
@@ -9,14 +14,25 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   // ===== CONSTRUCTOR =====
 
-  constructor() {
+  constructor(options) {
     super();
 
     this.engine = new VoiceEngine({
       sampleRate,
       random: () => Math.random(),
-      post: (message) => this.port.postMessage(message),
+      post: (message) => {
+        this.voice.observe(message);
+        this.port.postMessage(message);
+      },
     });
+    this.voice = new PoolVoice(this.engine, (message) => this.port.postMessage(message));
+
+    this.poolId = options?.processorOptions?.poolId;
+    if (this.poolId !== undefined) {
+      if (!pools.has(this.poolId)) pools.set(this.poolId, new VoicePool());
+      this.pool = pools.get(this.poolId);
+      this.pool.addVoice(this.voice);
+    }
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -48,6 +64,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:setBuffer': {
+        // The swap drops a sounding note without a report. The node stops its
+        // own first, but a note the pool started meanwhile is news to it.
+        if (this.voice.state !== 'AVAILABLE') {
+          const ended = { type: 'voice:ended', triggerId: engine.triggerId };
+          this.voice.observe(ended);
+          this.port.postMessage(ended);
+        }
         engine.setBuffer(buffer);
 
         this.port.postMessage({
@@ -67,7 +90,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:start':
-        engine.start(triggerId, timestamp, event.data);
+        this.voice.start(triggerId, timestamp, event.data);
         break;
 
       case 'voice:setRate':
@@ -75,11 +98,25 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:stop':
-        engine.stop(timestamp);
+        this.voice.stop(timestamp);
         break;
 
       case 'voice:release':
-        engine.release(timestamp);
+        this.voice.release(timestamp);
+        break;
+
+      case 'pool:noteOn':
+      case 'pool:noteOff':
+      case 'pool:allNotesOff':
+        this.pool?.schedule(event.data);
+        break;
+
+      case 'pool:setLegato':
+        if (this.pool) this.pool.allocator.legato = value;
+        break;
+
+      case 'pool:dispose':
+        pools.delete(this.poolId);
         break;
 
       case 'setEnvelope':
@@ -139,6 +176,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs, parameters) {
     const output = outputs[0];
+
+    // Whichever voice renders first settles the notes due in this block for all of them.
+    this.pool?.advance(currentTime + (output?.[0]?.length ?? 128) / sampleRate);
 
     if (!output || !this.engine.canRender) {
       if (output) this.engine.reportIdle(parameters, currentTime);
