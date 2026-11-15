@@ -197,19 +197,25 @@ The library resumes it on the next user gesture if it is suspended. If it is
 closed later, `getGlobalAudioContext()` creates a new context rather than reusing
 it, so call `setGlobalAudioContext` again with the replacement.
 
-Factories also accept an `OfflineAudioContext` for faster-than-real-time renders.
-Play notes and change settings while rendering is suspended. Messages sent before
-`startRendering()` can reach the audio thread after the first frames have rendered:
+To bounce a phrase to an `AudioBuffer` faster than real time, for export, a waveform
+preview or a resampled sample, use `renderOffline`. Build the graph and schedule notes
+inside the callback; it runs before the first frame renders:
 
 ```ts
-const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: 48000 * 4, sampleRate: 48000 });
-const player = await createSamplePlayer({ context: ctx, audio: sampleData });
-void ctx.suspend(0).then(() => {
-  player.play(60);
-  void ctx.resume();
-});
-const rendered = await ctx.startRendering();
-player.dispose(); // after the render; nodes stay registered until disposed
+import { renderOffline, createSamplePlayer } from '@kidlib/web-audio';
+
+const buffer = await renderOffline(
+  async (ctx) => {
+    const player = await createSamplePlayer({ context: ctx, audio: sampleData });
+    player.play(60); // now
+    player.play(64, 100, 0, 0.5); // 0.5 s in (velocity, glide, secondsFromNow)
+  },
+  { duration: 2 },
+);
 ```
+
+Factories also accept an `OfflineAudioContext` you manage yourself. Messages sent
+before `startRendering()` can reach the audio thread after the first frames have
+rendered, so send notes and settings while rendering is suspended, as `renderOffline` does.
 
 The recorder and output-device helpers still need a real-time `AudioContext`.
