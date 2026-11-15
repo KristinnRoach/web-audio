@@ -91,6 +91,33 @@ describe('VoicePool', () => {
 describe('pooled sample-player processors', () => {
   setupProcessorGlobals();
 
+  it('reports completion when a buffer swap clears playback with a scheduled stop', async () => {
+    const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
+    const processor = new (SamplePlayerProcessor as any)();
+    const send = (data: object) => processor.port.onmessage({ data });
+    const load = () =>
+      send({ type: 'voice:setBuffer', buffer: [new Float32Array(TEST_SAMPLE_RATE)] });
+    const ended = () =>
+      processor.port.postMessage.mock.calls
+        .map(([message]: any) => message)
+        .filter((message: any) => message.type === 'voice:ended');
+
+    load();
+    send({ type: 'voice:start', triggerId: 42, timestamp: 0 });
+    send({ type: 'voice:stop', timestamp: 1 });
+    expect(processor.voice.state).toBe('AVAILABLE');
+    expect(processor.engine.isPlaying).toBe(true);
+    expect(ended()).toEqual([]);
+
+    load();
+    expect(ended()).toEqual([{ type: 'voice:ended', triggerId: 42 }]);
+    expect(processor.engine.isPlaying).toBe(false);
+
+    // Loading again while idle must not duplicate the completion.
+    load();
+    expect(ended()).toHaveLength(1);
+  });
+
   it('share one pool by id and start the note on the voice it picks', async () => {
     const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
     const create = () =>

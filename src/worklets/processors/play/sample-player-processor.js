@@ -66,7 +66,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'voice:setBuffer': {
         // The swap drops a sounding note without a report. The node stops its
         // own first, but a note the pool started meanwhile is news to it.
-        if (this.voice.state !== 'AVAILABLE') {
+        // Allocation can already be available while a scheduled stop is still pending.
+        if (engine.isPlaying) {
           const ended = { type: 'voice:ended', triggerId: engine.triggerId };
           this.voice.observe(ended);
           this.port.postMessage(ended);
