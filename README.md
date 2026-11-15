@@ -212,4 +212,7 @@ const rendered = await ctx.startRendering();
 player.dispose(); // after the render; nodes stay registered until disposed
 ```
 
+Firefox doesn't implement `OfflineAudioContext.suspend()`
+([bug 1265406](https://bugzil.la/1265406)), so this pattern needs Chromium or Safari.
+
 The recorder and output-device helpers still need a real-time `AudioContext`.
