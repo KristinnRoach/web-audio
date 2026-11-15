@@ -54,6 +54,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   const sendToProcessor = vi.fn();
   const setPitchOffset = vi.fn();
   const setBusFeedbackPitch = vi.fn();
+  const poolHandlers = new Map<string, (message: any) => void>();
   player.setLoopPitchQuantization({ scale: [2], lowestOctave: 0, highestOctave: 5 });
 
   await initTestPlayer(
@@ -67,8 +68,21 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
           setParam() {},
           setLoopPoints() {},
         } as never),
-      noteOn: () => ({ midiNote: 60, glideTime: 0, retuned: false }),
-      noteOff: () => ({ midiNote: 57, glideTime: 0.1 }),
+      onMessage: (type, handler) => {
+        poolHandlers.set(type, handler);
+        return () => {};
+      },
+      noteOn: () => 60,
+      // A legato voice falls back to an earlier held note and reports it.
+      noteOff: (_midiNote, secondsFromNow) =>
+        poolHandlers.get('voice:retuned')?.({
+          type: 'voice:retuned',
+          senderId: 'test',
+          midiNote: 57,
+          glideTime: 0.1,
+          timestamp: secondsFromNow,
+          fallback: true,
+        }),
       dispose() {},
     },
     { noteOn() {}, noteOff() {}, getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,

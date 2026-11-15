@@ -4,7 +4,6 @@ import { VoiceState } from '../VoiceState';
 import { Message, MessageHandler, MessageBus, createMessageBus } from '@/events';
 import { GainStages, LibNode } from '@/nodes/LibNode';
 import { createSampleVoices } from './createSampleVoice';
-import { VoiceAllocator } from '@/worklets/processors/play/engine/voice-allocator.js';
 
 /**
  * When noteOn retunes a playing voice instead of triggering a new one.
@@ -30,8 +29,10 @@ export class SampleVoicePool implements LibNode {
 
   #allVoices: SampleVoice[] = [];
   #loaded = new Set<NodeID>();
-  // Decides; this class applies. Lives with the engine so it can move into the processor.
-  #allocator = new VoiceAllocator();
+  #legato: LegatoSettings = { mode: 'off' };
+  #noteId = 0;
+  #bufferId = 0;
+  #initAttempt = 0;
 
   constructor(
     context: BaseAudioContext,
@@ -53,9 +54,13 @@ export class SampleVoicePool implements LibNode {
       try {
         this.#allVoices = await createSampleVoices(this.#polyphony, this.#context, {
           internalSignalChain: this.#voiceSignalChain,
+          // Voices sharing an id form one pool on the audio thread, which allocates.
+          // ponytail: a new id per attempt keeps voices orphaned by a failed init out of
+          // the retry's pool; their pool leaks until one processor owns all the voices.
+          processorOptions: { poolId: `${this.nodeId}:${++this.#initAttempt}` },
         });
+        this.#post({ type: 'pool:setLegato', value: this.#legato });
 
-        this.#allocator.voices = this.#allVoices;
         this.#allVoices.forEach((voice) => {
           this.#setupMessageHandling(voice);
         });
@@ -130,6 +135,7 @@ export class SampleVoicePool implements LibNode {
         'voice:started',
         'voice:stopped',
         'voice:releasing',
+        'voice:retuned',
         'voice:loaded',
         'loop:range',
         'trim:range',
@@ -145,6 +151,10 @@ export class SampleVoicePool implements LibNode {
           }
           return null;
         }
+        // A fallback decided before a later noteOn must not take the glide origin back.
+        if (msg.type === 'voice:retuned' && msg.fallback && msg.noteId === this.#noteId) {
+          this.prevMidiNote = msg.midiNote;
+        }
         return msg;
       },
     );
@@ -153,92 +163,72 @@ export class SampleVoicePool implements LibNode {
   setBuffer(buffer: AudioBuffer, zeroCrossings?: number[]) {
     // Reset loaded voices tracking for new buffer
     this.#loaded.clear();
-    this.#allVoices.forEach((voice) => voice.loadBuffer(buffer, zeroCrossings));
+    this.allNotesOff(); // notes scheduled on the old buffer go with it
+    // A rejected buffer reaches no voice, so the audio thread must not wait for it.
+    const accepted = buffer.sampleRate === this.#context.sampleRate;
+    const bufferId = accepted ? ++this.#bufferId : this.#bufferId;
+    if (accepted) this.#post({ type: 'pool:expectBuffer', bufferId });
+    this.#allVoices.forEach((voice) => voice.loadBuffer(buffer, zeroCrossings, bufferId));
     return this;
   }
 
-  allocate(): SampleVoice | undefined {
-    const voice = this.#allocator.selectVoice(this.#allVoices) as SampleVoice | undefined;
-
-    if (!voice) {
-      console.warn('Could not allocate voice');
-      return;
-    }
-
-    if (voice.state !== VoiceState.AVAILABLE) voice.stop();
-
-    return voice;
+  /** Any voice's port reaches the pool on the audio thread. */
+  #post(message: object) {
+    this.#allVoices[0]?.sendToProcessor(message);
   }
 
   prevMidiNote = 60;
 
   get legato(): LegatoSettings {
-    return this.#allocator.legato;
+    return this.#legato;
   }
 
   set legato(settings: LegatoSettings) {
-    this.#allocator.legato = settings;
+    this.#legato = settings;
+    this.#post({ type: 'pool:setLegato', value: settings });
   }
 
+  /**
+   * Queues the note for the audio thread, which picks the voice when the note
+   * is due. What it decided comes back as `voice:started` or `voice:retuned`.
+   * Null when no audio is loaded.
+   */
   noteOn(
     midiNote: MidiValue,
     velocity: MidiValue = 100,
     secondsFromNow = 0,
     glideTime = 0,
-  ): { midiNote: MidiValue; glideTime: number; retuned: boolean } | null {
-    const decision = this.#allocator.noteOn(midiNote, glideTime);
-    if (!decision) {
-      console.warn('Could not allocate voice');
-      return null;
-    }
-
-    for (const action of decision.actions) {
-      const voice = action.voice as SampleVoice;
-      if (action.type === 'steal') voice.stop();
-      else if (action.type === 'release') voice.release({ secondsFromNow });
-      else {
-        const success =
-          action.type === 'retune'
-            ? voice.retune(midiNote, secondsFromNow, decision.glideTime)
-            : voice.trigger({
-                midiNote,
-                velocity,
-                secondsFromNow,
-                glide: { fromMidiNote: this.prevMidiNote, seconds: decision.glideTime },
-              });
-        if (success === null) return null;
-        decision.commit();
-      }
-    }
-    this.prevMidiNote = midiNote;
-    return { midiNote, glideTime: decision.glideTime, retuned: decision.retuned };
-  }
-
-  /** Returns the earlier held note a legato voice fell back to, if any. */
-  noteOff(
-    midiNote: MidiValue,
-    secondsFromNow: number = 0,
-  ): { midiNote: MidiValue; glideTime: number } | null {
-    let fallback: { midiNote: MidiValue; glideTime: number } | null = null;
-    for (const action of this.#allocator.noteOff(midiNote)) {
-      const voice = action.voice as SampleVoice;
-      if (action.type === 'retune') {
-        voice.retune(action.midiNote, secondsFromNow, action.glideTime);
-        this.prevMidiNote = action.midiNote;
-        fallback = { midiNote: action.midiNote, glideTime: action.glideTime };
-      } else voice.release({ secondsFromNow });
-    }
-
-    return fallback;
-  }
-
-  allNotesOff() {
-    this.#allVoices.forEach((voice) => {
-      if (voice.state === VoiceState.PLAYING) {
-        voice.release();
-      }
+  ): MidiValue | null {
+    const voice = this.#allVoices[0];
+    if (!voice?.hasLoadedAudio) return null;
+    this.#post({
+      type: 'pool:noteOn',
+      triggerId: ++this.#noteId,
+      // ponytail: every voice shares one pitch setting, so any voice can work out the
+      // note's rate. Per-voice tuning means the audio thread computing it per voice.
+      ...voice.noteMessage({
+        midiNote,
+        velocity,
+        secondsFromNow,
+        glide: { fromMidiNote: this.prevMidiNote, seconds: glideTime },
+      }),
     });
+    this.prevMidiNote = midiNote;
+    return midiNote;
+  }
 
+  /** A legato voice falling back to an earlier held note reports `voice:retuned` with `fallback`. */
+  noteOff(midiNote: MidiValue, secondsFromNow: number = 0) {
+    this.#post({
+      type: 'pool:noteOff',
+      midiNote,
+      timestamp: this.#context.currentTime + secondsFromNow,
+    });
+  }
+
+  /** Releases every held note and drops the ones still waiting to sound. */
+  allNotesOff() {
+    this.#post({ type: 'pool:allNotesOff', timestamp: this.#context.currentTime });
     return this;
   }
 
@@ -285,10 +275,9 @@ export class SampleVoicePool implements LibNode {
   }
 
   dispose() {
+    this.#post({ type: 'pool:dispose' });
     this.applyToAllVoices((voice) => voice.dispose());
-    this.#allocator.clear();
     this.#allVoices = [];
-    this.#allocator.voices = [];
     this.#loaded.clear();
     this.#initialized = false;
     this.#initPromise = null;

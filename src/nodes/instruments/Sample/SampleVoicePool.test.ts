@@ -4,17 +4,32 @@ import type { SamplePlayer } from './SamplePlayer';
 import type { Message, MessageHandler } from '../../../events';
 import { VoiceState } from '../VoiceState';
 
-const fake = vi.hoisted(() => ({ triggerTimestamp: 0 }));
+type FakeEngine = Record<'start' | 'stop' | 'release' | 'setNoteRate', ReturnType<typeof vi.fn>>;
+/** The fake engine behind a test voice, where the pool's decisions land. */
+const engineOf = (voice: unknown) => (voice as { engine: FakeEngine }).engine;
 
-vi.mock('./createSampleVoice', () => {
+vi.mock('./createSampleVoice', async () => {
+  const { PoolVoice, VoicePool } =
+    await import('../../../worklets/processors/play/engine/voice-pool.js');
+
+  /** Stands in for a SampleVoice and its processor: messages reach a real VoicePool at once. */
   class TestVoice {
     state: VoiceState = VoiceState.AVAILABLE;
     midiNote: number | null = null;
-    triggerTimestamp = -1;
-    get isInPitchLoop() {
-      return false;
-    }
+    hasLoadedAudio = true;
+    engine = {
+      loopEnabled: true,
+      start: vi.fn(),
+      stop: vi.fn(),
+      release: vi.fn(),
+      setNoteRate: vi.fn(),
+    };
+    poolVoice = new PoolVoice(this.engine, (message: any) => this.#receive(message));
     handlers = new Map<string, Set<MessageHandler<Message>>>();
+
+    constructor(private pool: InstanceType<typeof VoicePool>) {
+      pool.addVoice(this.poolVoice);
+    }
 
     onMessage(type: string, handler: MessageHandler<Message>) {
       const handlers = this.handlers.get(type) ?? new Set();
@@ -23,48 +38,69 @@ vi.mock('./createSampleVoice', () => {
       return () => handlers.delete(handler);
     }
 
-    #emit(type: string, midiNote = this.midiNote) {
-      this.handlers.get(type)?.forEach((handler) => handler({ type, senderId: 'test', midiNote }));
+    #emit(type: string, data = {}) {
+      const message = { type, senderId: 'test', midiNote: this.midiNote, ...data };
+      this.handlers.get(type)?.forEach((handler) => handler(message));
     }
 
-    trigger({ midiNote }: { midiNote: number }): number | null {
-      if (this.state !== VoiceState.AVAILABLE) return null;
-      this.state = VoiceState.PLAYING;
-      this.midiNote = midiNote;
-      this.triggerTimestamp = ++fake.triggerTimestamp;
-      this.#emit('voice:started');
+    #receive({ type, ...data }: any) {
+      if (type === 'voice:started') {
+        if (this.state !== VoiceState.AVAILABLE) this.#emit('voice:stopped');
+        this.state = VoiceState.PLAYING;
+        this.midiNote = data.midiNote;
+      } else if (type === 'voice:retuned') this.midiNote = data.midiNote;
+      else if (type === 'voice:releasing') this.state = VoiceState.RELEASING;
+      this.#emit(type, data);
+    }
+
+    /** Every event is due at once, so a test reads the decision on the next line. */
+    sendToProcessor(message: any) {
+      if (message.type === 'pool:setLegato') this.pool.allocator.legato = message.value;
+      else if (message.type !== 'pool:dispose') {
+        this.pool.schedule(message);
+        this.pool.advance(Infinity);
+      }
+    }
+
+    /** Rates stand in as note numbers, so a test can read them back. */
+    noteMessage({ midiNote, velocity, secondsFromNow = 0, glide }: any) {
+      return {
+        timestamp: secondsFromNow,
+        midiNote,
+        playbackRate: midiNote,
+        velocity,
+        glideTime: glide.seconds,
+        glideFromNote: glide.fromMidiNote,
+        glideFrom: glide.fromMidiNote,
+        glideSeconds: glide.seconds,
+      };
+    }
+
+    trigger({ midiNote }: { midiNote: number }) {
+      this.poolVoice.start(0, 0, { midiNote });
+      this.#receive({ type: 'voice:started', midiNote });
       return midiNote;
-    }
-
-    retune(midiNote: number) {
-      this.midiNote = midiNote;
-      return midiNote;
-    }
-
-    setLoopEnabled = vi.fn();
-
-    release() {
-      if (this.state !== VoiceState.PLAYING) return this;
-      this.state = VoiceState.RELEASING;
-      this.#emit('voice:releasing');
-      return this;
     }
 
     stop() {
       if (this.state === VoiceState.AVAILABLE) return this;
-      const midiNote = this.midiNote;
+      this.poolVoice.stop(0);
+      this.#emit('voice:stopped');
       this.state = VoiceState.AVAILABLE;
       this.midiNote = null;
-      this.#emit('voice:stopped', midiNote);
       return this;
     }
+
+    setLoopEnabled = vi.fn();
 
     dispose() {}
   }
 
   return {
-    createSampleVoices: async (numVoices: number) =>
-      Array.from({ length: numVoices }, () => new TestVoice()),
+    createSampleVoices: async (numVoices: number) => {
+      const pool = new VoicePool();
+      return Array.from({ length: numVoices }, () => new TestVoice(pool));
+    },
   };
 });
 
@@ -99,6 +135,7 @@ describe('SamplePlayer sustain with the real voice pool', () => {
       player,
       {
         allVoices: pool.allVoices,
+        onMessage: pool.onMessage.bind(pool),
         noteOn: pool.noteOn.bind(pool),
         noteOff: pool.noteOff.bind(pool),
         allNotesOff: pool.allNotesOff.bind(pool),
@@ -204,9 +241,8 @@ describe('SamplePlayer sustain with the real voice pool', () => {
 });
 
 async function setup(polyphony = 3) {
-  fake.triggerTimestamp = 0;
   const { SampleVoicePool } = await import('./SampleVoicePool');
-  const pool = new SampleVoicePool({} as AudioContext, polyphony);
+  const pool = new SampleVoicePool({ currentTime: 0 } as AudioContext, polyphony);
   await pool.init();
   return pool;
 }
@@ -216,8 +252,8 @@ describe('SampleVoicePool', () => {
     const pool = await setup();
     pool.legato = { mode: 'always' };
     const voice = pool.allVoices[0];
-    const retrigger = vi.spyOn(voice, 'trigger');
-    const retune = vi.spyOn(voice, 'retune');
+    const retuned = vi.fn();
+    pool.onMessage('voice:retuned', retuned);
     pool.noteOn(0);
     pool.noteOn(62);
     pool.noteOn(64);
@@ -225,17 +261,22 @@ describe('SampleVoicePool', () => {
     pool.noteOff(62);
     expect(voice.midiNote).toBe(65);
 
-    expect(pool.noteOff(65, 0.2)).toEqual({ midiNote: 64, glideTime: 0.4 });
+    pool.noteOff(65, 0.2);
+    expect(retuned).toHaveBeenLastCalledWith(
+      expect.objectContaining({ midiNote: 64, timestamp: 0.2, glideTime: 0.4, fallback: true }),
+    );
     expect(voice.midiNote).toBe(64);
-    expect(retune).toHaveBeenLastCalledWith(64, 0.2, 0.4);
     pool.noteOff(64);
     expect(voice.midiNote).toBe(0);
-    const nextTrigger = vi.spyOn(pool.allVoices[1], 'trigger');
     pool.legato = { mode: 'off' };
     pool.noteOn(72, 100, 0, 0.2);
-    expect(nextTrigger.mock.calls[0][0].glide).toEqual({ fromMidiNote: 0, seconds: 0.2 });
+    // The next note glides from the note the voice fell back to.
+    expect(engineOf(pool.allVoices[1]).start.mock.lastCall?.[2]).toMatchObject({
+      glideFrom: 0,
+      glideSeconds: 0.2,
+    });
     expect(voice.state).toBe(VoiceState.PLAYING);
-    expect(retrigger).toHaveBeenCalledOnce();
+    expect(engineOf(voice).start).toHaveBeenCalledOnce();
     pool.noteOff(0);
     expect(voice.state).toBe(VoiceState.RELEASING);
     pool.dispose();
@@ -273,33 +314,31 @@ describe('SampleVoicePool', () => {
     pool.dispose();
   });
 
-  it('keeps earlier held notes when a reassigned note fails to start', async () => {
-    const pool = await setup();
-    pool.legato = { mode: 'always', interval: [1, 12] };
-    const [first, second] = pool.allVoices;
-    pool.noteOn(60);
-    pool.noteOn(64);
-    vi.spyOn(second, 'trigger').mockReturnValueOnce(null);
-
-    expect(pool.noteOn(60)).toBeNull();
-    expect(pool.noteOff(64)).toEqual({ midiNote: 60, glideTime: 0 });
-    expect(first.midiNote).toBe(60);
-    pool.dispose();
-  });
-
   it('glides only legato notes in legato glide mode', async () => {
     const pool = await setup();
     const [first, second] = pool.allVoices;
     pool.legato = { mode: 'always', interval: [-12, 12], glide: 'legato' };
-    const trigger = vi.spyOn(second, 'trigger');
+    const started = vi.fn();
+    const retuned = vi.fn();
+    pool.onMessage('voice:started', started);
+    pool.onMessage('voice:retuned', retuned);
     pool.noteOn(60, 100, 0, 0.3);
-    expect(pool.noteOn(64, 100, 0, 0.3)).toEqual({ midiNote: 64, glideTime: 0.3, retuned: true });
-    expect(pool.noteOn(90, 100, 0, 0.3)).toEqual({ midiNote: 90, glideTime: 0, retuned: false });
-    expect(trigger.mock.calls[0][0].glide).toEqual({ fromMidiNote: 64, seconds: 0 });
+    pool.noteOn(64, 100, 0, 0.3);
+    expect(retuned).toHaveBeenLastCalledWith(
+      expect.objectContaining({ midiNote: 64, glideTime: 0.3, fallback: false }),
+    );
+    pool.noteOn(90, 100, 0, 0.3);
+    expect(started).toHaveBeenLastCalledWith(
+      expect.objectContaining({ midiNote: 90, glideTime: 0 }),
+    );
+    expect(engineOf(second).start.mock.lastCall?.[2]).not.toHaveProperty('glideFrom');
     expect(first.midiNote).toBe(64);
 
     pool.legato = { mode: 'off' };
-    expect(pool.noteOn(50, 100, 0, 0.3)?.glideTime).toBe(0.3);
+    pool.noteOn(50, 100, 0, 0.3);
+    expect(started).toHaveBeenLastCalledWith(
+      expect.objectContaining({ midiNote: 50, glideTime: 0.3 }),
+    );
     pool.dispose();
   });
 
@@ -341,16 +380,13 @@ describe('SampleVoicePool', () => {
     const [first, second] = pool.allVoices;
     pool.noteOn(60);
     pool.noteOn(62);
-    vi.spyOn(second, 'isInPitchLoop', 'get').mockReturnValue(true);
+    vi.spyOn((second as any).poolVoice, 'isInPitchLoop', 'get').mockReturnValue(true);
     pool.legato = { mode: 'pitchLoop' };
-    const retrigger = vi.spyOn(second, 'trigger');
-    const retune = vi.spyOn(second, 'retune');
-    const stop = vi.spyOn(second, 'stop');
 
-    expect(pool.noteOn(65, 20, 0.2, 0.3)).toEqual({ midiNote: 65, glideTime: 0.3, retuned: true });
-    expect(retune).toHaveBeenCalledWith(65, 0.2, 0.3);
-    expect(retrigger).not.toHaveBeenCalled();
-    expect(stop).not.toHaveBeenCalled();
+    pool.noteOn(65, 20, 0.2, 0.3);
+    expect(engineOf(second).setNoteRate).toHaveBeenCalledWith(0.2, 65, 0.3);
+    expect(engineOf(second).start).toHaveBeenCalledOnce();
+    expect(engineOf(second).stop).not.toHaveBeenCalled();
     expect(first.midiNote).toBe(60);
     expect(pool.playingVoicesCount).toBe(2);
     pool.noteOff(62);
@@ -374,14 +410,12 @@ describe('SampleVoicePool', () => {
     pool.noteOn(64);
     pool.noteOff(62);
 
-    const stopSecond = vi.spyOn(second, 'stop');
     pool.noteOn(65);
-    expect(stopSecond).toHaveBeenCalledOnce();
+    expect(engineOf(second).stop).toHaveBeenCalledOnce();
     expect(second.midiNote).toBe(65);
 
-    const stopFirst = vi.spyOn(first, 'stop');
     pool.noteOn(67);
-    expect(stopFirst).toHaveBeenCalledOnce();
+    expect(engineOf(first).stop).toHaveBeenCalledOnce();
     expect(pool.allVoices.map((voice) => voice.midiNote)).toEqual([67, 65, 64]);
     expect(third.state).toBe(VoiceState.PLAYING);
     expect(pool.playingVoicesCount).toBe(3);
@@ -392,18 +426,15 @@ describe('SampleVoicePool', () => {
   it('releases an earlier same-note voice and routes note-off to its replacement', async () => {
     const pool = await setup();
     const [first, second] = pool.allVoices;
-    const releaseFirst = vi.spyOn(first, 'release');
-    const releaseSecond = vi.spyOn(second, 'release');
-
     pool.noteOn(0);
     pool.noteOn(0, 100, 0.2);
 
-    expect(releaseFirst).toHaveBeenCalledWith({ secondsFromNow: 0.2 });
+    expect(engineOf(first).release).toHaveBeenCalledWith(0.2);
     expect(first.state).toBe(VoiceState.RELEASING);
     expect(second.state).toBe(VoiceState.PLAYING);
 
     pool.noteOff(0, 0.1);
-    expect(releaseSecond).toHaveBeenCalledWith({ secondsFromNow: 0.1 });
+    expect(engineOf(second).release).toHaveBeenCalledWith(0.1);
     expect(pool.playingVoicesCount).toBe(0);
     expect(pool.releasingVoicesCount).toBe(2);
 

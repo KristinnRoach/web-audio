@@ -207,7 +207,12 @@ export class SampleVoice {
     }
   }
 
-  async loadBuffer(buffer: AudioBuffer, zeroCrossings?: number[]): Promise<boolean> {
+  /** `bufferId` is the pool's name for this load, so it can wait for every voice to have it. */
+  async loadBuffer(
+    buffer: AudioBuffer,
+    zeroCrossings?: number[],
+    bufferId?: number,
+  ): Promise<boolean> {
     if (buffer.sampleRate !== this.context.sampleRate) {
       console.warn(
         `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
@@ -227,6 +232,7 @@ export class SampleVoice {
       type: 'voice:setBuffer',
       buffer: channels,
       durationSeconds: buffer.duration,
+      bufferId,
     });
     this.#hasLoadedAudio = true;
 
@@ -256,10 +262,24 @@ export class SampleVoice {
   }
 
   /** Moves a sounding note: playback rate, feedback and the AM LFO follow. */
-  #applyPitch(midiNote: MidiValue, timestamp: number, glideSeconds: number) {
+  #applyPitch(
+    midiNote: MidiValue,
+    timestamp: number,
+    glideSeconds: number,
+    sendRate = true,
+    pitchId?: number,
+  ) {
     const soundingNote = midiNote + this.#pitchOffset;
     const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
-    this.#setNoteRate(playbackRate, timestamp, this.#pitchDisabled ? 0 : glideSeconds);
+    if (sendRate) {
+      this.sendToProcessor({
+        type: 'voice:setRate',
+        value: playbackRate,
+        timestamp,
+        glideSeconds: this.#pitchDisabled ? 0 : glideSeconds,
+        pitchId,
+      });
+    }
     this.#feedback?.setPitch(soundingNote, 0, timestamp, glideSeconds);
     this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
       timestamp,
@@ -279,6 +299,32 @@ export class SampleVoice {
     return this.#state === VoiceState.PLAYING && this.#loopEnabled && this.#isInPitchLoop;
   }
 
+  /**
+   * The note as a processor starts it. `trigger()` sends it to this voice; a
+   * pool posts it and lets the audio thread pick the voice.
+   */
+  noteMessage(options: {
+    midiNote: MidiValue;
+    velocity: MidiValue;
+    secondsFromNow?: number;
+    glide?: { fromMidiNote: number; seconds: number };
+  }) {
+    const { midiNote, velocity, secondsFromNow = 0 } = options;
+    const glideTime = options.glide?.seconds ?? 0;
+    const glideFromNote = glideTime > 0 ? options.glide!.fromMidiNote + this.#pitchOffset : null;
+    const soundingNote = midiNote + this.#pitchOffset;
+    const glides = !this.#pitchDisabled && glideFromNote !== null;
+    return {
+      timestamp: this.now + secondsFromNow,
+      midiNote,
+      playbackRate: this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote),
+      velocity,
+      glideTime,
+      glideFromNote,
+      ...(glides && { glideFrom: midiToPlaybackRate(glideFromNote), glideSeconds: glideTime }),
+    };
+  }
+
   trigger(options: {
     midiNote: MidiValue;
     velocity: MidiValue;
@@ -286,56 +332,58 @@ export class SampleVoice {
     glide?: { fromMidiNote: number; seconds: number };
   }): MidiValue | null {
     if (!this.#hasLoadedAudio) return null;
-    const { midiNote, velocity, secondsFromNow = 0 } = options;
-    const timestamp = this.now + secondsFromNow;
+    const note = this.noteMessage(options);
 
     if (this.#state !== VoiceState.AVAILABLE) {
-      console.log(`had to stop a playing voice, midinote: ${midiNote}`);
-      this.stop(timestamp);
+      console.log(`had to stop a playing voice, midinote: ${note.midiNote}`);
+      this.stop(note.timestamp);
       return null;
     }
 
     this.#transitionTo(VoiceState.PLAYING, {
-      midiNote,
-      startedTimestamp: timestamp,
+      midiNote: note.midiNote,
+      startedTimestamp: note.timestamp,
     });
-
-    const glideSeconds = options.glide?.seconds ?? 0;
-    const glideFrom = glideSeconds > 0 ? options.glide!.fromMidiNote + this.#pitchOffset : null;
-    const soundingNote = midiNote + this.#pitchOffset;
-    const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
 
     // Everything the note needs travels with it, so nothing races its first sample.
-    const glides = !this.#pitchDisabled && glideFrom !== null;
-    this.sendToProcessor({
-      type: 'voice:start',
-      timestamp,
-      triggerId: this.#triggerId,
-      playbackRate,
-      velocity,
-      ...(glides && { glideFrom: midiToPlaybackRate(glideFrom), glideSeconds }),
-    });
+    this.sendToProcessor({ type: 'voice:start', triggerId: this.#triggerId, ...note });
+    this.#announceStart(note);
+
+    return this.#midiNote;
+  }
+
+  /** Tells listeners and this voice's effects about a note that has started. */
+  #announceStart(note: {
+    midiNote: MidiValue;
+    velocity: MidiValue;
+    timestamp: number;
+    glideTime: number;
+    glideFromNote: number | null;
+  }) {
+    const { midiNote, velocity, timestamp, glideTime, glideFromNote } = note;
     this.#sendUpstreamMessage('voice:started', {
       voiceId: this.nodeId,
-      midiNote: this.#midiNote,
+      midiNote,
+      velocity,
+      timestamp,
+      glideTime,
     });
 
-    // Trigger effects
+    const soundingNote = midiNote + this.#pitchOffset;
     this.#feedback?.trigger(soundingNote, {
       velocity,
-      secondsFromNow,
-      glideTime: glideSeconds,
+      secondsFromNow: Math.max(0, timestamp - this.now),
+      glideTime,
       triggerDecay: true,
     });
 
     this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
       divisor: 1,
-      glideTime: glideSeconds,
-      glideFromMidiNote: glideFrom === null ? undefined : glideFrom + this.#am_lfo_semitone_offset,
+      glideTime,
+      glideFromMidiNote:
+        glideFromNote === null ? undefined : glideFromNote + this.#am_lfo_semitone_offset,
       timestamp,
     });
-
-    return this.#midiNote;
   }
 
   #transitionTo(state: VoiceState, note?: { midiNote: number; startedTimestamp: number }) {
@@ -593,6 +641,42 @@ export class SampleVoice {
           }
           break;
 
+        // The pool picked this voice on the audio thread; its effects follow from here.
+        case 'voice:started': {
+          if (this.#state !== VoiceState.AVAILABLE) {
+            // Stolen: the note it held ends without a report of its own.
+            const midiNote = this.#midiNote;
+            this.#transitionTo(VoiceState.AVAILABLE);
+            this.#sendUpstreamMessage('voice:stopped', { voiceId: this.nodeId, midiNote });
+          }
+          this.#transitionTo(VoiceState.PLAYING, {
+            midiNote: data.midiNote,
+            startedTimestamp: data.timestamp,
+          });
+          this.#triggerId = data.triggerId;
+          this.#announceStart(data);
+          return;
+        }
+
+        case 'voice:retuned':
+          if (this.#state !== VoiceState.PLAYING) return;
+          // The pool set the rate itself unless the voice fell back to an earlier held note.
+          this.#applyPitch(
+            data.midiNote,
+            data.timestamp,
+            data.glideTime,
+            data.fallback,
+            data.pitchId,
+          );
+          data = { voiceId: this.nodeId, ...data };
+          break;
+
+        case 'voice:releasing':
+          if (this.#state !== VoiceState.PLAYING) return;
+          this.#transitionTo(VoiceState.RELEASING);
+          data = { voiceId: this.nodeId, midiNote: this.#midiNote };
+          break;
+
         case 'voice:ended': {
           if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
             return;
@@ -662,6 +746,10 @@ export class SampleVoice {
 
   get initialized() {
     return this.#isInitialized;
+  }
+
+  get hasLoadedAudio() {
+    return this.#hasLoadedAudio;
   }
 
   get now(): number {

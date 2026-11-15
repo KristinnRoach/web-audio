@@ -333,6 +333,9 @@ export class SamplePlayer {
       this.#sendUpstreamMessage('sample-player:initialized', {});
     });
 
+    this.#voicePool.onMessage('voice:started', (report) => this.#followVoice(report, false));
+    this.#voicePool.onMessage('voice:retuned', (report) => this.#followVoice(report, true));
+
     // Forward voice pool messages upstream
     this.#messages.forwardFrom(this.#voicePool, [
       'voice-pool:initialized',
@@ -541,8 +544,8 @@ export class SamplePlayer {
   /* === PLAYBACK === */
 
   /**
-   * `secondsFromNow` schedules the note on the audio clock. The voice is
-   * allocated now, so a scheduled note counts toward polyphony straight away.
+   * `secondsFromNow` schedules the note on the audio clock. Its voice is picked
+   * when the note sounds, from whatever is playing then.
    */
   play(
     midiNote: MidiValue,
@@ -562,22 +565,13 @@ export class SamplePlayer {
     this.#lastPlayedNote = midiNote;
     this.#syncLFOsToNote(soundingNote);
 
-    const played = this.#voicePool.noteOn(
+    // The audio thread picks the voice; the bus follows its report in #followVoice.
+    return this.#voicePool.noteOn(
       midiNote,
       safeVelocity,
       secondsFromNow,
       glideTime / GLIDE_TEMP_SCALAR,
     );
-    if (!played) return null;
-    // The bus follows the pool: same glide, and a legato retune doesn't restart its decay.
-    this.#outBus.noteOn(
-      soundingNote,
-      safeVelocity,
-      secondsFromNow,
-      played.glideTime,
-      played.retuned,
-    );
-    return played.midiNote;
   }
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
@@ -593,7 +587,7 @@ export class SamplePlayer {
     // Remove from sustained notes if it was there
     this.#sustainedNotes.delete(midiNote);
 
-    this.#followFallback(this.#voicePool.noteOff(midiNote, secondsFromNow), secondsFromNow);
+    this.#voicePool.noteOff(midiNote, secondsFromNow);
     this.#outBus.noteOff(midiNote + this.#pitchOffset);
     this.#sendUpstreamMessage('note:off', { midiNote });
     return this;
@@ -619,14 +613,22 @@ export class SamplePlayer {
     return this.#transposeSemitones + this.#fineTuneCents / 100;
   }
 
-  /** A legato voice returning to an earlier held note takes the note-tracking LFOs and bus feedback with it. */
-  #followFallback(fallback: { midiNote: MidiValue; glideTime: number } | null, secondsFromNow = 0) {
-    if (!fallback) return;
-    const soundingNote = fallback.midiNote + this.#pitchOffset;
-    this.#lastPlayedNote = fallback.midiNote;
+  /**
+   * The pool reports each note once its voice is picked. The bus follows: same
+   * glide, and a legato retune doesn't restart its decay. A voice falling back
+   * to an earlier held note takes the note-tracking LFOs and bus feedback with it.
+   */
+  #followVoice(report: Message, retuned: boolean) {
+    const soundingNote = report.midiNote + this.#pitchOffset;
+    const secondsFromNow = Math.max(0, report.timestamp - this.now);
+    if (!report.fallback) {
+      this.#outBus.noteOn(soundingNote, report.velocity, secondsFromNow, report.glideTime, retuned);
+      return;
+    }
+    this.#lastPlayedNote = report.midiNote;
     const timestamp = this.now + secondsFromNow;
     this.#syncLFOsToNote(soundingNote, timestamp);
-    this.#outBus.getFeedback()?.setPitch(soundingNote, 0, timestamp, fallback.glideTime);
+    this.#outBus.getFeedback()?.setPitch(soundingNote, 0, timestamp, report.glideTime);
   }
 
   #syncLFOsToNote(soundingNote: number, timestamp = this.now) {
