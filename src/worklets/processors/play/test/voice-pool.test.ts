@@ -23,6 +23,34 @@ function setup(voiceCount = 2) {
 }
 
 describe('VoicePool', () => {
+  it('queues a scheduled flood with bounded timestamp comparisons and stable ties', () => {
+    const { pool, voices } = setup(1);
+    let timestampReads = 0;
+    const events = Array.from({ length: 800 }, (_, index) => ({
+      type: 'pool:noteOn',
+      triggerId: index,
+      midiNote: 60,
+      glideTime: 0,
+      // Interleaved on/off times, including ties, as in a scheduled note flood.
+      get timestamp() {
+        timestampReads++;
+        return Math.floor(index / 2) * 0.005 + (index % 2 ? 0.15 : 0);
+      },
+    }));
+    for (const event of events) pool.schedule(event);
+
+    // Re-sorting the full queue per event reads timestamps over 600,000 times.
+    // Binary insertion needs at most two reads per level for each event.
+    expect(timestampReads).toBeLessThanOrEqual(
+      2 * events.length * Math.ceil(Math.log2(events.length)),
+    );
+    const expected = [...events].sort((a, b) => a.timestamp - b.timestamp);
+    pool.advance(10);
+    expect(voices[0].engine.start.mock.calls.map(([triggerId]) => triggerId)).toEqual(
+      expected.map((event) => event.triggerId),
+    );
+  });
+
   it('decides a scheduled note from the voices as they are when it sounds', () => {
     const { pool, voices, noteOn } = setup(1);
     const [{ voice, engine }] = voices;

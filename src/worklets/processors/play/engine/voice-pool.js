@@ -86,9 +86,20 @@ export class VoicePool {
       }
       return;
     }
+    // Insert after equal timestamps, preserving post order without re-sorting the
+    // entire queue for every message in a scheduled burst on the audio thread.
+    let low = 0;
+    let high = this.#queue.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (this.#queue[middle].timestamp <= event.timestamp) low = middle + 1;
+      else high = middle;
+    }
     this.#queue.push(event);
-    // Stable, so events at one timestamp keep the order they were posted in.
-    this.#queue.sort((a, b) => a.timestamp - b.timestamp);
+    for (let index = this.#queue.length - 1; index > low; index--) {
+      this.#queue[index] = this.#queue[index - 1];
+    }
+    this.#queue[low] = event;
   }
 
   /** A played note's rate under the current pitch settings. */
