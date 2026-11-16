@@ -228,6 +228,12 @@ export class SamplePlayer {
         // Processors persist the periods across sample loads, so they are sent once here.
         // Keeps any periods configured before init.
         this.#post({ type: 'setLoopQuantizePeriods', value: this.#loopPitchPeriods });
+        // Replay what was set before the worklet existed. Pitch periods follow the
+        // first sample load, which sends them for 'period' mode.
+        this.#post({ type: 'setLoopEnabled', value: this.#loopEnabled });
+        this.#post({ type: 'setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
+        this.#post({ type: 'setTimestretchMode', value: this.#timestretchMode });
+        this.#voices.forEach((voice) => voice.setPitchOffset(this.#pitchOffset));
 
         // Connect audio chain
         this.#connectAudioChain();

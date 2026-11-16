@@ -154,6 +154,41 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   }
 });
 
+it('replays settings made before init to the processor and voices', async () => {
+  vi.stubGlobal('window', {});
+  vi.stubGlobal('AudioContext', class {});
+  vi.stubGlobal('AudioWorkletNode', class {});
+  vi.stubGlobal(
+    'GainNode',
+    class {
+      connect() {}
+      disconnect() {}
+    },
+  );
+  const { SamplePlayer } = await import('./SamplePlayer');
+  const { SampleVoice } = await import('./SampleVoice');
+  const setPitchOffset = vi.spyOn(SampleVoice.prototype, 'setPitchOffset');
+  const context = Object.assign(new EventTarget(), { currentTime: 0 });
+  const player = new SamplePlayer({ context: context as unknown as AudioContext, polyphony: 2 });
+
+  try {
+    player.transpose(2).fineTune(-50).setLoopEnabled(true).setKeytrackLoopAmount(0.25);
+    player.setTimestretchMode('period');
+    const { ofType } = await initTestPlayer(player);
+
+    expect(ofType('setLoopEnabled')).toEqual([{ type: 'setLoopEnabled', value: true }]);
+    expect(ofType('setKeytrackLoopAmount')).toEqual([
+      { type: 'setKeytrackLoopAmount', value: 0.25 },
+    ]);
+    expect(ofType('setTimestretchMode')).toEqual([{ type: 'setTimestretchMode', value: 'period' }]);
+    expect(setPitchOffset.mock.calls).toEqual([[1.5], [1.5]]);
+  } finally {
+    player.dispose();
+    setPitchOffset.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
+
 it('keeps LFO routing and parameter mappings behind player controls', async () => {
   vi.stubGlobal('window', {});
   vi.stubGlobal('AudioContext', class {});
