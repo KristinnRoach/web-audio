@@ -192,7 +192,9 @@ export class VoicePool {
   #retune(voice, { midiNote, timestamp, velocity }, glideTime, fallback) {
     voice.midiNote = midiNote;
     if (fallback) this.#glideOrigin = midiNote;
-    voice.engine.setNoteRate(timestamp, this.rate(midiNote), this.pitchEnabled ? glideTime : 0);
+    // With pitch off a legato note keeps its glide, so it does not cut the ramp to rate 1 short.
+    const glides = this.pitchEnabled || !fallback;
+    voice.engine.setNoteRate(timestamp, this.rate(midiNote), glides ? glideTime : 0);
     voice.post({
       type: 'voice:retuned',
       midiNote,

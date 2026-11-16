@@ -117,6 +117,22 @@ describe('VoicePool', () => {
     expect(voices[1].engine.start.mock.lastCall?.[2]).toMatchObject({ glideFrom: 1 });
   });
 
+  it('keeps a legato glide while pitch is off, but not a fallback glide', () => {
+    const { pool, voices, noteOn } = setup();
+    pool.allocator.legato = { mode: 'always' };
+    noteOn(60, 0);
+    pool.advance(1);
+    pool.setPitchEnabled(false, 1);
+    noteOn(64, 2, 0.2);
+    pool.schedule({ type: 'pool:noteOff', midiNote: 64, timestamp: 3 });
+    pool.advance(10);
+
+    expect(voices[0].engine.setNoteRate.mock.calls.slice(1)).toEqual([
+      [2, 1, 0.2],
+      [3, 1, 0],
+    ]);
+  });
+
   it('retunes held notes when the pitch settings change', () => {
     const { pool, voices, noteOn } = setup();
     noteOn(60, 0);

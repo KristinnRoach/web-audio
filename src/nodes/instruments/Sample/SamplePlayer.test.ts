@@ -689,7 +689,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
   });
 
   /** The port reaches a real VoicePool at once, so a test reads its decision on the next line. */
-  async function setup() {
+  async function setup(beforeInit?: (player: SamplePlayer) => void) {
     vi.stubGlobal('window', {});
     vi.stubGlobal('AudioContext', class {});
     vi.stubGlobal('AudioWorkletNode', class {});
@@ -720,6 +720,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     const releaseAll = vi.fn();
     const setPitch = vi.fn();
     player = new SamplePlayer({ context, polyphony: voices.length });
+    beforeInit?.(player);
     const test = await initTestPlayer(player, {
       bus: { noteOff, releaseAll, getFeedback: () => ({ setPitch }) } as never,
       onPost: (message) => {
@@ -836,6 +837,15 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     player.setSustainPedal(true);
     player.setSustainPedal(false);
     expect(loop()).toHaveLength(count);
+  });
+
+  it('applies a transpose set before init to the processor and the voice effects', async () => {
+    const { player, ofType } = await setup((player) => player.transpose(12));
+    expect(ofType('pool:setPitchOffset')[0].value).toBe(12);
+    player.play(60);
+    // The AM LFO sits an octave above the sounding note by default.
+    const amNotes = getTestLFOs().flatMap((lfo) => lfo.setMusicalNote.mock.calls.map(([n]) => n));
+    expect(amNotes).toContain(84);
   });
 
   it('posts note-off untagged at the scheduled time and tells the bus the sounding note', async () => {

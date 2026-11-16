@@ -223,6 +223,7 @@ export class SamplePlayer {
 
         this.#post({ type: 'pool:setLegato', value: this.#legato });
         this.#post({ type: 'pool:setPitchOffset', value: this.#pitchOffset });
+        this.#voices.forEach((voice) => voice.setPitchOffset(this.#pitchOffset));
         this.#post({ type: 'pool:setPitchEnabled', value: this.#pitchEnabled });
         if (this.#interpolationMode !== null) {
           this.#post({ type: 'setInterpolation', value: this.#interpolationMode });
