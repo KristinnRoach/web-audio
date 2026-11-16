@@ -2,12 +2,4 @@
 '@kidlib/web-audio': patch
 ---
 
-Fix distortion and pumping on chords in `SamplePlayer`. Voices now sum with about 9 dB of headroom, and the bus compressor is out of the signal path, so the limiter only catches rare peaks. Output is quieter than before, most of all on single notes; raise `setVolume()` to compensate. `setCompressorParams()` and `getCompressor()` remain but no longer affect the sound.
-
-AM and the amp LFO now dip below the unmodulated level instead of boosting above it, so raising their depth no longer adds up to 6 dB.
-
-The distortion macro now lowers its output as it goes up (up to -15 dB at full), offsetting the loudness that drive and clipping add.
-
-Harmonic feedback auto-gain is now on, so the top of the Feedback knob adds less loudness. Above feedback 0.8 its output also comes from the soft-clipped loop signal.
-
-`SamplePlayer` output now starts at the `volume` param default (0.75) instead of 0.5, so a player that never calls `setVolume()` is about 3.5 dB louder.
+Fix clipping and pumping on chords. Output is quieter (more headroom, bus compressor bypassed), but the `volume` default rises to 0.75. AM, amp LFO, distortion and feedback add less loudness at high settings. `setCompressorParams()` no longer affects the sound.
