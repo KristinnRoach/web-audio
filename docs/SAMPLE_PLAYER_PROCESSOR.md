@@ -12,14 +12,15 @@ The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/
 
 ## The `voice` tag
 
-- Main → processor: a message with `voice: i` goes to voice `i`; one without `voice` goes to every voice. `pool:*` messages go to the allocator and ignore the tag.
-- Processor → main: every report except `initialized` carries the `voice` index it came from. `SamplePlayer` applies it to its record `voices[voice]`.
+- Main → processor: a voice message with `voice: i` goes to voice `i`; one without `voice` goes to every voice. `pool:*` and `flush` are node-wide and ignore the tag.
+- Processor → main: every report except `initialized` and `flushed` carries the `voice` index it came from. `SamplePlayer` applies it to its record `voices[voice]`.
 - `SamplePlayer` posts only untagged messages. Tagged messages remain for the engine tests in `src/worklets/processors/play/test/`, which drive voices directly.
 
 ## Main → processor
 
 | type                           | fields                                                                                      | tag      | sent by                                                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `flush`                        | `id`                                                                                        | untagged | `flushMessages()`                                                                   |
 | `pool:noteOn`                  | `triggerId`, `timestamp`, `midiNote`, `velocity`, `glideTime`                               | untagged | `play()`                                                                            |
 | `pool:noteOff`                 | `midiNote`, `timestamp`                                                                     | untagged | `release()`                                                                         |
 | `pool:allNotesOff`             | `timestamp`                                                                                 | untagged | `releaseAll()`, so also every load and `dispose()`                                  |
@@ -48,6 +49,7 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 
 | type              | fields                                                                                                    | notes                                                                                          |
 | ----------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `flushed`         | `id`                                                                                                      | untagged acknowledgement of `flush`; all preceding port messages have been handled.            |
 | `initialized`     | none                                                                                                      | untagged, once, from the constructor. The player then posts the settings marked above.         |
 | `voice:loaded`    | `durationSeconds`, `time`                                                                                 | one per voice per `voice:setBuffer`. The player emits `sample:loaded` after the last one.      |
 | `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                            | allocator picked this voice; posted before the engine starts, so it precedes its reports.      |
@@ -73,6 +75,14 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 - `voice:setPitchPeriods` follows `voice:setBuffer`: a new buffer clears the periods.
 - Settings posted before `initialized` arrive are queued and applied in order; `initialized` only tells the player its voices are on defaults and need the player's envelopes, glides and position tracking.
 - `voice:started` is posted before the voice's first `loop:range`/`trim:range`, so the main thread knows the note's `triggerId` before ranges for it arrive.
+
+### Offline delivery
+
+`OfflineAudioContext.suspend(0)` pauses rendering, but posting a message and immediately calling `resume()` does not order its delivery before rendering. Rendering can finish before the processor receives the note ([#187](https://github.com/KristinnRoach/web-audio/issues/187)).
+
+After setup and scheduling, await `player.flushMessages()` before resuming. It posts `flush` on the same FIFO port; the processor replies `flushed` after handling earlier messages. Scheduled notes have entered the queue, but still start only when due. This is independent of the constructor's `initialized` report, which does not acknowledge later commands.
+
+`flushMessages()` requires completed `init()`. Calls have distinct ids; disposal rejects outstanding calls. It confirms only preceding port messages, not AudioParam automation, messages posted later, or main-thread AM/feedback and bus reactions to reports during rendering. Full offline effects timing remains separate work after migration step 6.
 
 ## Voice state on the main thread
 

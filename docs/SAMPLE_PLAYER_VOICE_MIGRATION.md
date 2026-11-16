@@ -33,4 +33,4 @@ Steps 1–5 (including 4a and 4b) are merged. Each remaining step is one or more
 
 - Exact steal timing needs a pending note while the outgoing note fades ([#170](https://github.com/KristinnRoach/web-audio/issues/170)).
 - Per-voice metering (`getGainStages`) needs a source after step 7.
-- Scheduled offline note delivery remains unresolved ([#187](https://github.com/KristinnRoach/web-audio/issues/187)); moving effects alone does not establish startup readiness.
+- Scheduled offline notes require `await player.flushMessages()` before resuming rendering ([#187](https://github.com/KristinnRoach/web-audio/issues/187)); suspension alone does not establish delivery. Later main-thread effects and bus report timing remain separate work after step 6. See the [delivery contract](SAMPLE_PLAYER_PROCESSOR.md#offline-delivery).

@@ -16,21 +16,26 @@ describe('SamplePlayer on an OfflineAudioContext', () => {
     });
 
     const player = await createSamplePlayer({ context: ctx, audio });
-    // Send while rendering is suspended at 0, as the README shows, so the message
-    // reaches the worklet before the first frame.
-    void ctx.suspend(0).then(() => {
+    // Suspension alone does not guarantee port delivery before rendering resumes.
+    const scheduled = ctx.suspend(0).then(async () => {
       player.play(60, 100, 0, 0.5);
-      void ctx.resume();
+      await player.flushMessages();
+      expect(ctx.currentTime).toBe(0);
+      await ctx.resume();
     });
-    const rendered = await ctx.startRendering();
+    try {
+      const [rendered] = await Promise.all([ctx.startRendering(), scheduled]);
 
-    const data = rendered.getChannelData(0);
-    expect(peak(data.subarray(0, 0.45 * sampleRate))).toBe(0);
-    expect(peak(data.subarray(0.5 * sampleRate))).toBeGreaterThan(0.01);
+      const data = rendered.getChannelData(0);
+      expect(peak(data.subarray(0, 0.45 * sampleRate))).toBe(0);
+      expect(peak(data.subarray(0.5 * sampleRate))).toBeGreaterThan(0.01);
 
-    player.dispose();
-    expect(getAllNodeIds()).toHaveLength(registered);
-    expect(error).not.toHaveBeenCalled();
-    error.mockRestore();
+      player.dispose();
+      expect(getAllNodeIds()).toHaveLength(registered);
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      player.dispose();
+      error.mockRestore();
+    }
   });
 });

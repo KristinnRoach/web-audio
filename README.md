@@ -203,10 +203,28 @@ The library resumes it on the next user gesture if it is suspended. If it is
 closed later, `getGlobalAudioContext()` creates a new context rather than reusing
 it, so call `setGlobalAudioContext` again with the replacement.
 
-Factories also accept an `OfflineAudioContext`, but scheduled sampler rendering
-is not yet reliable: suspending at zero, posting a note and immediately resuming
-can still render silence. See [#187](https://github.com/KristinnRoach/web-audio/issues/187)
-for the unresolved message-delivery ordering and effects-timing limits.
-Dispose nodes after rendering to release their registrations.
+Factories also accept an `OfflineAudioContext`. For scheduled sampler notes,
+suspend at zero, post the notes/settings, then await `player.flushMessages()`
+before resuming. Suspension alone does not guarantee message delivery:
+
+```ts
+const player = await createSamplePlayer({ context: offlineContext, audio });
+const scheduled = offlineContext.suspend(0).then(async () => {
+  player.play(60, 100, 0, 0.5);
+  await player.flushMessages();
+  await offlineContext.resume();
+});
+try {
+  const [rendered] = await Promise.all([offlineContext.startRendering(), scheduled]);
+  // Use rendered.
+} finally {
+  player.dispose();
+}
+```
+
+The flush confirms preceding processor messages were handled, including queuing
+future notes. Later main-thread AM/feedback and bus reactions during rendering
+are not yet deterministic; see the [delivery contract](docs/SAMPLE_PLAYER_PROCESSOR.md#offline-delivery)
+and [#187](https://github.com/KristinnRoach/web-audio/issues/187).
 
 The recorder and output-device helpers still need a real-time `AudioContext`.
