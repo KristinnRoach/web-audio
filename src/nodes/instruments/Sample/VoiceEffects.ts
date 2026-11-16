@@ -57,8 +57,13 @@ export class VoiceEffects {
     this.#outputNode = new GainNode(context, { gain: 1 });
     this.#source = new GainNode(context, { gain: 1 });
 
-    this.#initInternalSignalChainNodes();
-    this.#connectAudioChain(worklet, voiceIndex);
+    try {
+      this.#initInternalSignalChainNodes();
+      this.#connectAudioChain(worklet, voiceIndex);
+    } catch (error) {
+      this.dispose(); // or the registration outlives a voice nobody holds
+      throw error;
+    }
   }
 
   /**

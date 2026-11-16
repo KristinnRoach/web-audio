@@ -76,7 +76,7 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 
 ## Voice state on the main thread
 
-`SamplePlayer.#receive` keeps one record per voice, `{ state, midiNote, triggerId, effects }`, and emits on the player's own bus. Voice reports go out with the voice's id as `senderId` (`sample:loaded` with the last voice's) and as `voiceId`. A pitch offset change reaches held notes through `effects.setPitchOffset(offset, midiNote)`.
+`SamplePlayer.#receive` keeps one record per voice, `{ state, midiNote, triggerId, effects }`, and emits on the player's own bus. Voice reports go out with the voice's id as `senderId` and as `voiceId`. `sample:loaded` is the exception: its `senderId` is the last voice's and it has no `voiceId`. A pitch offset change reaches held notes through `effects.setPitchOffset(offset, midiNote)`.
 
 | report                                       | record                                                                                                              | upstream                                                                                                               |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |

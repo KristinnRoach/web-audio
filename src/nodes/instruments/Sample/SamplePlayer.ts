@@ -40,7 +40,6 @@ import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { VoiceEffects, type SampleVoiceChainNode } from './VoiceEffects';
 import { VoiceState } from '../VoiceState';
-import { cancelAndPinParamValue } from '@/nodes/params/audioparam-utils';
 import { detectPitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   SAMPLE_ENVELOPE_IDS,
@@ -206,12 +205,15 @@ export class SamplePlayer {
         this.#assertNotDisposed();
         const worklet = createSampleWorklet(this.context, this.#polyphony);
         this.#worklet = worklet;
-        this.#voices = Array.from({ length: this.#polyphony }, (_, voiceIndex) => ({
-          state: VoiceState.AVAILABLE,
-          midiNote: null,
-          triggerId: 0,
-          effects: new VoiceEffects(this.context, worklet, voiceIndex, this.#voiceSignalChain),
-        }));
+        // Pushed one by one, so a failed init can dispose the voices built before it.
+        for (let voiceIndex = 0; voiceIndex < this.#polyphony; voiceIndex++) {
+          this.#voices.push({
+            state: VoiceState.AVAILABLE,
+            midiNote: null,
+            triggerId: 0,
+            effects: new VoiceEffects(this.context, worklet, voiceIndex, this.#voiceSignalChain),
+          });
+        }
         worklet.port.onmessage = ({ data }) => this.#receive(data);
 
         this.#post({ type: 'pool:setLegato', value: this.#legato });
@@ -899,28 +901,11 @@ export class SamplePlayer {
   }
 
   /** Sets one of the processor's AudioParams, which every voice reads. */
-  #setParam(
-    name: string,
-    targetValue: number,
-    timestamp: number = this.now,
-    options: { glideTime?: number; cancelPrevious?: boolean } = {},
-  ) {
+  #setParam(name: string, targetValue: number, timestamp: number = this.now) {
     const param = this.#worklet?.parameters.get(name);
     if (!param) return;
-
-    const { glideTime = 0, cancelPrevious = true } = options;
-
-    if (glideTime <= 0) {
-      if (cancelPrevious) param.cancelScheduledValues(timestamp);
-      param.setValueAtTime(targetValue, Math.max(timestamp, this.now + 0.001));
-    } else {
-      // param.value is only valid now: a future glide falls back to a plain cancel.
-      if (cancelPrevious) {
-        if (timestamp <= this.now) cancelAndPinParamValue(param, timestamp);
-        else param.cancelScheduledValues(timestamp);
-      }
-      param.linearRampToValueAtTime(targetValue, timestamp + Math.max(glideTime, 0.001));
-    }
+    param.cancelScheduledValues(timestamp);
+    param.setValueAtTime(targetValue, Math.max(timestamp, this.now + 0.001));
   }
 
   /** Both points at one event time: re-reading `now` per param can split them across frames. */

@@ -30,6 +30,7 @@ class FakeNode {
   detune = {};
   Q = {};
   connect() {}
+  disconnect() {}
 }
 
 beforeEach(() => {
@@ -48,6 +49,19 @@ it('rejects duplicate nodes', async () => {
   expect(() => new VoiceEffects(context, {} as AudioWorkletNode, 0, ['lpf', 'lpf'])).toThrow(
     'Voice signal chain cannot contain duplicate nodes',
   );
+});
+
+it('unregisters itself when wiring fails', async () => {
+  const { VoiceEffects } = await import('./VoiceEffects');
+  const { getNodesByType } = await import('../../node-store');
+  const before = getNodesByType('sample-voice').length;
+  const worklet = {
+    connect() {
+      throw new Error('no such output');
+    },
+  };
+  expect(() => new VoiceEffects(context, worklet as never, 0, ['lpf'])).toThrow('no such output');
+  expect(getNodesByType('sample-voice')).toHaveLength(before);
 });
 
 it('wires its two processor outputs and follows notes with the pitch offset', async () => {
