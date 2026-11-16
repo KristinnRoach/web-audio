@@ -1,3 +1,4 @@
+import { midiToPlaybackRate } from '@/utils/music-theory/utils/core-utils.ts';
 import { VoiceAllocator } from './voice-allocator.js';
 
 /**
@@ -9,8 +10,6 @@ export class PoolVoice {
   state = 'AVAILABLE';
   midiNote = null;
   triggerTimestamp = -1;
-  /** Counts pitch decisions, so a rate the node sends back for an older one can be dropped. */
-  pitchId = 0;
   #inPitchLoop = false;
 
   /** `post` reaches this voice's node. */
@@ -27,7 +26,6 @@ export class PoolVoice {
     this.state = 'PLAYING';
     this.midiNote = note.midiNote ?? null;
     this.triggerTimestamp = timestamp ?? 0;
-    this.pitchId++;
     this.#inPitchLoop = false;
     this.engine.start(triggerId, timestamp, note);
   }
@@ -61,11 +59,18 @@ export class PoolVoice {
  * they are due, so the allocator decides from the voices as they are when the
  * note sounds, not when it was scheduled. Each voice reports what happened to
  * its node (`voice:started`, `voice:retuned`, `voice:releasing`).
+ *
+ * It also holds the pitch settings and works out every note's playback rate.
  */
 export class VoicePool {
   allocator = new VoiceAllocator();
+  /** Semitones added to every played note. */
+  pitchOffset = 0;
+  /** Off plays every note at rate 1, without glide. */
+  pitchEnabled = true;
   #queue = [];
-  #lastNoteId;
+  // The played note a new note glides from, updated as events are applied.
+  #glideOrigin = 60;
 
   addVoice(voice) {
     this.allocator.voices.push(voice);
@@ -86,6 +91,45 @@ export class VoicePool {
     this.#queue.sort((a, b) => a.timestamp - b.timestamp);
   }
 
+  /** A played note's rate under the current pitch settings. */
+  rate(midiNote) {
+    return this.pitchEnabled ? midiToPlaybackRate(midiNote + this.pitchOffset) : 1;
+  }
+
+  /** What an engine starts a note with. `glideFromNote` is a played note, or null. */
+  note({ midiNote, velocity, glideTime, glideFromNote }) {
+    const glides = this.pitchEnabled && glideTime > 0 && glideFromNote != null;
+    return {
+      midiNote,
+      velocity,
+      // A start without a note (engine tests) plays the sample at its own pitch.
+      playbackRate: this.rate(midiNote ?? 60),
+      ...(glides && { glideFrom: this.rate(glideFromNote), glideSeconds: glideTime }),
+    };
+  }
+
+  /** Retunes every voice that has a note, at `time`. */
+  setPitchOffset(semitones, time) {
+    if (this.pitchOffset === semitones) return;
+    this.pitchOffset = semitones;
+    this.#retuneAll(time, this.pitchEnabled ? 0.01 : 0);
+  }
+
+  setPitchEnabled(enabled, time) {
+    this.pitchEnabled = enabled;
+    // Time constants: about 95% there after 0.1 s (off) or 0.01 s (on).
+    if (enabled) this.#retuneAll(time, 0.01 / 3);
+    else for (const voice of this.allocator.voices) voice.engine.setNoteRate(time, 1, 0.1 / 3);
+  }
+
+  #retuneAll(time, glideSeconds) {
+    for (const voice of this.allocator.voices) {
+      if (voice.midiNote !== null) {
+        voice.engine.setNoteRate(time, this.rate(voice.midiNote), glideSeconds);
+      }
+    }
+  }
+
   /** Applies every event due before `time`. Call at the top of each render block. */
   advance(time) {
     while (this.#queue.length && this.#queue[0].timestamp < time) this.#apply(this.#queue.shift());
@@ -97,13 +141,19 @@ export class VoicePool {
     if (event.type === 'pool:noteOff') {
       for (const action of this.allocator.noteOff(midiNote)) {
         if (action.type === 'release') this.#release(action.voice, timestamp);
-        // No rate here: the node works it out from its current pitch settings.
-        else this.#retune(action.voice, { midiNote: action.midiNote, timestamp }, action.glideTime);
+        else
+          this.#retune(
+            action.voice,
+            { midiNote: action.midiNote, timestamp },
+            action.glideTime,
+            true,
+          );
       }
       return;
     }
 
-    this.#lastNoteId = event.triggerId;
+    const glideFromNote = this.#glideOrigin;
+    this.#glideOrigin = midiNote;
     const decision = this.allocator.noteOn(midiNote, event.glideTime);
     if (!decision) return;
     const { glideTime } = decision;
@@ -115,16 +165,16 @@ export class VoicePool {
       if (type === 'steal') voice.stop(timestamp);
       else if (type === 'release') this.#release(voice, timestamp);
       else {
-        if (type === 'retune') this.#retune(voice, event, glideTime);
-        else this.#start(voice, event, glideTime);
+        if (type === 'retune') this.#retune(voice, event, glideTime, false);
+        else this.#start(voice, event, glideTime, glideFromNote);
         decision.commit();
       }
     }
   }
 
-  #start(voice, event, glideTime) {
-    const { triggerId, timestamp, midiNote, velocity, playbackRate } = event;
-    const glides = glideTime > 0 && event.glideFrom !== undefined;
+  #start(voice, event, glideTime, glideFromNote) {
+    const { triggerId, timestamp, midiNote, velocity } = event;
+    if (glideTime <= 0) glideFromNote = null;
     // Posted before the engine starts, so the node knows the note before its first report.
     voice.post({
       type: 'voice:started',
@@ -133,21 +183,16 @@ export class VoicePool {
       velocity,
       timestamp,
       glideTime,
-      glideFromNote: glideTime > 0 ? event.glideFromNote : null,
+      glideFromNote,
     });
-    voice.start(triggerId, timestamp, {
-      midiNote,
-      playbackRate,
-      velocity,
-      ...(glides && { glideFrom: event.glideFrom, glideSeconds: glideTime }),
-    });
+    voice.start(triggerId, timestamp, this.note({ midiNote, velocity, glideTime, glideFromNote }));
   }
 
-  #retune(voice, { midiNote, timestamp, velocity, playbackRate }, glideTime) {
+  /** `fallback`: a note-off returned the voice to an earlier held note. */
+  #retune(voice, { midiNote, timestamp, velocity }, glideTime, fallback) {
     voice.midiNote = midiNote;
-    voice.pitchId++;
-    const fallback = playbackRate === undefined;
-    if (!fallback) voice.engine.setNoteRate(timestamp, playbackRate, glideTime);
+    if (fallback) this.#glideOrigin = midiNote;
+    voice.engine.setNoteRate(timestamp, this.rate(midiNote), this.pitchEnabled ? glideTime : 0);
     voice.post({
       type: 'voice:retuned',
       midiNote,
@@ -155,9 +200,6 @@ export class VoicePool {
       timestamp,
       glideTime,
       fallback,
-      // Let the node tell whether its answer, or the glide origin, is already out of date.
-      pitchId: voice.pitchId,
-      noteId: this.#lastNoteId,
     });
   }
 

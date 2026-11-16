@@ -6,7 +6,7 @@ import { VoiceState } from '../VoiceState';
 
 import { Message, MessageHandler, createMessageBus, MessageBus } from '@/events';
 
-import { assert, mapToRange, midiToPlaybackRate } from '@/utils';
+import { assert, mapToRange } from '@/utils';
 import { HarmonicFeedback } from '@/nodes/effects/HarmonicFeedback';
 import {
   cancelAndPinParamValue,
@@ -77,11 +77,10 @@ export class SampleVoice {
   #sampleDurationSeconds = 0;
   #loopEnabled = false;
 
-  /** Semitones added to the played note for everything that tracks pitch. */
+  /** Semitones added to the played note for the effects that track pitch; the processor applies its own. */
   #pitchOffset = 0;
 
   #internalSignalChain: readonly SampleVoiceChainNode[];
-  #pitchDisabled = false;
 
   #hpf: BiquadFilterNode | null = null;
   #lpf: BiquadFilterNode | null = null;
@@ -254,7 +253,7 @@ export class SampleVoice {
     return true;
   }
 
-  /** Retunes a held note too: playback rate, feedback and the AM LFO follow. */
+  /** Retunes a held note's feedback and AM LFO. */
   setPitchOffset(semitones: number): this {
     if (this.#pitchOffset === semitones) return this;
     this.#pitchOffset = semitones;
@@ -262,42 +261,22 @@ export class SampleVoice {
     return this;
   }
 
-  /** Keeps the source, velocity and envelopes running; note-off follows the new note. */
+  /** Moves the effects to a new note; the processor retunes the source. Note-off follows the new note. */
   retune(midiNote: MidiValue, secondsFromNow = 0, glideTime = 0): MidiValue | null {
     if (this.#state !== VoiceState.PLAYING) return null;
     this.#applyPitch(midiNote, this.now + secondsFromNow, glideTime);
     return midiNote;
   }
 
-  /** Moves a sounding note: playback rate, feedback and the AM LFO follow. */
-  #applyPitch(
-    midiNote: MidiValue,
-    timestamp: number,
-    glideSeconds: number,
-    sendRate = true,
-    pitchId?: number,
-  ) {
+  /** Moves a sounding note's feedback and AM LFO. */
+  #applyPitch(midiNote: MidiValue, timestamp: number, glideSeconds: number) {
     const soundingNote = midiNote + this.#pitchOffset;
-    const playbackRate = this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote);
-    if (sendRate) {
-      this.sendToProcessor({
-        type: 'voice:setRate',
-        value: playbackRate,
-        timestamp,
-        glideSeconds: this.#pitchDisabled ? 0 : glideSeconds,
-        pitchId,
-      });
-    }
     this.#feedback?.setPitch(soundingNote, 0, timestamp, glideSeconds);
     this.#am_lfo?.setMusicalNote(soundingNote + this.#am_lfo_semitone_offset, {
       timestamp,
       glideTime: glideSeconds,
     });
     this.#midiNote = midiNote;
-  }
-
-  #setNoteRate(playbackRate: number, timestamp: number, glideSeconds: number) {
-    this.sendToProcessor({ type: 'voice:setRate', value: playbackRate, timestamp, glideSeconds });
   }
 
   #isInPitchLoop = false;
@@ -308,8 +287,8 @@ export class SampleVoice {
   }
 
   /**
-   * The note as a processor starts it. `trigger()` sends it to this voice; a
-   * pool posts it and lets the audio thread pick the voice.
+   * The note as a processor starts it, in played notes; the processor works out
+   * the rates.
    */
   noteMessage(options: {
     midiNote: MidiValue;
@@ -319,17 +298,12 @@ export class SampleVoice {
   }) {
     const { midiNote, velocity, secondsFromNow = 0 } = options;
     const glideTime = options.glide?.seconds ?? 0;
-    const glideFromNote = glideTime > 0 ? options.glide!.fromMidiNote + this.#pitchOffset : null;
-    const soundingNote = midiNote + this.#pitchOffset;
-    const glides = !this.#pitchDisabled && glideFromNote !== null;
     return {
       timestamp: this.now + secondsFromNow,
       midiNote,
-      playbackRate: this.#pitchDisabled ? 1 : midiToPlaybackRate(soundingNote),
       velocity,
       glideTime,
-      glideFromNote,
-      ...(glides && { glideFrom: midiToPlaybackRate(glideFromNote), glideSeconds: glideTime }),
+      glideFromNote: glideTime > 0 ? options.glide!.fromMidiNote : null,
     };
   }
 
@@ -389,7 +363,9 @@ export class SampleVoice {
       divisor: 1,
       glideTime,
       glideFromMidiNote:
-        glideFromNote === null ? undefined : glideFromNote + this.#am_lfo_semitone_offset,
+        glideFromNote === null
+          ? undefined
+          : glideFromNote + this.#pitchOffset + this.#am_lfo_semitone_offset,
       timestamp,
     });
   }
@@ -570,20 +546,6 @@ export class SampleVoice {
     return this;
   }
 
-  disablePitch = () => {
-    this.#pitchDisabled = true;
-    // Time constant: about 95% there after 0.1 s.
-    this.#setNoteRate(1, this.now, 0.1 / 3);
-  };
-
-  enablePitch = () => {
-    this.#pitchDisabled = false;
-    if (this.#midiNote !== null) {
-      const playbackRate = midiToPlaybackRate(this.#midiNote + this.#pitchOffset);
-      this.#setNoteRate(playbackRate, this.now, 0.01 / 3);
-    }
-  };
-
   /** CONNECTIONS */
 
   connect(destination: Destination, output?: number, input?: number): Destination {
@@ -669,14 +631,7 @@ export class SampleVoice {
 
       case 'voice:retuned':
         if (this.#state !== VoiceState.PLAYING) return;
-        // The pool set the rate itself unless the voice fell back to an earlier held note.
-        this.#applyPitch(
-          data.midiNote,
-          data.timestamp,
-          data.glideTime,
-          data.fallback,
-          data.pitchId,
-        );
+        this.#applyPitch(data.midiNote, data.timestamp, data.glideTime);
         data = { voiceId: this.nodeId, ...data };
         break;
 

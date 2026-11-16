@@ -86,6 +86,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     player.transpose(2);
     expect(periodsPosted()).toHaveLength(2);
     expect(setPitchOffset).toHaveBeenLastCalledWith(2);
+    expect(ofType('pool:setPitchOffset').at(-1)).toEqual({ type: 'pool:setPitchOffset', value: 2 });
     expect(player.transposedBySemitones).toBe(2);
 
     // Fine tune sums with transpose instead of replacing it.
@@ -723,6 +724,8 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       bus: { noteOff, releaseAll, getFeedback: () => ({ setPitch }) } as never,
       onPost: (message) => {
         if (message.type === 'pool:setLegato') pool.allocator.legato = message.value;
+        else if (message.type === 'pool:setPitchOffset') pool.setPitchOffset(message.value, 0);
+        else if (message.type === 'pool:setPitchEnabled') pool.setPitchEnabled(message.value, 0);
         else if (message.type.startsWith('pool:')) {
           pool.schedule(message);
           pool.advance(Infinity);
@@ -845,31 +848,5 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     ]);
     expect(noteOff).toHaveBeenCalledWith(62);
     expect(upstream).toHaveBeenCalledWith(expect.objectContaining({ midiNote: 60 }));
-  });
-
-  it('glides the next note from a fallback, unless a later note was played since', async () => {
-    const { player, voices, ofType, report } = await setup();
-    const glideOrigin = () => ofType('pool:noteOn').at(-1).glideFromNote;
-    player.setLegato({ mode: 'always' });
-    player.play(48);
-    player.play(55);
-    player.release(55);
-    // Fell back to 48, the most recent held note: the next note glides from there.
-    expect(voices[0].midiNote).toBe(48);
-    player.play(72, 100, 1.6);
-    expect(glideOrigin()).toBe(48);
-
-    // A fallback decided before that note must not take the glide origin back.
-    report({
-      type: 'voice:retuned',
-      voice: 0,
-      midiNote: 50,
-      timestamp: 0,
-      glideTime: 0,
-      fallback: true,
-      noteId: 2,
-    });
-    player.play(74, 100, 1.6);
-    expect(glideOrigin()).toBe(72);
   });
 });

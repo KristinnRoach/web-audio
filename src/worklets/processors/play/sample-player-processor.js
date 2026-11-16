@@ -61,6 +61,14 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'pool:setLegato':
         this.pool.allocator.legato = value;
         return;
+
+      case 'pool:setPitchOffset':
+        this.pool.setPitchOffset(value, currentTime);
+        return;
+
+      case 'pool:setPitchEnabled':
+        this.pool.setPitchEnabled(value, currentTime);
+        return;
     }
 
     const index = event.data.voice;
@@ -117,13 +125,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:start':
-        voice.start(triggerId, timestamp, data);
-        break;
-
-      case 'voice:setRate':
-        // An answer to a fallback the pool has since moved on from.
-        if (data.pitchId !== undefined && data.pitchId !== voice.pitchId) break;
-        engine.setNoteRate(timestamp, value, data.glideSeconds);
+        voice.start(triggerId, timestamp, this.pool.note(data));
         break;
 
       case 'voice:stop':

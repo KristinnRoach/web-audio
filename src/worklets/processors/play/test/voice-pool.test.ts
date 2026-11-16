@@ -17,8 +17,8 @@ function setup(voiceCount = 2) {
     pool.addVoice(voice);
     return { voice, engine, post };
   });
-  const noteOn = (midiNote: number, timestamp: number) =>
-    pool.schedule({ type: 'pool:noteOn', triggerId: midiNote, midiNote, timestamp, glideTime: 0 });
+  const noteOn = (midiNote: number, timestamp: number, glideTime = 0) =>
+    pool.schedule({ type: 'pool:noteOn', triggerId: midiNote, midiNote, timestamp, glideTime });
   return { pool, voices, noteOn };
 }
 
@@ -67,41 +67,90 @@ describe('VoicePool', () => {
     expect(voices[1].engine.start).not.toHaveBeenCalled();
   });
 
-  it('leaves a fallback retune rate to the node', () => {
+  it('works out note rates from the pitch settings and glides from the last note applied', () => {
     const { pool, voices, noteOn } = setup(1);
-    pool.allocator.legato = { mode: 'always' };
-    noteOn(60, 0);
-    pool.schedule({
-      type: 'pool:noteOn',
-      midiNote: 64,
-      timestamp: 1,
-      glideTime: 0,
+    const [{ voice, engine }] = voices;
+    pool.setPitchOffset(12, 0);
+    noteOn(60, 0, 0.1);
+    pool.advance(1);
+    // The first note glides from middle C, as the player's first note always has.
+    expect(engine.start).toHaveBeenLastCalledWith(60, 0, {
+      midiNote: 60,
+      velocity: undefined,
       playbackRate: 2,
+      glideFrom: 2,
+      glideSeconds: 0.1,
     });
+    voice.observe({ type: 'voice:ended' });
+
+    pool.setPitchEnabled(false, 1);
+    noteOn(72, 1, 0.1);
+    pool.advance(2);
+    expect(engine.start.mock.lastCall?.[2]).toEqual({
+      midiNote: 72,
+      velocity: undefined,
+      playbackRate: 1,
+    });
+    // The node still hears where the note glides from, for its effects.
+    expect(voices[0].post).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'voice:started', glideFromNote: 60 }),
+    );
+  });
+
+  it('retunes a legato voice, and a fallback becomes the next glide origin', () => {
+    const { pool, voices, noteOn } = setup();
+    pool.allocator.legato = { mode: 'always', interval: [-5, 5] };
+    noteOn(60, 0);
+    noteOn(64, 1, 0.2);
     pool.schedule({ type: 'pool:noteOff', midiNote: 64, timestamp: 2 });
+    noteOn(72, 3, 0.2);
     pool.advance(10);
 
-    expect(voices[0].engine.setNoteRate.mock.calls).toEqual([[1, 2, 0]]);
+    expect(voices[0].engine.setNoteRate.mock.calls).toEqual([
+      [1, 2 ** (4 / 12), 0.2],
+      [2, 1, 0.2],
+    ]);
     expect(voices[0].post).toHaveBeenLastCalledWith(
-      // Third pitch decision on this voice: start, retune, fallback.
-      expect.objectContaining({ type: 'voice:retuned', midiNote: 60, fallback: true, pitchId: 3 }),
+      expect.objectContaining({ type: 'voice:retuned', midiNote: 60, fallback: true }),
     );
+    // Out of the legato interval: a new voice, gliding from the fallback note.
+    expect(voices[1].engine.start.mock.lastCall?.[2]).toMatchObject({ glideFrom: 1 });
+  });
+
+  it('retunes held notes when the pitch settings change', () => {
+    const { pool, voices, noteOn } = setup();
+    noteOn(60, 0);
+    pool.advance(1);
+    const [held, idle] = voices.map(({ engine }) => engine.setNoteRate);
+
+    pool.setPitchOffset(12, 1);
+    pool.setPitchOffset(12, 1);
+    pool.setPitchEnabled(false, 2);
+    pool.setPitchOffset(-12, 3);
+    pool.setPitchEnabled(true, 4);
+
+    expect(held.mock.calls).toEqual([
+      [1, 2, 0.01],
+      [2, 1, 0.1 / 3],
+      [3, 1, 0],
+      [4, 0.5, 0.01 / 3],
+    ]);
+    expect(idle.mock.calls).toEqual([[2, 1, 0.1 / 3]]);
   });
 });
 
 describe('sample-player processor voices', () => {
   setupProcessorGlobals();
 
-  it('drops a rate answering a pitch decision the voice has moved on from', async () => {
+  it('starts a tagged voice:start at the rate the pool works out', async () => {
     const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
     const processor = new (SamplePlayerProcessor as any)();
-    const setNoteRate = vi.spyOn(processor.engine, 'setNoteRate');
-    processor.voice.pitchId = 2;
-    processor.port.onmessage({ data: { type: 'voice:setRate', value: 2, pitchId: 1 } });
-    expect(setNoteRate).not.toHaveBeenCalled();
-    processor.port.onmessage({ data: { type: 'voice:setRate', value: 2, pitchId: 2 } });
-    processor.port.onmessage({ data: { type: 'voice:setRate', value: 2 } });
-    expect(setNoteRate).toHaveBeenCalledTimes(2);
+    const start = vi.spyOn(processor.engine, 'start');
+    processor.port.onmessage({ data: { type: 'pool:setPitchOffset', value: 12 } });
+    processor.port.onmessage({
+      data: { type: 'voice:start', voice: 0, triggerId: 1, timestamp: 0, midiNote: 60 },
+    });
+    expect(start.mock.lastCall?.[2]).toMatchObject({ playbackRate: 2 });
   });
 
   it('reports completion when a buffer swap clears playback with a scheduled stop', async () => {
