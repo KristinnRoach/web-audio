@@ -4,9 +4,9 @@ Breakpoint envelopes for Web Audio. Draw a shape out of points, bind it to an `A
 then trigger and release it. See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for all deferred work.
 
 `Envelope` owns parameter scheduling and per-trigger snapshots. `SamplePlayer` owns
-editable configs; `SampleVoice` applies them using
+editable configs and posts them to its processor using
 [`sample-envelope-policy.ts`](../../instruments/Sample/sample-envelope-policy.ts) for
-defaults, parameter mapping and trigger options. Live-edit decisions stay in `SampleVoice`.
+defaults and parameter mapping. Live-edit decisions are made in the processor.
 
 ```ts
 import { Envelope } from '@/nodes/modulators/envelope';

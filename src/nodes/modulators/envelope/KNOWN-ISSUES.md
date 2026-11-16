@@ -1,7 +1,7 @@
 # Envelope follow-ups
 
 Backlog for this main-thread `Envelope` module. The sampler no longer uses it:
-`SampleVoice` sends its envelopes to the sample-player processor
+`SamplePlayer` sends its envelopes to the sample-player processor
 (`src/worklets/processors/play/engine/voice-envelopes.js`), which restarts loop-synced
 envelopes on its own loop wraps. Sampler-specific follow-ups (live-edit rules, exact
 release length) live with that code.

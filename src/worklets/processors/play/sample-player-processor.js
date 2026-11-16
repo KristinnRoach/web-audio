@@ -37,7 +37,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.pool.addVoice(voice);
       return { engine, voice, post };
     });
-    // The first voice, for a processor that has only one.
+    // The first voice: the engine tests drive a one-voice processor through it.
     ({ engine: this.engine, voice: this.voice } = this.voices[0]);
 
     this.port.onmessage = this.#handleMessage.bind(this);
@@ -124,16 +124,13 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         engine.setPitchPeriods(periods, hopSamples);
         break;
 
+      // Engine tests start and stop a voice directly; SamplePlayer goes through the pool.
       case 'voice:start':
         voice.start(triggerId, timestamp, this.pool.note(data));
         break;
 
       case 'voice:stop':
         voice.stop(timestamp);
-        break;
-
-      case 'voice:release':
-        voice.release(timestamp);
         break;
 
       case 'setEnvelope':
