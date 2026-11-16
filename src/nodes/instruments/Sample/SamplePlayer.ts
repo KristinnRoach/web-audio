@@ -38,17 +38,14 @@ import type { AudioDestination } from '@/nodes/LibAudioNode';
 import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
-import {
-  SampleVoice,
-  createSampleWorklet,
-  type InterpolationMode,
-  type SampleVoiceChainNode,
-  type TimestretchMode,
-} from './SampleVoice';
+import { VoiceEffects, type SampleVoiceChainNode } from './VoiceEffects';
+import { VoiceState } from '../VoiceState';
+import { cancelAndPinParamValue } from '@/nodes/params/audioparam-utils';
 import { detectPitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeConfig,
+  getSampleEnvelopeIds,
   getSampleEnvelopeProcessorTarget,
   resolveSampleEnvelopeForProcessor,
   type SampleEnvelopeId,
@@ -56,19 +53,26 @@ import {
 
 const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
 
-/** Voice reports the player passes on, after #fromVoice has had its say. */
-const VOICE_REPORTS = [
-  'voice:started',
-  'voice:stopped',
-  'voice:releasing',
-  'voice:retuned',
-  'voice:loaded',
-  // Resolved loop and trim in seconds, from whichever voice resolved them last.
-  'loop:range',
-  'trim:range',
-  // Playhead per voice (0..1 of the sample), only while position tracking is on.
-  'voice:position',
-];
+export type TimestretchMode = 'off' | 'period';
+/** Experimental: for comparing source interpolation by ear, may be removed. */
+export type InterpolationMode = 'linear' | 'hermite' | 'sinc';
+
+/** The processor node for `voiceCount` voices: per voice, stereo audio then its filter envelope in cents (for lpf.detune). */
+const createSampleWorklet = (context: BaseAudioContext, voiceCount: number) =>
+  new AudioWorkletNode(context, 'sample-player-processor', {
+    numberOfInputs: 0,
+    numberOfOutputs: voiceCount * 2,
+    outputChannelCount: Array.from({ length: voiceCount }, () => [2, 1]).flat(),
+    processorOptions: { voiceCount },
+  });
+
+/** A processor voice as its reports leave it; `triggerId` names the note it plays. */
+type Voice = {
+  state: VoiceState;
+  midiNote: number | null;
+  triggerId: number;
+  effects: VoiceEffects;
+};
 
 /**
  * When noteOn retunes a playing voice instead of triggering a new one.
@@ -146,12 +150,9 @@ export class SamplePlayer {
   #pitchPeriodsSent = false;
   #preprocessAudio = true;
 
-  /** One processor renders every voice; each `SampleVoice` wraps one of its outputs. */
+  /** One processor renders every voice; each voice's effects take two of its outputs. */
   #worklet: AudioWorkletNode | null = null;
-  // ponytail: the worklet's AudioParams are shared, so voice 0's param setters
-  // (setParam, setLoopPoints) set them for every voice. Move them here when
-  // SampleVoice is reduced to its effect chain (migration step 4b).
-  #voices: SampleVoice[] = [];
+  #voices: Voice[] = [];
   #loadedVoices = 0;
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
@@ -205,25 +206,17 @@ export class SamplePlayer {
         this.#assertNotDisposed();
         const worklet = createSampleWorklet(this.context, this.#polyphony);
         this.#worklet = worklet;
-        this.#voices = Array.from(
-          { length: this.#polyphony },
-          (_, voiceIndex) =>
-            new SampleVoice(this.context, {
-              internalSignalChain: this.#voiceSignalChain,
-              worklet,
-              voiceIndex,
-            }),
-        );
-        this.#voices.forEach((voice) =>
-          this.#messages.forwardFrom(voice, VOICE_REPORTS, (msg) => this.#fromVoice(msg)),
-        );
+        this.#voices = Array.from({ length: this.#polyphony }, (_, voiceIndex) => ({
+          state: VoiceState.AVAILABLE,
+          midiNote: null,
+          triggerId: 0,
+          effects: new VoiceEffects(this.context, worklet, voiceIndex, this.#voiceSignalChain),
+        }));
         worklet.port.onmessage = ({ data }) => this.#receive(data);
-        await Promise.all(this.#voices.map((voice) => voice.init()));
-        this.#assertNotDisposed();
 
         this.#post({ type: 'pool:setLegato', value: this.#legato });
         this.#post({ type: 'pool:setPitchOffset', value: this.#pitchOffset });
-        this.#voices.forEach((voice) => voice.setPitchOffset(this.#pitchOffset));
+        this.#voices.forEach((voice) => voice.effects.setPitchOffset(this.#pitchOffset, null));
         this.#post({ type: 'pool:setPitchEnabled', value: this.#pitchEnabled });
         if (this.#interpolationMode !== null) {
           this.#post({ type: 'setInterpolation', value: this.#interpolationMode });
@@ -266,7 +259,7 @@ export class SamplePlayer {
   }
 
   #connectAudioChain() {
-    this.#voices.forEach((voice) => voice.connect(this.#outBus.input));
+    this.#voices.forEach((voice) => voice.effects.connect(this.#outBus.input));
     this.#outBus.connect(this.#masterOut);
     this.#masterOut.connect(this.context.destination);
   }
@@ -360,30 +353,74 @@ export class SamplePlayer {
     this.#worklet?.port.postMessage(message);
   }
 
-  /** A report names its voice; one without a `voice` (`initialized`) goes to all. */
+  /**
+   * Every report but `initialized` names its voice. The voice records mirror the
+   * audio thread's; a report about a note the voice no longer plays is dropped.
+   */
   #receive(data: any) {
-    for (const voice of data.voice === undefined ? this.#voices : [this.#voices[data.voice]]) {
-      voice.receive(data);
-    }
-    if (data.type === 'initialized') this.#onProcessorReady();
-  }
+    const { type, voice: index, ...report } = data;
+    if (type === 'initialized') return this.#onProcessorReady();
+    const voice = this.#voices[index];
+    const voiceId = voice.effects.nodeId;
 
-  /** What the player does with a voice's report before passing it on; null keeps it here. */
-  #fromVoice(msg: Message): Message | null {
-    switch (msg.type) {
+    switch (type) {
       case 'voice:loaded':
         // Every voice reports the one buffer; announce it once.
-        if (++this.#loadedVoices !== this.#voices.length) return null;
+        if (++this.#loadedVoices !== this.#voices.length) return;
         this.#onSampleLoaded();
-        return { ...msg, type: 'sample:loaded' };
-      case 'voice:started':
-        this.#followVoice(msg, false);
-        return msg;
+        return this.#emitFrom(voice, 'sample:loaded', report);
+
+      // The pool picked this voice on the audio thread; its effects follow from here.
+      case 'voice:started': {
+        // Stolen: the note it held ends without a report of its own.
+        if (voice.state !== VoiceState.AVAILABLE) this.#voiceStopped(voice);
+        const { midiNote, velocity, timestamp, glideTime, glideFromNote, triggerId } = report;
+        Object.assign(voice, { state: VoiceState.PLAYING, midiNote, triggerId });
+        this.#followVoice(report, false);
+        this.#emitFrom(voice, type, { voiceId, midiNote, velocity, timestamp, glideTime });
+        voice.effects.followNote(midiNote, { velocity, timestamp, glideTime, glideFromNote });
+        return;
+      }
+
       case 'voice:retuned':
-        this.#followVoice(msg, true);
-        return null;
+        if (voice.state !== VoiceState.PLAYING) return;
+        voice.midiNote = report.midiNote;
+        voice.effects.followNote(report.midiNote, {
+          timestamp: report.timestamp,
+          glideTime: report.glideTime,
+        });
+        return this.#followVoice(report, true);
+
+      case 'voice:releasing':
+        if (voice.state !== VoiceState.PLAYING) return;
+        voice.state = VoiceState.RELEASING;
+        return this.#emitFrom(voice, type, { voiceId, midiNote: voice.midiNote });
+
+      case 'voice:ended':
+        if (voice.state === VoiceState.AVAILABLE || report.triggerId !== voice.triggerId) return;
+        return this.#voiceStopped(voice);
+
+      case 'loop:range':
+      case 'trim:range':
+      case 'voice:position': {
+        // Idle report: the steady loop for the next note, not a playing range.
+        if (report.idle) return;
+        if (voice.state === VoiceState.AVAILABLE || report.triggerId !== voice.triggerId) return;
+        const { triggerId: _, ...range } = report;
+        return this.#emitFrom(voice, type, { voiceId, midiNote: voice.midiNote, ...range });
+      }
     }
-    return msg;
+  }
+
+  #voiceStopped(voice: Voice) {
+    const { midiNote } = voice;
+    Object.assign(voice, { state: VoiceState.AVAILABLE, midiNote: null });
+    this.#emitFrom(voice, 'voice:stopped', { voiceId: voice.effects.nodeId, midiNote });
+  }
+
+  /** Voice reports go out with the voice as sender. */
+  #emitFrom(voice: Voice, type: string, data: object) {
+    this.#messages.sendMessage(type, { senderId: voice.effects.nodeId, ...data });
   }
 
   #onSampleLoaded() {
@@ -414,24 +451,26 @@ export class SamplePlayer {
   #resetLoopPoints() {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
-    this.#voices[0]?.setLoopPoints(this.#loopStart, this.#loopEnd, this.context.currentTime);
+    this.#setLoopParams(this.#loopStart, this.#loopEnd, this.context.currentTime);
     return this;
   }
 
   /* === LFOs === */
 
   setModulationDepth = (modType: 'AM' | 'FM', depth: number) =>
-    this.#voices.forEach((v) => v.setModulationDepth(modType, depth));
+    this.#voices.forEach((v) => v.effects.setModulationDepth(modType, depth));
 
   setAMModOctaveOffset = (offset: number) =>
-    this.#voices.forEach((v) => v.setAMModOctaveOffset(offset));
+    this.#voices.forEach((v) => v.effects.setAMModOctaveOffset(offset, v.midiNote));
 
   setModulationWaveform(
     modType: 'AM' | 'FM' = 'AM',
     waveform: CustomLibWaveform | OscillatorType | PeriodicWave = 'triangle',
     customWaveOptions: WaveformOptions = {},
   ) {
-    this.#voices.forEach((v) => v.setModulationWaveform(modType, waveform, customWaveOptions));
+    this.#voices.forEach((v) =>
+      v.effects.setModulationWaveform(modType, waveform, customWaveOptions),
+    );
   }
 
   syncLFOsToNoteFreq(lfoId: 'gain-lfo' | 'pitch-lfo', enabled: boolean) {
@@ -694,7 +733,7 @@ export class SamplePlayer {
    * glide, and a legato retune doesn't restart its decay. A voice falling back
    * to an earlier held note takes the note-tracking LFOs and bus feedback with it.
    */
-  #followVoice(report: Message, retuned: boolean) {
+  #followVoice(report: any, retuned: boolean) {
     const soundingNote = report.midiNote + this.#pitchOffset;
     const secondsFromNow = Math.max(0, report.timestamp - this.now);
     if (!report.fallback) {
@@ -718,7 +757,7 @@ export class SamplePlayer {
   #applyPitchOffset(): this {
     const offset = this.#pitchOffset;
     this.#post({ type: 'pool:setPitchOffset', value: offset });
-    this.#voices.forEach((voice) => voice.setPitchOffset(offset));
+    this.#voices.forEach((voice) => voice.effects.setPitchOffset(offset, voice.midiNote));
     if (this.#lastPlayedNote !== null) {
       const soundingNote = this.#lastPlayedNote + offset;
       this.#syncLFOsToNote(soundingNote);
@@ -850,13 +889,50 @@ export class SamplePlayer {
   }
 
   setSampleStartPoint(seconds: number): this {
-    this.#voices[0]?.setParam('startPoint', seconds);
+    this.#setParam('startPoint', seconds);
     return this;
   }
 
   setSampleEndPoint(seconds: number): this {
-    this.#voices[0]?.setParam('endPoint', seconds);
+    this.#setParam('endPoint', seconds);
     return this;
+  }
+
+  /** Sets one of the processor's AudioParams, which every voice reads. */
+  #setParam(
+    name: string,
+    targetValue: number,
+    timestamp: number = this.now,
+    options: { glideTime?: number; cancelPrevious?: boolean } = {},
+  ) {
+    const param = this.#worklet?.parameters.get(name);
+    if (!param) return;
+
+    const { glideTime = 0, cancelPrevious = true } = options;
+
+    if (glideTime <= 0) {
+      if (cancelPrevious) param.cancelScheduledValues(timestamp);
+      param.setValueAtTime(targetValue, Math.max(timestamp, this.now + 0.001));
+    } else {
+      // param.value is only valid now: a future glide falls back to a plain cancel.
+      if (cancelPrevious) {
+        if (timestamp <= this.now) cancelAndPinParamValue(param, timestamp);
+        else param.cancelScheduledValues(timestamp);
+      }
+      param.linearRampToValueAtTime(targetValue, timestamp + Math.max(glideTime, 0.001));
+    }
+  }
+
+  /** Both points at one event time: re-reading `now` per param can split them across frames. */
+  #setLoopParams(loopStart: number, loopEnd: number, timestamp: number) {
+    const startParam = this.#worklet?.parameters.get('loopStart');
+    const endParam = this.#worklet?.parameters.get('loopEnd');
+    if (!startParam || !endParam) return;
+    const at = Math.max(timestamp, this.now + 0.001);
+    startParam.cancelScheduledValues(timestamp);
+    endParam.cancelScheduledValues(timestamp);
+    startParam.setValueAtTime(loopStart, at);
+    endParam.setValueAtTime(loopEnd, at);
   }
 
   /** Posts `voice:position` (0..1 of the sample, ~60 Hz) per sounding voice. Off by default. */
@@ -981,7 +1057,7 @@ export class SamplePlayer {
   }
 
   setLoopDurationDriftAmount(amount: number): this {
-    this.#voices[0]?.setLoopDurationDriftAmount(amount);
+    this.#setParam('loopDurationDriftAmount', amount);
     return this;
   }
 
@@ -1054,11 +1130,11 @@ export class SamplePlayer {
     if (loopPoint === 'start') {
       if (seconds === this.loopStart) return this;
       this.#loopStart = seconds;
-      this.#voices[0]?.setParam('loopStart', seconds, timestamp);
+      this.#setParam('loopStart', seconds, timestamp);
     } else {
       if (seconds === this.loopEnd) return this;
       this.#loopEnd = seconds;
-      this.#voices[0]?.setParam('loopEnd', seconds, timestamp);
+      this.#setParam('loopEnd', seconds, timestamp);
     }
 
     this.#sendUpstreamMessage('loop-points:updated', {
@@ -1078,7 +1154,7 @@ export class SamplePlayer {
     const timestamp = this.context.currentTime;
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
-    this.#voices[0]?.setLoopPoints(loopStart, loopEnd, timestamp);
+    this.#setLoopParams(loopStart, loopEnd, timestamp);
 
     this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
@@ -1113,13 +1189,13 @@ export class SamplePlayer {
 
   /** PARAM GETTERS  */
 
-  // TODO: Consider moving source of truth from SampleVoice to SamplePlayer, or convert to MacroParams, symmetrical with the loop start/end points
+  // TODO: Consider keeping these in fields or MacroParams, symmetrical with the loop start/end points
   getStartPoint(): number {
-    return this.#voices[0]?.startPoint ?? 0;
+    return this.#worklet?.parameters.get('startPoint')?.value ?? 0;
   }
 
   getEndPoint(): number {
-    return this.#voices[0]?.endPoint ?? this.sampleDuration;
+    return this.#worklet?.parameters.get('endPoint')?.value ?? this.sampleDuration;
   }
 
   getLoopLengthGlide(): number {
@@ -1219,9 +1295,10 @@ export class SamplePlayer {
     });
   }
 
-  /** Envelope ids on the current voices; empty until the player is initialized. */
+  /** Envelope ids on the current voices; empty until the player is initialized. The filter one needs an lpf. */
   get envelopeIds(): readonly SampleEnvelopeId[] {
-    return this.#voices[0]?.envelopeIds ?? [];
+    const effects = this.#voices[0]?.effects;
+    return effects ? getSampleEnvelopeIds(effects.getParam('lpf') !== null) : [];
   }
 
   /**
@@ -1236,7 +1313,9 @@ export class SamplePlayer {
     ]);
     // Each voice stage, prefixed `voice.`, is metered as the sum across every voice:
     // it reads whatever is playing without depending on which voice was picked.
-    const perVoice = includeVoices ? this.#voices.map((voice) => voice.getGainStages()) : [];
+    const perVoice = includeVoices
+      ? this.#voices.map((voice) => voice.effects.getGainStages())
+      : [];
     const voiceStages = Object.keys(perVoice[0] ?? {}).map((name) => [
       `voice.${name}`,
       perVoice.map((stages) => stages[name]),
@@ -1281,7 +1360,7 @@ export class SamplePlayer {
   setLpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' | 'all' = 'pre') => {
     this.#lpfCutoff = hz;
     if (preOrPostFx === 'pre' || preOrPostFx === 'all') {
-      this.#voices.forEach((v) => v.setLpfCutoff(hz));
+      this.#voices.forEach((v) => v.effects.setLpfCutoff(hz));
     }
     if (preOrPostFx === 'post' || preOrPostFx === 'all') {
       this.#outBus.setLpfCutoff(hz);
@@ -1291,7 +1370,7 @@ export class SamplePlayer {
   setHpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' = 'post') => {
     this.#hpfCutoff = hz;
     if (preOrPostFx === 'pre') {
-      this.#voices.forEach((v) => v.setHpfCutoff(hz));
+      this.#voices.forEach((v) => v.effects.setHpfCutoff(hz));
     } else if (preOrPostFx === 'post') {
       this.#outBus.setHpfCutoff(hz);
     }
@@ -1304,7 +1383,7 @@ export class SamplePlayer {
   setFeedbackDecay(value: number) {
     this.#outBus.setFeedbackDecay(value);
     this.#voices.forEach((voice) => {
-      voice.feedback?.setDecay(value);
+      voice.effects.feedback?.setDecay(value);
     });
   }
 
@@ -1312,7 +1391,7 @@ export class SamplePlayer {
     this.#outBus.setFeedbackLowpassCutoff(freqHz);
 
     this.#voices.forEach((voice) => {
-      voice.feedback?.setLowpassCutoff(freqHz);
+      voice.effects.feedback?.setLowpassCutoff(freqHz);
     });
   }
 
@@ -1326,7 +1405,7 @@ export class SamplePlayer {
 
     if (this.#feedbackMode === 'polyphonic' || this.#feedbackMode === 'double-trouble') {
       this.#voices.forEach((voice) => {
-        voice.feedback?.setAmountMacro(amount);
+        voice.effects.feedback?.setAmountMacro(amount);
       });
     }
   };
@@ -1337,9 +1416,9 @@ export class SamplePlayer {
     this.#feedbackMode = mode;
 
     if (mode === 'monophonic') {
-      let currAmount = this.#voices[0].feedback?.currentAmount ?? 0;
+      let currAmount = this.#voices[0].effects.feedback?.currentAmount ?? 0;
       this.#voices.forEach((voice) => {
-        voice.feedback?.setAmountMacro(0);
+        voice.effects.feedback?.setAmountMacro(0);
       });
       this.#outBus.setFeedbackAmount(currAmount);
     } else if (mode === 'polyphonic') {
@@ -1349,7 +1428,7 @@ export class SamplePlayer {
       this.#outBus.setFeedbackAmount(0);
 
       this.#voices.forEach((voice) => {
-        voice.feedback?.setAmountMacro(currAmount);
+        voice.effects.feedback?.setAmountMacro(currAmount);
       });
     } else {
       console.info('Feedback mode set to double-trouble, radical!');
@@ -1360,7 +1439,7 @@ export class SamplePlayer {
     this.#outBus.setFeedbackPitchScale(value);
 
     this.#voices.forEach((voice) => {
-      voice.feedback?.setDelayMultiplier(value);
+      voice.effects.feedback?.setDelayMultiplier(value);
     });
   }
 
@@ -1500,8 +1579,12 @@ export class SamplePlayer {
       // Clear sustained notes
       this.#sustainedNotes.clear();
 
-      this.#voices.forEach((voice) => voice.dispose());
+      for (const voice of this.#voices) {
+        if (voice.state !== VoiceState.AVAILABLE) this.#voiceStopped(voice);
+        voice.effects.dispose();
+      }
       this.#voices = [];
+      this.#worklet?.port.close();
       this.#worklet = null;
 
       if (this.#outBus) {

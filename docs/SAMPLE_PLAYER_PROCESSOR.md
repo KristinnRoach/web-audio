@@ -1,20 +1,20 @@
 # SamplePlayer ↔ SamplePlayerProcessor
 
-The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/SamplePlayer.ts`) and its `SamplePlayerProcessor` (`src/worklets/processors/play/sample-player-processor.js`), as of [migration](SAMPLE_PLAYER_VOICE_MIGRATION.md) step 5. The processor holds the pitch settings and works out every note's playback rate; no main → processor message carries a rate.
+The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/SamplePlayer.ts`) and its `SamplePlayerProcessor` (`src/worklets/processors/play/sample-player-processor.js`), as of [migration](SAMPLE_PLAYER_VOICE_MIGRATION.md) step 4b. The processor holds the pitch settings and works out every note's playback rate; no main → processor message carries a rate.
 
 ## Node
 
-`createSampleWorklet(context, voiceCount)` in `SampleVoice.ts`; `voiceCount` is the player's `polyphony` (default 16).
+`createSampleWorklet(context, voiceCount)` in `SamplePlayer.ts`; `voiceCount` is the player's `polyphony` (default 16).
 
 - `processorOptions: { voiceCount }`, `numberOfInputs: 0`, `numberOfOutputs: voiceCount * 2`.
 - Output `2i`: voice `i`'s stereo audio. Output `2i + 1`: voice `i`'s filter envelope in cents (mono), connected to that voice's `lpf.detune`; silent when the envelope is off.
-- AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `startPoint`, `endPoint`, `loopDurationDriftAmount`, `maxLoopCount`) belong to the node and are shared by every voice. The player sets each once.
+- AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `startPoint`, `endPoint`, `loopDurationDriftAmount`, `maxLoopCount`) belong to the node and are shared by every voice. `SamplePlayer` sets them on its worklet: `startPoint`, `endPoint`, `loopStart`, `loopEnd` (both at one event time when set together) and `loopDurationDriftAmount`; the pitch LFO drives `detune`.
 
 ## The `voice` tag
 
 - Main → processor: a message with `voice: i` goes to voice `i`; one without `voice` goes to every voice. `pool:*` messages go to the allocator and ignore the tag.
-- Processor → main: every report except `initialized` carries the `voice` index it came from. `SamplePlayer` hands a tagged report to `voices[voice]` and an untagged one to all voices.
-- `SamplePlayer` posts untagged. Only `SampleVoice.sendToProcessor` tags: `voice:stop` from a player's voice, and the messages of a stand-alone `SampleVoice`.
+- Processor → main: every report except `initialized` carries the `voice` index it came from. `SamplePlayer` applies it to its record `voices[voice]`.
+- `SamplePlayer` posts only untagged messages. Tagged messages remain for the engine tests in `src/worklets/processors/play/test/`, which drive voices directly.
 
 ## Main → processor
 
@@ -41,9 +41,8 @@ The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/
 | `voice:setPlaybackDirection`   | `playbackDirection: 'forward' \| 'reverse'`                                                 | untagged | `setPlaybackDirection()`                                                            |
 | `setTimestretchMode`           | `value: 'off' \| 'period'`                                                                  | untagged | `setTimestretchMode()`                                                              |
 | `setInterpolation`             | `value: 'linear' \| 'hermite' \| 'sinc'`                                                    | untagged | `init()` if set before it, `setInterpolation()`                                     |
-| `voice:stop`                   | `timestamp`                                                                                 | tagged   | `SampleVoice.dispose()` of a voice that is still sounding                           |
 
-The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, `velocity`, `glideTime`, `glideFromNote`) and `voice:release` (tagged). `SamplePlayer` does not send them; they serve a stand-alone `SampleVoice`. `voice:start` gets its rate from the pool like a `pool:noteOn`.
+The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, `velocity`, `glideTime`, `glideFromNote`) and `voice:stop` (`timestamp`), tagged or not. Nothing on the main thread sends them; they stay because the engine tests start and stop voices with them (and read the first voice through the processor's `engine`/`voice` fields). `voice:start` gets its rate from the pool like a `pool:noteOn`.
 
 ## Processor → main
 
@@ -54,8 +53,8 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 | `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                            | allocator picked this voice; posted before the engine starts, so it precedes its reports.      |
 | `voice:retuned`   | `midiNote`, `velocity`, `timestamp`, `glideTime`, `fallback`                                              | legato retune, rate already set; `fallback` means a note-off returned to an earlier held note. |
 | `voice:releasing` | none                                                                                                      |                                                                                                |
-| `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The voice emits `voice:stopped`.               |
-| `loop:enabled`    | `enabled`                                                                                                 | echo of `setLoopEnabled`, once per voice.                                                      |
+| `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The player emits `voice:stopped`.              |
+| `loop:enabled`    | `enabled`                                                                                                 | echo of `setLoopEnabled`, once per voice; ignored (the player emits its own).                  |
 | `loop:range`      | `loopStart`, `loopEnd`, `triggerId`; playing: `loopMode`, `isInPitchLoop`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.           |
 | `trim:range`      | `startPoint`, `endPoint`, `inverted`, `triggerId`                                                         | throttled.                                                                                     |
 | `voice:position`  | `position` (0..1), `triggerId`                                                                            | ~60 Hz, only while position tracking is on.                                                    |
@@ -63,9 +62,9 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 ## Pitch
 
 - `VoicePool` holds the pitch offset and whether pitch is on. A played note's rate is `midiToPlaybackRate(midiNote + offset)` (reference note 60), or 1 with pitch off. It computes the rate of a started note and its glide origin, of legato and fallback retunes, and of a `voice:start`. With pitch off nothing glides between notes; a legato retune still passes its glide time, so the ramp to rate 1 that disabling started is not cut short.
-- The glide origin is the last note applied, or the earlier held note a fallback returned to; 60 before the first note. `glideFromNote` in `voice:started` is that played note, `null` without glide; the voice adds its offset for its effects.
+- The glide origin is the last note applied, or the earlier held note a fallback returned to; 60 before the first note. `glideFromNote` in `voice:started` is that played note, `null` without glide; `VoiceEffects` adds its offset for the AM LFO.
 - A setting change retunes at the processor's `currentTime` when handled: a new offset moves voices that have a note with a 0.01 s time constant (0 while pitch is off); pitch off sends every voice to rate 1 with 0.1/3; pitch on retunes voices that have a note with 0.01/3.
-- `SampleVoice` keeps its own copy of the offset only for its main-thread effects (feedback, AM LFO).
+- `VoiceEffects` keeps its own copy of the offset only for its main-thread effects (feedback, AM LFO).
 
 ## Ordering the code relies on
 
@@ -75,20 +74,40 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 - Settings posted before `initialized` arrive are queued and applied in order; `initialized` only tells the player its voices are on defaults and need the player's envelopes, glides and position tracking.
 - `voice:started` is posted before the voice's first `loop:range`/`trim:range`, so the main thread knows the note's `triggerId` before ranges for it arrive.
 
+## Voice state on the main thread
+
+`SamplePlayer.#receive` keeps one record per voice, `{ state, midiNote, triggerId, effects }`, and emits on the player's own bus. Voice reports go out with the voice's id as `senderId` (`sample:loaded` with the last voice's) and as `voiceId`. A pitch offset change reaches held notes through `effects.setPitchOffset(offset, midiNote)`.
+
+| report                                       | record                                                                                                              | upstream                                                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `voice:started`                              | a voice not `AVAILABLE` was stolen: `voice:stopped` for its old note first; then `PLAYING`, `midiNote`, `triggerId` | bus `noteOn`, `voice:started` (`voiceId`, `midiNote`, `velocity`, `timestamp`, `glideTime`), then `effects.followNote` |
+| `voice:retuned`                              | only while `PLAYING`: `midiNote`                                                                                    | `effects.followNote`, bus follows; not passed on                                                                       |
+| `voice:releasing`                            | only while `PLAYING`: `RELEASING`                                                                                   | `voice:releasing` (`voiceId`, `midiNote`)                                                                              |
+| `voice:ended`                                | only for the current `triggerId`: `AVAILABLE`, `midiNote` null                                                      | `voice:stopped` (`voiceId`, `midiNote`)                                                                                |
+| `loop:range`, `trim:range`, `voice:position` | dropped when `idle`, when the voice is `AVAILABLE` or for another `triggerId`                                       | same type, `triggerId` replaced by `voiceId` and `midiNote`                                                            |
+
+`dispose()` emits `voice:stopped` for every voice still sounding.
+
+## Main-thread structure
+
+| piece          | holds                                                                                                    | does                                                                                                                                                                      |
+| -------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SamplePlayer` | the worklet, `voices[]` records, the buffer, legato and pitch settings, envelope configs, other settings | `init`, `loadAudio`, `dispose`; `play`, `release`, `releaseAll`; `#post` to and `#receive` from the processor; sets the worklet's AudioParams                             |
+| `VoiceEffects` | one voice's chain (source → am, hpf, feedback, lpf in configured order → out), its pitch offset          | built and wired in its constructor (outputs `2i` and `2i + 1`); `connect`, `followNote`, `getGainStages`, `dispose`; filter cutoffs, AM depth, waveform and octave offset |
+
 ## Usage
 
 ```ts
 // SamplePlayer.init(), shortened
 const worklet = createSampleWorklet(context, polyphony);
-const voices = Array.from(
-  { length: polyphony },
-  (_, voiceIndex) => new SampleVoice(context, { worklet, voiceIndex }),
-);
-worklet.port.onmessage = ({ data }) => {
-  for (const voice of data.voice === undefined ? voices : [voices[data.voice]]) {
-    voice.receive(data); // e.g. voice:started → state PLAYING, then forwarded upstream
-  }
-};
+const voices = Array.from({ length: polyphony }, (_, voiceIndex) => ({
+  state: VoiceState.AVAILABLE,
+  midiNote: null,
+  triggerId: 0,
+  effects: new VoiceEffects(context, worklet, voiceIndex),
+}));
+// e.g. voice:started → voices[3] PLAYING, effects follow, voice:started emitted upstream
+worklet.port.onmessage = ({ data }) => this.#receive(data);
 
 // play(60): untagged, the processor picks the voice when the note is due
 worklet.port.postMessage({

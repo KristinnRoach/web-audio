@@ -50,8 +50,8 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   expect(player.getLoopPitchPeriods()).toEqual(
     [60, 48, 36, 24, 12].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)),
   );
-  const { SampleVoice } = await import('./SampleVoice');
-  const setPitchOffset = vi.spyOn(SampleVoice.prototype, 'setPitchOffset');
+  const { VoiceEffects } = await import('./VoiceEffects');
+  const setPitchOffset = vi.spyOn(VoiceEffects.prototype, 'setPitchOffset');
   const setBusFeedbackPitch = vi.fn();
   player.setLoopPitchQuantization({ scale: [2], lowestOctave: 0, highestOctave: 5 });
 
@@ -85,15 +85,15 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     // The transpose carries quantized loops; rebuilding the periods too would shift them twice.
     player.transpose(2);
     expect(periodsPosted()).toHaveLength(2);
-    expect(setPitchOffset).toHaveBeenLastCalledWith(2);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(2, null);
     expect(ofType('pool:setPitchOffset').at(-1)).toEqual({ type: 'pool:setPitchOffset', value: 2 });
     expect(player.transposedBySemitones).toBe(2);
 
     // Fine tune sums with transpose instead of replacing it.
     player.fineTune(-50);
-    expect(setPitchOffset).toHaveBeenLastCalledWith(1.5);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(1.5, null);
     player.transpose(-1);
-    expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5);
+    expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5, null);
 
     // Bus feedback retunes from the last played note; before any note it has nothing to follow.
     expect(setBusFeedbackPitch).not.toHaveBeenCalled();
@@ -552,8 +552,7 @@ describe('SamplePlayer context watch', () => {
 
     player.dispose();
     player.dispose();
-    // Each voice lets go of the port once.
-    expect(close).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledOnce();
     expect(getNodeById(player.nodeId)).toBeNull();
     expect(player.initialized).toBe(false);
     expect(player.disposed).toBe(true);
@@ -679,6 +678,67 @@ it.each([null, 'linear', 'sinc'] as const)(
     }
   },
 );
+
+it('mirrors voice reports and passes on only those about the note each voice plays', async () => {
+  vi.stubGlobal('window', {});
+  vi.stubGlobal('AudioContext', class {});
+  vi.stubGlobal('AudioWorkletNode', class {});
+  vi.stubGlobal(
+    'GainNode',
+    class {
+      connect() {}
+      disconnect() {}
+    },
+  );
+  const { SamplePlayer } = await import('./SamplePlayer');
+  const context = Object.assign(new EventTarget(), { currentTime: 0 });
+  const player = new SamplePlayer({ context: context as unknown as AudioContext, polyphony: 2 });
+  const { report } = await initTestPlayer(player);
+  const upstream: any[] = [];
+  for (const type of ['voice:started', 'voice:releasing', 'voice:stopped', 'loop:range']) {
+    player.onMessage(type, (message: object) => upstream.push(message));
+  }
+  const started = { type: 'voice:started', velocity: 100, timestamp: 0, glideTime: 0 };
+  const range = { type: 'loop:range', loopStart: 0, loopEnd: 1 };
+
+  try {
+    report({ ...started, voice: 0, triggerId: 1, midiNote: 60, glideFromNote: null });
+    report({ ...range, voice: 0, triggerId: 0 }); // an earlier note's
+    report({ ...range, voice: 0, triggerId: 1, idle: true }); // the next note's
+    report({ ...range, voice: 0, triggerId: 1 });
+    report({ ...range, voice: 1, triggerId: 1 }); // a free voice
+    report({ type: 'voice:retuned', voice: 0, midiNote: 64, timestamp: 0, glideTime: 0 });
+    // Stolen for a new note: the old one stops without a report of its own.
+    report({ ...started, voice: 0, triggerId: 2, midiNote: 67, glideFromNote: null });
+    report({ type: 'voice:ended', voice: 0, triggerId: 1 });
+    report({ type: 'voice:releasing', voice: 0 });
+    report({ type: 'voice:ended', voice: 0, triggerId: 2 });
+    report({ type: 'voice:releasing', voice: 0 });
+    report({ ...started, voice: 1, triggerId: 3, midiNote: 72, glideFromNote: null });
+    player.dispose(); // stops what still sounds
+
+    const voiceId = upstream[0].voiceId;
+    expect(voiceId).toMatch(/^\d+-sample-voice$/);
+    expect(upstream.slice(0, 2)).toEqual([
+      { ...started, senderId: voiceId, voiceId, midiNote: 60 },
+      { type: 'loop:range', senderId: voiceId, voiceId, midiNote: 60, loopStart: 0, loopEnd: 1 },
+    ]);
+    expect(upstream.map(({ type, midiNote }) => [type, midiNote])).toEqual([
+      ['voice:started', 60],
+      ['loop:range', 60],
+      ['voice:stopped', 64],
+      ['voice:started', 67],
+      ['voice:releasing', 67],
+      ['voice:stopped', 67],
+      ['voice:started', 72],
+      ['voice:stopped', 72],
+    ]);
+    expect(upstream.at(-1).voiceId).not.toBe(voiceId);
+  } finally {
+    player.dispose();
+    vi.unstubAllGlobals();
+  }
+});
 
 describe('SamplePlayer with the real audio-thread voice pool', () => {
   let player: SamplePlayer | undefined;
@@ -847,6 +907,20 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     // The AM LFO sits an octave above the sounding note by default.
     const amNotes = getTestLFOs().flatMap((lfo) => lfo.setMusicalNote.mock.calls.map(([n]) => n));
     expect(amNotes).toContain(84);
+  });
+
+  it('schedules both loop points at one event time even if the audio clock advances', async () => {
+    const { player, worklet } = await setup();
+    const start = vi.spyOn(worklet.parameters.get('loopStart')!, 'setValueAtTime');
+    const end = vi.spyOn(worklet.parameters.get('loopEnd')!, 'setValueAtTime');
+    vi.spyOn(player, 'now', 'get')
+      .mockReturnValueOnce(2)
+      .mockReturnValue(2 + 128 / 48000);
+
+    player.setLoopPoints(0.1, 0.2);
+
+    expect(start.mock.calls).toEqual([[0.1, 2.001]]);
+    expect(end.mock.calls).toEqual([[0.2, 2.001]]);
   });
 
   it('posts note-off untagged at the scheduled time and tells the bus the sounding note', async () => {
