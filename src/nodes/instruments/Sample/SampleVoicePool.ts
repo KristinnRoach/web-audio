@@ -155,6 +155,12 @@ export class SampleVoicePool implements LibNode {
   }
 
   setBuffer(buffer: AudioBuffer, zeroCrossings?: number[]) {
+    if (buffer.sampleRate !== this.#context.sampleRate) {
+      console.warn(
+        `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.#context.sampleRate}`,
+      );
+      return this;
+    }
     // Reset loaded voices tracking for new buffer
     this.#loaded.clear();
     this.allNotesOff(); // notes scheduled on the old buffer go with it
