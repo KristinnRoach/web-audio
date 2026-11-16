@@ -15,7 +15,7 @@ Each step is a PR that can be ear-tested. Order: 4a, 5, 4b, then 6 and 7.
 - [x] 1. Pure allocator in the engine ([#184](https://github.com/KristinnRoach/web-audio/pull/184)).
 - [x] 2. Allocate on the audio thread; main thread mirrors ([#185](https://github.com/KristinnRoach/web-audio/pull/185)).
 - [x] 3. One processor, one output per voice. Effects stay on the main thread, wired to the outputs.
-- [x] 4a. Fold `SampleVoicePool` into `SamplePlayer`; stateless settings posted once, untagged ([#PR](PR_URL)). Contract: [SAMPLE_PLAYER_PROCESSOR.md](SAMPLE_PLAYER_PROCESSOR.md).
+- [x] 4a. Fold `SampleVoicePool` into `SamplePlayer`; stateless settings posted once, untagged ([#188](https://github.com/KristinnRoach/web-audio/pull/188)). Contract: [SAMPLE_PLAYER_PROCESSOR.md](SAMPLE_PLAYER_PROCESSOR.md).
 - [ ] 5. Pitch settings on the audio thread; it computes every note's rate.
 - [ ] 4b. Voice state mirror into plain records on `SamplePlayer`; `SampleVoice` keeps only its effect chain and is renamed `VoiceEffects`.
 - [ ] 6. Port per-voice effects into the engine, one PR each: filters, AM, feedback.
