@@ -1,6 +1,6 @@
 import { initTestPlayer } from './test/initTestPlayer';
 import { afterEach, expect, it, vi } from 'vite-plus/test';
-import type { SampleVoicePool } from './SampleVoicePool';
+import type { SamplePlayer } from './SamplePlayer';
 
 vi.mock('@/nodes/params', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -16,6 +16,19 @@ vi.mock('@/nodes/preprocessor/Preprocessor', async (importOriginal) => ({
 vi.mock('@/utils/audiodata/convert/resampleAudioBuffer', () => ({
   resampleAudioBuffer: vi.fn(),
 }));
+
+/** Answers each buffer the way the processor does: one `voice:loaded` per voice. */
+async function initLoadingPlayer(player: SamplePlayer, voiceCount: number) {
+  const test = await initTestPlayer(player, {
+    onPost: (message) => {
+      if (message.type !== 'voice:setBuffer') return;
+      for (let voice = 0; voice < voiceCount; voice++) {
+        test.report({ type: 'voice:loaded', voice, durationSeconds: message.durationSeconds });
+      }
+    },
+  });
+  return test;
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -61,12 +74,10 @@ it.each(['resampling', 'preprocessing', 'processor acknowledgement'])(
     });
     const context = Object.assign(new EventTarget(), { sampleRate: 48000, currentTime: 0 });
     const player = new SamplePlayer({ context: context as unknown as AudioContext });
-    const setBuffer = vi.fn((): SampleVoicePool => {
-      markEntered();
-      return pool;
+    // The processor never acknowledges, so the load waits for it.
+    const { ofType } = await initTestPlayer(player, {
+      onPost: (message) => message.type === 'voice:setBuffer' && markEntered(),
     });
-    const unsubscribe = vi.fn();
-    const pool = await initTestPlayer(player, { setBuffer, onMessage: () => unsubscribe });
     const buffer = {
       length: 1,
       duration: 1,
@@ -84,8 +95,7 @@ it.each(['resampling', 'preprocessing', 'processor acknowledgement'])(
     await rejected;
     expect(player.audiobuffer).toBeNull();
     expect(player.isLoaded).toBe(false);
-    if (stage === 'processor acknowledgement') expect(unsubscribe).toHaveBeenCalled();
-    else expect(setBuffer).not.toHaveBeenCalled();
+    expect(ofType('voice:setBuffer')).toHaveLength(stage === 'processor acknowledgement' ? 1 : 0);
     await expect(player.loadAudio(buffer)).rejects.toThrow('SamplePlayer is disposed');
   },
 );
@@ -105,7 +115,7 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
   const { resampleAudioBuffer } =
     await import('../../../utils/audiodata/convert/resampleAudioBuffer');
   const context = Object.assign(new EventTarget(), { sampleRate: 48000, currentTime: 0 });
-  const player = new SamplePlayer({ context: context as unknown as AudioContext });
+  const player = new SamplePlayer({ context: context as unknown as AudioContext, polyphony: 2 });
   const first = {
     length: 1,
     duration: 1,
@@ -114,51 +124,59 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
     getChannelData: () => new Float32Array([0.5]),
     copyFromChannel: (destination: Float32Array) => destination.set(new Float32Array([0.5])),
   };
-  const laterData = { ...first, sampleRate: 44100 };
   const firstBuffer = first as unknown as AudioBuffer;
-  const later = laterData as unknown as AudioBuffer;
+  const later = { ...first } as unknown as AudioBuffer;
+  const mismatched = { ...first, sampleRate: 44100 } as unknown as AudioBuffer;
   const failure = new Error('Rendering failed');
   vi.mocked(resampleAudioBuffer).mockImplementation(async (buffer) => {
     if (buffer === later) throw failure;
     return buffer;
   });
-  let loaded = () => {};
-  const publish = vi.fn(() => loaded());
-  const setLoopEnabled = vi.fn();
-  await initTestPlayer(player, {
-    allVoices: [{ setLoopEnabled }],
-    onMessage: (_type: string, callback: () => void) => {
-      loaded = callback;
-      return () => {};
-    },
-    setBuffer: publish,
-    applyToAllVoices: vi.fn(),
-    dispose: vi.fn(),
-  } as unknown as Partial<SampleVoicePool>);
-  vi.spyOn(player, 'releaseAll').mockReturnValue(player);
+  const { posted, ofType } = await initLoadingPlayer(player, 2);
+  const loaded = vi.fn();
+  player.onMessage('sample:loaded', loaded);
 
   try {
     const loopChanged = vi.fn();
     player.onMessage('loop:enabled', loopChanged);
     player.setLoopEnabled(true);
-    setLoopEnabled.mockClear();
     loopChanged.mockClear();
+    posted.length = 0;
     await expect(player.loadAudio(firstBuffer)).resolves.toBe(firstBuffer);
-    expect(publish).toHaveBeenCalledWith(firstBuffer, []);
+    // One untagged copy for the processor; held notes are released first.
+    expect(posted.map((message) => message.type).slice(0, 2)).toEqual([
+      'pool:allNotesOff',
+      'voice:setBuffer',
+    ]);
+    expect(ofType('voice:setBuffer')).toEqual([
+      { type: 'voice:setBuffer', buffer: [new Float32Array([0.5])], durationSeconds: 1 },
+    ]);
+    expect(ofType('voice:setZeroCrossings')).toEqual([]);
+    // Both voices acknowledged; the player announces the sample once.
+    expect(loaded).toHaveBeenCalledOnce();
+    expect(player.isLoaded).toBe(true);
     expect(player.audiobuffer).toBe(firstBuffer);
+    posted.length = 0;
     player.setLoopEnabled(true);
-    expect(setLoopEnabled).toHaveBeenCalledWith(true);
+    expect(ofType('setLoopEnabled')).toEqual([{ type: 'setLoopEnabled', value: true }]);
     expect(loopChanged).not.toHaveBeenCalled();
     player.setLoopLocked(true);
-    setLoopEnabled.mockClear();
+    posted.length = 0;
     player.setLoopEnabled(false);
-    expect(setLoopEnabled).not.toHaveBeenCalled();
+    expect(ofType('setLoopEnabled')).toEqual([]);
     expect(player.loopEnabled).toBe(true);
     expect(loopChanged).not.toHaveBeenCalled();
 
-    publish.mockClear();
+    posted.length = 0;
     await expect(player.loadAudio(later)).rejects.toThrow(failure);
-    expect(publish).not.toHaveBeenCalled();
+    expect(ofType('voice:setBuffer')).toEqual([]);
+    expect(player.audiobuffer).toBe(firstBuffer);
+
+    // A buffer at another rate is refused before notes stop or audio is sent.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(player.loadAudio(mismatched)).resolves.toBeNull();
+    expect(warn).toHaveBeenCalledWith('Sample rate mismatch - buffer: 44100, context: 48000');
+    expect(posted).toEqual([]);
     expect(player.audiobuffer).toBe(firstBuffer);
     await expect(player.loadAudio(firstBuffer)).resolves.toBe(firstBuffer);
 
@@ -265,42 +283,27 @@ it('sends pitch periods once per load, only in period mode', async () => {
     copyFromChannel: (destination: Float32Array) =>
       destination.set(new Float32Array(48000).fill(0.5)),
   } as unknown as AudioBuffer;
-  let loaded = () => {};
-  const setPitchPeriods = vi.fn();
-  // Init and load configure voices in other ways too; only this call matters here.
-  const voice = new Proxy({ setPitchPeriods } as Record<string | symbol, unknown>, {
-    get: (target, key) => target[key] ?? (() => {}),
-  });
-  await initTestPlayer(player, {
-    allVoices: [],
-    onMessage: (_type: string, callback: () => void) => {
-      loaded = callback;
-      return () => {};
-    },
-    setBuffer: vi.fn(() => loaded()),
-    applyToAllVoices: (fn: (voice: never) => void) => fn(voice as never),
-    dispose: vi.fn(),
-  } as unknown as Partial<SampleVoicePool>);
-  vi.spyOn(player, 'releaseAll').mockReturnValue(player);
+  const { ofType } = await initLoadingPlayer(player, 16);
+  const sent = () => ofType('voice:setPitchPeriods').length;
 
   // Choosing the mode before any audio has nothing to detect yet.
   player.setTimestretchMode('period');
-  expect(setPitchPeriods).not.toHaveBeenCalled();
+  expect(sent()).toBe(0);
   await player.loadAudio(buffer);
-  expect(setPitchPeriods).toHaveBeenCalledTimes(1);
+  expect(sent()).toBe(1);
 
   // Switching back to the mode reuses what the voices already hold.
   player.setTimestretchMode('off');
   player.setTimestretchMode('period');
-  expect(setPitchPeriods).toHaveBeenCalledTimes(1);
+  expect(sent()).toBe(1);
 
   // Voices clear periods on every load, even of the same buffer.
   await player.loadAudio(buffer);
-  expect(setPitchPeriods).toHaveBeenCalledTimes(2);
+  expect(sent()).toBe(2);
 
   player.setTimestretchMode('off');
   await player.loadAudio(buffer);
-  expect(setPitchPeriods).toHaveBeenCalledTimes(2);
+  expect(sent()).toBe(2);
   player.setTimestretchMode('period');
-  expect(setPitchPeriods).toHaveBeenCalledTimes(3);
+  expect(sent()).toBe(3);
 });

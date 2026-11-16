@@ -28,7 +28,6 @@ import { LFO } from '@/nodes/modulators/LFO/LFO';
 import { createInstrumentBus, type InstrumentBus } from '@/nodes/master/createInstrumentBus';
 import { BusNodeName } from '@/nodes/master/InstrumentBus';
 import { VOICE_SUM_GAIN } from '@/nodes/master/defaults';
-import { SampleVoicePool, type LegatoSettings } from './SampleVoicePool';
 import { getDuration, setDuration } from '@/nodes/modulators/envelope';
 import {
   assertValidEnvelopeConfig,
@@ -39,16 +38,49 @@ import type { AudioDestination } from '@/nodes/LibAudioNode';
 import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
-import { createSampleVoicePool } from './createSampleVoicePool';
-import type { InterpolationMode, SampleVoiceChainNode, TimestretchMode } from './SampleVoice';
+import {
+  SampleVoice,
+  createSampleWorklet,
+  type InterpolationMode,
+  type SampleVoiceChainNode,
+  type TimestretchMode,
+} from './SampleVoice';
 import { detectPitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   SAMPLE_ENVELOPE_IDS,
   createDefaultSampleEnvelopeConfig,
+  getSampleEnvelopeProcessorTarget,
+  resolveSampleEnvelopeForProcessor,
   type SampleEnvelopeId,
 } from './sample-envelope-policy';
 
 const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
+
+/** Voice reports the player passes on, after #fromVoice has had its say. */
+const VOICE_REPORTS = [
+  'voice:started',
+  'voice:stopped',
+  'voice:releasing',
+  'voice:retuned',
+  'voice:loaded',
+  // Resolved loop and trim in seconds, from whichever voice resolved them last.
+  'loop:range',
+  'trim:range',
+  // Playhead per voice (0..1 of the sample), only while position tracking is on.
+  'voice:position',
+];
+
+/**
+ * When noteOn retunes a playing voice instead of triggering a new one.
+ * `pitchLoop` waits until the voice is looping a pitch-length loop.
+ * `interval` is the inclusive range of signed semitones from the voice's current note.
+ */
+export type LegatoSettings = {
+  mode: 'off' | 'always' | 'pitchLoop';
+  interval?: readonly [min: number, max: number];
+  /** `legato` glides only notes that retune a playing voice; `always` (default) also glides new notes from the last one played. */
+  glide?: 'always' | 'legato';
+};
 
 export type SamplePlayerOptions = {
   context: BaseAudioContext;
@@ -114,7 +146,16 @@ export class SamplePlayer {
   #pitchPeriodsSent = false;
   #preprocessAudio = true;
 
-  #voicePool!: SampleVoicePool; // todo: fix use of '!'
+  /** One processor renders every voice; each `SampleVoice` wraps one of its outputs. */
+  #worklet: AudioWorkletNode | null = null;
+  // ponytail: the worklet's AudioParams are shared, so voice 0's param setters
+  // (setParam, setLoopPoints) set them for every voice. Move them here when
+  // SampleVoice is reduced to its effect chain (migration step 4b).
+  #voices: SampleVoice[] = [];
+  #loadedVoices = 0;
+  #legato: LegatoSettings = { mode: 'off' };
+  #noteId = 0;
+  #prevMidiNote = 60;
   #outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
@@ -162,31 +203,41 @@ export class SamplePlayer {
           this.#outBus = null as unknown as InstrumentBus;
         }
         this.#assertNotDisposed();
-        this.#voicePool = await createSampleVoicePool(
-          this.context,
-          this.#polyphony,
-          this.#voiceSignalChain,
+        const worklet = createSampleWorklet(this.context, this.#polyphony);
+        this.#worklet = worklet;
+        this.#voices = Array.from(
+          { length: this.#polyphony },
+          (_, voiceIndex) =>
+            new SampleVoice(this.context, {
+              internalSignalChain: this.#voiceSignalChain,
+              worklet,
+              voiceIndex,
+            }),
         );
-        if (this.#disposed) {
-          this.#voicePool.dispose();
-          this.#voicePool = null as unknown as SampleVoicePool;
-        }
+        this.#voices.forEach((voice) =>
+          this.#messages.forwardFrom(voice, VOICE_REPORTS, (msg) => this.#fromVoice(msg)),
+        );
+        worklet.port.onmessage = ({ data }) => this.#receive(data);
+        await Promise.all(this.#voices.map((voice) => voice.init()));
         this.#assertNotDisposed();
-        const interpolationMode = this.#interpolationMode;
-        if (interpolationMode !== null) {
-          this.#voicePool.applyToAllVoices((voice) => voice.setInterpolation(interpolationMode));
+
+        this.#post({ type: 'pool:setLegato', value: this.#legato });
+        if (this.#interpolationMode !== null) {
+          this.#post({ type: 'setInterpolation', value: this.#interpolationMode });
         }
         // Processors persist the periods across sample loads, so they are sent once here.
         // Keeps any periods configured before init.
-        const periods = this.#loopPitchPeriods;
-        this.#voicePool.applyToAllVoices((voice) => {
-          voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
-        });
+        this.#post({ type: 'setLoopQuantizePeriods', value: this.#loopPitchPeriods });
+        // Replay what was set before the worklet existed. Pitch periods follow the
+        // first sample load, which sends them for 'period' mode.
+        this.#post({ type: 'setLoopEnabled', value: this.#loopEnabled });
+        this.#post({ type: 'setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
+        this.#post({ type: 'setTimestretchMode', value: this.#timestretchMode });
+        this.#voices.forEach((voice) => voice.setPitchOffset(this.#pitchOffset));
 
         // Connect audio chain
         this.#connectAudioChain();
         this.#setupLFOs();
-        this.#setupMessageHandling();
 
         // Load initial sample if provided
         if (this.#initialAudio) {
@@ -213,7 +264,7 @@ export class SamplePlayer {
   }
 
   #connectAudioChain() {
-    this.#voicePool.connect(this.#outBus.input);
+    this.#voices.forEach((voice) => voice.connect(this.#outBus.input));
     this.#outBus.connect(this.#masterOut);
     this.#masterOut.connect(this.context.destination);
   }
@@ -302,83 +353,85 @@ export class SamplePlayer {
 
   /* === MESSAGES === */
 
-  #setupMessageHandling(): this {
-    this.#voicePool.onMessage('sample:loaded', () => {
-      this.#isLoaded = true;
+  /** Untagged, so the processor applies it to every voice. */
+  #post(message: object) {
+    this.#worklet?.port.postMessage(message);
+  }
 
-      // Rescale every shape to the new buffer and push it down. Voices come up on
-      // their own defaults, so this is also what first puts them on the owned state -
-      // without it the player and its voices would hold different shapes.
-      SAMPLE_ENVELOPE_IDS.forEach((id) => {
-        const { shape } = this.getEnvelope(id);
-        this.updateEnvelope(id, {
-          shape: { ...shape, points: setDuration(shape.points, this.#bufferDuration) },
-        });
+  /** A report names its voice; one without a `voice` (`initialized`) goes to all. */
+  #receive(data: any) {
+    for (const voice of data.voice === undefined ? this.#voices : [this.#voices[data.voice]]) {
+      voice.receive(data);
+    }
+    if (data.type === 'initialized') this.#onProcessorReady();
+  }
+
+  /** What the player does with a voice's report before passing it on; null keeps it here. */
+  #fromVoice(msg: Message): Message | null {
+    switch (msg.type) {
+      case 'voice:loaded':
+        // Every voice reports the one buffer; announce it once.
+        if (++this.#loadedVoices !== this.#voices.length) return null;
+        this.#onSampleLoaded();
+        return { ...msg, type: 'sample:loaded' };
+      case 'voice:started':
+        this.#followVoice(msg, false);
+        return msg;
+      case 'voice:retuned':
+        // A fallback decided before a later noteOn must not take the glide origin back.
+        if (msg.fallback && msg.noteId === this.#noteId) this.#prevMidiNote = msg.midiNote;
+        this.#followVoice(msg, true);
+        return null;
+    }
+    return msg;
+  }
+
+  #onSampleLoaded() {
+    this.#isLoaded = true;
+
+    // Rescale every shape to the new buffer and push it down. Voices come up on
+    // their own defaults, so this is also what first puts them on the owned state -
+    // without it the player and its voices would hold different shapes.
+    SAMPLE_ENVELOPE_IDS.forEach((id) => {
+      const { shape } = this.getEnvelope(id);
+      this.updateEnvelope(id, {
+        shape: { ...shape, points: setDuration(shape.points, this.#bufferDuration) },
       });
     });
+  }
 
-    this.#voicePool.onMessage('voice-pool:initialized', () => {
-      // Fresh voices start on defaults, so hand them the owned state before they play.
-      SAMPLE_ENVELOPE_IDS.forEach((id) => {
-        const config = this.getEnvelope(id);
-        this.#voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, config));
-      });
-      this.#voicePool.applyToAllVoices((voice) => voice.setLoopLengthGlide(this.#loopLengthGlide));
-      this.#voicePool.applyToAllVoices((voice) =>
-        voice.setLoopPositionGlide(this.#loopPositionGlide),
-      );
-      this.#voicePool.applyToAllVoices((voice) =>
-        voice.enablePositionTracking(this.#positionTracking),
-      );
-      this.#sendUpstreamMessage('sample-player:initialized', {});
-    });
-
-    this.#voicePool.onMessage('voice:started', (report) => this.#followVoice(report, false));
-    this.#voicePool.onMessage('voice:retuned', (report) => this.#followVoice(report, true));
-
-    // Forward voice pool messages upstream
-    this.#messages.forwardFrom(this.#voicePool, [
-      'voice-pool:initialized',
-      'voice:started',
-      'voice:stopped',
-      'voice:releasing',
-      'sample:loaded',
-      // Resolved loop and trim in seconds, from whichever voice resolved them last.
-      'loop:range',
-      'trim:range',
-      // Playhead per voice (0..1 of the sample), only while position tracking is on.
-      'voice:position',
-    ]);
-    return this;
+  #onProcessorReady() {
+    // Fresh voices start on defaults, so hand them the owned state before they play.
+    SAMPLE_ENVELOPE_IDS.forEach((id) => this.#postEnvelope(id, this.getEnvelope(id)));
+    this.#post({ type: 'setLoopLengthGlide', value: this.#loopLengthGlide });
+    this.#post({ type: 'setLoopPositionGlide', value: this.#loopPositionGlide });
+    this.#post({ type: 'voice:reportPlaybackPosition', value: this.#positionTracking });
+    this.#sendUpstreamMessage('sample-player:initialized', {});
+    this.#sendUpstreamMessage('voice-pool:initialized', { voiceCount: this.#voices.length });
   }
 
   // TODO: Check whether this is still needed after moving loop points to processor
   #resetLoopPoints() {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
-    const timestamp = this.context.currentTime;
-    this.#voicePool.applyToAllVoices((voice) =>
-      voice.setLoopPoints(this.#loopStart, this.#loopEnd, timestamp),
-    );
+    this.#voices[0]?.setLoopPoints(this.#loopStart, this.#loopEnd, this.context.currentTime);
     return this;
   }
 
   /* === LFOs === */
 
   setModulationDepth = (modType: 'AM' | 'FM', depth: number) =>
-    this.#voicePool.applyToAllVoices((v) => v.setModulationDepth(modType, depth));
+    this.#voices.forEach((v) => v.setModulationDepth(modType, depth));
 
   setAMModOctaveOffset = (offset: number) =>
-    this.#voicePool.applyToAllVoices((v) => v.setAMModOctaveOffset(offset));
+    this.#voices.forEach((v) => v.setAMModOctaveOffset(offset));
 
   setModulationWaveform(
     modType: 'AM' | 'FM' = 'AM',
     waveform: CustomLibWaveform | OscillatorType | PeriodicWave = 'triangle',
     customWaveOptions: WaveformOptions = {},
   ) {
-    this.#voicePool.applyToAllVoices((v) =>
-      v.setModulationWaveform(modType, waveform, customWaveOptions),
-    );
+    this.#voices.forEach((v) => v.setModulationWaveform(modType, waveform, customWaveOptions));
   }
 
   syncLFOsToNoteFreq(lfoId: 'gain-lfo' | 'pitch-lfo', enabled: boolean) {
@@ -415,10 +468,8 @@ export class SamplePlayer {
 
     gainLFO.connect(this.#outBus.input.gain);
 
-    this.#voicePool.applyToAllVoices((voice) => {
-      const param = voice.getParam('detune');
-      if (param) pitchLFO.connect(param);
-    });
+    const detune = this.#worklet?.parameters.get('detune');
+    if (detune) pitchLFO.connect(detune);
 
     this.#gainLFO = gainLFO;
     this.#pitchLFO = pitchLFO;
@@ -474,8 +525,15 @@ export class SamplePlayer {
         }
       }
       this.#assertNotDisposed();
+      if (buffer.sampleRate !== this.context.sampleRate) {
+        console.warn(
+          `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.context.sampleRate}`,
+        );
+        return null;
+      }
 
-      // Clear and release only if all preprocessing succeeds.
+      // Clear and release only if all preprocessing succeeds. This also drops
+      // notes scheduled on the old buffer.
       this.releaseAll();
       this.#isLoaded = false;
       this.#buffer = buffer;
@@ -483,12 +541,21 @@ export class SamplePlayer {
 
       const loadedPromise = new Promise<void>((resolve, reject) => {
         this.#cancelPendingLoad = reject;
-        unsubscribe = this.#voicePool.onMessage('sample:loaded', () => {
+        unsubscribe = this.#messages.onMessage('sample:loaded', () => {
           resolve();
         });
       });
 
-      this.#voicePool.setBuffer(buffer, newZeroCrossings);
+      this.#loadedVoices = 0;
+      // One copy for the processor, which every voice plays from. Copied so the
+      // caller's buffer is left alone in Brave.
+      const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
+        copyChannelData(buffer, i),
+      );
+      this.#post({ type: 'voice:setBuffer', buffer: channels, durationSeconds: buffer.duration });
+      if (newZeroCrossings.length) {
+        this.#post({ type: 'voice:setZeroCrossings', zeroCrossings: newZeroCrossings });
+      }
       // Voices drop their periods with the old buffer, even when it is the same one again.
       this.#pitchPeriodsSent = false;
       this.#sendPitchPeriods();
@@ -565,13 +632,24 @@ export class SamplePlayer {
     this.#lastPlayedNote = midiNote;
     this.#syncLFOsToNote(soundingNote);
 
-    // The audio thread picks the voice; the bus follows its report in #followVoice.
-    return this.#voicePool.noteOn(
-      midiNote,
-      safeVelocity,
-      secondsFromNow,
-      glideTime / GLIDE_TEMP_SCALAR,
-    );
+    const voice = this.#voices[0];
+    if (!voice || !this.#buffer) return null;
+    // The audio thread picks the voice when the note is due; the bus follows its
+    // report (`voice:started` or `voice:retuned`) in #followVoice.
+    this.#post({
+      type: 'pool:noteOn',
+      triggerId: ++this.#noteId,
+      // ponytail: every voice shares one pitch setting, so any voice can work out the
+      // note's rate. Per-voice tuning means the audio thread computing it per voice.
+      ...voice.noteMessage({
+        midiNote,
+        velocity: safeVelocity,
+        secondsFromNow,
+        glide: { fromMidiNote: this.#prevMidiNote, seconds: glideTime / GLIDE_TEMP_SCALAR },
+      }),
+    });
+    this.#prevMidiNote = midiNote;
+    return midiNote;
   }
 
   /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
@@ -587,7 +665,8 @@ export class SamplePlayer {
     // Remove from sustained notes if it was there
     this.#sustainedNotes.delete(midiNote);
 
-    this.#voicePool.noteOff(midiNote, secondsFromNow);
+    // A legato voice falling back to an earlier held note reports `voice:retuned` with `fallback`.
+    this.#post({ type: 'pool:noteOff', midiNote, timestamp: this.now + secondsFromNow });
     this.#outBus.noteOff(midiNote + this.#pitchOffset);
     this.#sendUpstreamMessage('note:off', { midiNote });
     return this;
@@ -595,7 +674,8 @@ export class SamplePlayer {
 
   releaseAll(): this {
     this.#sustainedNotes.clear();
-    this.#voicePool?.allNotesOff();
+    // Releases every held note and drops the ones still waiting to sound.
+    this.#post({ type: 'pool:allNotesOff', timestamp: this.now });
     this.#outBus?.releaseAll();
     return this;
   }
@@ -604,7 +684,7 @@ export class SamplePlayer {
 
   /** Off plays every note at the sample's own pitch; the pitch envelope still bends it. */
   setPitchEnabled(enabled: boolean): this {
-    this.#voicePool.allVoices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
+    this.#voices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
     return this;
   }
 
@@ -614,7 +694,7 @@ export class SamplePlayer {
   }
 
   /**
-   * The pool reports each note once its voice is picked. The bus follows: same
+   * The processor reports each note once its voice is picked. The bus follows: same
    * glide, and a legato retune doesn't restart its decay. A voice falling back
    * to an earlier held note takes the note-tracking LFOs and bus feedback with it.
    */
@@ -641,7 +721,7 @@ export class SamplePlayer {
 
   #applyPitchOffset(): this {
     const offset = this.#pitchOffset;
-    this.#voicePool.applyToAllVoices((voice) => voice.setPitchOffset(offset));
+    this.#voices.forEach((voice) => voice.setPitchOffset(offset));
     if (this.#lastPlayedNote !== null) {
       const soundingNote = this.#lastPlayedNote + offset;
       this.#syncLFOsToNote(soundingNote);
@@ -728,9 +808,7 @@ export class SamplePlayer {
     const periods = this.#getNotePeriodsInSeconds(scale, lowestOctave, highestOctave);
     this.#loopPitchPeriods = periods;
 
-    this.#voicePool?.applyToAllVoices((voice) => {
-      voice.sendToProcessor({ type: 'setLoopQuantizePeriods', value: periods });
-    });
+    this.#post({ type: 'setLoopQuantizePeriods', value: periods });
 
     return this;
   }
@@ -775,33 +853,33 @@ export class SamplePlayer {
   }
 
   setSampleStartPoint(seconds: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setParam('startPoint', seconds));
+    this.#voices[0]?.setParam('startPoint', seconds);
     return this;
   }
 
   setSampleEndPoint(seconds: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setParam('endPoint', seconds));
+    this.#voices[0]?.setParam('endPoint', seconds);
     return this;
   }
 
   /** Posts `voice:position` (0..1 of the sample, ~60 Hz) per sounding voice. Off by default. */
   enablePositionTracking(enabled: boolean): this {
     this.#positionTracking = enabled;
-    this.#voicePool?.applyToAllVoices((voice) => voice.enablePositionTracking(enabled));
+    this.#post({ type: 'voice:reportPlaybackPosition', value: enabled });
     return this;
   }
 
   /** Length glide time constant between quantized loop periods. 0 = stepped. */
   setLoopLengthGlide(seconds: number): this {
     this.#loopLengthGlide = seconds;
-    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopLengthGlide(seconds));
+    this.#post({ type: 'setLoopLengthGlide', value: seconds });
     return this;
   }
 
   /** Position glide time constant for quantized audio-rate loops. 0 = instant. */
   setLoopPositionGlide(seconds: number): this {
     this.#loopPositionGlide = seconds;
-    this.#voicePool?.applyToAllVoices((voice) => voice.setLoopPositionGlide(seconds));
+    this.#post({ type: 'setLoopPositionGlide', value: seconds });
     return this;
   }
 
@@ -812,7 +890,8 @@ export class SamplePlayer {
 
   /** Retune a playing voice instead of retriggering; `{ mode: 'off' }` restores normal triggering. */
   setLegato(settings: LegatoSettings): this {
-    this.#voicePool.legato = { ...settings };
+    this.#legato = { ...settings };
+    this.#post({ type: 'pool:setLegato', value: this.#legato });
     return this;
   }
 
@@ -820,7 +899,7 @@ export class SamplePlayer {
     // if loop is locked (ON), turning it off is disabled but turning it on should work
     if (this.#loopLocked && !enabled) return this;
 
-    this.#voicePool?.allVoices.forEach((v) => v.setLoopEnabled(enabled));
+    this.#post({ type: 'setLoopEnabled', value: enabled });
     if (this.#loopEnabled === enabled) return this;
     this.#loopEnabled = enabled;
 
@@ -888,7 +967,7 @@ export class SamplePlayer {
   }
 
   setPlaybackDirection(direction: 'forward' | 'reverse'): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setPlaybackDirection(direction));
+    this.#post({ type: 'voice:setPlaybackDirection', playbackDirection: direction });
     return this;
   }
 
@@ -900,24 +979,24 @@ export class SamplePlayer {
    * sounds an octave lower, since one cycle covers the loop twice.
    */
   setLoopPingPong(enabled: boolean): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setLoopPingPong(enabled));
+    this.#post({ type: 'setLoopPingPong', value: enabled });
     return this;
   }
 
   setLoopDurationDriftAmount(amount: number): this {
-    this.#voicePool.applyToAllVoices((voice) => voice.setLoopDurationDriftAmount(amount));
+    this.#voices[0]?.setLoopDurationDriftAmount(amount);
     return this;
   }
 
   setPanDriftEnabled = (enabled: boolean) => {
-    this.#voicePool.applyToAllVoices((voice) => voice.setPanDriftEnabled(enabled));
+    this.#post({ type: 'setPanDriftEnabled', value: enabled });
     return this;
   };
 
   setTimestretchMode = (mode: TimestretchMode) => {
     this.#timestretchMode = mode;
     this.#sendPitchPeriods();
-    this.#voicePool.applyToAllVoices((voice) => voice.setTimestretchMode(mode));
+    this.#post({ type: 'setTimestretchMode', value: mode });
     return this;
   };
 
@@ -927,7 +1006,7 @@ export class SamplePlayer {
       throw new RangeError('Interpolation mode must be linear, hermite or sinc');
     }
     this.#interpolationMode = mode;
-    this.#voicePool?.applyToAllVoices((voice) => voice.setInterpolation(mode));
+    this.#post({ type: 'setInterpolation', value: mode });
     return this;
   };
 
@@ -935,8 +1014,11 @@ export class SamplePlayer {
   #sendPitchPeriods() {
     const buffer = this.#buffer;
     if (this.#timestretchMode !== 'period' || !buffer || this.#pitchPeriodsSent) return;
-    const pitchPeriods = detectPitchPeriods(copyChannelData(buffer, 0), buffer.sampleRate);
-    this.#voicePool.applyToAllVoices((voice) => voice.setPitchPeriods(pitchPeriods));
+    const { periods, hopSamples } = detectPitchPeriods(
+      copyChannelData(buffer, 0),
+      buffer.sampleRate,
+    );
+    this.#post({ type: 'voice:setPitchPeriods', periods, hopSamples });
     this.#pitchPeriodsSent = true;
   }
 
@@ -955,7 +1037,7 @@ export class SamplePlayer {
   setKeytrackLoopAmount(amount: number) {
     const clamped = Math.max(0, Math.min(1, amount));
     this.#keytrackLoopAmount = clamped;
-    this.#voicePool.applyToAllVoices((voice) => voice.setKeytrackLoopAmount(clamped));
+    this.#post({ type: 'setKeytrackLoopAmount', value: clamped });
     return this;
   }
 
@@ -975,11 +1057,11 @@ export class SamplePlayer {
     if (loopPoint === 'start') {
       if (seconds === this.loopStart) return this;
       this.#loopStart = seconds;
-      this.#voicePool.applyToAllVoices((voice) => voice.setParam('loopStart', seconds, timestamp));
+      this.#voices[0]?.setParam('loopStart', seconds, timestamp);
     } else {
       if (seconds === this.loopEnd) return this;
       this.#loopEnd = seconds;
-      this.#voicePool.applyToAllVoices((voice) => voice.setParam('loopEnd', seconds, timestamp));
+      this.#voices[0]?.setParam('loopEnd', seconds, timestamp);
     }
 
     this.#sendUpstreamMessage('loop-points:updated', {
@@ -999,7 +1081,7 @@ export class SamplePlayer {
     const timestamp = this.context.currentTime;
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
-    this.#voicePool.applyToAllVoices((voice) => voice.setLoopPoints(loopStart, loopEnd, timestamp));
+    this.#voices[0]?.setLoopPoints(loopStart, loopEnd, timestamp);
 
     this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
@@ -1036,11 +1118,11 @@ export class SamplePlayer {
 
   // TODO: Consider moving source of truth from SampleVoice to SamplePlayer, or convert to MacroParams, symmetrical with the loop start/end points
   getStartPoint(): number {
-    return this.#voicePool?.allVoices[0]?.startPoint ?? 0;
+    return this.#voices[0]?.startPoint ?? 0;
   }
 
   getEndPoint(): number {
-    return this.#voicePool?.allVoices[0]?.endPoint ?? this.sampleDuration;
+    return this.#voices[0]?.endPoint ?? this.sampleDuration;
   }
 
   getLoopLengthGlide(): number {
@@ -1115,7 +1197,7 @@ export class SamplePlayer {
     const next = cloneEnvelopeConfig(merged);
     this.envelopeConfigs.set(id, next);
 
-    this.#voicePool.applyToAllVoices((voice) => voice.setEnvelopeConfig(id, next));
+    this.#postEnvelope(id, next);
 
     this.#sendUpstreamMessage('envelope:changed', { id, config: cloneEnvelopeConfig(next) });
   }
@@ -1130,9 +1212,19 @@ export class SamplePlayer {
     );
   }
 
-  /** Envelope ids on the current voices; empty until the pool is initialized. */
+  /** The processor applies a new shape at its next point. */
+  #postEnvelope(id: SampleEnvelopeId, config: EnvelopeConfig) {
+    if (!this.envelopeIds.includes(id)) return;
+    this.#post({
+      type: 'setEnvelope',
+      target: getSampleEnvelopeProcessorTarget(id),
+      value: config.enabled ? resolveSampleEnvelopeForProcessor(id, config) : null,
+    });
+  }
+
+  /** Envelope ids on the current voices; empty until the player is initialized. */
   get envelopeIds(): readonly SampleEnvelopeId[] {
-    return this.#voicePool?.allVoices[0]?.envelopeIds ?? [];
+    return this.#voices[0]?.envelopeIds ?? [];
   }
 
   /**
@@ -1145,8 +1237,15 @@ export class SamplePlayer {
       `bus.${name}`,
       node,
     ]);
+    // Each voice stage, prefixed `voice.`, is metered as the sum across every voice:
+    // it reads whatever is playing without depending on which voice was picked.
+    const perVoice = includeVoices ? this.#voices.map((voice) => voice.getGainStages()) : [];
+    const voiceStages = Object.keys(perVoice[0] ?? {}).map((name) => [
+      `voice.${name}`,
+      perVoice.map((stages) => stages[name]),
+    ]);
     return {
-      ...(includeVoices ? this.#voicePool.getGainStages() : {}),
+      ...Object.fromEntries(voiceStages),
       ...Object.fromEntries(busStages),
       masterOut: this.#masterOut,
     };
@@ -1185,9 +1284,7 @@ export class SamplePlayer {
   setLpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' | 'all' = 'pre') => {
     this.#lpfCutoff = hz;
     if (preOrPostFx === 'pre' || preOrPostFx === 'all') {
-      this.#voicePool.applyToAllVoices((v) => {
-        v.setLpfCutoff(hz);
-      });
+      this.#voices.forEach((v) => v.setLpfCutoff(hz));
     }
     if (preOrPostFx === 'post' || preOrPostFx === 'all') {
       this.#outBus.setLpfCutoff(hz);
@@ -1197,9 +1294,7 @@ export class SamplePlayer {
   setHpfCutoff = (hz: number, preOrPostFx: 'pre' | 'post' = 'post') => {
     this.#hpfCutoff = hz;
     if (preOrPostFx === 'pre') {
-      this.#voicePool.applyToAllVoices((v) => {
-        v.setHpfCutoff(hz);
-      });
+      this.#voices.forEach((v) => v.setHpfCutoff(hz));
     } else if (preOrPostFx === 'post') {
       this.#outBus.setHpfCutoff(hz);
     }
@@ -1211,7 +1306,7 @@ export class SamplePlayer {
 
   setFeedbackDecay(value: number) {
     this.#outBus.setFeedbackDecay(value);
-    this.#voicePool.applyToAllVoices((voice) => {
+    this.#voices.forEach((voice) => {
       voice.feedback?.setDecay(value);
     });
   }
@@ -1219,7 +1314,7 @@ export class SamplePlayer {
   setFeedbackLowpassCutoff(freqHz: number) {
     this.#outBus.setFeedbackLowpassCutoff(freqHz);
 
-    this.#voicePool.applyToAllVoices((voice) => {
+    this.#voices.forEach((voice) => {
       voice.feedback?.setLowpassCutoff(freqHz);
     });
   }
@@ -1233,7 +1328,7 @@ export class SamplePlayer {
     }
 
     if (this.#feedbackMode === 'polyphonic' || this.#feedbackMode === 'double-trouble') {
-      this.#voicePool.applyToAllVoices((voice) => {
+      this.#voices.forEach((voice) => {
         voice.feedback?.setAmountMacro(amount);
       });
     }
@@ -1245,8 +1340,8 @@ export class SamplePlayer {
     this.#feedbackMode = mode;
 
     if (mode === 'monophonic') {
-      let currAmount = this.#voicePool.allVoices[0].feedback?.currentAmount ?? 0;
-      this.#voicePool.applyToAllVoices((voice) => {
+      let currAmount = this.#voices[0].feedback?.currentAmount ?? 0;
+      this.#voices.forEach((voice) => {
         voice.feedback?.setAmountMacro(0);
       });
       this.#outBus.setFeedbackAmount(currAmount);
@@ -1256,7 +1351,7 @@ export class SamplePlayer {
 
       this.#outBus.setFeedbackAmount(0);
 
-      this.#voicePool.applyToAllVoices((voice) => {
+      this.#voices.forEach((voice) => {
         voice.feedback?.setAmountMacro(currAmount);
       });
     } else {
@@ -1267,7 +1362,7 @@ export class SamplePlayer {
   setFeedbackPitchScale(value: number) {
     this.#outBus.setFeedbackPitchScale(value);
 
-    this.#voicePool.applyToAllVoices((voice) => {
+    this.#voices.forEach((voice) => {
       voice.feedback?.setDelayMultiplier(value);
     });
   }
@@ -1408,10 +1503,9 @@ export class SamplePlayer {
       // Clear sustained notes
       this.#sustainedNotes.clear();
 
-      if (this.#voicePool) {
-        this.#voicePool.dispose();
-        this.#voicePool = null as unknown as SampleVoicePool;
-      }
+      this.#voices.forEach((voice) => voice.dispose());
+      this.#voices = [];
+      this.#worklet = null;
 
       if (this.#outBus) {
         this.#outBus.dispose();
