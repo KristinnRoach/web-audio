@@ -1,5 +1,19 @@
 # @kidlib/web-audio
 
+## 0.12.0
+
+### Minor Changes
+
+- b53e6b6: Add `setGlobalAudioContext(context)` to share an existing `AudioContext` (e.g. with Tone.js).
+- 2972692: Add `SamplePlayer.flushMessages()`. In offline renders, await it after posting notes and before `resume()`.
+- b53e6b6: Instruments, effects and modulators accept any `BaseAudioContext`, including `OfflineAudioContext`. `SamplePlayer.context` and `InstrumentBus.context` are now typed `BaseAudioContext`.
+
+### Patch Changes
+
+- b53e6b6: Fix `SamplePlayer.dispose()` leaking bus effect and feedback nodes.
+- d0c5580: Fix clipping and pumping on chords. Output is quieter (more headroom, bus compressor bypassed), but the `volume` default rises to 0.75. AM, amp LFO, distortion and feedback add less loudness at high settings. `setCompressorParams()` no longer affects the sound.
+- 2972692: `SamplePlayer` runs all voices in one audio-thread processor that also allocates voices and computes pitch. Scheduled notes steal voices when they start, and `voice:*` events arrive a few ms after `play()`/`release()`.
+
 ## 0.11.0
 
 ### Minor Changes
