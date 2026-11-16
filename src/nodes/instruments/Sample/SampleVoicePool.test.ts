@@ -56,7 +56,7 @@ vi.mock('./createSampleVoice', async () => {
     /** Every event is due at once, so a test reads the decision on the next line. */
     sendToProcessor(message: any) {
       if (message.type === 'pool:setLegato') this.pool.allocator.legato = message.value;
-      else if (message.type !== 'pool:dispose') {
+      else {
         this.pool.schedule(message);
         this.pool.advance(Infinity);
       }
@@ -242,12 +242,39 @@ describe('SamplePlayer sustain with the real voice pool', () => {
 
 async function setup(polyphony = 3) {
   const { SampleVoicePool } = await import('./SampleVoicePool');
-  const pool = new SampleVoicePool({ currentTime: 0 } as AudioContext, polyphony);
+  const pool = new SampleVoicePool(
+    { currentTime: 0, sampleRate: 48000 } as AudioContext,
+    polyphony,
+  );
   await pool.init();
   return pool;
 }
 
 describe('SampleVoicePool', () => {
+  it('rejects a mismatched buffer before stopping notes or loading audio', async () => {
+    const pool = await setup();
+    const loadBuffer = vi.fn();
+    Object.assign(pool.allVoices[0], { loadBuffer });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      pool.noteOn(60);
+      const buffer = { sampleRate: 44100 } as AudioBuffer;
+      expect(pool.setBuffer(buffer)).toBe(pool);
+      expect(warn).toHaveBeenCalledWith('Sample rate mismatch - buffer: 44100, context: 48000');
+      expect(pool.playingVoicesCount).toBe(1);
+      expect(loadBuffer).not.toHaveBeenCalled();
+
+      const matchingBuffer = { sampleRate: 48000 } as AudioBuffer;
+      const zeroCrossings = [0, 100];
+      expect(pool.setBuffer(matchingBuffer, zeroCrossings)).toBe(pool);
+      expect(pool.playingVoicesCount).toBe(0);
+      expect(loadBuffer).toHaveBeenCalledExactlyOnceWith(matchingBuffer, zeroCrossings, true);
+    } finally {
+      warn.mockRestore();
+      pool.dispose();
+    }
+  });
+
   it('returns to the most recent held note without retriggering', async () => {
     const pool = await setup();
     pool.legato = { mode: 'always' };

@@ -31,8 +31,6 @@ export class SampleVoicePool implements LibNode {
   #loaded = new Set<NodeID>();
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
-  #bufferId = 0;
-  #initAttempt = 0;
 
   constructor(
     context: BaseAudioContext,
@@ -54,10 +52,6 @@ export class SampleVoicePool implements LibNode {
       try {
         this.#allVoices = await createSampleVoices(this.#polyphony, this.#context, {
           internalSignalChain: this.#voiceSignalChain,
-          // Voices sharing an id form one pool on the audio thread, which allocates.
-          // ponytail: a new id per attempt keeps voices orphaned by a failed init out of
-          // the retry's pool; their pool leaks until one processor owns all the voices.
-          processorOptions: { poolId: `${this.nodeId}:${++this.#initAttempt}` },
         });
         this.#post({ type: 'pool:setLegato', value: this.#legato });
 
@@ -161,18 +155,21 @@ export class SampleVoicePool implements LibNode {
   }
 
   setBuffer(buffer: AudioBuffer, zeroCrossings?: number[]) {
+    if (buffer.sampleRate !== this.#context.sampleRate) {
+      console.warn(
+        `Sample rate mismatch - buffer: ${buffer.sampleRate}, context: ${this.#context.sampleRate}`,
+      );
+      return this;
+    }
     // Reset loaded voices tracking for new buffer
     this.#loaded.clear();
     this.allNotesOff(); // notes scheduled on the old buffer go with it
-    // A rejected buffer reaches no voice, so the audio thread must not wait for it.
-    const accepted = buffer.sampleRate === this.#context.sampleRate;
-    const bufferId = accepted ? ++this.#bufferId : this.#bufferId;
-    if (accepted) this.#post({ type: 'pool:expectBuffer', bufferId });
-    this.#allVoices.forEach((voice) => voice.loadBuffer(buffer, zeroCrossings, bufferId));
+    // One copy for the processor, which every voice plays from.
+    void this.#allVoices[0]?.loadBuffer(buffer, zeroCrossings, true);
     return this;
   }
 
-  /** Any voice's port reaches the pool on the audio thread. */
+  /** The voices share one port, which reaches the pool on the audio thread. */
   #post(message: object) {
     this.#allVoices[0]?.sendToProcessor(message);
   }
@@ -275,7 +272,6 @@ export class SampleVoicePool implements LibNode {
   }
 
   dispose() {
-    this.#post({ type: 'pool:dispose' });
     this.applyToAllVoices((voice) => voice.dispose());
     this.#allVoices = [];
     this.#loaded.clear();

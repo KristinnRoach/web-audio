@@ -34,7 +34,8 @@ const audio = vi.hoisted(() => {
   class FakeAudioWorkletNode {
     parameters = new Map(PARAM_NAMES.map((name) => [name, fakeParam()]));
     port = {
-      postMessage: (msg: any) => latest.posted.push(msg),
+      // A voice addresses its messages; these tests have one voice, so drop the index.
+      postMessage: ({ voice: _voice, ...msg }: any) => latest.posted.push(msg),
       start: () => {},
       onmessage: null,
     };

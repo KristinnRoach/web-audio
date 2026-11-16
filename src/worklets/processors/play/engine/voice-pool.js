@@ -9,8 +9,6 @@ export class PoolVoice {
   state = 'AVAILABLE';
   midiNote = null;
   triggerTimestamp = -1;
-  /** Which buffer load this voice has received; see `VoicePool.bufferId`. */
-  bufferId;
   /** Counts pitch decisions, so a rate the node sends back for an older one can be dropped. */
   pitchId = 0;
   #inPitchLoop = false;
@@ -66,9 +64,6 @@ export class PoolVoice {
  */
 export class VoicePool {
   allocator = new VoiceAllocator();
-  // Buffers reach each voice on its own port and notes on one, in no promised
-  // order between ports. Notes wait until every voice has the announced buffer.
-  bufferId;
   #queue = [];
   #lastNoteId;
 
@@ -78,10 +73,6 @@ export class VoicePool {
 
   /** `pool:noteOn`, `pool:noteOff` or `pool:allNotesOff`, each with a `timestamp` in seconds. */
   schedule(event) {
-    if (event.type === 'pool:expectBuffer') {
-      this.bufferId = event.bufferId;
-      return;
-    }
     if (event.type === 'pool:allNotesOff') {
       // Takes notes that have not sounded yet with it.
       this.#queue.length = 0;
@@ -97,7 +88,6 @@ export class VoicePool {
 
   /** Applies every event due before `time`. Call at the top of each render block. */
   advance(time) {
-    if (this.allocator.voices.some((voice) => voice.bufferId !== this.bufferId)) return;
     while (this.#queue.length && this.#queue[0].timestamp < time) this.#apply(this.#queue.shift());
   }
 

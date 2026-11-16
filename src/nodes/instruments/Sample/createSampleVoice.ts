@@ -1,22 +1,27 @@
-// createSampleVoice.ts
-import { SampleVoice, type SampleVoiceChainNode } from './SampleVoice';
+import { SampleVoice, createSampleWorklet, type SampleVoiceChainNode } from './SampleVoice';
 
-export async function createSampleVoice(
-  context: BaseAudioContext,
-  options?: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] },
-): Promise<SampleVoice> {
-  const voice = new SampleVoice(context, options);
-  await voice.init();
-  return voice;
-}
-
+/** One processor renders every voice; each `SampleVoice` wraps one of its outputs. */
 export async function createSampleVoices(
   numVoices: number,
   context: BaseAudioContext,
-  options?: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] },
+  options?: { internalSignalChain?: readonly SampleVoiceChainNode[] },
 ): Promise<SampleVoice[]> {
-  const voicePromises = Array.from({ length: numVoices }, () =>
-    createSampleVoice(context, options),
+  const worklet = createSampleWorklet(context, numVoices);
+  const voices = Array.from(
+    { length: numVoices },
+    (_, voiceIndex) => new SampleVoice(context, { ...options, worklet, voiceIndex }),
   );
-  return Promise.all(voicePromises);
+  // A report names its voice; `initialized` names none and goes to all.
+  worklet.port.onmessage = ({ data }) => {
+    for (const voice of data.voice === undefined ? voices : [voices[data.voice]]) {
+      voice.receive(data);
+    }
+  };
+  try {
+    await Promise.all(voices.map((voice) => voice.init()));
+  } catch (error) {
+    voices.forEach((voice) => voice.dispose());
+    throw error;
+  }
+  return voices;
 }

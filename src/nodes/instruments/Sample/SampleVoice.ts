@@ -33,6 +33,15 @@ export type InterpolationMode = 'linear' | 'hermite' | 'sinc';
 
 const DEFAULT_CHAIN_ORDER: readonly SampleVoiceChainNode[] = ['am', 'hpf', 'feedback', 'lpf'];
 
+/** The processor node for `voiceCount` voices: per voice, stereo audio then its filter envelope in cents (for lpf.detune). */
+export const createSampleWorklet = (context: BaseAudioContext, voiceCount: number) =>
+  new AudioWorkletNode(context, 'sample-player-processor', {
+    numberOfInputs: 0,
+    numberOfOutputs: voiceCount * 2,
+    outputChannelCount: Array.from({ length: voiceCount }, () => [2, 1]).flat(),
+    processorOptions: { voiceCount },
+  });
+
 export class SampleVoice {
   readonly nodeId: NodeID;
   readonly nodeType: NodeType = 'sample-voice';
@@ -40,7 +49,11 @@ export class SampleVoice {
   #initPromise: Promise<void> | null = null;
 
   #outputNode: GainNode;
+  /** The player's processor, shared by its voices; this one is voice `#voiceIndex` in it. */
   #playerWorklet: AudioWorkletNode;
+  #voiceIndex: number;
+  /** This voice's audio as it leaves the processor. */
+  #source: GainNode;
 
   #am_lfo: LFO | null = null;
   #am_lfo_semitone_offset: number = samplerParams.amModOctaveOffset.defaultValue * 12;
@@ -79,7 +92,11 @@ export class SampleVoice {
 
   constructor(
     private context: BaseAudioContext,
-    options: { processorOptions?: any; internalSignalChain?: readonly SampleVoiceChainNode[] } = {},
+    options: {
+      worklet?: AudioWorkletNode;
+      voiceIndex?: number;
+      internalSignalChain?: readonly SampleVoiceChainNode[];
+    } = {},
   ) {
     const signalChain = options.internalSignalChain ?? DEFAULT_CHAIN_ORDER;
     if (new Set(signalChain).size !== signalChain.length) {
@@ -92,13 +109,12 @@ export class SampleVoice {
 
     this.#outputNode = new GainNode(context, { gain: 1 });
 
-    this.#playerWorklet = new AudioWorkletNode(context, 'sample-player-processor', {
-      numberOfInputs: 0,
-      numberOfOutputs: 2,
-      // Stereo audio, plus the audio-thread filter envelope in cents for lpf.detune
-      outputChannelCount: [2, 1],
-      processorOptions: options.processorOptions || {},
-    });
+    this.#source = new GainNode(context, { gain: 1 });
+    this.#voiceIndex = options.voiceIndex ?? 0;
+    // ponytail: a voice on its own makes a one-voice processor, which only tests use.
+    // Goes when the voice is reduced to its effect chain.
+    this.#playerWorklet = options.worklet ?? createSampleWorklet(context, 1);
+    if (!options.worklet) this.#playerWorklet.port.onmessage = (e) => this.receive(e.data);
 
     // Connections are made in #connectAudioChain() during init()
   }
@@ -113,8 +129,6 @@ export class SampleVoice {
         // Connect nodes
         this.#connectAudioChain();
 
-        // Setup message handling
-        this.#setupWorkletMessageHandling();
         this.#playerWorklet.port.start();
       } catch (error) {
         this.dispose();
@@ -148,13 +162,15 @@ export class SampleVoice {
 
   #connectAudioChain() {
     const stages = [
-      { name: 'worklet', in: this.#playerWorklet, out: this.#playerWorklet as AudioNode },
+      { name: 'worklet', in: this.#source as AudioNode, out: this.#source as AudioNode },
       ...this.#chainStages(),
       { name: 'out', in: this.#outputNode as AudioNode, out: this.#outputNode as AudioNode },
     ];
     for (let i = 0; i < stages.length - 1; i++) stages[i].out.connect(stages[i + 1].in);
+    // Each voice has two outputs: its audio, then its filter envelope in cents.
+    this.#playerWorklet.connect(this.#source, this.#voiceIndex * 2);
     // Sums with lpf.detune's own value, so it stays 0 while the filter envelope is off.
-    if (this.#lpf) this.#playerWorklet.connect(this.#lpf.detune, 1);
+    if (this.#lpf) this.#playerWorklet.connect(this.#lpf.detune, this.#voiceIndex * 2 + 1);
   }
 
   /**
@@ -163,7 +179,7 @@ export class SampleVoice {
    */
   getGainStages(): Record<string, AudioNode> {
     return {
-      worklet: this.#playerWorklet,
+      worklet: this.#source,
       ...Object.fromEntries(this.#chainStages().map(({ name, out }) => [name, out])),
       out: this.#outputNode,
     };
@@ -207,11 +223,11 @@ export class SampleVoice {
     }
   }
 
-  /** `bufferId` is the pool's name for this load, so it can wait for every voice to have it. */
+  /** `allVoices` loads one copy into every voice of the processor, not just this one. */
   async loadBuffer(
     buffer: AudioBuffer,
     zeroCrossings?: number[],
-    bufferId?: number,
+    allVoices = false,
   ): Promise<boolean> {
     if (buffer.sampleRate !== this.context.sampleRate) {
       console.warn(
@@ -228,20 +244,12 @@ export class SampleVoice {
     // stop for it, so end the note here or the voice stays PLAYING in silence.
     this.stop();
 
-    this.sendToProcessor({
-      type: 'voice:setBuffer',
-      buffer: channels,
-      durationSeconds: buffer.duration,
-      bufferId,
-    });
+    const post = (message: object) =>
+      allVoices ? this.#playerWorklet.port.postMessage(message) : this.sendToProcessor(message);
+    post({ type: 'voice:setBuffer', buffer: channels, durationSeconds: buffer.duration });
     this.#hasLoadedAudio = true;
 
-    if (zeroCrossings?.length) {
-      this.sendToProcessor({
-        type: 'voice:setZeroCrossings',
-        zeroCrossings,
-      });
-    }
+    if (zeroCrossings?.length) post({ type: 'voice:setZeroCrossings', zeroCrossings });
 
     return true;
   }
@@ -612,8 +620,9 @@ export class SampleVoice {
     return this.#messages.onMessage(type, handler);
   }
 
+  /** Addressed to this voice; the processor applies a message without `voice` to all of them. */
   sendToProcessor(data: any): this {
-    this.#playerWorklet.port.postMessage(data);
+    this.#playerWorklet.port.postMessage({ ...data, voice: this.#voiceIndex });
     return this;
   }
 
@@ -622,100 +631,99 @@ export class SampleVoice {
     return this;
   }
 
-  #setupWorkletMessageHandling() {
-    this.#playerWorklet.port.onmessage = (event: MessageEvent) => {
-      let { type, ...data } = event.data;
+  /** A processor report for this voice. Whoever owns the port passes it on. */
+  receive(message: any) {
+    let { type, voice: _voice, ...data } = message;
 
-      switch (type) {
-        case 'initialized':
-          this.#isInitialized = true;
+    switch (type) {
+      case 'initialized':
+        this.#isInitialized = true;
 
-          this.#sendUpstreamMessage('voice:initialized', {
-            voiceId: this.nodeId,
-          });
-          break;
+        this.#sendUpstreamMessage('voice:initialized', {
+          voiceId: this.nodeId,
+        });
+        break;
 
-        case 'voice:loaded':
-          if (data.durationSeconds) {
-            this.#sampleDurationSeconds = data.durationSeconds;
-          }
-          break;
-
-        // The pool picked this voice on the audio thread; its effects follow from here.
-        case 'voice:started': {
-          if (this.#state !== VoiceState.AVAILABLE) {
-            // Stolen: the note it held ends without a report of its own.
-            const midiNote = this.#midiNote;
-            this.#transitionTo(VoiceState.AVAILABLE);
-            this.#sendUpstreamMessage('voice:stopped', { voiceId: this.nodeId, midiNote });
-          }
-          this.#transitionTo(VoiceState.PLAYING, {
-            midiNote: data.midiNote,
-            startedTimestamp: data.timestamp,
-          });
-          this.#triggerId = data.triggerId;
-          this.#announceStart(data);
-          return;
+      case 'voice:loaded':
+        if (data.durationSeconds) {
+          this.#sampleDurationSeconds = data.durationSeconds;
         }
+        break;
 
-        case 'voice:retuned':
-          if (this.#state !== VoiceState.PLAYING) return;
-          // The pool set the rate itself unless the voice fell back to an earlier held note.
-          this.#applyPitch(
-            data.midiNote,
-            data.timestamp,
-            data.glideTime,
-            data.fallback,
-            data.pitchId,
-          );
-          data = { voiceId: this.nodeId, ...data };
-          break;
-
-        case 'voice:releasing':
-          if (this.#state !== VoiceState.PLAYING) return;
-          this.#transitionTo(VoiceState.RELEASING);
-          data = { voiceId: this.nodeId, midiNote: this.#midiNote };
-          break;
-
-        case 'voice:ended': {
-          if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
-            return;
-          }
+      // The pool picked this voice on the audio thread; its effects follow from here.
+      case 'voice:started': {
+        if (this.#state !== VoiceState.AVAILABLE) {
+          // Stolen: the note it held ends without a report of its own.
           const midiNote = this.#midiNote;
           this.#transitionTo(VoiceState.AVAILABLE);
-          type = 'voice:stopped';
-          data = {
-            voiceId: this.nodeId,
-            midiNote,
-          };
-          break;
+          this.#sendUpstreamMessage('voice:stopped', { voiceId: this.nodeId, midiNote });
         }
-
-        case 'loop:range':
-        case 'trim:range':
-        case 'voice:position': {
-          // Idle report: the steady loop for the next note, not a playing range.
-          if (data.idle) return;
-          if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
-            return;
-          }
-          if (type === 'loop:range') this.#isInPitchLoop = data.isInPitchLoop ?? false;
-          const { triggerId: _, ...range } = data;
-          data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
-          break;
-        }
-
-        // Forwarded upstream by the tail call, nothing to do here.
-        case 'loop:enabled':
-          break;
-
-        default:
-          console.warn(`Unhandled message type: ${type}`);
-          break;
+        this.#transitionTo(VoiceState.PLAYING, {
+          midiNote: data.midiNote,
+          startedTimestamp: data.timestamp,
+        });
+        this.#triggerId = data.triggerId;
+        this.#announceStart(data);
+        return;
       }
 
-      this.#sendUpstreamMessage(type, data);
-    };
+      case 'voice:retuned':
+        if (this.#state !== VoiceState.PLAYING) return;
+        // The pool set the rate itself unless the voice fell back to an earlier held note.
+        this.#applyPitch(
+          data.midiNote,
+          data.timestamp,
+          data.glideTime,
+          data.fallback,
+          data.pitchId,
+        );
+        data = { voiceId: this.nodeId, ...data };
+        break;
+
+      case 'voice:releasing':
+        if (this.#state !== VoiceState.PLAYING) return;
+        this.#transitionTo(VoiceState.RELEASING);
+        data = { voiceId: this.nodeId, midiNote: this.#midiNote };
+        break;
+
+      case 'voice:ended': {
+        if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
+          return;
+        }
+        const midiNote = this.#midiNote;
+        this.#transitionTo(VoiceState.AVAILABLE);
+        type = 'voice:stopped';
+        data = {
+          voiceId: this.nodeId,
+          midiNote,
+        };
+        break;
+      }
+
+      case 'loop:range':
+      case 'trim:range':
+      case 'voice:position': {
+        // Idle report: the steady loop for the next note, not a playing range.
+        if (data.idle) return;
+        if (this.#state === VoiceState.AVAILABLE || data.triggerId !== this.#triggerId) {
+          return;
+        }
+        if (type === 'loop:range') this.#isInPitchLoop = data.isInPitchLoop ?? false;
+        const { triggerId: _, ...range } = data;
+        data = { voiceId: this.nodeId, midiNote: this.#midiNote, ...range };
+        break;
+      }
+
+      // Forwarded upstream by the tail call, nothing to do here.
+      case 'loop:enabled':
+        break;
+
+      default:
+        console.warn(`Unhandled message type: ${type}`);
+        break;
+    }
+
+    this.#sendUpstreamMessage(type, data);
   }
 
   // Getters
