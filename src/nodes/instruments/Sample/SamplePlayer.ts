@@ -236,7 +236,6 @@ export class SamplePlayer {
         this.#post({ type: 'setLoopEnabled', value: this.#loopEnabled });
         this.#post({ type: 'setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
         this.#post({ type: 'setTimestretchMode', value: this.#timestretchMode });
-        this.#voices.forEach((voice) => voice.setPitchOffset(this.#pitchOffset));
 
         // Connect audio chain
         this.#connectAudioChain();

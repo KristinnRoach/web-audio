@@ -183,6 +183,7 @@ it('replays settings made before init to the processor and voices', async () => 
     ]);
     expect(ofType('setTimestretchMode')).toEqual([{ type: 'setTimestretchMode', value: 'period' }]);
     expect(setPitchOffset.mock.calls).toEqual([[1.5], [1.5]]);
+    expect(ofType('pool:setPitchOffset')).toEqual([{ type: 'pool:setPitchOffset', value: 1.5 }]);
   } finally {
     player.dispose();
     setPitchOffset.mockRestore();
