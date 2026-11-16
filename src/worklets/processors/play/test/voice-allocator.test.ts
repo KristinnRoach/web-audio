@@ -55,6 +55,65 @@ describe('VoiceAllocator', () => {
     expect(allocator.noteOff(60)).toEqual([{ type: 'release', voice: a }]);
   });
 
+  it('retunes only inside the signed legato interval', () => {
+    const allocator = new VoiceAllocator();
+    allocator.legato = { mode: 'always', interval: [-2, 2] };
+    const a = voice('PLAYING', 60, 1);
+    allocator.voices = [a, voice()];
+
+    expect(allocator.noteOn(62)!.retuned).toBe(true);
+    expect(allocator.noteOn(58)!.retuned).toBe(true);
+    expect(allocator.noteOn(63)!.retuned).toBe(false);
+    expect(allocator.noteOn(57)!.retuned).toBe(false);
+  });
+
+  it('glides only retuned notes in legato glide mode', () => {
+    const allocator = new VoiceAllocator();
+    allocator.legato = { mode: 'always', interval: [0, 2], glide: 'legato' };
+    allocator.voices = [voice('PLAYING', 60, 1), voice()];
+
+    expect(allocator.noteOn(62, 0.1)!.glideTime).toBe(0.1);
+    expect(allocator.noteOn(72, 0.1)!.actions[0]).toMatchObject({ type: 'start', glideTime: 0 });
+  });
+
+  it('retunes in pitchLoop mode only a voice that is in a pitch loop', () => {
+    const allocator = new VoiceAllocator();
+    allocator.legato = { mode: 'pitchLoop' };
+    const a = voice('PLAYING', 60, 1);
+    allocator.voices = [a, voice()];
+
+    expect(allocator.noteOn(62)!.retuned).toBe(false);
+    a.isInPitchLoop = true;
+    expect(allocator.noteOn(62)!.retuned).toBe(true);
+  });
+
+  it('keeps a held-note stack per voice and moves a reassigned note out of the earlier one', () => {
+    const allocator = new VoiceAllocator();
+    allocator.legato = { mode: 'always', interval: [0, 2] };
+    const [a, b, c] = [voice(), voice(), voice()];
+    allocator.voices = [a, b, c];
+    const play = (midiNote: number) => {
+      const decision = allocator.noteOn(midiNote)!;
+      const { voice: target } = decision.actions.find(({ type }) => type !== 'release')!;
+      Object.assign(target, { state: 'PLAYING', midiNote });
+      decision.commit();
+      return target;
+    };
+
+    expect(play(60)).toBe(a);
+    expect(play(72)).toBe(b);
+    expect(play(62)).toBe(a);
+    expect(play(74)).toBe(b);
+    // Each voice falls back within its own phrase.
+    expect(allocator.noteOff(74)).toEqual([
+      { type: 'retune', voice: b, midiNote: 72, glideTime: 0 },
+    ]);
+
+    // 60 is out of a's interval, so it starts on c and leaves a's stack.
+    expect(play(60)).toBe(c);
+    expect(allocator.noteOff(62)).toEqual([{ type: 'release', voice: a }]);
+  });
+
   it('uses a swapped selection policy', () => {
     const allocator = new VoiceAllocator((voices: unknown[]) => voices.at(-1));
     const last = voice();

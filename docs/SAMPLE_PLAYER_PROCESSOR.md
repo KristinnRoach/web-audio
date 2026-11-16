@@ -46,18 +46,18 @@ The processor also handles `voice:start` and `voice:release` (tagged). `SamplePl
 
 ## Processor → main
 
-| type              | fields                                                                                           | notes                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `initialized`     | none                                                                                             | untagged, once, from the constructor. The player then posts the settings marked above.    |
-| `voice:loaded`    | `durationSeconds`, `time`                                                                        | one per voice per `voice:setBuffer`. The player emits `sample:loaded` after the last one. |
-| `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                   | allocator picked this voice; posted before the engine starts, so it precedes its reports. |
-| `voice:retuned`   | `midiNote`, `velocity`, `timestamp`, `glideTime`, `fallback`; **step 5:** `pitchId`, `noteId`    | legato retune; `fallback` means a note-off returned to an earlier held note.              |
-| `voice:releasing` | none                                                                                             |                                                                                           |
-| `voice:ended`     | `triggerId`                                                                                      | the note finished, or a buffer swap dropped it. The voice emits `voice:stopped`.          |
-| `loop:enabled`    | `enabled`                                                                                        | echo of `setLoopEnabled`, once per voice.                                                 |
-| `loop:range`      | `loopStart`, `loopEnd`, `loopMode`, `isInPitchLoop`, `triggerId`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.      |
-| `trim:range`      | `startPoint`, `endPoint`, `inverted`, `triggerId`                                                | throttled.                                                                                |
-| `voice:position`  | `position` (0..1), `triggerId`                                                                   | ~60 Hz, only while position tracking is on.                                               |
+| type              | fields                                                                                                    | notes                                                                                     |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `initialized`     | none                                                                                                      | untagged, once, from the constructor. The player then posts the settings marked above.    |
+| `voice:loaded`    | `durationSeconds`, `time`                                                                                 | one per voice per `voice:setBuffer`. The player emits `sample:loaded` after the last one. |
+| `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                            | allocator picked this voice; posted before the engine starts, so it precedes its reports. |
+| `voice:retuned`   | `midiNote`, `velocity`, `timestamp`, `glideTime`, `fallback`; **step 5:** `pitchId`, `noteId`             | legato retune; `fallback` means a note-off returned to an earlier held note.              |
+| `voice:releasing` | none                                                                                                      |                                                                                           |
+| `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The voice emits `voice:stopped`.          |
+| `loop:enabled`    | `enabled`                                                                                                 | echo of `setLoopEnabled`, once per voice.                                                 |
+| `loop:range`      | `loopStart`, `loopEnd`, `triggerId`; playing: `loopMode`, `isInPitchLoop`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.      |
+| `trim:range`      | `startPoint`, `endPoint`, `inverted`, `triggerId`                                                         | throttled.                                                                                |
+| `voice:position`  | `position` (0..1), `triggerId`                                                                            | ~60 Hz, only while position tracking is on.                                               |
 
 ## Ordering the code relies on
 
