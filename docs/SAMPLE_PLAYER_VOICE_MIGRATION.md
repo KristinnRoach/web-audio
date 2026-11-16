@@ -17,7 +17,7 @@ Each step is a PR that can be ear-tested. Order: 4a, 5, 4b, then 6 and 7.
 - [x] 3. One processor, one output per voice. Effects stay on the main thread, wired to the outputs.
 - [x] 4a. Fold `SampleVoicePool` into `SamplePlayer`; stateless settings posted once, untagged ([#188](https://github.com/KristinnRoach/web-audio/pull/188)). Contract: [SAMPLE_PLAYER_PROCESSOR.md](SAMPLE_PLAYER_PROCESSOR.md).
 - [x] 5. Pitch settings on the audio thread; it computes every note's rate ([#189](https://github.com/KristinnRoach/web-audio/pull/189)).
-- [x] 4b. Voice state mirror into plain records on `SamplePlayer`; `SampleVoice` keeps only its effect chain and is renamed `VoiceEffects` (PRLINK).
+- [x] 4b. Voice state mirror into plain records on `SamplePlayer`; `SampleVoice` keeps only its effect chain and is renamed `VoiceEffects` ([#190](https://github.com/KristinnRoach/web-audio/pull/190)).
 - [ ] 6. Port per-voice effects (`VoiceEffects`) into the engine, one PR each: filters, AM, feedback.
 - [ ] 7. Mix voices in the processor; single stereo output. Delete `VoiceEffects`.
 
