@@ -66,7 +66,7 @@ export class VoicePool {
   allocator = new VoiceAllocator();
   /** Semitones added to every played note. */
   pitchOffset = 0;
-  /** Off plays every note at rate 1, without glide. */
+  /** Off plays every note at rate 1. */
   pitchEnabled = true;
   #queue = [];
   // The played note a new note glides from, updated as events are applied.

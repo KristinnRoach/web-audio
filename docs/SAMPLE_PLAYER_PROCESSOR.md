@@ -62,7 +62,7 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 
 ## Pitch
 
-- `VoicePool` holds the pitch offset and whether pitch is on. A played note's rate is `midiToPlaybackRate(midiNote + offset)` (reference note 60), or 1 with pitch off. It computes the rate of a started note and its glide origin, of legato and fallback retunes, and of a `voice:start`. Pitch off also means no glide.
+- `VoicePool` holds the pitch offset and whether pitch is on. A played note's rate is `midiToPlaybackRate(midiNote + offset)` (reference note 60), or 1 with pitch off. It computes the rate of a started note and its glide origin, of legato and fallback retunes, and of a `voice:start`. With pitch off nothing glides between notes; a legato retune still passes its glide time, so the ramp to rate 1 that disabling started is not cut short.
 - The glide origin is the last note applied, or the earlier held note a fallback returned to; 60 before the first note. `glideFromNote` in `voice:started` is that played note, `null` without glide; the voice adds its offset for its effects.
 - A setting change retunes at the processor's `currentTime` when handled: a new offset moves voices that have a note with a 0.01 s time constant (0 while pitch is off); pitch off sends every voice to rate 1 with 0.1/3; pitch on retunes voices that have a note with 0.01/3.
 - `SampleVoice` keeps its own copy of the offset only for its main-thread effects (feedback, AM LFO).
