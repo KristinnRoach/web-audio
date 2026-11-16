@@ -42,8 +42,9 @@ similar load when comparing future changes.
   `loadAudio()` resolves to `AudioBuffer | null`, rather than an array.
 - Read `player.audiobuffer` instead of `player.samples[0]`; `samples` and
   `MAX_SAMPLES` were removed. Layer separate players/voices for multiple sources.
-- `SampleVoice.loadBuffer()` and `SampleVoicePool.setBuffer()` replace
-  `loadAudioData()` and `setAudioData()`. The worklet takes `voice:setBuffer`
+- `SampleVoice.loadBuffer()` and `SampleVoicePool.setBuffer()` replaced
+  `loadAudioData()` and `setAudioData()` (the pool was later folded into
+  `SamplePlayer`, which now posts the buffer itself). The worklet takes `voice:setBuffer`
   with an array of channels for one source; stereo remains supported.
 - `setTempo()`, `syncLoopToTempo()`, the `tempo` getter, sampler parameter and
   worklet AudioParam, and their update messages were removed. Repository-wide

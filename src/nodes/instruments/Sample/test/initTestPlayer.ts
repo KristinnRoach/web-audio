@@ -1,7 +1,7 @@
 import { vi } from 'vite-plus/test';
 import type { SamplePlayer } from '../SamplePlayer';
-import type { SampleVoicePool } from '../SampleVoicePool';
 import type { InstrumentBus } from '../../../master/InstrumentBus';
+import { SAMPLE_PLAYER_WORKLET_AUDIOPARAMS } from '../../../../worklets/processors/play/sample-player-paramdescriptors';
 
 type TestLFO = {
   setMusicalNote: ReturnType<typeof vi.fn>;
@@ -28,40 +28,98 @@ vi.mock('@/nodes/modulators/LFO/LFO', () => ({
   },
 }));
 
+vi.mock('@/nodes/effects/HarmonicFeedback', () => ({
+  HarmonicFeedback: class {
+    input = { connect() {} };
+    output = { connect() {} };
+    currentAmount = 0;
+    setPitch() {}
+    trigger() {}
+    setAmountMacro() {}
+    dispose() {}
+  },
+}));
+
 export function getTestLFOs() {
   return testLFOs;
 }
 
-/** Initialize through the real player lifecycle, supplying fake audio components. */
+const fakeParam = (value: number) => ({
+  value,
+  setValueAtTime(next: number) {
+    this.value = next;
+  },
+  cancelScheduledValues() {},
+  linearRampToValueAtTime() {},
+});
+
+class FakeNode {
+  gain = fakeParam(1);
+  frequency = fakeParam(0);
+  detune = fakeParam(0);
+  Q = fakeParam(1);
+  connect() {}
+  disconnect() {}
+}
+
+/**
+ * Initialize through the real player lifecycle. The processor is a fake worklet:
+ * its port records what the player posts and `report()` delivers a processor message.
+ */
 export async function initTestPlayer(
   player: SamplePlayer,
-  overrides: Partial<SampleVoicePool>,
-  busOverrides: Partial<InstrumentBus> = {},
+  { bus = {}, onPost }: { bus?: Partial<InstrumentBus>; onPost?: (message: any) => void } = {},
 ) {
-  const pool = {
-    allVoices: [],
-    connect() {},
-    onMessage: () => () => {},
-    applyToAllVoices() {},
-    allNotesOff() {},
-    dispose() {},
-    ...overrides,
-  } as unknown as SampleVoicePool;
-  const factory = await import('../createSampleVoicePool');
+  const posted: any[] = [];
+  let worklet!: { port: { onmessage: (event: { data: unknown }) => void } };
+  vi.stubGlobal('GainNode', FakeNode);
+  vi.stubGlobal('BiquadFilterNode', FakeNode);
+  vi.stubGlobal('AudioNode', FakeNode);
+  vi.stubGlobal('AudioParam', class {});
+  vi.stubGlobal(
+    'AudioWorkletNode',
+    class {
+      parameters = new Map(
+        Object.values(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS).map((p) => [
+          p.name,
+          fakeParam(p.defaultValue),
+        ]),
+      );
+      port = {
+        onmessage: null,
+        postMessage(message: any) {
+          posted.push(message);
+          onPost?.(message);
+        },
+        start() {},
+        close() {},
+      };
+      connect() {}
+      constructor() {
+        worklet = this as never;
+      }
+    },
+  );
   const busFactory = await import('../../../master/createInstrumentBus');
-  const poolSpy = vi.spyOn(factory, 'createSampleVoicePool').mockResolvedValue(pool);
   const busSpy = vi.spyOn(busFactory, 'createInstrumentBus').mockResolvedValue({
-    input: { gain: { setValueAtTime: vi.fn() } },
+    input: Object.assign(new FakeNode(), { gain: { setValueAtTime: vi.fn() } }),
     connect() {},
+    noteOn() {},
+    noteOff() {},
     releaseAll() {},
     dispose() {},
-    ...busOverrides,
+    ...bus,
   } as unknown as InstrumentBus);
   try {
     await player.init();
   } finally {
-    poolSpy.mockRestore();
     busSpy.mockRestore();
   }
-  return pool;
+  return {
+    posted,
+    worklet: worklet as unknown as AudioWorkletNode,
+    report: (data: object) => worklet.port.onmessage({ data }),
+    /** Posted messages of one type. */
+    ofType: (type: string) => posted.filter((message) => message.type === type),
+  };
 }

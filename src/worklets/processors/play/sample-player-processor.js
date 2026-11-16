@@ -9,6 +9,7 @@ import { PoolVoice, VoicePool } from './engine/voice-pool.js';
  *
  * A message with a `voice` index goes to that voice, and one without goes to
  * all of them. Every report carries the index of the voice it came from.
+ * Messages and ordering: docs/SAMPLE_PLAYER_PROCESSOR.md.
  */
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
   // ===== PARAMETER DESCRIPTORS =====
