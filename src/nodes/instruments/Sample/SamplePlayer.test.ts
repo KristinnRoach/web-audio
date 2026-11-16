@@ -167,8 +167,8 @@ it('replays settings made before init to the processor and voices', async () => 
     },
   );
   const { SamplePlayer } = await import('./SamplePlayer');
-  const { SampleVoice } = await import('./SampleVoice');
-  const setPitchOffset = vi.spyOn(SampleVoice.prototype, 'setPitchOffset');
+  const { VoiceEffects } = await import('./VoiceEffects');
+  const setPitchOffset = vi.spyOn(VoiceEffects.prototype, 'setPitchOffset');
   const context = Object.assign(new EventTarget(), { currentTime: 0 });
   const player = new SamplePlayer({ context: context as unknown as AudioContext, polyphony: 2 });
 
@@ -182,7 +182,10 @@ it('replays settings made before init to the processor and voices', async () => 
       { type: 'setKeytrackLoopAmount', value: 0.25 },
     ]);
     expect(ofType('setTimestretchMode')).toEqual([{ type: 'setTimestretchMode', value: 'period' }]);
-    expect(setPitchOffset.mock.calls).toEqual([[1.5], [1.5]]);
+    expect(setPitchOffset.mock.calls).toEqual([
+      [1.5, null],
+      [1.5, null],
+    ]);
     expect(ofType('pool:setPitchOffset')).toEqual([{ type: 'pool:setPitchOffset', value: 1.5 }]);
   } finally {
     player.dispose();
