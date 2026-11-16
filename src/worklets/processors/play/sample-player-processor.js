@@ -7,8 +7,9 @@ import { PoolVoice, VoicePool } from './engine/voice-pool.js';
  * engines sharing one `VoicePool` and one set of AudioParams. Voice `i` renders
  * to output `2i` (stereo) and `2i + 1` (its filter envelope in cents).
  *
- * A message with a `voice` index goes to that voice, and one without goes to
- * all of them. Every report carries the index of the voice it came from.
+ * Voice messages with a `voice` index go to that voice; untagged ones go to all.
+ * Pool commands and flush are node-wide. Voice reports carry their index;
+ * initialized/flushed are node-wide.
  * Messages and ordering: docs/SAMPLE_PLAYER_PROCESSOR.md.
  */
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
@@ -52,6 +53,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     const { type, value } = event.data;
 
     switch (type) {
+      case 'flush':
+        // FIFO: preceding messages have been handled, including queued notes.
+        this.port.postMessage({ type: 'flushed', id: event.data.id });
+        return;
+
       case 'pool:noteOn':
       case 'pool:noteOff':
       case 'pool:allNotesOff':

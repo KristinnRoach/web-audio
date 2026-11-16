@@ -186,6 +186,21 @@ describe('VoicePool', () => {
 describe('sample-player processor voices', () => {
   setupProcessorGlobals();
 
+  it('acknowledges handled messages without starting scheduled notes early', async () => {
+    const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
+    const processor = new (SamplePlayerProcessor as any)();
+    const send = (data: object) => processor.port.onmessage({ data });
+    send({ type: 'voice:setBuffer', buffer: [new Float32Array(TEST_SAMPLE_RATE).fill(0.5)] });
+    send({ type: 'pool:noteOn', triggerId: 1, midiNote: 60, timestamp: 0.5 });
+    send({ type: 'flush', id: 42 });
+    expect(processor.port.postMessage).toHaveBeenLastCalledWith({ type: 'flushed', id: 42 });
+    expect(processor.voice.state).toBe('AVAILABLE');
+    processor.pool.advance(0.5);
+    expect(processor.voice.state).toBe('AVAILABLE');
+    processor.pool.advance(0.51);
+    expect(processor.voice.state).toBe('PLAYING');
+  });
+
   it('starts a tagged voice:start at the rate the pool works out', async () => {
     const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
     const processor = new (SamplePlayerProcessor as any)();

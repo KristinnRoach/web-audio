@@ -528,6 +528,43 @@ describe('SamplePlayer envelope config', () => {
 });
 
 describe('SamplePlayer context watch', () => {
+  it('waits for each flush acknowledgement and rejects pending flushes on disposal', async () => {
+    vi.stubGlobal(
+      'GainNode',
+      class {
+        connect() {}
+        disconnect() {}
+      },
+    );
+    const { SamplePlayer } = await import('./SamplePlayer');
+    const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
+    try {
+      await expect(player.flushMessages()).rejects.toThrow('SamplePlayer is not initialized');
+      const { report, ofType } = await initTestPlayer(player);
+      const firstDone = vi.fn();
+      const secondDone = vi.fn();
+      const first = player.flushMessages().then(firstDone);
+      const second = player.flushMessages().then(secondDone);
+      const [a, b] = ofType('flush');
+
+      report({ type: 'flushed', id: b.id });
+      await second;
+      expect(secondDone).toHaveBeenCalledOnce();
+      expect(firstDone).not.toHaveBeenCalled();
+      report({ type: 'flushed', id: a.id });
+      await first;
+      expect(firstDone).toHaveBeenCalledOnce();
+
+      const pending = expect(player.flushMessages()).rejects.toThrow('SamplePlayer is disposed');
+      player.dispose();
+      await pending;
+      await expect(player.flushMessages()).rejects.toThrow('SamplePlayer is disposed');
+    } finally {
+      player.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('distinguishes disposal from initialization and ignores late note calls', async () => {
     vi.stubGlobal('window', {});
     vi.stubGlobal('AudioContext', class {});

@@ -155,6 +155,8 @@ export class SamplePlayer {
   #loadedVoices = 0;
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
+  #flushId = 0;
+  #pendingFlushes = new Map<number, { resolve: () => void; reject: (error: Error) => void }>();
   #pitchEnabled = true;
   #outBus!: InstrumentBus; // todo: fix use of '!'
 
@@ -350,18 +352,39 @@ export class SamplePlayer {
 
   /* === MESSAGES === */
 
-  /** Untagged, so the processor applies it to every voice. */
+  /** All player messages use the same FIFO port. */
   #post(message: object) {
     this.#worklet?.port.postMessage(message);
   }
 
   /**
-   * Every report but `initialized` names its voice. The voice records mirror the
-   * audio thread's; a report about a note the voice no longer plays is dropped.
+   * Wait until the processor has handled all messages posted so far. Scheduled
+   * notes are queued, not sounded. Await before resuming an offline render;
+   * this does not wait for AudioParam automation or later main-thread effects.
+   * Requires init(); disposal rejects pending flushes.
+   */
+  async flushMessages(): Promise<void> {
+    this.#assertNotDisposed();
+    if (!this.#initialized) throw new Error('SamplePlayer is not initialized');
+    const id = ++this.#flushId;
+    return new Promise<void>((resolve, reject) => {
+      this.#pendingFlushes.set(id, { resolve, reject });
+      this.#post({ type: 'flush', id });
+    });
+  }
+
+  /**
+   * Voice reports name their voice; `initialized` and `flushed` are node-wide.
+   * Voice records mirror the audio thread; reports about an old note are dropped.
    */
   #receive(data: any) {
     const { type, voice: index, ...report } = data;
     if (type === 'initialized') return this.#onProcessorReady();
+    if (type === 'flushed') {
+      this.#pendingFlushes.get(report.id)?.resolve();
+      this.#pendingFlushes.delete(report.id);
+      return;
+    }
     const voice = this.#voices[index];
     const voiceId = voice.effects.nodeId;
 
@@ -1557,6 +1580,10 @@ export class SamplePlayer {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#cancelPendingLoad?.(new Error('SamplePlayer is disposed'));
+    for (const pending of this.#pendingFlushes.values()) {
+      pending.reject(new Error('SamplePlayer is disposed'));
+    }
+    this.#pendingFlushes.clear();
     try {
       this.context.removeEventListener('statechange', this.#onContextStateChange);
       this.releaseAll();
