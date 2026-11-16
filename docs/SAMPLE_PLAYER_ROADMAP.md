@@ -43,7 +43,7 @@ Next up. Prototype each on a branch in the JS engine. Order is a suggestion.
 - **A. Morphing:** in the oscillator regime, crossfade between window positions at the same phase. Start from the prototype in [#151](https://github.com/KristinnRoach/web-audio/pull/151) and the ideas in `proto/loop-move-latch` (local only).
 - **C. Anti-aliasing:** add a seam for how heads read the source, then choose between band-limited copies per octave and a filtered kernel. Start from `prototype/rate-8-loop-prefilter`. Done after A because the two interact: moving between band-limited tables at audio rate [can add sidebands](https://www.kvraudio.com/forum/viewtopic.php?p=8105138) (forum source, verify when we get there).
 - **B. Granular:** more heads with window envelopes, for timestretch modes and simple creative effects, detune and widening.
-- **D. Audio-rate modulation:** move envelopes and selected modulators to the audio thread where audio-rate operation is needed, which may also remove the need for idle range reports used for envelope timing.
+- **D. Audio-rate modulation:** sampler envelopes already run on the audio thread, including loop sync; idle range reports no longer drive their timing. Move selected modulators there when needed.
 
 ### 7. Port
 
@@ -88,11 +88,14 @@ src/worklets/
 
 Features add files only when they arrive, such as `engine/morph.js`, `engine/grains.js` and `engine/source-reader.js`. Move something to `shared/` once it is clearly generic, not in anticipation.
 
+## Voice ownership — in progress
+
+one processor per `SamplePlayer` owns the shared sample, allocation, note scheduling, pitch and envelopes. `SamplePlayer` mirrors lifecycle reports in plain voice records. Per-voice filters, AM and feedback remain in main-thread `VoiceEffects`; AM and feedback follow note reports. Next migration steps move these effects into the engine, then mix voices to one stereo output and delete `VoiceEffects`. See the [voice migration plan](SAMPLE_PLAYER_VOICE_MIGRATION.md) and [processor contract](SAMPLE_PLAYER_PROCESSOR.md).
+
 ## Later decisions
 
 Not needed until we reach them:
 
-- **The processor owns its voices:** Each `SamplePlayer` would get one audio-thread engine that owns the voice pool, allocation and voice lifecycle, which are on the main thread today. Each voice keeps its own effects chain inside the engine, and the stages can still be enabled, disabled and reordered. `InstrumentBus` stays outside and processes the mixed output. With one engine per player, sample memory is one store per processor and needs no `SharedArrayBuffer`. Voices, allocation and the sample are there already: one processor per player renders every voice to its own output, and `engine/voice-pool.js` queues note events, decides when each is due and works out every note's playback rate. `SamplePlayer` mirrors the result from its reports in plain voice records; each voice's main-thread effects (`VoiceEffects`: filters, AM, feedback) follow a message late until they move too. Remaining steps: [voice migration plan](SAMPLE_PLAYER_VOICE_MIGRATION.md). Messages between the player and its processor: [processor contract](SAMPLE_PLAYER_PROCESSOR.md).
 - Morph frame spacing and whether it snaps to the quantized period
 - Anti-aliasing method and memory budget
 - Grain count and envelope

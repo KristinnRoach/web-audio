@@ -203,22 +203,10 @@ The library resumes it on the next user gesture if it is suspended. If it is
 closed later, `getGlobalAudioContext()` creates a new context rather than reusing
 it, so call `setGlobalAudioContext` again with the replacement.
 
-Factories also accept an `OfflineAudioContext` for faster-than-real-time renders.
-Play notes and change settings while rendering is suspended. Messages sent before
-`startRendering()` can reach the audio thread after the first frames have rendered:
-
-```ts
-const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: 48000 * 4, sampleRate: 48000 });
-const player = await createSamplePlayer({ context: ctx, audio: sampleData });
-void ctx.suspend(0).then(() => {
-  player.play(60);
-  void ctx.resume();
-});
-const rendered = await ctx.startRendering();
-player.dispose(); // after the render; nodes stay registered until disposed
-```
-
-Firefox doesn't implement `OfflineAudioContext.suspend()`
-([bug 1265406](https://bugzil.la/1265406)), so this pattern needs Chromium or Safari.
+Factories also accept an `OfflineAudioContext`, but scheduled sampler rendering
+is not yet reliable: suspending at zero, posting a note and immediately resuming
+can still render silence. See [#187](https://github.com/KristinnRoach/web-audio/issues/187)
+for the unresolved message-delivery ordering and effects-timing limits.
+Dispose nodes after rendering to release their registrations.
 
 The recorder and output-device helpers still need a real-time `AudioContext`.

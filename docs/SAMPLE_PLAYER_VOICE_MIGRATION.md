@@ -10,7 +10,7 @@ Goal: one audio-thread processor per `SamplePlayer` owns voices, allocation and 
 
 ## Steps
 
-Each step is a PR that can be ear-tested. Order: 4a, 5, 4b, then 6 and 7.
+Steps 1–5 (including 4a and 4b) are merged. Each remaining step is one or more PRs that can be ear-tested.
 
 - [x] 1. Pure allocator in the engine ([#184](https://github.com/KristinnRoach/web-audio/pull/184)).
 - [x] 2. Allocate on the audio thread; main thread mirrors ([#185](https://github.com/KristinnRoach/web-audio/pull/185)).
@@ -27,9 +27,10 @@ Each step is a PR that can be ear-tested. Order: 4a, 5, 4b, then 6 and 7.
 - Step 4a (done): `SampleVoicePool`, the same setting posted once per voice, a second `pool:allNotesOff` on each load.
 - Step 4b (done): the one-voice processor a lone `SampleVoice` made, its standalone note path (`trigger`, `release`, `stop`, `voice:release`) and its message bus.
 - Step 5 (done): fallback rate round trip (`pitchId`, `noteId`), shared-pitch shortcut in `noteOn`.
-- Step 6: effects trailing the note by a message.
-- Any step after 3: exact steal timing (engine holds a pending note).
+- Step 6: AM and feedback following note reports on the main thread.
 
 ## Open
 
+- Exact steal timing needs a pending note while the outgoing note fades ([#170](https://github.com/KristinnRoach/web-audio/issues/170)).
 - Per-voice metering (`getGainStages`) needs a source after step 7.
+- Scheduled offline note delivery remains unresolved ([#187](https://github.com/KristinnRoach/web-audio/issues/187)); moving effects alone does not establish startup readiness.
