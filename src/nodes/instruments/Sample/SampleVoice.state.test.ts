@@ -120,9 +120,7 @@ describe('SampleVoice state', () => {
     const timestamp = voice.triggerTimestamp;
 
     expect(voice.retune(72, 0.2, 0.3)).toBe(72);
-    expect(audio.posted).toEqual([
-      { type: 'voice:setRate', value: 4, timestamp: 0.2, glideSeconds: 0.3 },
-    ]);
+    expect(audio.posted).toEqual([]);
     expect(voice.midiNote).toBe(72);
     expect(voice.triggerTimestamp).toBe(timestamp);
     voice.release();
@@ -154,17 +152,6 @@ describe('SampleVoice state', () => {
     report(2, false);
     expect(voice.isInPitchLoop).toBe(false);
     voice.stop();
-  });
-
-  it('adds the pitch offset to new notes and retunes a held one', async () => {
-    const voice = await loadedVoice();
-    voice.setPitchOffset(12);
-    trigger(voice, 60);
-    expect(audio.posted.find((m) => m.type === 'voice:start')).toMatchObject({ playbackRate: 2 });
-
-    voice.setPitchOffset(-12);
-    expect(audio.posted.at(-1)).toMatchObject({ type: 'voice:setRate', value: 0.5 });
-    expect(voice.midiNote).toBe(60);
   });
 
   it('retunes the feedback of a held note with the pitch offset', async () => {
@@ -260,7 +247,6 @@ describe('SampleVoice state', () => {
       timestamp: 0,
       triggerId: 1,
       midiNote: 72,
-      playbackRate: 2,
       velocity: 100,
       glideTime: 0,
       glideFromNote: null,
@@ -285,11 +271,11 @@ describe('SampleVoice state', () => {
     expect(voice.midiNote).toBe(60);
     expect(audio.posted).toEqual([]); // the pool already started the engine
 
-    // Only a fallback leaves the rate to the node.
+    // The pool retunes the engine itself, a fallback included.
     report({ type: 'voice:retuned', midiNote: 64, timestamp: 0, glideTime: 0, fallback: false });
-    expect(audio.posted).toEqual([]);
     report({ type: 'voice:retuned', midiNote: 72, timestamp: 0, glideTime: 0, fallback: true });
-    expect(audio.posted.at(-1)).toMatchObject({ type: 'voice:setRate', value: 2 });
+    expect(audio.posted).toEqual([]);
+    expect(voice.midiNote).toBe(72);
 
     // Stolen for a new note: the old one stops without a processor report.
     report({ ...started, triggerId: 8, midiNote: 67, glideFromNote: null });

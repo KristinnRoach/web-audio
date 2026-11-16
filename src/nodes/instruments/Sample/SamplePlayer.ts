@@ -155,7 +155,7 @@ export class SamplePlayer {
   #loadedVoices = 0;
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
-  #prevMidiNote = 60;
+  #pitchEnabled = true;
   #outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
@@ -222,6 +222,9 @@ export class SamplePlayer {
         this.#assertNotDisposed();
 
         this.#post({ type: 'pool:setLegato', value: this.#legato });
+        this.#post({ type: 'pool:setPitchOffset', value: this.#pitchOffset });
+        this.#voices.forEach((voice) => voice.setPitchOffset(this.#pitchOffset));
+        this.#post({ type: 'pool:setPitchEnabled', value: this.#pitchEnabled });
         if (this.#interpolationMode !== null) {
           this.#post({ type: 'setInterpolation', value: this.#interpolationMode });
         }
@@ -233,7 +236,6 @@ export class SamplePlayer {
         this.#post({ type: 'setLoopEnabled', value: this.#loopEnabled });
         this.#post({ type: 'setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
         this.#post({ type: 'setTimestretchMode', value: this.#timestretchMode });
-        this.#voices.forEach((voice) => voice.setPitchOffset(this.#pitchOffset));
 
         // Connect audio chain
         this.#connectAudioChain();
@@ -378,8 +380,6 @@ export class SamplePlayer {
         this.#followVoice(msg, false);
         return msg;
       case 'voice:retuned':
-        // A fallback decided before a later noteOn must not take the glide origin back.
-        if (msg.fallback && msg.noteId === this.#noteId) this.#prevMidiNote = msg.midiNote;
         this.#followVoice(msg, true);
         return null;
     }
@@ -632,23 +632,18 @@ export class SamplePlayer {
     this.#lastPlayedNote = midiNote;
     this.#syncLFOsToNote(soundingNote);
 
-    const voice = this.#voices[0];
-    if (!voice || !this.#buffer) return null;
-    // The audio thread picks the voice when the note is due; the bus follows its
-    // report (`voice:started` or `voice:retuned`) in #followVoice.
+    if (!this.#voices.length || !this.#buffer) return null;
+    // The audio thread picks the voice when the note is due and works out its rate
+    // and glide origin; the bus follows its report (`voice:started` or `voice:retuned`)
+    // in #followVoice.
     this.#post({
       type: 'pool:noteOn',
       triggerId: ++this.#noteId,
-      // ponytail: every voice shares one pitch setting, so any voice can work out the
-      // note's rate. Per-voice tuning means the audio thread computing it per voice.
-      ...voice.noteMessage({
-        midiNote,
-        velocity: safeVelocity,
-        secondsFromNow,
-        glide: { fromMidiNote: this.#prevMidiNote, seconds: glideTime / GLIDE_TEMP_SCALAR },
-      }),
+      timestamp: this.now + secondsFromNow,
+      midiNote,
+      velocity: safeVelocity,
+      glideTime: glideTime / GLIDE_TEMP_SCALAR,
     });
-    this.#prevMidiNote = midiNote;
     return midiNote;
   }
 
@@ -684,7 +679,8 @@ export class SamplePlayer {
 
   /** Off plays every note at the sample's own pitch; the pitch envelope still bends it. */
   setPitchEnabled(enabled: boolean): this {
-    this.#voices.forEach((v) => (enabled ? v.enablePitch() : v.disablePitch()));
+    this.#pitchEnabled = enabled;
+    this.#post({ type: 'pool:setPitchEnabled', value: enabled });
     return this;
   }
 
@@ -721,6 +717,7 @@ export class SamplePlayer {
 
   #applyPitchOffset(): this {
     const offset = this.#pitchOffset;
+    this.#post({ type: 'pool:setPitchOffset', value: offset });
     this.#voices.forEach((voice) => voice.setPitchOffset(offset));
     if (this.#lastPlayedNote !== null) {
       const soundingNote = this.#lastPlayedNote + offset;
