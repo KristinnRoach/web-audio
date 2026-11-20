@@ -1,4 +1,5 @@
-// Crossfades playhead discontinuities (loop jumps, turns and moves). Each one
+// Crossfades playhead discontinuities (loop jumps and turns; pitch loop moves fade
+// between windows in the voice engine instead). Each one
 // leaves an outgoing head reading on from where the playhead was, in the direction
 // it was going, fading out while the relocated or turned playhead fades in. Heads
 // nest: a newer head fades from what was audible when it started, older heads
@@ -68,6 +69,11 @@ export class LoopCrossfade {
       if (head.progress >= head.length) this.#remove(i);
       else head.mix = head.progress / head.length;
     }
+  }
+
+  /** Moves every head with a playhead carried by a moving loop. */
+  shift(delta) {
+    for (let i = 0; i < this.#count; i++) this.#heads[i].position += delta;
   }
 
   reset() {

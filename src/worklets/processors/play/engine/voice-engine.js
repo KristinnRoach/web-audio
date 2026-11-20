@@ -23,13 +23,17 @@ import {
 } from './loop-length.js';
 
 const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
-// Loop jump, turn and move crossfade length in source samples (~5 ms at 48 kHz).
+// Loop jump and turn crossfade length in source samples (~5 ms at 48 kHz).
 const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
 // U-turn crossfade: a ping-pong or backward-loop turn has no step, but its slope
 // reverses in one frame (a corner, audible at zero crossings). The crossfade
 // rounds it off, at the cost of a brief level dip. Not standard sampler practice;
 // false restores bare turns.
 const LOOP_TURN_CROSSFADE = true;
+// Pitch loop move crossfade, old window to new at the same phase. In output time,
+// not source samples: it doesn't depend on the loop's length or the playback rate.
+// Moves during a fade wait for it, so this is also the longest lag behind a drag.
+const LOOP_MOVE_FADE_SECONDS = 0.01; // reasonable: 0.005 - 0.05
 // Source-domain fade into a loop's silence padding; not a note release.
 const TAIL_FADE_SAMPLES = 64;
 // Note-boundary de-click ramps, independent of pitch, direction and the musical
@@ -85,6 +89,7 @@ export class VoiceEngine {
    */
   constructor({ sampleRate, random, post }) {
     this.sampleRate = sampleRate;
+    this.loopMoveFadeFrames = Math.max(1, Math.round(LOOP_MOVE_FADE_SECONDS * sampleRate));
     this.random = random;
     this.post = post;
 
@@ -115,6 +120,9 @@ export class VoiceEngine {
     this.loopWindowSlots = [new LoopWindow(), new LoopWindow()];
     // The window a pitch loop's playhead follows while a move waits for the running move fade.
     this.heldLoopWindow = new LoopWindow();
+    // The window a pitch loop move fades from: where it reads relative to the playhead
+    // (old start - new start), and its trim.
+    this.loopMoveFrom = { offset: 0, fadesTail: false, audioEnd: 0, firstIndex: 0, lastIndex: 0 };
     // Ping-pong turns around at both loop edges and overrides loop point order.
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
@@ -311,7 +319,7 @@ export class VoiceEngine {
     this.loopWindow = null;
     this.loopRate = 1;
     this.loopCrossfade.reset();
-    this.loopMoveFadeLeft = 0; // source samples left in the running move fade
+    this.loopMoveFadeLeft = 0; // output frames left in the pitch loop move fade
     this.#resetLoopGlides(); // new notes start on the target range
 
     this.loopDriftRolled = false; // roll fresh drift for this note
@@ -408,14 +416,14 @@ export class VoiceEngine {
   // a moving window would shift its phase every sample and bend the cycles while
   // it moves. Carry the playhead with the window start instead.
   //
-  // Moves latch, as in Faust's de.sdelay: a move crossfades from the unmoved playhead,
-  // and moves that arrive during that fade wait for it to end, then take up the
-  // latest start in one fade. A drag runs one move fade at a time instead of stacking
-  // a fade per sample. Meanwhile the playhead follows the held window: the new length
+  // Moves latch, as in Faust's de.sdelay: a move crossfades from the old window to the
+  // new one at the same phase (the whole head mix, read at both), and moves that
+  // arrive during that fade wait for it to end, then take up the latest start in one
+  // fade. A drag runs one move fade at a time instead of stacking a fade per sample.
+  // Meanwhile the playhead follows the held window: the new length
   // and direction at the old start, so pitch still follows the loop per sample.
   // Returns the window the playhead follows.
-  // ponytail: the fade runs in source samples, so near rate 0 a move waits longer.
-  #carryPlayhead(window, approachDirection) {
+  #carryPlayhead(window) {
     const previous = this.loopWindow;
     this.loopWindow = window;
     if (
@@ -445,20 +453,22 @@ export class VoiceEngine {
         return held;
       }
     }
+    const delta = window.start - previous.start;
     if (fades) {
-      const length = this.#crossfadeLength(window);
-      // From the unmoved playhead, before any edge it passes this frame
-      this.loopCrossfade.start(
-        this.playbackPosition,
-        this.loopTurned ? -approachDirection : approachDirection,
-        length,
-        previous.end > previous.audioEnd,
-        previous.audioEnd,
-        previous.audioStart,
-      );
-      this.loopMoveFadeLeft = length;
+      // ponytail: a move that can't wait (trim cut the held window) drops a running
+      // fade's older window, a small step if it was still audible.
+      this.loopMoveFadeLeft = this.loopMoveFadeFrames;
+      const from = this.loopMoveFrom;
+      from.offset = -delta;
+      from.fadesTail = previous.end > previous.audioEnd;
+      from.audioEnd = previous.audioEnd;
+      from.firstIndex = Math.ceil(previous.audioStart);
+      from.lastIndex = Math.ceil(previous.audioEnd) - 1;
+      // Running wrap and turn fades move with the playhead, so the offset reads
+      // all of them back in the old window.
+      this.loopCrossfade.shift(delta);
     }
-    this.playbackPosition += window.start - previous.start;
+    this.playbackPosition += delta;
     return window;
   }
 
@@ -502,16 +512,30 @@ export class VoiceEngine {
 
   // Each head's `mix` is the weight of the heads inside it. The innermost has
   // nothing inside it, so its 0 leaves it at full level. All heads move at `rate`.
-  #mixReadHeads(channel, rate) {
+  // `from` reads every head in the window a move fades from, at its offset and with
+  // that window's trim and tail.
+  // ponytail: a wrap fade started just before the move reads the move's trim, not its own.
+  #mixReadHeads(channel, rate, from = null) {
     let mixed = 0;
     for (let i = 0; i < this.readHeadCount; i++) {
       const head = this.readHeads[i];
+      const source = head.source;
       // Mono sources feed every output channel. Each head keeps its own bounds,
       // including the saved trim end of an outgoing crossfade head.
-      head.source.samples = this.buffer[Math.min(channel, this.buffer.length - 1)];
-      const value =
-        readSource(this.interpolation, head.source, head.position, rate, head.sincKernel) *
-        head.gain;
+      source.samples = this.buffer[Math.min(channel, this.buffer.length - 1)];
+      let position = head.position;
+      let gain = head.gain;
+      const firstIndex = source.firstIndex;
+      const lastIndex = source.lastIndex;
+      if (from) {
+        position += from.offset;
+        source.firstIndex = from.firstIndex;
+        source.lastIndex = from.lastIndex;
+        gain = from.fadesTail ? tailGainAt(position, from.audioEnd) : 1;
+      }
+      const value = readSource(this.interpolation, source, position, rate, head.sincKernel) * gain;
+      source.firstIndex = firstIndex;
+      source.lastIndex = lastIndex;
       mixed = value + head.mix * (mixed - value);
     }
     return mixed;
@@ -1063,7 +1087,7 @@ export class VoiceEngine {
       // even when a time window's bounds resolve once per block. Turns wait for an edge.
       loopWindow.direction = loopStart > loopEnd ? -1 : 1;
       // The rest of this sample plays the window the playhead follows.
-      const playWindow = this.#carryPlayhead(loopWindow, approachDirection);
+      const playWindow = this.#carryPlayhead(loopWindow);
 
       this.smoothedPanDrift +=
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
@@ -1149,13 +1173,12 @@ export class VoiceEngine {
         // Safety check: ensure output channel exists
         if (!outputChannels[channel]) continue;
 
-        const finalSample =
-          this.#mixReadHeads(channel, Math.abs(playbackStep)) *
-          velocityGain *
-          envelopeGain *
-          masterGain *
-          startGain *
-          stopGain;
+        let mixed = this.#mixReadHeads(channel, Math.abs(playbackStep));
+        if (this.loopMoveFadeLeft > 0) {
+          const old = this.#mixReadHeads(channel, Math.abs(playbackStep), this.loopMoveFrom);
+          mixed = old + (1 - this.loopMoveFadeLeft / this.loopMoveFadeFrames) * (mixed - old);
+        }
+        const finalSample = mixed * velocityGain * envelopeGain * masterGain * startGain * stopGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;
@@ -1176,7 +1199,7 @@ export class VoiceEngine {
         );
       }
       this.loopCrossfade.advance(Math.abs(playbackStep));
-      this.loopMoveFadeLeft -= Math.abs(playbackStep);
+      if (this.loopMoveFadeLeft > 0) this.loopMoveFadeLeft--;
 
       // Remember the rendered position, before a fractional step can overshoot
       // the edge. The next sample must carry that overshoot with a moving loop.

@@ -10,7 +10,7 @@ How the engine is organised after step 4:
 
 1. **Loop window:** a resolved `LoopWindow` (`start`, `length`, requested `direction`).
 2. **Two loop regimes,** decided once per window as `isPitchLoop`:
-   - **Oscillator** (length is pitch): quantize, length and position glide, playhead carry (moves latch: one move fade at a time). Morphing goes here.
+   - **Oscillator** (length is pitch): quantize, length and position glide, playhead carry. A move crossfades the whole head mix from the old window to the new one at the same phase, one fade at a time (moves latch). Morphing goes here.
    - **Sample** (length is time): keytrack, zero-crossing snap, tempo sync later.
 3. **Read heads:** the playhead, crossfade heads and the stretcher's outgoing position mix in one list. Morph frames and grains would be more of the same.
 
@@ -40,7 +40,7 @@ Deferred until a feature needs position or length as real params, or Float32 pre
 
 Next up. Prototype each on a branch in the JS engine. Order is a suggestion.
 
-- **A. Morphing:** in the oscillator regime, crossfade between window positions at the same phase. Start from the prototype in [#151](https://github.com/KristinnRoach/web-audio/pull/151) (conflicts with `main`, use as reference). The move latch from `proto/loop-move-latch` is on `main`; a frame crossfade builds on it.
+- **A. Morphing:** in the oscillator regime, crossfade between window positions at the same phase. Start from the prototype in [#151](https://github.com/KristinnRoach/web-audio/pull/151) (conflicts with `main`, use as reference). The same-phase move fade and its latch are on `main`; morphing adds frames and a morph amount on top.
   - Keep position glide (`setLoopPositionGlide`, default 0) as an option: its tape-like pitch bend while the loop moves is intended.
 - **C. Anti-aliasing:** add a seam for how heads read the source, then choose between band-limited copies per octave and a filtered kernel. Start from `prototype/rate-8-loop-prefilter`. Done after A because the two interact: moving between band-limited tables at audio rate [can add sidebands](https://www.kvraudio.com/forum/viewtopic.php?p=8105138) (forum source, verify when we get there).
 - **B. Granular:** more heads with window envelopes, for timestretch modes and simple creative effects, detune and widening.
