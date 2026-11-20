@@ -5,8 +5,10 @@
  * @typedef {{ readTap(index: number): number }} SourceReader
  */
 
-// Repeat the endpoints of [firstIndex, lastIndex], inclusive. Bounds are integer
-// sample indices inside the trim: ceil(startSamples) through ceil(endSamples) - 1.
+// Bounds are integer sample indices inside the trim, inclusive: ceil(startSamples)
+// through ceil(endSamples) - 1. Before firstIndex, reflect through the first sample
+// (odd reflection), so a fade running past the start keeps its slope instead of
+// flattening. After lastIndex, repeat the last sample; the tail fade covers that end.
 // shortcut: loop edges do not extend the source yet. Short loops can pick up
 // content outside the loop, especially with sinc. Add loop-aware readers once
 // fractional wrap/reflect continuation is defined; never round loop boundaries.
@@ -20,6 +22,12 @@ export class ClampedSourceReader {
 
   // The engine reuses this reader across channels, without allocating.
   readTap(index) {
-    return this.samples?.[Math.max(this.firstIndex, Math.min(index, this.lastIndex))] || 0;
+    const samples = this.samples;
+    if (!samples) return 0;
+    const first = this.firstIndex;
+    const last = this.lastIndex;
+    if (index >= first) return samples[Math.min(index, last)] || 0;
+    const edge = samples[first] || 0;
+    return 2 * edge - (samples[Math.max(first, Math.min(2 * first - index, last))] || 0);
   }
 }

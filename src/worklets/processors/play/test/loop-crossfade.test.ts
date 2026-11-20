@@ -80,6 +80,40 @@ describe('loop jump crossfade', () => {
 
 // Covers LOOP_TURN_CROSSFADE; expected to fail with it off.
 describe('loop turn crossfade', () => {
+  it.each([0.5, 1, 1.5, 2])(
+    'keeps the slope through a turn at buffer zero at rate %s',
+    async (rate) => {
+      // A nonzero offset and fractional reads exercise reflection around the first sample.
+      const source = Float32Array.from(
+        { length: 48_000 },
+        (_, i) => 0.15 + 0.2 * Math.sin((2 * Math.PI * 220.3 * i) / 48_000),
+      );
+      const processor = await startProcessor();
+      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+      send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
+      send({ type: 'setLoopPingPong', value: true });
+      send({ type: 'voice:start', triggerId: 1 });
+      const output = new Float32Array(40_000);
+      processor.process(
+        [],
+        [[output]],
+        makeParameters({
+          playbackRate: rate,
+          loopStart: 0,
+          loopEnd: 0.1,
+          loopDurationDriftAmount: 0,
+        }),
+      );
+      // First turn at the loop end, then back at buffer zero
+      const turn = Math.ceil(9600 / rate) * 2;
+      let curvature = 0;
+      for (let i = turn - 4; i < turn + Math.ceil(256 / rate) + 4; i++) {
+        curvature = Math.max(curvature, Math.abs(output[i] - 2 * output[i - 1] + output[i - 2]));
+      }
+      expect(curvature).toBeLessThan(0.002 * rate);
+    },
+  );
+
   it('rounds off the slope reversal of a ping-pong turn', async () => {
     const sine = Float32Array.from({ length: 48_000 }, (_, i) =>
       Math.sin((2 * Math.PI * 220.3 * i) / 48_000),
