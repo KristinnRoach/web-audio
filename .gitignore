@@ -34,3 +34,6 @@ AGENTS.md
 
 
 .playwright-mcp/
+
+# Rust build output
+target/

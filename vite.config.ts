@@ -60,7 +60,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'spikes/**/*.test.ts'],
     exclude: ['**/*.browser.test.ts', 'node_modules/**'],
     coverage: {
       reporter: ['text', 'html'],
