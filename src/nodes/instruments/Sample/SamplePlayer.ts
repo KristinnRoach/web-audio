@@ -957,7 +957,10 @@ export class SamplePlayer {
     return this;
   }
 
-  /** Position glide time constant for quantized audio-rate loops. 0 = instant. */
+  /**
+   * Position glide time constant for quantized audio-rate loops. 0 = instant.
+   * Tape-like: the pitch bends while the loop moves.
+   */
   setLoopPositionGlide(seconds: number): this {
     this.#loopPositionGlide = seconds;
     this.#post({ type: 'setLoopPositionGlide', value: seconds });

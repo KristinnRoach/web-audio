@@ -32,15 +32,16 @@ Each step is one or more small PRs with no audible change, unless noted.
 4. **Loop window — complete:** resolved loops are a `LoopWindow` (`start`, `length`, requested `direction`; `end` derived), two preallocated per voice. `direction` replaces the `loopMode` string; the travel direction still turns only at an edge.
    - The playhead stays in source coordinates and the carry stays, now reading the window. Storing it as an offset from the window start was tried and dropped: the hard part is deciding when the playhead follows the window (pitch loops) and when it stays put (time loops, approach, disabled), and an offset only moves that decision into rebasing between coordinate systems. The #151 morph prototype needs one subtraction for a shared phase, not a new playhead model.
 
-### 5. Param contract — when a feature needs it
+### 5. Param contract — deferred
 
-Replace the paired `loopStart`/`loopEnd` AudioParams with position and length, which removes the Float32 tolerance workaround. This is the largest test churn (about 220 references), so do it only when a feature needs position or length as real params; morphing is the likely trigger, so decide during 6A. The public `SamplePlayer` API can stay as it is.
+Deferred until a feature needs position or length as real params, or Float32 precision problems show up; none so far, including for 6A. Replace the paired `loopStart`/`loopEnd` AudioParams with position and length, which removes the Float32 tolerance workaround in move detection. This changes what the engine reads, not only the main thread, and is the largest test churn (about 220 references). The public `SamplePlayer` API can stay as it is.
 
 ### 6. Features
 
 Next up. Prototype each on a branch in the JS engine. Order is a suggestion.
 
-- **A. Morphing:** in the oscillator regime, crossfade between window positions at the same phase. Start from the prototype in [#151](https://github.com/KristinnRoach/web-audio/pull/151) and the ideas in `proto/loop-move-latch` (local only).
+- **A. Morphing:** in the oscillator regime, crossfade between window positions at the same phase. Start from the prototype in [#151](https://github.com/KristinnRoach/web-audio/pull/151) (conflicts with `main`, use as reference) and the ideas in `proto/loop-move-latch` (local only).
+  - Keep position glide (`setLoopPositionGlide`, default 0) as an option: its tape-like pitch bend while the loop moves is intended.
 - **C. Anti-aliasing:** add a seam for how heads read the source, then choose between band-limited copies per octave and a filtered kernel. Start from `prototype/rate-8-loop-prefilter`. Done after A because the two interact: moving between band-limited tables at audio rate [can add sidebands](https://www.kvraudio.com/forum/viewtopic.php?p=8105138) (forum source, verify when we get there).
 - **B. Granular:** more heads with window envelopes, for timestretch modes and simple creative effects, detune and widening.
 - **D. Audio-rate modulation:** sampler envelopes already run on the audio thread, including loop sync; idle range reports no longer drive their timing. Move selected modulators there when needed.
