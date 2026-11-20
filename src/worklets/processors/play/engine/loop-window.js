@@ -1,6 +1,7 @@
 // One resolved window in source samples. Direction is the requested loop order;
 // the voice keeps its current travel direction until the next loop edge.
-// Two instances per voice let the playhead carry compare against the preceding window.
+// Two instances per voice let the playhead carry compare against the preceding window;
+// a third holds the window a pitch loop follows while a move waits (see #carryPlayhead).
 export class LoopWindow {
   start = 0;
   length = 0;

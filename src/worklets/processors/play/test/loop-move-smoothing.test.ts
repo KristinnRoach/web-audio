@@ -108,6 +108,41 @@ describe('audio-rate loop movement smoothing', () => {
     expect(output.slice(1).every((sample, i) => Math.abs(sample - output[i]) < 0.02)).toBe(true);
   });
 
+  it('runs one move fade at a time while a pitch loop is dragged', async () => {
+    const period = 192;
+    const processor = await startProcessor([], [period / TEST_SAMPLE_RATE]);
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({
+      type: 'voice:setBuffer',
+      buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) => Math.sin(i / 23) * 0.2)],
+      durationSeconds: 1,
+    });
+    send({ type: 'setLoopEnabled', value: true });
+    send({ type: 'voice:start' });
+    const fades = processor.engine.loopCrossfade;
+    let mostFades = 0;
+    let start = 1000;
+    // One frame per call, so the fade count is seen every sample
+    for (let frame = 0; frame < 4000; frame++) {
+      if (frame >= 1000) start += 0.5;
+      processor.process(
+        [],
+        [[new Float32Array(1)]],
+        makeParameters({
+          loopStart: start / TEST_SAMPLE_RATE,
+          loopEnd: (start + period) / TEST_SAMPLE_RATE,
+        }),
+      );
+      if (frame >= 1000) mostFades = Math.max(mostFades, fades.count);
+    }
+    // One move fade plus at most one wrap fade (a wrap every 192 samples, fades of 48)
+    expect(mostFades).toBeLessThanOrEqual(2);
+    // The playhead still follows the loop: it ends inside the moved window
+    const position = processor.engine.playbackPosition;
+    expect(position).toBeGreaterThanOrEqual(start - 1);
+    expect(position).toBeLessThanOrEqual(start + period + 1);
+  });
+
   it.each([
     { mode: 'forward', frames: 124 },
     { mode: 'forward', frames: 125 },

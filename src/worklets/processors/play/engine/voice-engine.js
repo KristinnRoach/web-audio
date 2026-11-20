@@ -113,6 +113,8 @@ export class VoiceEngine {
     this.enableLoopCrossfade = true; // Crossfade between loop points
     this.loopCrossfade = new LoopCrossfade();
     this.loopWindowSlots = [new LoopWindow(), new LoopWindow()];
+    // The window a pitch loop's playhead follows while a move waits for the running move fade.
+    this.heldLoopWindow = new LoopWindow();
     // Ping-pong turns around at both loop edges and overrides loop point order.
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
@@ -309,6 +311,7 @@ export class VoiceEngine {
     this.loopWindow = null;
     this.loopRate = 1;
     this.loopCrossfade.reset();
+    this.loopMoveFadeLeft = 0; // source samples left in the running move fade
     this.#resetLoopGlides(); // new notes start on the target range
 
     this.loopDriftRolled = false; // roll fresh drift for this note
@@ -404,6 +407,14 @@ export class VoiceEngine {
   // A pitch loop's length is its pitch. The playhead is in source coordinates, so
   // a moving window would shift its phase every sample and bend the cycles while
   // it moves. Carry the playhead with the window start instead.
+  //
+  // Moves latch, as in Faust's de.sdelay: a move crossfades from the unmoved playhead,
+  // and moves that arrive during that fade wait for it to end, then take up the
+  // latest start in one fade. A drag runs one move fade at a time instead of stacking
+  // a fade per sample. Meanwhile the playhead follows the held window: the new length
+  // and direction at the old start, so pitch still follows the loop per sample.
+  // Returns the window the playhead follows.
+  // ponytail: the fade runs in source samples, so near rate 0 a move waits longer.
   #carryPlayhead(window, approachDirection) {
     const previous = this.loopWindow;
     this.loopWindow = window;
@@ -415,20 +426,40 @@ export class VoiceEngine {
       this.previousPlaybackPosition < previous.start ||
       this.previousPlaybackPosition > previous.end
     ) {
-      return;
+      return window;
     }
-    if (this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped)) {
+    const fades =
+      this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped);
+    if (fades && this.loopMoveFadeLeft > 0) {
+      const heldStart = previous.start; // read first: previous may be the held window
+      // Trim cutting the held window skips the wait.
+      if (heldStart >= window.audioStart && heldStart + window.length <= window.audioEnd) {
+        const held = this.heldLoopWindow;
+        held.start = heldStart;
+        held.length = window.length;
+        held.direction = window.direction;
+        held.isPitchLoop = true;
+        held.audioStart = window.audioStart;
+        held.audioEnd = window.audioEnd;
+        this.loopWindow = held;
+        return held;
+      }
+    }
+    if (fades) {
+      const length = this.#crossfadeLength(window);
       // From the unmoved playhead, before any edge it passes this frame
       this.loopCrossfade.start(
         this.playbackPosition,
         this.loopTurned ? -approachDirection : approachDirection,
-        this.#crossfadeLength(window),
+        length,
         previous.end > previous.audioEnd,
         previous.audioEnd,
         previous.audioStart,
       );
+      this.loopMoveFadeLeft = length;
     }
     this.playbackPosition += window.start - previous.start;
+    return window;
   }
 
   #addReadHead(position, gain, mix, firstIndex, lastIndex) {
@@ -1031,7 +1062,8 @@ export class VoiceEngine {
       // Set per sample, not in #calculateLoopWindow: direction follows a-rate points
       // even when a time window's bounds resolve once per block. Turns wait for an edge.
       loopWindow.direction = loopStart > loopEnd ? -1 : 1;
-      this.#carryPlayhead(loopWindow, approachDirection);
+      // The rest of this sample plays the window the playhead follows.
+      const playWindow = this.#carryPlayhead(loopWindow, approachDirection);
 
       this.smoothedPanDrift +=
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
@@ -1042,23 +1074,23 @@ export class VoiceEngine {
       const approachingLoop =
         this.loopEnabled &&
         !this.loopTurned &&
-        (isApproachingLoopWindow(this.playbackPosition, approachDirection, loopWindow) ||
+        (isApproachingLoopWindow(this.playbackPosition, approachDirection, playWindow) ||
           isApproachingLoopWindow(
             this.timestretch.timelinePosition,
             approachDirection,
-            loopWindow,
+            playWindow,
           ));
       const inLoop = this.loopEnabled && !approachingLoop;
 
-      const timestretchActive = this.timestretch.isActive(inLoop, loopWindow.isPitchLoop);
-      const silencePadTail = loopWindow.end > playbackRange.endSamples;
+      const timestretchActive = this.timestretch.isActive(inLoop, playWindow.isPitchLoop);
+      const silencePadTail = playWindow.end > playbackRange.endSamples;
 
       // Handle looping
       const maxLoopCount = parameters.maxLoopCount[0];
       const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
-      this.loopMessage.isInPitchLoop = canWrapLoop && inLoop && loopWindow.isPitchLoop;
+      this.loopMessage.isInPitchLoop = canWrapLoop && inLoop && playWindow.isPitchLoop;
       if (canWrapLoop) {
-        this.#passLoopEdge(approachDirection, loopWindow, silencePadTail, timestretchActive);
+        this.#passLoopEdge(approachDirection, playWindow, silencePadTail, timestretchActive);
       }
       // Out of loop passes (the edge just passed may have been the last), or
       // loop off: play out in the approach direction
@@ -1073,10 +1105,10 @@ export class VoiceEngine {
         this.playbackPosition,
         playbackStep,
         canWrapLoop && inLoop
-          ? Math.max(playbackRange.startSamples, loopWindow.start)
+          ? Math.max(playbackRange.startSamples, playWindow.start)
           : playbackRange.startSamples,
         canWrapLoop && inLoop
-          ? Math.min(playbackRange.endSamples, loopWindow.end)
+          ? Math.min(playbackRange.endSamples, playWindow.end)
           : playbackRange.endSamples,
       );
 
@@ -1092,8 +1124,8 @@ export class VoiceEngine {
           : transportPosition < playbackRange.startSamples;
       const isWithinLoop =
         this.loopEnabled &&
-        this.playbackPosition >= loopWindow.start &&
-        this.playbackPosition <= loopWindow.end;
+        this.playbackPosition >= playWindow.start &&
+        this.playbackPosition <= playWindow.end;
 
       if (leftPlaybackRange && !isWithinLoop) {
         return this.#halt();
@@ -1144,6 +1176,7 @@ export class VoiceEngine {
         );
       }
       this.loopCrossfade.advance(Math.abs(playbackStep));
+      this.loopMoveFadeLeft -= Math.abs(playbackStep);
 
       // Remember the rendered position, before a fractional step can overshoot
       // the edge. The next sample must carry that overshoot with a moving loop.

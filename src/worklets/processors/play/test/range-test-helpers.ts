@@ -19,6 +19,7 @@ export type TestProcessor = {
     readonly pitchPreservationThreshold: number;
     playbackPosition: number;
     minRangeSamples: number;
+    readonly loopCrossfade: { readonly count: number };
   };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
