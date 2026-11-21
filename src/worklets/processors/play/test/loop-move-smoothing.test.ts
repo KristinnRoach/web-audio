@@ -144,6 +144,40 @@ describe('audio-rate loop movement smoothing', () => {
     expect(position).toBeLessThanOrEqual(start + period + 1);
   });
 
+  it('gives running wrap fades the new trim when a move carries them', async () => {
+    const period = 48;
+    const processor = await startProcessor([], [period / TEST_SAMPLE_RATE]);
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({
+      type: 'voice:setBuffer',
+      buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) => Math.sin(i / 23) * 0.2)],
+      durationSeconds: 1,
+    });
+    send({ type: 'setLoopEnabled', value: true });
+    send({ type: 'voice:start' });
+    const render = (start: number, trimStart: number) =>
+      processor.process(
+        [],
+        [[new Float32Array(1)]],
+        makeParameters({
+          startPoint: trimStart / TEST_SAMPLE_RATE,
+          endPoint: (trimStart + 1000) / TEST_SAMPLE_RATE,
+          loopStart: start / TEST_SAMPLE_RATE,
+          loopEnd: (start + period) / TEST_SAMPLE_RATE,
+        }),
+      );
+    // Just past the first wrap, so its fade is running
+    for (let frame = 0; frame < period + 2; frame++) render(0, 0);
+    const fades = processor.engine.loopCrossfade;
+    expect(fades.count).toBe(1);
+    render(4000, 4000);
+    // The carried head reads the new region with its trim, not clamped to the old one
+    const window = processor.engine.loopWindow;
+    expect(fades.head(0).position).toBeGreaterThan(window.start);
+    expect(fades.head(0).audioStart).toBe(window.audioStart);
+    expect(fades.head(0).audioEnd).toBe(window.audioEnd);
+  });
+
   it('fades a minimum-length loop move over the move fade time, between the two windows', async () => {
     // Two regions of the same 24-sample sine, quiet then loud. Windows start on
     // whole periods, so a same-phase fade only changes the level.
