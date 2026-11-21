@@ -1,9 +1,10 @@
-// Crossfades playhead discontinuities (loop jumps, turns and moves). Each one
-// leaves an outgoing head reading on from where the playhead was, in the direction
-// it was going, fading out while the relocated or turned playhead fades in. Heads
-// nest: a newer head fades from what was audible when it started, older heads
-// included, so overlapping discontinuities stay continuous. Length and progress are in source samples, so a fade covers
-// the same stretch of audio at any playback rate.
+// Crossfades playhead discontinuities: loop jumps and turns. (Pitch loop moves fade
+// between windows in the voice engine instead.) Each one leaves an outgoing head
+// reading on from where the playhead was, in the direction it was going, fading out
+// while the relocated or turned playhead fades in. Heads nest: a newer head fades
+// from what was audible when it started, older heads included, so overlapping
+// discontinuities stay continuous. Length and progress are in source samples, so a
+// fade covers the same stretch of audio at any playback rate.
 
 export const MAX_OUTGOING_HEADS = 4; // reasonable: 2-16
 
@@ -67,6 +68,20 @@ export class LoopCrossfade {
       head.progress += speed;
       if (head.progress >= head.length) this.#remove(i);
       else head.mix = head.progress / head.length;
+    }
+  }
+
+  /**
+   * Moves every head with a playhead carried by a moving loop. The heads then read
+   * the new window, so they take its trim and tail.
+   */
+  shift(delta, fadesTail, audioEnd, audioStart) {
+    for (let i = 0; i < this.#count; i++) {
+      const head = this.#heads[i];
+      head.position += delta;
+      head.fadesTail = fadesTail;
+      head.audioStart = audioStart;
+      head.audioEnd = audioEnd;
     }
   }
 
