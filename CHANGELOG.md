@@ -1,5 +1,11 @@
 # @kidlib/web-audio
 
+## 0.12.1
+
+### Patch Changes
+
+- 667ad70: Moving audio-rate (pitch-range) `SamplePlayer` loops sounds smoother.
+
 ## 0.12.0
 
 ### Minor Changes
