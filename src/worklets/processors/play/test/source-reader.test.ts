@@ -30,12 +30,12 @@ function readRms(
 describe('source reader', () => {
   it('preserves pre-cache sinc output across channels, positions and rates', () => {
     const kernel = new SincKernel();
-    const left = new ClampedSourceReader(
-      Float32Array.from({ length: 257 }, (_, i) => 0.2 * Math.sin(i * 0.37)),
-    );
-    const right = new ClampedSourceReader(
-      Float32Array.from({ length: 257 }, (_, i) => 0.3 * Math.cos(i * 0.19)),
-    );
+    // Holds both endpoints, as the original reader did, so the reference values still apply.
+    const holding = (samples: Float32Array): SourceReader => ({
+      readTap: (index) => samples[Math.max(0, Math.min(index, samples.length - 1))],
+    });
+    const left = holding(Float32Array.from({ length: 257 }, (_, i) => 0.2 * Math.sin(i * 0.37)));
+    const right = holding(Float32Array.from({ length: 257 }, (_, i) => 0.3 * Math.cos(i * 0.19)));
     // Reference values from the original per-channel sinc reader. Includes both
     // clamped edges, widening/shrinking the kernel, and the rate cap.
     const reference = [
@@ -65,11 +65,14 @@ describe('source reader', () => {
     expect(kernel.read(source, 1.25, 2)).toBeCloseTo(0.75, 14);
   });
 
-  it('repeats the endpoints of the head’s inclusive sample range', () => {
+  it('reflects through the first sample and repeats the last of the head’s range', () => {
     const source = new ClampedSourceReader(new Float32Array([2, 4, 8, 16]), 0, 2);
-    expect([-100, -1, 0, 1, 2, 3, 100].map((index) => source.readTap(index))).toEqual([
-      2, 2, 2, 4, 8, 8, 8,
+    // Before the start: 2 * first - mirrored tap, the mirror clamped to the range
+    expect([-100, -2, -1, 0, 1, 2, 3, 100].map((index) => source.readTap(index))).toEqual([
+      -4, -4, 0, 2, 4, 8, 8, 8,
     ]);
+    const trimmed = new ClampedSourceReader(new Float32Array([2, 4, 8, 16]), 1, 3);
+    expect([-1, 0, 1, 4].map((index) => trimmed.readTap(index))).toEqual([-8, 0, 4, 16]);
   });
 
   it('returns silence for empty sources and repeats a single sample', () => {
