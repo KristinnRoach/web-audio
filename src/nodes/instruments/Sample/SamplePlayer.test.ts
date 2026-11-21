@@ -174,10 +174,13 @@ it('replays settings made before init to the processor and voices', async () => 
 
   try {
     player.transpose(2).fineTune(-50).setLoopEnabled(true).setKeytrackLoopAmount(0.25);
-    player.setTimestretchMode('period');
+    player.setTimestretchMode('period').setStartFromLoop(true);
     const { ofType } = await initTestPlayer(player);
 
     expect(ofType('setLoopEnabled')).toEqual([{ type: 'setLoopEnabled', value: true }]);
+    expect(ofType('voice:setStartFromLoop')).toEqual([
+      { type: 'voice:setStartFromLoop', value: true },
+    ]);
     expect(ofType('setKeytrackLoopAmount')).toEqual([
       { type: 'setKeytrackLoopAmount', value: 0.25 },
     ]);
