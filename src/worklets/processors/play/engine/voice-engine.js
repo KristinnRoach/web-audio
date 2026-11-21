@@ -33,7 +33,9 @@ const LOOP_TURN_CROSSFADE = true;
 // Pitch loop move crossfade, old window to new at the same phase. In output time,
 // not source samples: it doesn't depend on the loop's length or the playback rate.
 // Moves during a fade wait for it, so this is also the longest lag behind a drag.
-const LOOP_MOVE_FADE_SECONDS = 0.02; // reasonable: 0.005 - 0.05, tuned by ear on UI drags
+// UI drags arrive as discrete jumps per pointer event (~60-120 Hz); the fade should
+// span about one gap between them, or a drag steps. Tuned by ear: 10 ms stepped.
+const LOOP_MOVE_FADE_SECONDS = 0.02; // reasonable: 0.005 - 0.05
 // Source-domain fade into a loop's silence padding; not a note release.
 const TAIL_FADE_SAMPLES = 64;
 // Note-boundary de-click ramps, independent of pitch, direction and the musical
@@ -420,8 +422,8 @@ export class VoiceEngine {
   // new one at the same phase (the whole head mix, read at both), and moves that
   // arrive during that fade wait for it to end, then take up the latest start in one
   // fade. A drag runs one move fade at a time instead of stacking a fade per sample.
-  // Meanwhile the playhead follows the held window: the new length
-  // and direction at the old start, so pitch still follows the loop per sample.
+  // Meanwhile the playhead follows the held window: the new length and direction at
+  // the old start, so pitch still follows the loop per sample.
   // Returns the window the playhead follows.
   #carryPlayhead(window) {
     const previous = this.loopWindow;
