@@ -33,7 +33,7 @@ const LOOP_TURN_CROSSFADE = true;
 // Pitch loop move crossfade, old window to new at the same phase. In output time,
 // not source samples: it doesn't depend on the loop's length or the playback rate.
 // Moves during a fade wait for it, so this is also the longest lag behind a drag.
-const LOOP_MOVE_FADE_SECONDS = 0.01; // reasonable: 0.005 - 0.05
+const LOOP_MOVE_FADE_SECONDS = 0.02; // reasonable: 0.005 - 0.05, tuned by ear on UI drags
 // Source-domain fade into a loop's silence padding; not a note release.
 const TAIL_FADE_SAMPLES = 64;
 // Note-boundary de-click ramps, independent of pitch, direction and the musical

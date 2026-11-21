@@ -176,12 +176,15 @@ describe('audio-rate loop movement smoothing', () => {
       return output;
     };
     render(2400, 3000);
-    const output = render(7200, 960);
+    const fadeFrames = (
+      processor.engine as typeof processor.engine & { loopMoveFadeFrames: number }
+    ).loopMoveFadeFrames;
+    const output = render(7200, 2 * fadeFrames);
     const peak = (from: number) => Math.max(...output.subarray(from, from + period));
-    // 10 ms at 48 kHz: still the old level at the start, halfway at 240, new level after 480
+    // Still the old level at the start, halfway mid-fade, the new level after it
     expect(peak(0)).toBeCloseTo(0.2, 1);
-    expect(peak(240 - period / 2)).toBeCloseTo(0.5, 1);
-    expect(peak(960 - period)).toBeCloseTo(0.8, 4);
+    expect(peak(fadeFrames / 2 - period / 2)).toBeCloseTo(0.5, 1);
+    expect(peak(2 * fadeFrames - period)).toBeCloseTo(0.8, 4);
     expect(Math.max(...output.map(Math.abs))).toBeLessThanOrEqual(0.8 + 1e-6);
   });
 
@@ -292,9 +295,9 @@ describe('audio-rate loop movement smoothing', () => {
       expect(processor.engine.playbackPosition - state.loopWindow.start).toBeCloseTo(35 * rate, 4);
 
       // The held second move takes up after the first fade, then fades in turn
-      const settled = render(0.2, 1024);
-      expect(settled[0][1023]).toBeCloseTo(-0.4, 4);
-      expect(settled[1][1023]).toBeCloseTo(0.3, 4);
+      const settled = render(0.2, 2048);
+      expect(settled[0][2047]).toBeCloseTo(-0.4, 4);
+      expect(settled[1][2047]).toBeCloseTo(0.3, 4);
 
       // Reusing the voice must not carry a previous note's correction into its attack.
       render(0, 1);
