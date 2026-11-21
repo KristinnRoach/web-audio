@@ -71,9 +71,18 @@ export class LoopCrossfade {
     }
   }
 
-  /** Moves every head with a playhead carried by a moving loop. */
-  shift(delta) {
-    for (let i = 0; i < this.#count; i++) this.#heads[i].position += delta;
+  /**
+   * Moves every head with a playhead carried by a moving loop. The heads then read
+   * the new window, so they take its trim and tail.
+   */
+  shift(delta, fadesTail, audioEnd, audioStart) {
+    for (let i = 0; i < this.#count; i++) {
+      const head = this.#heads[i];
+      head.position += delta;
+      head.fadesTail = fadesTail;
+      head.audioStart = audioStart;
+      head.audioEnd = audioEnd;
+    }
   }
 
   reset() {

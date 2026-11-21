@@ -461,15 +461,22 @@ export class VoiceEngine {
       // fade's older window, a small step if it was still audible.
       this.loopMoveFadeLeft = this.loopMoveFadeFrames;
       const from = this.loopMoveFrom;
-      from.offset = -delta;
+      from.offset = 0;
       from.fadesTail = previous.end > previous.audioEnd;
       from.audioEnd = previous.audioEnd;
       from.firstIndex = Math.ceil(previous.audioStart);
       from.lastIndex = Math.ceil(previous.audioEnd) - 1;
-      // Running wrap and turn fades move with the playhead, so the offset reads
-      // all of them back in the old window.
-      this.loopCrossfade.shift(delta);
     }
+    // Running wrap and turn fades move with the playhead, and the offset reads all
+    // of them back in the window a running move fade started from.
+    this.loopMoveFrom.offset -= delta;
+    // ponytail: the tail test repeats silencePadTail's in render(); keep them in step.
+    this.loopCrossfade.shift(
+      delta,
+      window.end > window.audioEnd,
+      window.audioEnd,
+      window.audioStart,
+    );
     this.playbackPosition += delta;
     return window;
   }
