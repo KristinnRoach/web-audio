@@ -114,6 +114,7 @@ export class SamplePlayer {
   #bufferDuration: number = 0;
 
   #loopEnabled = false;
+  #startFromLoop = false;
   #loopLocked = false;
   #holdEnabled = false;
   #holdLocked = false;
@@ -231,6 +232,7 @@ export class SamplePlayer {
         // Replay what was set before the worklet existed. Pitch periods follow the
         // first sample load, which sends them for 'period' mode.
         this.#post({ type: 'setLoopEnabled', value: this.#loopEnabled });
+        this.#post({ type: 'voice:setStartFromLoop', value: this.#startFromLoop });
         this.#post({ type: 'setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
         this.#post({ type: 'setTimestretchMode', value: this.#timestretchMode });
 
@@ -1064,6 +1066,17 @@ export class SamplePlayer {
    */
   setLoopPingPong(enabled: boolean): this {
     this.#post({ type: 'setLoopPingPong', value: enabled });
+    return this;
+  }
+
+  /**
+   * While looping is on, notes start at the loop instead of the trim start:
+   * at the lower loop point, or the higher one when playing in reverse. Trim
+   * still bounds playback. With looping off, notes start at trim as usual.
+   */
+  setStartFromLoop(enabled: boolean): this {
+    this.#startFromLoop = enabled;
+    this.#post({ type: 'voice:setStartFromLoop', value: enabled });
     return this;
   }
 
