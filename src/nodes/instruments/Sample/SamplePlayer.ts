@@ -1067,6 +1067,16 @@ export class SamplePlayer {
     return this;
   }
 
+  /**
+   * While looping is on, notes start at the loop instead of the trim start:
+   * at the lower loop point, or the higher one when playing in reverse. Trim
+   * still bounds playback. With looping off, notes start at trim as usual.
+   */
+  setStartFromLoop(enabled: boolean): this {
+    this.#post({ type: 'voice:setStartFromLoop', value: enabled });
+    return this;
+  }
+
   setLoopDurationDriftAmount(amount: number): this {
     this.#setParam('loopDurationDriftAmount', amount);
     return this;

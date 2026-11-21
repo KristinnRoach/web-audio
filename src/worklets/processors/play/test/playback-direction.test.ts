@@ -3,7 +3,7 @@ import { makeParameters, setupProcessorGlobals, TEST_SAMPLE_RATE } from './range
 
 // A ramp buffer makes every output sample equal to the position it was read at,
 // so a render trace is a trace of read positions.
-const RAMP = Float32Array.from({ length: 1000 }, (_, i) => i / TEST_SAMPLE_RATE);
+const RAMP = Float32Array.from({ length: 2000 }, (_, i) => i / TEST_SAMPLE_RATE);
 const toSeconds = (samples: number) => samples / TEST_SAMPLE_RATE;
 
 type DirectionProcessor = {
@@ -208,5 +208,45 @@ describe('loop types', () => {
     const turn = indexOfRun(positions, [376, 375, 376]);
     expect(turn).toBeGreaterThan(0);
     expect(indexOfRun(positions.slice(turn), [748, 749, 375, 376])).toBeGreaterThan(0);
+  });
+});
+
+describe('start from loop', () => {
+  setupProcessorGlobals();
+
+  // Multiples of 375 samples are exact in float32 seconds.
+  const trim = { startPoint: toSeconds(375), endPoint: toSeconds(1500) };
+  const loop = { ...trim, loopStart: toSeconds(750), loopEnd: toSeconds(1125) };
+
+  async function firstPositions(
+    direction: 'forward' | 'reverse',
+    loopOn: boolean,
+    params: Record<string, number>,
+  ) {
+    const { processor, send } = await startRamp(direction, loopOn);
+    send({ type: 'voice:setStartFromLoop', value: true });
+    send({ type: 'voice:start' });
+    processor.engine.startFadeFrames = Infinity;
+    return trace(processor, makeParameters(params), 3);
+  }
+
+  it('starts at the lower loop point forward and before the higher one in reverse', async () => {
+    expect(await firstPositions('forward', true, loop)).toEqual([750, 751, 752]);
+    expect(await firstPositions('reverse', true, loop)).toEqual([1124, 1123, 1122]);
+  });
+
+  it('uses the same edges when loop points are inverted', async () => {
+    const inverted = { ...loop, loopStart: loop.loopEnd, loopEnd: loop.loopStart };
+    expect((await firstPositions('forward', true, inverted))[0]).toBe(750);
+  });
+
+  it('keeps the start inside trim', async () => {
+    const outside = { ...trim, loopStart: 0, loopEnd: toSeconds(1875) };
+    expect((await firstPositions('forward', true, outside))[0]).toBe(375);
+    expect((await firstPositions('reverse', true, outside))[0]).toBe(1499);
+  });
+
+  it('starts at trim with looping off', async () => {
+    expect(await firstPositions('forward', false, loop)).toEqual([375, 376, 377]);
   });
 });
