@@ -27,6 +27,7 @@ dist
 
 .vitest-attachments/
 AGENTS.md
+CLAUDE.md
 .claude
 
 # vitest browser failure screenshots
