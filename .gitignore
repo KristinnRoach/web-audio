@@ -33,3 +33,4 @@ CLAUDE.md
 .vitest-attachments/
 **/__screenshots__/
 .playwright-mcp/
+.vitest/
