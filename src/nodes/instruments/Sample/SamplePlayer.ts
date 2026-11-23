@@ -1171,12 +1171,12 @@ export class SamplePlayer {
 
     if (loopPoint === 'start') {
       if (seconds === this.loopStart) return this;
-      this.#loopStart = seconds;
       this.#setParam('loopStart', seconds, timestamp);
+      this.#loopStart = seconds;
     } else {
       if (seconds === this.loopEnd) return this;
-      this.#loopEnd = seconds;
       this.#setParam('loopEnd', seconds, timestamp);
+      this.#loopEnd = seconds;
     }
 
     this.#sendUpstreamMessage('loop-points:updated', {
