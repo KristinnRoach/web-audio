@@ -966,10 +966,39 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       .mockReturnValueOnce(2)
       .mockReturnValue(2 + 128 / 48000);
 
-    player.setLoopPoints(0.1, 0.2);
+    player.setLoopRange(0.1, 0.2);
 
     expect(start.mock.calls).toEqual([[0.1, 2.001]]);
     expect(end.mock.calls).toEqual([[0.2, 2.001]]);
+  });
+
+  it('schedules both trim points at one event time even if the audio clock advances', async () => {
+    const { player, worklet } = await setup();
+    const start = vi.spyOn(worklet.parameters.get('startPoint')!, 'setValueAtTime');
+    const end = vi.spyOn(worklet.parameters.get('endPoint')!, 'setValueAtTime');
+    vi.spyOn(player, 'now', 'get')
+      .mockReturnValueOnce(2)
+      .mockReturnValue(2 + 128 / 48000);
+
+    player.setTrimRange(0.1, 0.5);
+
+    expect(start.mock.calls).toEqual([[0.1, 2.001]]);
+    expect(end.mock.calls).toEqual([[0.5, 2.001]]);
+  });
+
+  it('rejects a non-finite trim point without touching either param', async () => {
+    const { player, worklet } = await setup();
+    const start = worklet.parameters.get('startPoint')!;
+    const end = worklet.parameters.get('endPoint')!;
+    const calls = [
+      vi.spyOn(start, 'cancelScheduledValues'),
+      vi.spyOn(start, 'setValueAtTime'),
+      vi.spyOn(end, 'cancelScheduledValues'),
+      vi.spyOn(end, 'setValueAtTime'),
+    ];
+
+    expect(() => player.setTrimRange(0.1, NaN)).toThrow(RangeError);
+    for (const spy of calls) expect(spy).not.toHaveBeenCalled();
   });
 
   it('posts note-off untagged at the scheduled time and tells the bus the sounding note', async () => {

@@ -45,7 +45,7 @@
 
       const player = await createSamplePlayer({ audio: buffer });
       player.setLoopEnabled(true);
-      player.setLoopPoints(0.5, 0.6);
+      player.setLoopRange(0.5, 0.6);
 
       // Tone effects' inputs are Tone nodes, so wire with Tone.connect, which unwraps them.
       const reverb = new Tone.Reverb(3).connect(Tone.getDestination());

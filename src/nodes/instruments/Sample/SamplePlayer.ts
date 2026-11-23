@@ -39,6 +39,7 @@ import { registerNode, unregisterNode, NodeID } from '@/nodes/node-store';
 import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { VoiceEffects, type SampleVoiceChainNode } from './VoiceEffects';
+import type { SamplePlayerWorkletAudioParamKey } from '@/worklets/processors/play/sample-player-paramdescriptors';
 import { VoiceState } from '../VoiceState';
 import { detectPitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
@@ -478,7 +479,10 @@ export class SamplePlayer {
   #resetLoopPoints() {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
-    this.#setLoopParams(this.#loopStart, this.#loopEnd, this.context.currentTime);
+    this.#setParams(
+      { loopStart: this.#loopStart, loopEnd: this.#loopEnd },
+      this.context.currentTime,
+    );
     return this;
   }
 
@@ -629,8 +633,7 @@ export class SamplePlayer {
       this.#resetLoopPoints();
       // Trim points are seconds: one left from the previous sample (or set while
       // none was loaded) would cut the new one short.
-      this.setSampleStartPoint(0);
-      this.setSampleEndPoint(this.#bufferDuration);
+      this.setTrimRange(0, this.#bufferDuration);
 
       await loadedPromise;
       this.#assertNotDisposed();
@@ -925,24 +928,39 @@ export class SamplePlayer {
     return this;
   }
 
-  /** Sets one of the processor's AudioParams, which every voice reads. */
-  #setParam(name: string, targetValue: number, timestamp: number = this.now) {
-    const param = this.#worklet?.parameters.get(name);
-    if (!param) return;
-    param.cancelScheduledValues(timestamp);
-    param.setValueAtTime(targetValue, Math.max(timestamp, this.now + 0.001));
+  /** Set both trim points at once so both edges land at one event time. */
+  setTrimRange(startSeconds: number, endSeconds: number): this {
+    this.#setParams({ startPoint: startSeconds, endPoint: endSeconds });
+    return this;
   }
 
-  /** Both points at one event time: re-reading `now` per param can split them across frames. */
-  #setLoopParams(loopStart: number, loopEnd: number, timestamp: number) {
-    const startParam = this.#worklet?.parameters.get('loopStart');
-    const endParam = this.#worklet?.parameters.get('loopEnd');
-    if (!startParam || !endParam) return;
-    const at = Math.max(timestamp, this.now + 0.001);
-    startParam.cancelScheduledValues(timestamp);
-    endParam.cancelScheduledValues(timestamp);
-    startParam.setValueAtTime(loopStart, at);
-    endParam.setValueAtTime(loopEnd, at);
+  /** Sets one of the processor's AudioParams, which every voice reads. */
+  #setParam(name: SamplePlayerWorkletAudioParamKey, targetValue: number, timestamp?: number) {
+    this.#setParams({ [name]: targetValue }, timestamp);
+  }
+
+  /** Schedules processor AudioParams at one event time so paired updates don't split across frames. */
+  #setParams(
+    values: Partial<Record<SamplePlayerWorkletAudioParamKey, number>>,
+    timestamp?: number,
+  ) {
+    // Validate first so a bad value can't leave a pair half-scheduled.
+    for (const [name, value] of Object.entries(values)) {
+      if (value !== undefined && !Number.isFinite(value)) {
+        throw new RangeError(`${name} must be a finite number, got ${value}`);
+      }
+    }
+    const params = this.#worklet?.parameters;
+    if (!params) return;
+    const now = this.now;
+    const cancelAt = timestamp ?? now;
+    const at = Math.max(cancelAt, now + 0.001);
+    for (const [name, value] of Object.entries(values)) {
+      const param = params.get(name);
+      if (!param || value === undefined) continue;
+      param.cancelScheduledValues(cancelAt);
+      param.setValueAtTime(value, at);
+    }
   }
 
   /** Posts `voice:position` (0..1 of the sample, ~60 Hz) per sounding voice. Off by default. */
@@ -1153,12 +1171,12 @@ export class SamplePlayer {
 
     if (loopPoint === 'start') {
       if (seconds === this.loopStart) return this;
-      this.#loopStart = seconds;
       this.#setParam('loopStart', seconds, timestamp);
+      this.#loopStart = seconds;
     } else {
       if (seconds === this.loopEnd) return this;
-      this.#loopEnd = seconds;
       this.#setParam('loopEnd', seconds, timestamp);
+      this.#loopEnd = seconds;
     }
 
     this.#sendUpstreamMessage('loop-points:updated', {
@@ -1170,15 +1188,15 @@ export class SamplePlayer {
   }
 
   /** Set both loop points at once: one voice update, one loop-points:updated. */
-  setLoopPoints(loopStartSeconds: number, loopEndSeconds: number) {
+  setLoopRange(loopStartSeconds: number, loopEndSeconds: number) {
     const loopStart = clamp(loopStartSeconds, 0, this.#bufferDuration);
     const loopEnd = clamp(loopEndSeconds, 0, this.#bufferDuration);
     if (loopStart === this.loopStart && loopEnd === this.loopEnd) return this;
 
     const timestamp = this.context.currentTime;
+    this.#setParams({ loopStart, loopEnd }, timestamp);
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
-    this.#setLoopParams(loopStart, loopEnd, timestamp);
 
     this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
@@ -1195,7 +1213,7 @@ export class SamplePlayer {
       Math.max(0, -loopDuration),
       this.#bufferDuration - Math.max(0, loopDuration),
     );
-    return this.setLoopPoints(loopStart, loopStart + loopDuration);
+    return this.setLoopRange(loopStart, loopStart + loopDuration);
   }
 
   applyParams(params: SamplerParams): this {
