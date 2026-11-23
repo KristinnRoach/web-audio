@@ -166,6 +166,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
       }
 
+      // Starts at the requested loop edge, clamped to trim.
+      // ponytail: if note-on needs the resolved edge, choose the start position
+      // after calculating the first loop window and reuse that window for playback.
       case 'voice:setStartFromLoop':
         engine.startFromLoop = value;
         break;
