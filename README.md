@@ -108,8 +108,7 @@ opens input for the measurement when idle, and keeps monitoring when called
 while monitoring. Thresholds stay fixed for the take; the recorder does not
 adapt them while armed. During monitoring `record:level` reports
 `startThresholdDb: null`, and a take that finishes ends the monitoring it
-started from. [examples/recorder](examples/recorder/index.html) is a minimal
-record/meter/play widget built on these calls.
+started from.
 
 `input` picks the source; the microphone is the default. One of:
 
@@ -196,8 +195,7 @@ setGlobalAudioContext(ctx); // throws while a different global context is open
 After `setContext`, use `Tone.getTransport()` and `Tone.getDestination()`: the
 `Tone.Transport` and `Tone.Destination` constants stay bound to Tone's import-time
 context. Tone effects take Tone nodes as input, so wire into them with
-`Tone.connect(player.output, effect)`. [examples/tone-interop](examples/tone-interop/index.html)
-sequences a looping SamplePlayer with Tone's Transport through a Tone reverb.
+`Tone.connect(player.output, effect)`.
 
 The library resumes it on the next user gesture if it is suspended. If it is
 closed later, `getGlobalAudioContext()` creates a new context rather than reusing
