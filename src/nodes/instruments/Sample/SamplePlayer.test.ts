@@ -303,10 +303,15 @@ describe('SamplePlayer.applyParams', () => {
     const setVolume = vi.fn();
     const setGlideTime = vi.fn();
     const setFeedbackPitchScale = vi.fn();
+    const setTrimStart = vi.fn();
+    const setTrimEnd = vi.fn();
     const player = {
       setVolume,
       setGlideTime,
       setFeedbackPitchScale,
+      setTrimStart,
+      setTrimEnd,
+      sampleDuration: 2,
     } as unknown as SamplePlayer;
 
     SamplePlayer.prototype.applyParams.call(player, {
@@ -314,11 +319,15 @@ describe('SamplePlayer.applyParams', () => {
       glide: 0.2,
       unknown: 1,
       feedbackPitch: 0.3,
+      trimStart: 0.1,
+      trimEnd: 0.9,
     } as never);
 
     expect(setVolume).toHaveBeenCalledWith(0.75);
     expect(setGlideTime).toHaveBeenCalledWith(0.2);
     expect(setFeedbackPitchScale).not.toHaveBeenCalled();
+    expect(setTrimStart).toHaveBeenCalledWith(0.2);
+    expect(setTrimEnd).toHaveBeenCalledWith(1.8);
   });
 });
 
@@ -984,6 +993,18 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
 
     expect(start.mock.calls).toEqual([[0.1, 2.001]]);
     expect(end.mock.calls).toEqual([[0.5, 2.001]]);
+  });
+
+  it('sets individual trim edges via setTrimStart and setTrimEnd', async () => {
+    const { player, worklet } = await setup();
+    const start = vi.spyOn(worklet.parameters.get('startPoint')!, 'setValueAtTime');
+    const end = vi.spyOn(worklet.parameters.get('endPoint')!, 'setValueAtTime');
+
+    player.setTrimStart(0.1);
+    expect(start).toHaveBeenCalledWith(0.1, expect.any(Number));
+
+    player.setTrimEnd(0.5);
+    expect(end).toHaveBeenCalledWith(0.5, expect.any(Number));
   });
 
   it('rejects a non-finite trim point without touching either param', async () => {

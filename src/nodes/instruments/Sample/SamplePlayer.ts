@@ -250,7 +250,7 @@ export class SamplePlayer {
         }
 
         this.#assertNotDisposed();
-        this.#resetLoopPoints();
+        this.#resetLoopRange();
 
         this.#initialized = true;
       } catch (error) {
@@ -476,7 +476,7 @@ export class SamplePlayer {
   }
 
   // TODO: Check whether this is still needed after moving loop points to processor
-  #resetLoopPoints() {
+  #resetLoopRange() {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
     this.#setParams(
@@ -630,7 +630,7 @@ export class SamplePlayer {
       this.#pitchPeriodsSent = false;
       this.#sendPitchPeriods();
 
-      this.#resetLoopPoints();
+      this.#resetLoopRange();
       // Trim points are seconds: one left from the previous sample (or set while
       // none was loaded) would cut the new one short.
       this.setTrimRange(0, this.#bufferDuration);
@@ -653,8 +653,8 @@ export class SamplePlayer {
    * loaded, the bounds aren't finite, or the region is empty.
    */
   async cropSample(
-    startSeconds = this.getStartPoint(),
-    endSeconds = this.getEndPoint(),
+    startSeconds = this.trimStart,
+    endSeconds = this.trimEnd,
     fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
     this.#assertNotDisposed();
@@ -918,12 +918,12 @@ export class SamplePlayer {
     return this;
   }
 
-  setSampleStartPoint(seconds: number): this {
+  setTrimStart(seconds: number): this {
     this.#setParam('startPoint', seconds);
     return this;
   }
 
-  setSampleEndPoint(seconds: number): this {
+  setTrimEnd(seconds: number): this {
     this.#setParam('endPoint', seconds);
     return this;
   }
@@ -1138,15 +1138,15 @@ export class SamplePlayer {
   }
 
   setLoopStart = (seconds: number) => {
-    return this.#setLoopPoint('start', seconds, this.loopEnd);
+    return this.#setLoopEdge('start', seconds, this.loopEnd);
   };
 
   setLoopEnd = (seconds: number) => {
-    return this.#setLoopPoint('end', this.loopStart, seconds);
+    return this.#setLoopEdge('end', this.loopStart, seconds);
   };
 
   setLoopDuration = (seconds: number) =>
-    this.#setLoopPoint('end', this.loopStart, this.loopStart + seconds);
+    this.#setLoopEdge('end', this.loopStart, this.loopStart + seconds);
 
   // Keytrack loop length to the played note (0 = fixed samples, 1 = constant loop time)
   setKeytrackLoopAmount(amount: number) {
@@ -1158,18 +1158,18 @@ export class SamplePlayer {
 
   getKeytrackLoopAmount = () => this.#keytrackLoopAmount;
 
-  #setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
+  #setLoopEdge(loopEdge: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.
     // The processor resolves ordering, pitch quantization, zero-crossing snapping
     // and trim containment.
     const seconds = clamp(
-      loopPoint === 'start' ? loopStartSeconds : loopEndSeconds,
+      loopEdge === 'start' ? loopStartSeconds : loopEndSeconds,
       0,
       this.#bufferDuration,
     );
     const timestamp = this.context.currentTime;
 
-    if (loopPoint === 'start') {
+    if (loopEdge === 'start') {
       if (seconds === this.loopStart) return this;
       this.#setParam('loopStart', seconds, timestamp);
       this.#loopStart = seconds;
@@ -1179,7 +1179,7 @@ export class SamplePlayer {
       this.#loopEnd = seconds;
     }
 
-    this.#sendUpstreamMessage('loop-points:updated', {
+    this.#sendUpstreamMessage('loop-range:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -1187,7 +1187,7 @@ export class SamplePlayer {
     return this;
   }
 
-  /** Set both loop points at once: one voice update, one loop-points:updated. */
+  /** Set both loop edges at once: one voice update, one loop-range:updated. */
   setLoopRange(loopStartSeconds: number, loopEndSeconds: number) {
     const loopStart = clamp(loopStartSeconds, 0, this.#bufferDuration);
     const loopEnd = clamp(loopEndSeconds, 0, this.#bufferDuration);
@@ -1198,7 +1198,7 @@ export class SamplePlayer {
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
 
-    this.#sendUpstreamMessage('loop-points:updated', {
+    this.#sendUpstreamMessage('loop-range:updated', {
       loopStart: this.loopStart,
       loopEnd: this.loopEnd,
     });
@@ -1206,7 +1206,7 @@ export class SamplePlayer {
     return this;
   }
 
-  scrollLoopPoints(loopStart: number) {
+  scrollLoopPosition(loopStart: number) {
     const loopDuration = this.loopEnd - this.loopStart;
     loopStart = clamp(
       loopStart,
@@ -1230,15 +1230,6 @@ export class SamplePlayer {
   }
 
   /** PARAM GETTERS  */
-
-  // TODO: Consider keeping these in fields or MacroParams, symmetrical with the loop start/end points
-  getStartPoint(): number {
-    return this.#worklet?.parameters.get('startPoint')?.value ?? 0;
-  }
-
-  getEndPoint(): number {
-    return this.#worklet?.parameters.get('endPoint')?.value ?? this.sampleDuration;
-  }
 
   getLoopLengthGlide(): number {
     return this.#loopLengthGlide;
@@ -1590,6 +1581,14 @@ export class SamplePlayer {
   /** Modulates voice detune; depth is in cents. */
   setPitchLFODepth(cents: number): void {
     this.#pitchLFO?.setDepth(cents);
+  }
+
+  get trimStart(): number {
+    return this.#worklet?.parameters.get('startPoint')?.value ?? 0;
+  }
+
+  get trimEnd(): number {
+    return this.#worklet?.parameters.get('endPoint')?.value ?? this.sampleDuration;
   }
 
   get loopStart(): number {

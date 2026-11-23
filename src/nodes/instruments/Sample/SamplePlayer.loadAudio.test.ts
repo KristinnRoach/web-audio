@@ -189,7 +189,7 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
     ]) {
       player.setLoopStart(start);
       player.setLoopEnd(end);
-      player.scrollLoopPoints(requested);
+      player.scrollLoopPosition(requested);
       expect(player.loopStart).toBeCloseTo(expectedStart);
       expect(player.loopEnd).toBeCloseTo(expectedEnd);
       expect(player.loopEnd - player.loopStart).toBeCloseTo(end - start);
