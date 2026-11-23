@@ -67,7 +67,6 @@ export class InstrumentBus implements ILibAudioNode {
 
   /** Last cutoff from `setLpfCutoff`, which is the envelope's base. Set in init(). */
   #lpfCutoffHz = 0;
-  #heldNotes = new Map<number, number>();
 
   #nodes: Partial<BusNodeTypeMap> = {};
   #internalRouting = new Map<string, string[]>();
@@ -337,7 +336,7 @@ export class InstrumentBus implements ILibAudioNode {
     return this;
   }
 
-  // === NOTE ON/OFF ===
+  // === NOTE ON ===
 
   /** `retune` moves a held legato note: pitch follows, the feedback decay keeps running. */
   noteOn(
@@ -347,8 +346,6 @@ export class InstrumentBus implements ILibAudioNode {
     glideTime = 0,
     retune = false,
   ): this {
-    this.#heldNotes.set(midiNote, (this.#heldNotes.get(midiNote) ?? 0) + 1);
-
     const feedback = this.getNode('feedback');
     if (feedback && 'trigger' in feedback && typeof feedback.trigger === 'function') {
       feedback.trigger(midiNote, {
@@ -362,21 +359,6 @@ export class InstrumentBus implements ILibAudioNode {
     const delayNode = this.getNode('delay');
     delayNode?.audioNode.sendProcessorMessage({ type: 'trigger' });
 
-    return this;
-  }
-
-  noteOff(midiNote: number): this {
-    const count = this.#heldNotes.get(midiNote);
-    if (count === undefined) return this;
-
-    if (count > 1) this.#heldNotes.set(midiNote, count - 1);
-    else this.#heldNotes.delete(midiNote);
-
-    return this;
-  }
-
-  releaseAll(): this {
-    this.#heldNotes.clear();
     return this;
   }
 
@@ -677,8 +659,6 @@ export class InstrumentBus implements ILibAudioNode {
   }
 
   dispose(): void {
-    this.#heldNotes.clear();
-
     // Disconnect all nodes
     for (const name of Object.keys(this.#nodes)) {
       this.#disconnectFromTo(name);

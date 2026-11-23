@@ -105,8 +105,6 @@ export async function initTestPlayer(
     input: Object.assign(new FakeNode(), { gain: { setValueAtTime: vi.fn() } }),
     connect() {},
     noteOn() {},
-    noteOff() {},
-    releaseAll() {},
     dispose() {},
     ...bus,
   } as unknown as InstrumentBus);

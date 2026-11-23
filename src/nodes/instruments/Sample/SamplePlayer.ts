@@ -726,7 +726,6 @@ export class SamplePlayer {
 
     // A legato voice falling back to an earlier held note reports `voice:retuned` with `fallback`.
     this.#post({ type: 'pool:noteOff', midiNote, timestamp: this.now + secondsFromNow });
-    this.#outBus.noteOff(midiNote + this.#pitchOffset);
     return this;
   }
 
@@ -734,7 +733,6 @@ export class SamplePlayer {
     this.#sustainedNotes.clear();
     // Releases every held note and drops the ones still waiting to sound.
     this.#post({ type: 'pool:allNotesOff', timestamp: this.now });
-    this.#outBus?.releaseAll();
     return this;
   }
 
