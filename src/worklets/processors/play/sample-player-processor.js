@@ -99,7 +99,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     } = data;
 
     switch (type) {
-      case 'setLoopQuantizePeriods':
+      case 'voice:setLoopQuantizePeriods':
         engine.setLoopQuantizePeriods(value);
         break;
 
@@ -139,11 +139,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         voice.stop(timestamp);
         break;
 
-      case 'setEnvelope':
+      case 'voice:setEnvelope':
         engine.setEnvelope(target, value);
         break;
 
-      case 'setLoopEnabled':
+      case 'voice:setLoopEnabled':
         engine.loopEnabled = value;
 
         post({
@@ -152,11 +152,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         });
         break;
 
-      case 'setLoopPingPong':
+      case 'voice:setLoopPingPong':
         engine.loopPingPong = value;
         break;
 
-      case 'setPanDriftEnabled':
+      case 'voice:setPanDriftEnabled':
         engine.setPanDriftEnabled(value);
         break;
 
@@ -174,23 +174,23 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         engine.reportPlaybackPosition = value;
         break;
 
-      case 'setLoopLengthGlide':
+      case 'voice:setLoopLengthGlide':
         engine.setLoopLengthGlide(value);
         break;
 
-      case 'setLoopPositionGlide':
+      case 'voice:setLoopPositionGlide':
         engine.setLoopPositionGlide(value);
         break;
 
-      case 'setKeytrackLoopAmount':
+      case 'voice:setKeytrackLoopAmount':
         engine.setKeytrackLoopAmount(value);
         break;
 
-      case 'setTimestretchMode':
+      case 'voice:setTimestretchMode':
         engine.setTimestretchMode(value);
         break;
 
-      case 'setInterpolation':
+      case 'voice:setInterpolation':
         engine.interpolation = value;
         break;
     }

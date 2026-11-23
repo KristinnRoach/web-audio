@@ -26,7 +26,7 @@ describe('audio-rate loop movement smoothing', () => {
           },
         } as MessageEvent);
         processor.port.onmessage?.({
-          data: { type: 'setLoopEnabled', value: true },
+          data: { type: 'voice:setLoopEnabled', value: true },
         } as MessageEvent);
         processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
         processor.process(
@@ -66,7 +66,7 @@ describe('audio-rate loop movement smoothing', () => {
         buffer: [new Float32Array(4800).fill(0.4), new Float32Array(4800)],
         durationSeconds: 0.1,
       });
-      send({ type: 'setKeytrackLoopAmount', value: 1 });
+      send({ type: 'voice:setKeytrackLoopAmount', value: 1 });
       send({ type: 'voice:start' });
       processor.process(
         [],
@@ -96,7 +96,9 @@ describe('audio-rate loop movement smoothing', () => {
         durationSeconds: 1,
       },
     } as MessageEvent);
-    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'voice:setLoopEnabled', value: true },
+    } as MessageEvent);
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
     const params = makeParameters();
     params.loopStart = Float32Array.from({ length: 128 }, (_, i) => i / 1e7);
@@ -117,7 +119,7 @@ describe('audio-rate loop movement smoothing', () => {
       buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) => Math.sin(i / 23) * 0.2)],
       durationSeconds: 1,
     });
-    send({ type: 'setLoopEnabled', value: true });
+    send({ type: 'voice:setLoopEnabled', value: true });
     send({ type: 'voice:start' });
     const fades = processor.engine.loopCrossfade;
     let mostFades = 0;
@@ -153,7 +155,7 @@ describe('audio-rate loop movement smoothing', () => {
       buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) => Math.sin(i / 23) * 0.2)],
       durationSeconds: 1,
     });
-    send({ type: 'setLoopEnabled', value: true });
+    send({ type: 'voice:setLoopEnabled', value: true });
     send({ type: 'voice:start' });
     const render = (start: number, trimStart: number) =>
       processor.process(
@@ -194,7 +196,7 @@ describe('audio-rate loop movement smoothing', () => {
       ],
       durationSeconds: 1,
     });
-    send({ type: 'setLoopEnabled', value: true });
+    send({ type: 'voice:setLoopEnabled', value: true });
     send({ type: 'voice:start' });
     const render = (start: number, frames: number) => {
       const output = new Float32Array(frames);
@@ -244,13 +246,13 @@ describe('audio-rate loop movement smoothing', () => {
             },
           } as MessageEvent);
           processor.port.onmessage?.({
-            data: { type: 'setLoopLengthGlide', value: 0 },
+            data: { type: 'voice:setLoopLengthGlide', value: 0 },
           } as MessageEvent);
           processor.port.onmessage?.({
-            data: { type: 'setLoopEnabled', value: true },
+            data: { type: 'voice:setLoopEnabled', value: true },
           } as MessageEvent);
           processor.port.onmessage?.({
-            data: { type: 'setLoopPingPong', value: mode === 'pingPong' },
+            data: { type: 'voice:setLoopPingPong', value: mode === 'pingPong' },
           } as MessageEvent);
           processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
           return processor;
@@ -293,7 +295,9 @@ describe('audio-rate loop movement smoothing', () => {
       processor.port.onmessage?.({
         data: { type: 'voice:setBuffer', buffer: [left, right], durationSeconds: 1 },
       } as MessageEvent);
-      processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+      processor.port.onmessage?.({
+        data: { type: 'voice:setLoopEnabled', value: true },
+      } as MessageEvent);
       processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
       const render = (start: number, length: number) => {

@@ -23,10 +23,10 @@ async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPon
     buffer: [RAMP],
     durationSeconds: RAMP.length / TEST_SAMPLE_RATE,
   });
-  send({ type: 'setLoopEnabled', value: loop });
-  send({ type: 'setLoopPingPong', value: pingPong });
+  send({ type: 'voice:setLoopEnabled', value: loop });
+  send({ type: 'voice:setLoopPingPong', value: pingPong });
   // The ramp reads back the playhead position only through linear interpolation.
-  send({ type: 'setInterpolation', value: 'linear' });
+  send({ type: 'voice:setInterpolation', value: 'linear' });
   send({ type: 'voice:setPlaybackDirection', playbackDirection: direction });
   send({ type: 'voice:start' });
   // Isolate source positions from the opening gain ramp.

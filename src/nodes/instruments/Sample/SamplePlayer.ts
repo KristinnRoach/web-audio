@@ -224,17 +224,17 @@ export class SamplePlayer {
         this.#voices.forEach((voice) => voice.effects.setPitchOffset(this.#pitchOffset, null));
         this.#post({ type: 'pool:setPitchEnabled', value: this.#pitchEnabled });
         if (this.#interpolationMode !== null) {
-          this.#post({ type: 'setInterpolation', value: this.#interpolationMode });
+          this.#post({ type: 'voice:setInterpolation', value: this.#interpolationMode });
         }
         // Processors persist the periods across sample loads, so they are sent once here.
         // Keeps any periods configured before init.
-        this.#post({ type: 'setLoopQuantizePeriods', value: this.#loopPitchPeriods });
+        this.#post({ type: 'voice:setLoopQuantizePeriods', value: this.#loopPitchPeriods });
         // Replay what was set before the worklet existed. Pitch periods follow the
         // first sample load, which sends them for 'period' mode.
-        this.#post({ type: 'setLoopEnabled', value: this.#loopEnabled });
+        this.#post({ type: 'voice:setLoopEnabled', value: this.#loopEnabled });
         this.#post({ type: 'voice:setStartFromLoop', value: this.#startFromLoop });
-        this.#post({ type: 'setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
-        this.#post({ type: 'setTimestretchMode', value: this.#timestretchMode });
+        this.#post({ type: 'voice:setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
+        this.#post({ type: 'voice:setTimestretchMode', value: this.#timestretchMode });
 
         // Connect audio chain
         this.#connectAudioChain();
@@ -467,8 +467,8 @@ export class SamplePlayer {
   #onProcessorReady() {
     // Fresh voices start on defaults, so hand them the owned state before they play.
     SAMPLE_ENVELOPE_IDS.forEach((id) => this.#postEnvelope(id, this.getEnvelope(id)));
-    this.#post({ type: 'setLoopLengthGlide', value: this.#loopLengthGlide });
-    this.#post({ type: 'setLoopPositionGlide', value: this.#loopPositionGlide });
+    this.#post({ type: 'voice:setLoopLengthGlide', value: this.#loopLengthGlide });
+    this.#post({ type: 'voice:setLoopPositionGlide', value: this.#loopPositionGlide });
     this.#post({ type: 'voice:reportPlaybackPosition', value: this.#positionTracking });
     this.#sendUpstreamMessage('sample-player:initialized', {});
     this.#sendUpstreamMessage('voice-pool:initialized', { voiceCount: this.#voices.length });
@@ -871,7 +871,7 @@ export class SamplePlayer {
     const periods = this.#getNotePeriodsInSeconds(scale, lowestOctave, highestOctave);
     this.#loopPitchPeriods = periods;
 
-    this.#post({ type: 'setLoopQuantizePeriods', value: periods });
+    this.#post({ type: 'voice:setLoopQuantizePeriods', value: periods });
 
     return this;
   }
@@ -955,7 +955,7 @@ export class SamplePlayer {
   /** Length glide time constant between quantized loop periods. 0 = stepped. */
   setLoopLengthGlide(seconds: number): this {
     this.#loopLengthGlide = seconds;
-    this.#post({ type: 'setLoopLengthGlide', value: seconds });
+    this.#post({ type: 'voice:setLoopLengthGlide', value: seconds });
     return this;
   }
 
@@ -965,7 +965,7 @@ export class SamplePlayer {
    */
   setLoopPositionGlide(seconds: number): this {
     this.#loopPositionGlide = seconds;
-    this.#post({ type: 'setLoopPositionGlide', value: seconds });
+    this.#post({ type: 'voice:setLoopPositionGlide', value: seconds });
     return this;
   }
 
@@ -985,7 +985,7 @@ export class SamplePlayer {
     // if loop is locked (ON), turning it off is disabled but turning it on should work
     if (this.#loopLocked && !enabled) return this;
 
-    this.#post({ type: 'setLoopEnabled', value: enabled });
+    this.#post({ type: 'voice:setLoopEnabled', value: enabled });
     if (this.#loopEnabled === enabled) return this;
     this.#loopEnabled = enabled;
 
@@ -1065,7 +1065,7 @@ export class SamplePlayer {
    * sounds an octave lower, since one cycle covers the loop twice.
    */
   setLoopPingPong(enabled: boolean): this {
-    this.#post({ type: 'setLoopPingPong', value: enabled });
+    this.#post({ type: 'voice:setLoopPingPong', value: enabled });
     return this;
   }
 
@@ -1086,14 +1086,14 @@ export class SamplePlayer {
   }
 
   setPanDriftEnabled = (enabled: boolean) => {
-    this.#post({ type: 'setPanDriftEnabled', value: enabled });
+    this.#post({ type: 'voice:setPanDriftEnabled', value: enabled });
     return this;
   };
 
   setTimestretchMode = (mode: TimestretchMode) => {
     this.#timestretchMode = mode;
     this.#sendPitchPeriods();
-    this.#post({ type: 'setTimestretchMode', value: mode });
+    this.#post({ type: 'voice:setTimestretchMode', value: mode });
     return this;
   };
 
@@ -1103,7 +1103,7 @@ export class SamplePlayer {
       throw new RangeError('Interpolation mode must be linear, hermite or sinc');
     }
     this.#interpolationMode = mode;
-    this.#post({ type: 'setInterpolation', value: mode });
+    this.#post({ type: 'voice:setInterpolation', value: mode });
     return this;
   };
 
@@ -1134,7 +1134,7 @@ export class SamplePlayer {
   setKeytrackLoopAmount(amount: number) {
     const clamped = Math.max(0, Math.min(1, amount));
     this.#keytrackLoopAmount = clamped;
-    this.#post({ type: 'setKeytrackLoopAmount', value: clamped });
+    this.#post({ type: 'voice:setKeytrackLoopAmount', value: clamped });
     return this;
   }
 
@@ -1313,7 +1313,7 @@ export class SamplePlayer {
   #postEnvelope(id: SampleEnvelopeId, config: EnvelopeConfig) {
     if (!this.envelopeIds.includes(id)) return;
     this.#post({
-      type: 'setEnvelope',
+      type: 'voice:setEnvelope',
       target: getSampleEnvelopeProcessorTarget(id),
       value: config.enabled ? resolveSampleEnvelopeForProcessor(id, config) : null,
     });

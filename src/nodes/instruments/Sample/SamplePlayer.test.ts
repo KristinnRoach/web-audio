@@ -58,12 +58,14 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   const { report, ofType } = await initTestPlayer(player, {
     bus: { getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
   });
-  const periodsPosted = () => ofType('setLoopQuantizePeriods');
+  const periodsPosted = () => ofType('voice:setLoopQuantizePeriods');
 
   const initialPeriods = [62, 50, 38, 26, 14, 2].map((i) => expect.closeTo(NOTE_PERIODS[i], 6));
   expect(player.getLoopPitchPeriods()).toEqual(initialPeriods);
   // Once for the whole processor, not once per voice.
-  expect(periodsPosted()).toEqual([{ type: 'setLoopQuantizePeriods', value: initialPeriods }]);
+  expect(periodsPosted()).toEqual([
+    { type: 'voice:setLoopQuantizePeriods', value: initialPeriods },
+  ]);
 
   try {
     player.setLoopPitchQuantization({
@@ -73,7 +75,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     });
     // Root in octaves 0–5, in seconds, sorted shortest first (C5 ... C0).
     expect(periodsPosted().at(-1)).toEqual({
-      type: 'setLoopQuantizePeriods',
+      type: 'voice:setLoopQuantizePeriods',
       value: [60, 48, 36, 24, 12, 0].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)),
     });
 
@@ -124,7 +126,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
       highestOctave: 5,
     });
     expect(periodsPosted().at(-1)).toEqual({
-      type: 'setLoopQuantizePeriods',
+      type: 'voice:setLoopQuantizePeriods',
       value: [62, 50, 38, 26, 14, 2].map((i) => expect.closeTo(NOTE_PERIODS[i], 6)), // D5 ... D0
     });
 
@@ -177,14 +179,16 @@ it('replays settings made before init to the processor and voices', async () => 
     player.setTimestretchMode('period').setStartFromLoop(true);
     const { ofType } = await initTestPlayer(player);
 
-    expect(ofType('setLoopEnabled')).toEqual([{ type: 'setLoopEnabled', value: true }]);
+    expect(ofType('voice:setLoopEnabled')).toEqual([{ type: 'voice:setLoopEnabled', value: true }]);
     expect(ofType('voice:setStartFromLoop')).toEqual([
       { type: 'voice:setStartFromLoop', value: true },
     ]);
-    expect(ofType('setKeytrackLoopAmount')).toEqual([
-      { type: 'setKeytrackLoopAmount', value: 0.25 },
+    expect(ofType('voice:setKeytrackLoopAmount')).toEqual([
+      { type: 'voice:setKeytrackLoopAmount', value: 0.25 },
     ]);
-    expect(ofType('setTimestretchMode')).toEqual([{ type: 'setTimestretchMode', value: 'period' }]);
+    expect(ofType('voice:setTimestretchMode')).toEqual([
+      { type: 'voice:setTimestretchMode', value: 'period' },
+    ]);
     expect(setPitchOffset.mock.calls).toEqual([
       [1.5, null],
       [1.5, null],
@@ -334,7 +338,7 @@ describe('SamplePlayer envelope config', () => {
     const changed = vi.fn();
     const player = new SamplePlayer({ context: new EventTarget() as AudioContext });
     const { posted, ofType } = await initTestPlayer(player);
-    const envelopesPosted = () => ofType('setEnvelope');
+    const envelopesPosted = () => ofType('voice:setEnvelope');
     player.onMessage('envelope:changed', changed);
     const shape = {
       ...envConfig.shape,
@@ -359,7 +363,9 @@ describe('SamplePlayer envelope config', () => {
       expect(player.getEnvelopeDuration('amp')).toBe(2);
       expect(config.timeScale).toBe(2);
       expect(config).not.toHaveProperty('duration');
-      expect(envelopesPosted()).toEqual([{ type: 'setEnvelope', target: 'gain', value: null }]);
+      expect(envelopesPosted()).toEqual([
+        { type: 'voice:setEnvelope', target: 'gain', value: null },
+      ]);
       expect(changed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ config }));
 
       // A duration-only update scales the stored shape and preserves its other settings.
@@ -471,7 +477,7 @@ describe('SamplePlayer envelope config', () => {
       (input.shape.points[0] as { value: number }).value = 99;
 
       // One untagged message per update reaches both voices.
-      const envelopes = ofType('setEnvelope');
+      const envelopes = ofType('voice:setEnvelope');
       expect(envelopes).toHaveLength(2);
       envelopes.forEach((message) => expect(message).not.toHaveProperty('voice'));
       expect(player.getEnvelope('amp').shape.points[0].value).toBe(0);
@@ -711,7 +717,7 @@ it.each([null, 'linear', 'sinc'] as const)(
         expect(player.setInterpolation(mode)).toBe(player);
       }
       const { ofType } = await initTestPlayer(player);
-      const modes = () => ofType('setInterpolation').map((message) => message.value);
+      const modes = () => ofType('voice:setInterpolation').map((message) => message.value);
       expect(modes()).toEqual(mode === null ? [] : [mode]);
       player.setInterpolation('linear');
       expect(modes().at(-1)).toBe('linear');
@@ -931,7 +937,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
 
   it('preserves ordinary pedal looping and a loop enabled before pedal-down', async () => {
     const { player, ofType } = await setup();
-    const loop = () => ofType('setLoopEnabled').map((message) => message.value);
+    const loop = () => ofType('voice:setLoopEnabled').map((message) => message.value);
     player.setSustainPedal(true);
     expect(loop().at(-1)).toBe(true);
     player.setSustainPedal(false);

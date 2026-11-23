@@ -71,10 +71,10 @@ describe('idle loop range', () => {
 
   it('reports the loop keytrack the voice must apply at the note rate', async () => {
     const processor = await idleProcessor();
-    send(processor, { type: 'setKeytrackLoopAmount', value: 0.5 });
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 0.5 });
     render(processor, parameters, 1);
     expect(idleReports(processor)[0].keytrackAmount).toBe(0.5);
-    send(processor, { type: 'setKeytrackLoopAmount', value: 1 });
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 1 });
     vi.stubGlobal('currentTime', 1);
     render(processor, parameters, 1);
     expect(idleReports(processor)[1].keytrackAmount).toBe(1);

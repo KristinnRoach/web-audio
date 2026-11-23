@@ -14,8 +14,9 @@ describe('loop position glide timing', () => {
     const processor = await startProcessor([], [0.002, 0.004, 0.008]);
     const send = (type: string, value: number) =>
       processor.port.onmessage?.({ data: { type, value } } as MessageEvent);
-    send('setLoopLengthGlide', lengthGlideSeconds);
-    if (positionGlideSeconds !== undefined) send('setLoopPositionGlide', positionGlideSeconds);
+    send('voice:setLoopLengthGlide', lengthGlideSeconds);
+    if (positionGlideSeconds !== undefined)
+      send('voice:setLoopPositionGlide', positionGlideSeconds);
     const process = (start: number, end: number, frames = 1, trim = {}) => {
       const params = makeParameters({ loopStart: start, loopEnd: end, ...trim });
       processor.process([], [[new Float32Array(frames)]], params);

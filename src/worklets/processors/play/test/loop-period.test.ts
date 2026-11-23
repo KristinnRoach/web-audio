@@ -20,7 +20,7 @@ function makeParameters(overrides: Record<string, number>): Parameters {
     playbackRate: 1,
     detune: 0,
     loopStart: 0,
-    loopEnd: 99_999,
+    loopEnd: 9999,
     startPoint: 0,
     endPoint: 9999,
     playbackPosition: 0,
@@ -69,7 +69,9 @@ describe('loop period', () => {
     processor.port.onmessage?.({
       data: { type: 'voice:setBuffer', buffer: [makeSample()], durationSeconds: 2 },
     } as MessageEvent);
-    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'voice:setLoopEnabled', value: true },
+    } as MessageEvent);
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
     const parameters = makeParameters({

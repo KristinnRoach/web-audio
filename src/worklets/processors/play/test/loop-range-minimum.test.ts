@@ -15,12 +15,12 @@ describe('trim and loop minimum lengths', () => {
     const defaultThreshold = processor.engine.pitchPreservationThreshold;
 
     processor.port.onmessage?.({
-      data: { type: 'setLoopQuantizePeriods', value: [0.004, 0.01] },
+      data: { type: 'voice:setLoopQuantizePeriods', value: [0.004, 0.01] },
     } as MessageEvent);
     expect(processor.engine.pitchPreservationThreshold).toBe(0.01 * TEST_SAMPLE_RATE);
 
     processor.port.onmessage?.({
-      data: { type: 'setLoopQuantizePeriods', value: [] },
+      data: { type: 'voice:setLoopQuantizePeriods', value: [] },
     } as MessageEvent);
     expect(processor.engine.pitchPreservationThreshold).toBe(defaultThreshold);
   });
@@ -186,7 +186,10 @@ describe('trim and loop minimum lengths', () => {
     const shortestPeriod = 46;
     const processor = await startProcessor();
     processor.port.onmessage?.({
-      data: { type: 'setLoopQuantizePeriods', value: [shortestPeriod / TEST_SAMPLE_RATE, 0.01] },
+      data: {
+        type: 'voice:setLoopQuantizePeriods',
+        value: [shortestPeriod / TEST_SAMPLE_RATE, 0.01],
+      },
     } as MessageEvent);
     const parameters = makeParameters({ loopStart: 0.5, loopEnd: 0.5 });
 

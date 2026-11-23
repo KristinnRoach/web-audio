@@ -731,7 +731,7 @@ export class VoiceEngine {
     this.previousRequestedLoop.start = params.loopStartSamples;
     this.previousRequestedLoop.end = params.loopEndSamples;
 
-    // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
+    // Same rule as the trim range, inside it. An unset loop (loopEnd's 9999
     // default) clamps to the full range.
     const resolved = resolveRange(lpStart, lpEnd, rangeStart, rangeEnd, this.minRangeSamples);
     let calcLoopStart = resolved[0];

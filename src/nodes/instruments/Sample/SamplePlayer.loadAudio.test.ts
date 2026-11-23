@@ -158,12 +158,12 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
     expect(player.audiobuffer).toBe(firstBuffer);
     posted.length = 0;
     player.setLoopEnabled(true);
-    expect(ofType('setLoopEnabled')).toEqual([{ type: 'setLoopEnabled', value: true }]);
+    expect(ofType('voice:setLoopEnabled')).toEqual([{ type: 'voice:setLoopEnabled', value: true }]);
     expect(loopChanged).not.toHaveBeenCalled();
     player.setLoopLocked(true);
     posted.length = 0;
     player.setLoopEnabled(false);
-    expect(ofType('setLoopEnabled')).toEqual([]);
+    expect(ofType('voice:setLoopEnabled')).toEqual([]);
     expect(player.loopEnabled).toBe(true);
     expect(loopChanged).not.toHaveBeenCalled();
 
