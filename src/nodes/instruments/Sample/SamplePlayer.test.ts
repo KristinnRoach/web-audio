@@ -967,7 +967,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     expect(amNotes).toContain(84);
   });
 
-  it('schedules both loop points at one event time even if the audio clock advances', async () => {
+  it('schedules both loop edges at one event time even if the audio clock advances', async () => {
     const { player, worklet } = await setup();
     const start = vi.spyOn(worklet.parameters.get('loopStart')!, 'setValueAtTime');
     const end = vi.spyOn(worklet.parameters.get('loopEnd')!, 'setValueAtTime');
@@ -981,7 +981,25 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     expect(end.mock.calls).toEqual([[0.2, 2.001]]);
   });
 
-  it('schedules both trim points at one event time even if the audio clock advances', async () => {
+  it('emits loop-range:updated once for individual edge changes and setLoopRange', async () => {
+    const { player } = await setup();
+    const onUpdated = vi.fn();
+    player.onMessage('loop-range:updated', onUpdated);
+
+    player.setLoopStart(0.1);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
+    expect(onUpdated).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'loop-range:updated', loopStart: 0.1, loopEnd: 1 }),
+    );
+
+    player.setLoopRange(0.2, 0.6);
+    expect(onUpdated).toHaveBeenCalledTimes(2);
+    expect(onUpdated).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'loop-range:updated', loopStart: 0.2, loopEnd: 0.6 }),
+    );
+  });
+
+  it('schedules both trim edges at one event time even if the audio clock advances', async () => {
     const { player, worklet } = await setup();
     const start = vi.spyOn(worklet.parameters.get('trimStart')!, 'setValueAtTime');
     const end = vi.spyOn(worklet.parameters.get('trimEnd')!, 'setValueAtTime');
@@ -993,21 +1011,25 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
 
     expect(start.mock.calls).toEqual([[0.1, 2.001]]);
     expect(end.mock.calls).toEqual([[0.5, 2.001]]);
+    expect(player.trimStart).toBe(0.1);
+    expect(player.trimEnd).toBe(0.5);
   });
 
-  it('sets individual trim edges via setTrimStart and setTrimEnd', async () => {
+  it('sets and reads individual trim edges via setTrimStart/setTrimEnd and trimStart/trimEnd', async () => {
     const { player, worklet } = await setup();
     const start = vi.spyOn(worklet.parameters.get('trimStart')!, 'setValueAtTime');
     const end = vi.spyOn(worklet.parameters.get('trimEnd')!, 'setValueAtTime');
 
     player.setTrimStart(0.1);
     expect(start).toHaveBeenCalledWith(0.1, expect.any(Number));
+    expect(player.trimStart).toBe(0.1);
 
     player.setTrimEnd(0.5);
     expect(end).toHaveBeenCalledWith(0.5, expect.any(Number));
+    expect(player.trimEnd).toBe(0.5);
   });
 
-  it('rejects a non-finite trim point without touching either param', async () => {
+  it('rejects a non-finite trim edge without touching either param', async () => {
     const { player, worklet } = await setup();
     const start = worklet.parameters.get('trimStart')!;
     const end = worklet.parameters.get('trimEnd')!;

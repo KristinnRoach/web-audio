@@ -119,7 +119,7 @@ export class VoiceEngine {
     this.envelopes = new VoiceEnvelopes(sampleRate);
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
-    this.enableLoopCrossfade = true; // Crossfade between loop points
+    this.enableLoopCrossfade = true; // Crossfade between loop edges
     this.loopCrossfade = new LoopCrossfade();
     this.loopWindowSlots = [new LoopWindow(), new LoopWindow()];
     // The window a pitch loop's playhead follows while a move waits for the running move fade.
@@ -127,7 +127,7 @@ export class VoiceEngine {
     // The window a pitch loop move fades from: where it reads relative to the playhead
     // (old start - new start), and its trim.
     this.loopMoveFrom = { offset: 0, fadesTail: false, audioEnd: 0, firstIndex: 0, lastIndex: 0 };
-    // Ping-pong turns around at both loop edges and overrides loop point order.
+    // Ping-pong turns around at both loop edges and overrides loop edge order.
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
     // play higher), 1 = real-time loop duration constant across notes. Period stretch loops on
@@ -338,7 +338,7 @@ export class VoiceEngine {
     this.isLoopPositionGliding = false;
     this.isLoopStartClamped = false;
     this.glidedLoopStart = null;
-    // Raw loop points in samples (start may pass end), from the last range calculation.
+    // Raw loop edges in samples (start may pass end), from the last range calculation.
     this.previousRequestedLoop.start = null;
     this.previousRequestedLoop.end = null;
   }
@@ -577,7 +577,7 @@ export class VoiceEngine {
     const samples = this.positionParams;
     samples.trimStartSamples = Math.floor(parameters.trimStart[0] * this.sampleRate);
     samples.trimEndSamples = Math.floor(parameters.trimEnd[0] * this.sampleRate);
-    // Keep loop points fractional: the loop length sets the pitch of an audio-rate
+    // Keep loop edges fractional: the loop length sets the pitch of an audio-rate
     // loop, and flooring rounded it to whole source samples (~5 cents at a
     // C5-length loop). Playback position and interpolation are already
     // fractional; every consumer that needs an index floors locally.
@@ -597,7 +597,7 @@ export class VoiceEngine {
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
 
-    // Snap inward to zero crossings, then resolve like the loop points. Directional
+    // Snap inward to zero crossings, then resolve like the loop edges. Directional
     // snaps clamp to the outermost crossing, so keep them only if they stay inside.
     const snapStart = this.#findNearestZeroCrossing(lo, 'right');
     const snapEnd = this.#findNearestZeroCrossing(hi, 'left');

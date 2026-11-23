@@ -87,7 +87,7 @@ describe('period timestretch through the processor', () => {
   async function renderSine(
     rate: number,
     loop = false,
-    loopPoints: { loopStart?: number; loopEnd?: number } = {},
+    loopRange: { loopStart?: number; loopEnd?: number } = {},
     pingPong = false,
     onFrame?: (engine: VoiceEngine, frame: number) => void,
   ) {
@@ -112,7 +112,7 @@ describe('period timestretch through the processor', () => {
     const parameters = makeParameters({
       playbackRate: rate,
       ...(loop ? { loopEnd: 5000 / TEST_SAMPLE_RATE } : {}),
-      ...loopPoints,
+      ...loopRange,
     });
     const rendered = new Float32Array(onFrame ? 200_000 : loop ? FRAMES / 2 : FRAMES - 2048);
     const blockSize = onFrame ? 1 : 128;

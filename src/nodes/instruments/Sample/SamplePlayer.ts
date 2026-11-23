@@ -475,7 +475,7 @@ export class SamplePlayer {
     this.#sendUpstreamMessage('voice-pool:initialized', { voiceCount: this.#voices.length });
   }
 
-  // TODO: Check whether this is still needed after moving loop points to processor
+  // TODO: Check whether this is still needed after moving loop range to processor
   #resetLoopRange() {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
@@ -631,7 +631,7 @@ export class SamplePlayer {
       this.#sendPitchPeriods();
 
       this.#resetLoopRange();
-      // Trim points are seconds: one left from the previous sample (or set while
+      // Trim edges are seconds: one left from the previous sample (or set while
       // none was loaded) would cut the new one short.
       this.setTrimRange(0, this.#bufferDuration);
 
@@ -646,10 +646,10 @@ export class SamplePlayer {
   }
 
   /**
-   * Replace the loaded sample with the region between its start and end points,
+   * Replace the loaded sample with the region between its trim edges,
    * reloading it without re-running preprocessing.
    *
-   * Points may be in either order. Seconds are clamped to the buffer. Returns null if there is no sample
+   * Edges may be in either order. Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
    */
   async cropSample(
@@ -928,7 +928,7 @@ export class SamplePlayer {
     return this;
   }
 
-  /** Set both trim points at once so both edges land at one event time. */
+  /** Set both trim edges at once so both land at one event time. */
   setTrimRange(startSeconds: number, endSeconds: number): this {
     this.#setParams({ trimStart: startSeconds, trimEnd: endSeconds });
     return this;
@@ -1077,7 +1077,7 @@ export class SamplePlayer {
 
   /**
    * Ping-pong loops turn around at both loop edges instead of jumping back, so
-   * loop point order no longer matters. Without it, loop points set in reverse
+   * loop edge order no longer matters. Without it, loop edges set in reverse
    * order (start after end) make a backward loop: the voice plays through the
    * loop once, then cycles it backward. A short pitched loop played ping-pong
    * sounds an octave lower, since one cycle covers the loop twice.
@@ -1089,7 +1089,7 @@ export class SamplePlayer {
 
   /**
    * While looping is on, notes start at the loop instead of the trim start:
-   * at the lower loop point, or the higher one when playing in reverse. Trim
+   * at the lower loop edge, or the higher one when playing in reverse. Trim
    * still bounds playback. With looping off, notes start at trim as usual.
    */
   setStartFromLoop(enabled: boolean): this {
