@@ -139,7 +139,7 @@
           mainGain.gain.setValueAtTime(1, ctx.currentTime);
         }
         post({
-          type: 'setEnvelope',
+          type: 'voice:setEnvelope',
           target: 'gain',
           value: $('engine').value === 'audio' ? { shape } : null,
         });
@@ -185,7 +185,7 @@
         }
       };
 
-      $('loop').onchange = () => post({ type: 'setLoopEnabled', value: $('loop').checked });
+      $('loop').onchange = () => post({ type: 'voice:setLoopEnabled', value: $('loop').checked });
 
       const KEYS = 'awsedftgyhujk';
       let octave = 0;
