@@ -59,7 +59,7 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 | `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The player emits `voice:stopped`.              |
 | `loop:enabled`    | `enabled`                                                                                                 | echo of `voice:setLoopEnabled`, once per voice; ignored (the player emits its own).            |
 | `loop:range`      | `loopStart`, `loopEnd`, `triggerId`; playing: `loopMode`, `isInPitchLoop`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.           |
-| `trim:range`      | `startPoint`, `endPoint`, `inverted`, `triggerId`                                                         | throttled.                                                                                     |
+| `trim:range`      | `trimStart`, `trimEnd`, `inverted`, `triggerId`                                                           | throttled.                                                                                     |
 | `voice:position`  | `position` (0..1), `triggerId`                                                                            | ~60 Hz, only while position tracking is on.                                                    |
 
 ## Pitch

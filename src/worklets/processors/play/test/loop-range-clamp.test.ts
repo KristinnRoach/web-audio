@@ -40,8 +40,8 @@ describe('loop range clamping', () => {
     const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
     const loop = messages.find((message) => message.type === 'loop:range');
     const trim = messages.find((message) => message.type === 'trim:range');
-    expect(loop.loopStart).toBe(trim.startPoint);
-    expect(loop.loopEnd).toBe(trim.endPoint);
+    expect(loop.loopStart).toBe(trim.trimStart);
+    expect(loop.loopEnd).toBe(trim.trimEnd);
   });
 
   it('wraps to startPoint when loopStart sits before it', async () => {
@@ -297,8 +297,8 @@ describe('loop range clamping', () => {
       .map(([msg]) => msg)
       .filter((msg) => msg.type === 'trim:range');
     expect(posts).toHaveLength(1);
-    expect(posts[0].startPoint).toBeCloseTo(0.3, 4);
-    expect(posts[0].endPoint).toBeCloseTo(0.6, 4);
+    expect(posts[0].trimStart).toBeCloseTo(0.3, 4);
+    expect(posts[0].trimEnd).toBeCloseTo(0.6, 4);
     expect(posts[0].inverted).toBe(true);
   });
 

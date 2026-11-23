@@ -153,7 +153,7 @@ export class VoiceEngine {
     };
     this.playbackRange = { startSamples: 0, endSamples: 0, durationSamples: 0, inverted: false };
     this.previousRequestedLoop = { start: null, end: null };
-    this.trimMessage = { type: 'trim:range', startPoint: 0, endPoint: 0, inverted: false };
+    this.trimMessage = { type: 'trim:range', trimStart: 0, trimEnd: 0, inverted: false };
     this.loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
     this.positionMessage = { type: 'voice:position', position: 0 };
     // Everything sounding this sample: the playhead, the stretcher's outgoing head
@@ -1008,8 +1008,8 @@ export class VoiceEngine {
     }
     this.previousApproachDirection = approachDirection;
 
-    this.trimMessage.startPoint = playbackRange.startSamples / sampleRate;
-    this.trimMessage.endPoint = playbackRange.endSamples / sampleRate;
+    this.trimMessage.trimStart = playbackRange.startSamples / sampleRate;
+    this.trimMessage.trimEnd = playbackRange.endSamples / sampleRate;
     this.trimMessage.inverted = playbackRange.inverted;
     this.#postRange(this.trimMessage, blockTime);
 

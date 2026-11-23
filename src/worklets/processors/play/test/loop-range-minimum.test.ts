@@ -65,8 +65,8 @@ describe('trim and loop minimum lengths', () => {
       const loop = messages.find((message) => message.type === 'loop:range');
       const trim = messages.find((message) => message.type === 'trim:range');
 
-      expect(loop.loopStart).toBeGreaterThanOrEqual(trim.startPoint);
-      expect(loop.loopEnd).toBeLessThanOrEqual(trim.endPoint);
+      expect(loop.loopStart).toBeGreaterThanOrEqual(trim.trimStart);
+      expect(loop.loopEnd).toBeLessThanOrEqual(trim.trimEnd);
       expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
         processor.engine.minRangeSamples - 1e-8,
       );
@@ -126,8 +126,8 @@ describe('trim and loop minimum lengths', () => {
         processor.engine.minRangeSamples,
       );
 
-      expect(loop.loopStart).toBe(trim.startPoint);
-      expect(loop.loopEnd).toBe(trim.endPoint);
+      expect(loop.loopStart).toBe(trim.trimStart);
+      expect(loop.loopEnd).toBe(trim.trimEnd);
       // Position params arrive as float32 seconds and trim resolves to source samples.
       expect(
         Math.abs((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE - expectedLength),
