@@ -40,7 +40,6 @@ import { createMessageBus, MessageBus } from '@/events';
 import { CustomLibWaveform, WaveformOptions } from '@/utils/audiodata/generate/generateWaveform';
 import { VoiceEffects, type SampleVoiceChainNode } from './VoiceEffects';
 import type { SamplePlayerWorkletAudioParamKey } from '@/worklets/processors/play/sample-player-paramdescriptors';
-import { VoiceState } from '../VoiceState';
 import { detectPitchPeriods } from '@/utils/audiodata/pitchDetection/pitchPeriods';
 import {
   SAMPLE_ENVELOPE_IDS,
@@ -66,9 +65,8 @@ const createSampleWorklet = (context: BaseAudioContext, voiceCount: number) =>
     processorOptions: { voiceCount },
   });
 
-/** A processor voice as its reports leave it; `triggerId` names the note it plays. */
+/** A processor voice as its reports leave it; `midiNote` is null while free and `triggerId` names its current note. */
 type Voice = {
-  state: VoiceState;
   midiNote: number | null;
   triggerId: number;
   effects: VoiceEffects;
@@ -214,7 +212,6 @@ export class SamplePlayer {
         // Pushed one by one, so a failed init can dispose the voices built before it.
         for (let voiceIndex = 0; voiceIndex < this.#polyphony; voiceIndex++) {
           this.#voices.push({
-            state: VoiceState.AVAILABLE,
             midiNote: null,
             triggerId: 0,
             effects: new VoiceEffects(this.context, worklet, voiceIndex, this.#voiceSignalChain),
@@ -380,7 +377,8 @@ export class SamplePlayer {
 
   /**
    * Voice reports name their voice; `initialized` and `flushed` are node-wide.
-   * Voice records mirror the audio thread; reports about an old note are dropped.
+   * Voice records hold the last reported note. The audio thread owns voice state and
+   * may be ahead of them; reports about an old note are dropped.
    */
   #receive(data: any) {
     const { type, voice: index, ...report } = data;
@@ -403,9 +401,9 @@ export class SamplePlayer {
       // The pool picked this voice on the audio thread; its effects follow from here.
       case 'voice:started': {
         // Stolen: the note it held ends without a report of its own.
-        if (voice.state !== VoiceState.AVAILABLE) this.#voiceStopped(voice);
+        if (voice.midiNote !== null) this.#voiceStopped(voice);
         const { midiNote, velocity, timestamp, glideTime, glideFromNote, triggerId } = report;
-        Object.assign(voice, { state: VoiceState.PLAYING, midiNote, triggerId });
+        Object.assign(voice, { midiNote, triggerId });
         this.#followVoice(report, false);
         this.#emitFrom(voice, type, { voiceId, midiNote, velocity, timestamp, glideTime });
         voice.effects.followNote(midiNote, { velocity, timestamp, glideTime, glideFromNote });
@@ -413,7 +411,7 @@ export class SamplePlayer {
       }
 
       case 'voice:retuned':
-        if (voice.state !== VoiceState.PLAYING) return;
+        if (voice.midiNote === null) return;
         voice.midiNote = report.midiNote;
         voice.effects.followNote(report.midiNote, {
           timestamp: report.timestamp,
@@ -422,12 +420,11 @@ export class SamplePlayer {
         return this.#followVoice(report, true);
 
       case 'voice:releasing':
-        if (voice.state !== VoiceState.PLAYING) return;
-        voice.state = VoiceState.RELEASING;
+        if (voice.midiNote === null) return;
         return this.#emitFrom(voice, type, { voiceId, midiNote: voice.midiNote });
 
       case 'voice:ended':
-        if (voice.state === VoiceState.AVAILABLE || report.triggerId !== voice.triggerId) return;
+        if (voice.midiNote === null || report.triggerId !== voice.triggerId) return;
         return this.#voiceStopped(voice);
 
       case 'loop:range':
@@ -435,7 +432,7 @@ export class SamplePlayer {
       case 'voice:position': {
         // Idle report: the steady loop for the next note, not a playing range.
         if (report.idle) return;
-        if (voice.state === VoiceState.AVAILABLE || report.triggerId !== voice.triggerId) return;
+        if (voice.midiNote === null || report.triggerId !== voice.triggerId) return;
         const { triggerId: _, ...range } = report;
         return this.#emitFrom(voice, type, { voiceId, midiNote: voice.midiNote, ...range });
       }
@@ -444,7 +441,7 @@ export class SamplePlayer {
 
   #voiceStopped(voice: Voice) {
     const { midiNote } = voice;
-    Object.assign(voice, { state: VoiceState.AVAILABLE, midiNote: null });
+    voice.midiNote = null;
     this.#emitFrom(voice, 'voice:stopped', { voiceId: voice.effects.nodeId, midiNote });
   }
 
@@ -1635,7 +1632,7 @@ export class SamplePlayer {
       this.#sustainedNotes.clear();
 
       for (const voice of this.#voices) {
-        if (voice.state !== VoiceState.AVAILABLE) this.#voiceStopped(voice);
+        if (voice.midiNote !== null) this.#voiceStopped(voice);
         voice.effects.dispose();
       }
       this.#voices = [];

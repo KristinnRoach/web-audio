@@ -87,15 +87,15 @@ After setup and scheduling, await `player.flushMessages()` before resuming. It p
 
 ## Voice state on the main thread
 
-`SamplePlayer.#receive` keeps one record per voice, `{ state, midiNote, triggerId, effects }`, and emits on the player's own bus. Voice reports go out with the voice's id as `senderId` and as `voiceId`. `sample:loaded` is the exception: its `senderId` is the last voice's and it has no `voiceId`. A pitch offset change reaches held notes through `effects.setPitchOffset(offset, midiNote)`.
+`SamplePlayer.#receive` keeps one record per voice, `{ midiNote, triggerId, effects }`, and emits on the player's own bus. The audio thread (`VoicePool` / `PoolVoice`) owns voice state and may be ahead of these records; `midiNote` is the last reported note, or null once it is reported ended. Voice reports go out with the voice's id as `senderId` and as `voiceId`. `sample:loaded` is the exception: its `senderId` is the last voice's and it has no `voiceId`. A pitch offset change reaches held notes through `effects.setPitchOffset(offset, midiNote)`.
 
-| report                                       | record                                                                                                              | upstream                                                                                                               |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `voice:started`                              | a voice not `AVAILABLE` was stolen: `voice:stopped` for its old note first; then `PLAYING`, `midiNote`, `triggerId` | bus `noteOn`, `voice:started` (`voiceId`, `midiNote`, `velocity`, `timestamp`, `glideTime`), then `effects.followNote` |
-| `voice:retuned`                              | only while `PLAYING`: `midiNote`                                                                                    | `effects.followNote`, bus follows; not passed on                                                                       |
-| `voice:releasing`                            | only while `PLAYING`: `RELEASING`                                                                                   | `voice:releasing` (`voiceId`, `midiNote`)                                                                              |
-| `voice:ended`                                | only for the current `triggerId`: `AVAILABLE`, `midiNote` null                                                      | `voice:stopped` (`voiceId`, `midiNote`)                                                                                |
-| `loop:range`, `trim:range`, `voice:position` | dropped when `idle`, when the voice is `AVAILABLE` or for another `triggerId`                                       | same type, `triggerId` replaced by `voiceId` and `midiNote`                                                            |
+| report                                       | record                                                                                                            | upstream                                                                                                               |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `voice:started`                              | a voice with `midiNote !== null` was stolen: `voice:stopped` for its old note first; then `midiNote`, `triggerId` | bus `noteOn`, `voice:started` (`voiceId`, `midiNote`, `velocity`, `timestamp`, `glideTime`), then `effects.followNote` |
+| `voice:retuned`                              | only while `midiNote !== null`: `midiNote`                                                                        | `effects.followNote`, bus follows; not passed on                                                                       |
+| `voice:releasing`                            | only while `midiNote !== null`                                                                                    | `voice:releasing` (`voiceId`, `midiNote`)                                                                              |
+| `voice:ended`                                | only for the current `triggerId` while `midiNote !== null`: `midiNote` null                                       | `voice:stopped` (`voiceId`, `midiNote`)                                                                                |
+| `loop:range`, `trim:range`, `voice:position` | dropped when `idle`, when `midiNote === null`, or for another `triggerId`                                         | same type, `triggerId` replaced by `voiceId` and `midiNote`                                                            |
 
 `dispose()` emits `voice:stopped` for every voice still sounding.
 
@@ -112,12 +112,11 @@ After setup and scheduling, await `player.flushMessages()` before resuming. It p
 // SamplePlayer.init(), shortened
 const worklet = createSampleWorklet(context, polyphony);
 const voices = Array.from({ length: polyphony }, (_, voiceIndex) => ({
-  state: VoiceState.AVAILABLE,
   midiNote: null,
   triggerId: 0,
   effects: new VoiceEffects(context, worklet, voiceIndex),
 }));
-// e.g. voice:started → voices[3] PLAYING, effects follow, voice:started emitted upstream
+// e.g. voice:started → voices[3] midiNote=60, effects follow, voice:started emitted upstream
 worklet.port.onmessage = ({ data }) => this.#receive(data);
 
 // play(60): untagged, the processor picks the voice when the note is due
