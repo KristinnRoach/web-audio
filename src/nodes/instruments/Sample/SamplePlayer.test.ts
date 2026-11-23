@@ -97,15 +97,25 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     player.transpose(-1);
     expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5, null);
 
-    // Bus feedback retunes from the last played note; before any note it has nothing to follow.
+    // Bus feedback and synced LFOs follow voices reported by the processor;
+    // play() without a sounding voice (e.g. no sample loaded or future-scheduled) does not move them.
+    player.syncLFOsToNoteFreq('gain-lfo', true);
+    player.syncLFOsToNoteFreq('pitch-lfo', true);
     expect(setBusFeedbackPitch).not.toHaveBeenCalled();
     player.play(60);
     player.transpose(2);
+    expect(setBusFeedbackPitch).not.toHaveBeenCalled();
+    for (const lfo of getTestLFOs().slice(-2)) {
+      expect(lfo.setMusicalNote).not.toHaveBeenCalled();
+    }
+
+    report({ type: 'voice:started', voice: 0, triggerId: 1, midiNote: 60, timestamp: 0.5 });
+    for (const lfo of getTestLFOs().slice(-2)) {
+      expect(lfo.setMusicalNote).toHaveBeenLastCalledWith(61.5, { divisor: 4, timestamp: 0.5 });
+    }
+    player.transpose(2);
     expect(setBusFeedbackPitch.mock.lastCall?.[0]).toBe(61.5);
-    // A legato fallback on release retunes the bus feedback to the earlier held note.
-    player.syncLFOsToNoteFreq('gain-lfo', true);
-    player.syncLFOsToNoteFreq('pitch-lfo', true);
-    report({ type: 'voice:started', voice: 0, triggerId: 1, midiNote: 60, timestamp: 0 });
+    // A legato fallback on release retunes the bus feedback and synced LFOs to the earlier held note.
     player.release(60, 1);
     report({
       type: 'voice:retuned',

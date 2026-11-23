@@ -694,16 +694,12 @@ export class SamplePlayer {
       console.warn(`Invalid midiNote: ${midiNote}`);
       return null;
     }
-    // Voices are keyed by the played note so release() still finds them after
-    // a transpose; anything that tracks pitch gets the sounding note.
-    const soundingNote = midiNote + this.#pitchOffset;
-    this.#lastPlayedNote = midiNote;
-    this.#syncLFOsToNote(soundingNote);
 
     if (!this.#voices.length || !this.#buffer) return null;
-    // The audio thread picks the voice when the note is due and works out its rate
-    // and glide origin; the bus follows its report (`voice:started` or `voice:retuned`)
-    // in #followVoice.
+    // Voices are keyed by the played note so release() still finds them after
+    // a transpose. The audio thread picks the voice when the note is due and
+    // works out its rate and glide origin; the bus and note-tracking LFOs
+    // follow its report (`voice:started` or `voice:retuned`) in #followVoice.
     this.#post({
       type: 'pool:noteOn',
       triggerId: ++this.#noteId,
@@ -758,20 +754,21 @@ export class SamplePlayer {
   }
 
   /**
-   * The processor reports each note once its voice is picked. The bus follows: same
-   * glide, and a legato retune doesn't restart its decay. A voice falling back
-   * to an earlier held note takes the note-tracking LFOs and bus feedback with it.
+   * The processor reports each note once its voice is picked. The bus and
+   * note-tracking LFOs follow: same glide, and a legato retune doesn't restart
+   * bus feedback decay. A voice falling back to an earlier held note moves bus
+   * feedback pitch without retriggering it.
    */
   #followVoice(report: any, retuned: boolean) {
     const soundingNote = report.midiNote + this.#pitchOffset;
     const secondsFromNow = Math.max(0, report.timestamp - this.now);
+    const timestamp = this.now + secondsFromNow;
+    this.#lastPlayedNote = report.midiNote;
+    this.#syncLFOsToNote(soundingNote, timestamp);
     if (!report.fallback) {
       this.#outBus.noteOn(soundingNote, report.velocity, secondsFromNow, report.glideTime, retuned);
       return;
     }
-    this.#lastPlayedNote = report.midiNote;
-    const timestamp = this.now + secondsFromNow;
-    this.#syncLFOsToNote(soundingNote, timestamp);
     this.#outBus.getFeedback()?.setPitch(soundingNote, 0, timestamp, report.glideTime);
   }
 
