@@ -67,6 +67,7 @@ export class InstrumentBus implements ILibAudioNode {
 
   /** Last cutoff from `setLpfCutoff`, which is the envelope's base. Set in init(). */
   #lpfCutoffHz = 0;
+  #pitchOffset = 0;
 
   #nodes: Partial<BusNodeTypeMap> = {};
   #internalRouting = new Map<string, string[]>();
@@ -336,29 +337,39 @@ export class InstrumentBus implements ILibAudioNode {
     return this;
   }
 
-  // === NOTE ON ===
+  // === NOTES ===
 
-  /** `retune` moves a held legato note: pitch follows, the feedback decay keeps running. */
-  noteOn(
+  /** Retunes feedback to the last note followed; `lastNote` is null before the first. */
+  setPitchOffset(semitones: number, lastNote: number | null): this {
+    if (this.#pitchOffset === semitones) return this;
+    this.#pitchOffset = semitones;
+    if (lastNote !== null) {
+      this.followNote(lastNote, { timestamp: this.now, glideTime: 0.01, retuned: true });
+    }
+    return this;
+  }
+
+  /**
+   * Moves feedback to a played note; adds the pitch offset.
+   * A new note restarts feedback decay. With `retuned`, only its pitch moves.
+   */
+  followNote(
     midiNote: number,
-    velocity: number = 100,
-    secondsFromNow = 0,
-    glideTime = 0,
-    retune = false,
+    note: { timestamp: number; glideTime: number; retuned?: boolean },
   ): this {
-    const feedback = this.getNode('feedback');
-    if (feedback && 'trigger' in feedback && typeof feedback.trigger === 'function') {
-      feedback.trigger(midiNote, {
-        velocity,
-        secondsFromNow,
-        glideTime,
-        triggerDecay: !retune,
-      });
+    const { timestamp, glideTime, retuned = false } = note;
+    const soundingNote = midiNote + this.#pitchOffset;
+    const feedback = this.getFeedback();
+    if (retuned) {
+      feedback?.setPitch(soundingNote, 0, timestamp, glideTime);
+      return this;
     }
 
-    const delayNode = this.getNode('delay');
-    delayNode?.audioNode.sendProcessorMessage({ type: 'trigger' });
-
+    feedback?.trigger(soundingNote, {
+      secondsFromNow: Math.max(0, timestamp - this.now),
+      glideTime,
+      triggerDecay: true,
+    });
     return this;
   }
 

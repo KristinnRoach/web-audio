@@ -139,7 +139,7 @@ describe('VoicePool', () => {
       [2, 1, 0.2],
     ]);
     expect(voices[0].post).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: 'voice:retuned', midiNote: 60, fallback: true }),
+      expect.objectContaining({ type: 'voice:retuned', midiNote: 60 }),
     );
     // Out of the legato interval: a new voice, gliding from the fallback note.
     expect(voices[1].engine.start.mock.lastCall?.[2]).toMatchObject({ glideFrom: 1 });

@@ -200,7 +200,7 @@ export class VoicePool {
   }
 
   /** `fallback`: a note-off returned the voice to an earlier held note. */
-  #retune(voice, { midiNote, timestamp, velocity }, glideTime, fallback) {
+  #retune(voice, { midiNote, timestamp }, glideTime, fallback) {
     voice.midiNote = midiNote;
     if (fallback) this.#glideOrigin = midiNote;
     // With pitch off a legato note keeps its glide, so it does not cut the ramp to rate 1 short.
@@ -209,10 +209,8 @@ export class VoicePool {
     voice.post({
       type: 'voice:retuned',
       midiNote,
-      velocity,
       timestamp,
       glideTime,
-      fallback,
     });
   }
 

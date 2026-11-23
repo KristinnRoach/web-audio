@@ -48,26 +48,26 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 
 ## Processor → main
 
-| type              | fields                                                                                                    | notes                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `flushed`         | `id`                                                                                                      | untagged acknowledgement of `flush`; all preceding port messages have been handled.            |
-| `initialized`     | none                                                                                                      | untagged, once, from the constructor. The player then posts the settings marked above.         |
-| `voice:loaded`    | `durationSeconds`, `time`                                                                                 | one per voice per `voice:setBuffer`. The player emits `sample:loaded` after the last one.      |
-| `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                            | allocator picked this voice; posted before the engine starts, so it precedes its reports.      |
-| `voice:retuned`   | `midiNote`, `velocity`, `timestamp`, `glideTime`, `fallback`                                              | legato retune, rate already set; `fallback` means a note-off returned to an earlier held note. |
-| `voice:releasing` | none                                                                                                      |                                                                                                |
-| `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The player emits `voice:stopped`.              |
-| `loop:enabled`    | `enabled`                                                                                                 | echo of `voice:setLoopEnabled`, once per voice; ignored (the player emits its own).            |
-| `loop:range`      | `loopStart`, `loopEnd`, `triggerId`; playing: `loopMode`, `isInPitchLoop`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.           |
-| `trim:range`      | `trimStart`, `trimEnd`, `inverted`, `triggerId`                                                           | throttled.                                                                                     |
-| `voice:position`  | `position` (fraction of the sample, can pass 1), `triggerId`                                              | ~60 Hz, only while position tracking is on.                                                    |
+| type              | fields                                                                                                    | notes                                                                                     |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `flushed`         | `id`                                                                                                      | untagged acknowledgement of `flush`; all preceding port messages have been handled.       |
+| `initialized`     | none                                                                                                      | untagged, once, from the constructor. The player then posts the settings marked above.    |
+| `voice:loaded`    | `durationSeconds`, `time`                                                                                 | one per voice per `voice:setBuffer`. The player emits `sample:loaded` after the last one. |
+| `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                            | allocator picked this voice; posted before the engine starts, so it precedes its reports. |
+| `voice:retuned`   | `midiNote`, `timestamp`, `glideTime`                                                                      | legato retune, rate already set; also when a note-off returns to an earlier held note.    |
+| `voice:releasing` | none                                                                                                      |                                                                                           |
+| `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The player emits `voice:stopped`.         |
+| `loop:enabled`    | `enabled`                                                                                                 | echo of `voice:setLoopEnabled`, once per voice; ignored (the player emits its own).       |
+| `loop:range`      | `loopStart`, `loopEnd`, `triggerId`; playing: `loopMode`, `isInPitchLoop`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.      |
+| `trim:range`      | `trimStart`, `trimEnd`, `inverted`, `triggerId`                                                           | throttled.                                                                                |
+| `voice:position`  | `position` (fraction of the sample, can pass 1), `triggerId`                                              | ~60 Hz, only while position tracking is on.                                               |
 
 ## Pitch
 
 - `VoicePool` holds the pitch offset and whether pitch is on. A played note's rate is `midiToPlaybackRate(midiNote + offset)` (reference note 60), or 1 with pitch off. It computes the rate of a started note and its glide origin, of legato and fallback retunes, and of a `voice:start`. With pitch off nothing glides between notes; a legato retune still passes its glide time, so the ramp to rate 1 that disabling started is not cut short.
 - The glide origin is the last note applied, or the earlier held note a fallback returned to; 60 before the first note. `glideFromNote` in `voice:started` is that played note, `null` without glide; `VoiceEffects` adds its offset for the AM LFO.
 - A setting change retunes at the processor's `currentTime` when handled: a new offset moves voices that have a note with a 0.01 s time constant (0 while pitch is off); pitch off sends every voice to rate 1 with 0.1/3; pitch on retunes voices that have a note with 0.01/3.
-- `VoiceEffects` keeps its own copy of the offset only for its main-thread effects (feedback, AM LFO).
+- `VoiceEffects` and `InstrumentBus` keep their own copies of the offset for their main-thread effects (feedback; AM LFO in `VoiceEffects`).
 
 ## Ordering the code relies on
 
@@ -89,13 +89,13 @@ After setup and scheduling, await `player.flushMessages()` before resuming. It p
 
 `SamplePlayer.#receive` keeps one record per voice, `{ midiNote, triggerId, effects }`, and emits on the player's own bus. The audio thread (`VoicePool` / `PoolVoice`) owns voice state and may be ahead of these records; `midiNote` is the last reported note, or null once it is reported ended. Voice reports go out with the voice's id as `senderId` and as `voiceId`. `sample:loaded` is the exception: its `senderId` is the last voice's and it has no `voiceId`. A pitch offset change reaches held notes through `effects.setPitchOffset(offset, midiNote)`.
 
-| report                                       | record                                                                                                            | upstream                                                                                                                            |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `voice:started`                              | a voice with `midiNote !== null` was stolen: `voice:stopped` for its old note first; then `midiNote`, `triggerId` | bus `noteOn` and LFO sync, `voice:started` (`voiceId`, `midiNote`, `velocity`, `timestamp`, `glideTime`), then `effects.followNote` |
-| `voice:retuned`                              | only while `midiNote !== null`: `midiNote`                                                                        | `effects.followNote`, bus and LFOs follow; not passed on                                                                            |
-| `voice:releasing`                            | only while `midiNote !== null`                                                                                    | `voice:releasing` (`voiceId`, `midiNote`)                                                                                           |
-| `voice:ended`                                | only for the current `triggerId` while `midiNote !== null`: `midiNote` null                                       | `voice:stopped` (`voiceId`, `midiNote`)                                                                                             |
-| `loop:range`, `trim:range`, `voice:position` | dropped when `idle`, when `midiNote === null`, or for another `triggerId`                                         | same type, `triggerId` replaced by `voiceId` and `midiNote`                                                                         |
+| report                                       | record                                                                                                            | upstream                                                                                                                                |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `voice:started`                              | a voice with `midiNote !== null` was stolen: `voice:stopped` for its old note first; then `midiNote`, `triggerId` | bus `followNote` and LFO sync, `voice:started` (`voiceId`, `midiNote`, `velocity`, `timestamp`, `glideTime`), then `effects.followNote` |
+| `voice:retuned`                              | only while `midiNote !== null`: `midiNote`                                                                        | `effects.followNote`, bus and LFOs follow; not passed on                                                                                |
+| `voice:releasing`                            | only while `midiNote !== null`                                                                                    | `voice:releasing` (`voiceId`, `midiNote`)                                                                                               |
+| `voice:ended`                                | only for the current `triggerId` while `midiNote !== null`: `midiNote` null                                       | `voice:stopped` (`voiceId`, `midiNote`)                                                                                                 |
+| `loop:range`, `trim:range`, `voice:position` | dropped when `idle`, when `midiNote === null`, or for another `triggerId`                                         | same type, `triggerId` replaced by `voiceId` and `midiNote`                                                                             |
 
 `dispose()` emits `voice:stopped` for every voice still sounding.
 

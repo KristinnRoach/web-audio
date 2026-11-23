@@ -52,12 +52,9 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
   );
   const { VoiceEffects } = await import('./VoiceEffects');
   const setPitchOffset = vi.spyOn(VoiceEffects.prototype, 'setPitchOffset');
-  const setBusFeedbackPitch = vi.fn();
   player.setLoopPitchQuantization({ scale: [2], lowestOctave: 0, highestOctave: 5 });
 
-  const { report, ofType } = await initTestPlayer(player, {
-    bus: { getFeedback: () => ({ setPitch: setBusFeedbackPitch }) } as never,
-  });
+  const { report, ofType } = await initTestPlayer(player);
   const periodsPosted = () => ofType('voice:setLoopQuantizePeriods');
 
   const initialPeriods = [62, 50, 38, 26, 14, 2].map((i) => expect.closeTo(NOTE_PERIODS[i], 6));
@@ -97,14 +94,12 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
     player.transpose(-1);
     expect(setPitchOffset).toHaveBeenLastCalledWith(-1.5, null);
 
-    // Bus feedback and synced LFOs follow voices reported by the processor;
+    // Synced LFOs follow voices reported by the processor;
     // play() without a sounding voice (e.g. no sample loaded or future-scheduled) does not move them.
     player.syncLFOsToNoteFreq('gain-lfo', true);
     player.syncLFOsToNoteFreq('pitch-lfo', true);
-    expect(setBusFeedbackPitch).not.toHaveBeenCalled();
     player.play(60);
     player.transpose(2);
-    expect(setBusFeedbackPitch).not.toHaveBeenCalled();
     for (const lfo of getTestLFOs().slice(-2)) {
       expect(lfo.setMusicalNote).not.toHaveBeenCalled();
     }
@@ -114,8 +109,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
       expect(lfo.setMusicalNote).toHaveBeenLastCalledWith(61.5, { divisor: 4, timestamp: 0.5 });
     }
     player.transpose(2);
-    expect(setBusFeedbackPitch.mock.lastCall?.[0]).toBe(61.5);
-    // A legato fallback on release retunes the bus feedback and synced LFOs to the earlier held note.
+    // A legato fallback on release retunes synced LFOs to the earlier held note.
     player.release(60, 1);
     report({
       type: 'voice:retuned',
@@ -123,9 +117,7 @@ it('sends loop quantize periods on quantization updates but not on transpose', a
       midiNote: 57,
       glideTime: 0.1,
       timestamp: 1,
-      fallback: true,
     });
-    expect(setBusFeedbackPitch).toHaveBeenLastCalledWith(58.5, 0, 1, 0.1);
     for (const lfo of getTestLFOs().slice(-2)) {
       expect(lfo.setMusicalNote).toHaveBeenLastCalledWith(58.5, { divisor: 4, timestamp: 1 });
     }
@@ -844,11 +836,9 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       pool.addVoice(voice);
       return voice;
     });
-    const setPitch = vi.fn();
     player = new SamplePlayer({ context, polyphony: voices.length });
     beforeInit?.(player);
     const test = await initTestPlayer(player, {
-      bus: { getFeedback: () => ({ setPitch }) } as never,
       onPost: (message) => {
         if (message.type === 'pool:setLegato') pool.allocator.legato = message.value;
         else if (message.type === 'pool:setPitchOffset') pool.setPitchOffset(message.value, 0);
@@ -874,7 +864,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       { skipPreProcessing: true },
     );
     const playing = () => voices.filter((voice) => voice.state === 'PLAYING').length;
-    return { player, voices, playing, setPitch, ...test };
+    return { player, voices, playing, ...test };
   }
 
   it('releases only deferred keys and drains multiple pitches and counts once', async () => {
@@ -903,7 +893,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
   });
 
   it('returns a legato voice to a still-held key on pedal-up', async () => {
-    const { player, voices, setPitch } = await setup();
+    const { player, voices } = await setup();
     player.setLegato({ mode: 'always' });
     player.play(60);
     player.play(64);
@@ -913,7 +903,6 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     player.setSustainPedal(false);
     expect(voices[0].state).toBe('PLAYING');
     expect(voices[0].midiNote).toBe(60);
-    expect(setPitch).toHaveBeenLastCalledWith(60, 0, 0, 0);
   });
 
   it.each(['hold', 'lock'] as const)('keeps explicit %s independent of the pedal', async (mode) => {
