@@ -946,6 +946,12 @@ export class SamplePlayer {
   ) {
     const params = this.#worklet?.parameters;
     if (!params) return;
+    // Validate first so a bad value can't leave a pair half-scheduled.
+    for (const [name, value] of Object.entries(values)) {
+      if (value !== undefined && !Number.isFinite(value)) {
+        throw new RangeError(`${name} must be a finite number, got ${value}`);
+      }
+    }
     const now = this.now;
     const cancelAt = timestamp ?? now;
     const at = Math.max(cancelAt, now + 0.001);

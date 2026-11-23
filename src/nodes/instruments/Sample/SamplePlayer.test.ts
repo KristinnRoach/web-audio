@@ -986,6 +986,21 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     expect(end.mock.calls).toEqual([[0.5, 2.001]]);
   });
 
+  it('rejects a non-finite trim point without touching either param', async () => {
+    const { player, worklet } = await setup();
+    const start = worklet.parameters.get('startPoint')!;
+    const end = worklet.parameters.get('endPoint')!;
+    const calls = [
+      vi.spyOn(start, 'cancelScheduledValues'),
+      vi.spyOn(start, 'setValueAtTime'),
+      vi.spyOn(end, 'cancelScheduledValues'),
+      vi.spyOn(end, 'setValueAtTime'),
+    ];
+
+    expect(() => player.setTrimRange(0.1, NaN)).toThrow(RangeError);
+    for (const spy of calls) expect(spy).not.toHaveBeenCalled();
+  });
+
   it('posts note-off untagged at the scheduled time and tells the bus the sounding note', async () => {
     const { player, ofType, noteOff, upstream } = await setup();
     player.transpose(2);
