@@ -981,24 +981,6 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     expect(end.mock.calls).toEqual([[0.2, 2.001]]);
   });
 
-  it('emits loop-range:updated once for individual edge changes and setLoopRange', async () => {
-    const { player } = await setup();
-    const onUpdated = vi.fn();
-    player.onMessage('loop-range:updated', onUpdated);
-
-    player.setLoopStart(0.1);
-    expect(onUpdated).toHaveBeenCalledTimes(1);
-    expect(onUpdated).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: 'loop-range:updated', loopStart: 0.1, loopEnd: 1 }),
-    );
-
-    player.setLoopRange(0.2, 0.6);
-    expect(onUpdated).toHaveBeenCalledTimes(2);
-    expect(onUpdated).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: 'loop-range:updated', loopStart: 0.2, loopEnd: 0.6 }),
-    );
-  });
-
   it('schedules both trim edges at one event time even if the audio clock advances', async () => {
     const { player, worklet } = await setup();
     const start = vi.spyOn(worklet.parameters.get('trimStart')!, 'setValueAtTime');

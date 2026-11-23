@@ -1179,15 +1179,10 @@ export class SamplePlayer {
       this.#loopEnd = seconds;
     }
 
-    this.#sendUpstreamMessage('loop-range:updated', {
-      loopStart: this.loopStart,
-      loopEnd: this.loopEnd,
-    });
-
     return this;
   }
 
-  /** Set both loop edges at once: one voice update, one loop-range:updated. */
+  /** Set both loop edges at once: one voice update. */
   setLoopRange(loopStartSeconds: number, loopEndSeconds: number) {
     const loopStart = clamp(loopStartSeconds, 0, this.#bufferDuration);
     const loopEnd = clamp(loopEndSeconds, 0, this.#bufferDuration);
@@ -1197,11 +1192,6 @@ export class SamplePlayer {
     this.#setParams({ loopStart, loopEnd }, timestamp);
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
-
-    this.#sendUpstreamMessage('loop-range:updated', {
-      loopStart: this.loopStart,
-      loopEnd: this.loopEnd,
-    });
 
     return this;
   }
