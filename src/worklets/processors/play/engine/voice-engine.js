@@ -559,9 +559,9 @@ export class VoiceEngine {
   // ===== CONVERSION UTILITIES =====
 
   /**
-   * Convert sample index to normalized position (0-1)
+   * Convert sample index to a fraction of the buffer length
    * @param {number} sampleIndex - Sample index
-   * @returns {number} - Normalized position 0-1
+   * @returns {number} - Fraction of the buffer length
    */
   #samplesToNormalized(sampleIndex) {
     if (!this.buffer || !this.buffer[0]) return 0;
@@ -1243,10 +1243,8 @@ export class VoiceEngine {
 
     // Playhead for display, ~60 Hz to match screen refresh.
     if (this.reportPlaybackPosition) {
-      this.positionMessage.position = Math.max(
-        0,
-        Math.min(1, this.#samplesToNormalized(this.playbackPosition)),
-      );
+      // Not clamped to 1: a keytracked loop can play silent padding past the buffer end.
+      this.positionMessage.position = Math.max(0, this.#samplesToNormalized(this.playbackPosition));
       this.#postRange(this.positionMessage, blockTime, 1 / 60);
     }
   }
