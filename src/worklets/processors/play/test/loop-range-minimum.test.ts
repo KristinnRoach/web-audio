@@ -58,15 +58,15 @@ describe('trim and loop minimum lengths', () => {
       const processor = await startProcessor([], withScale ? [0.004, 0.06] : undefined);
       render(
         processor,
-        makeParameters({ startPoint: 0.499, endPoint: 0.501, loopStart, loopEnd }),
+        makeParameters({ trimStart: 0.499, trimEnd: 0.501, loopStart, loopEnd }),
         1,
       );
       const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
       const loop = messages.find((message) => message.type === 'loop:range');
       const trim = messages.find((message) => message.type === 'trim:range');
 
-      expect(loop.loopStart).toBeGreaterThanOrEqual(trim.startPoint);
-      expect(loop.loopEnd).toBeLessThanOrEqual(trim.endPoint);
+      expect(loop.loopStart).toBeGreaterThanOrEqual(trim.trimStart);
+      expect(loop.loopEnd).toBeLessThanOrEqual(trim.trimEnd);
       expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
         processor.engine.minRangeSamples - 1e-8,
       );
@@ -74,13 +74,13 @@ describe('trim and loop minimum lengths', () => {
   });
 
   it.each([
-    ['startPoint', 'endPoint', 'loopStart', 'loopEnd'],
-    ['loopEnd', 'loopStart', 'endPoint', 'startPoint'],
+    ['trimStart', 'trimEnd', 'loopStart', 'loopEnd'],
+    ['loopEnd', 'loopStart', 'trimEnd', 'trimStart'],
   ])('respects the minimum while applying points in order %j', async (...order) => {
     const processor = await startProcessor([], [0.004, 0.06]);
     const values: Record<string, number> = {
-      startPoint: 0.499,
-      endPoint: 0.501,
+      trimStart: 0.499,
+      trimEnd: 0.501,
       loopStart: 0.1,
       loopEnd: 0.2,
     };
@@ -105,13 +105,13 @@ describe('trim and loop minimum lengths', () => {
 
   it.each([0.501, 0.503])(
     'fills trim ending at %f when a quantized period cannot fit, respecting the trim minimum',
-    async (endPoint) => {
+    async (trimEnd) => {
       const processor = await startProcessor([], [0.004]);
       render(
         processor,
         makeParameters({
-          startPoint: 0.5,
-          endPoint,
+          trimStart: 0.5,
+          trimEnd,
           loopStart: 0.5005,
           loopEnd: 0.5045,
         }),
@@ -122,12 +122,12 @@ describe('trim and loop minimum lengths', () => {
       const loop = messages.find((message) => message.type === 'loop:range');
       const trim = messages.find((message) => message.type === 'trim:range');
       const expectedLength = Math.max(
-        (endPoint - 0.5) * TEST_SAMPLE_RATE,
+        (trimEnd - 0.5) * TEST_SAMPLE_RATE,
         processor.engine.minRangeSamples,
       );
 
-      expect(loop.loopStart).toBe(trim.startPoint);
-      expect(loop.loopEnd).toBe(trim.endPoint);
+      expect(loop.loopStart).toBe(trim.trimStart);
+      expect(loop.loopEnd).toBe(trim.trimEnd);
       // Position params arrive as float32 seconds and trim resolves to source samples.
       expect(
         Math.abs((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE - expectedLength),
@@ -138,10 +138,10 @@ describe('trim and loop minimum lengths', () => {
   // Equal trim points resolve to the minimum range.
   it.each([[0.5, 0.5]])(
     'resolves trim points %f..%f to the minimum range',
-    async (startPoint, endPoint) => {
+    async (trimStart, trimEnd) => {
       const processor = await startProcessor();
       const length = processor.engine.minRangeSamples;
-      const parameters = makeParameters({ startPoint, endPoint });
+      const parameters = makeParameters({ trimStart, trimEnd });
 
       const positions: number[] = [];
       for (let frame = 0; frame < length * 3; frame++) {
@@ -163,7 +163,7 @@ describe('trim and loop minimum lengths', () => {
     const processor = await startProcessor();
     const minLength = processor.engine.minRangeSamples;
     const parameters = makeParameters({
-      endPoint: 1,
+      trimEnd: 1,
       loopStart: start / TEST_SAMPLE_RATE,
       loopEnd: (start + 1) / TEST_SAMPLE_RATE,
     });

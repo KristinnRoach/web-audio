@@ -15,7 +15,7 @@ describe('loop range clamping', () => {
 
   it('reports pitch-loop eligibility only after playback enters the loop', async () => {
     const processor = await startProcessor();
-    const parameters = makeParameters({ endPoint: 1, loopStart: 0.1, loopEnd: 0.102 });
+    const parameters = makeParameters({ trimEnd: 1, loopStart: 0.1, loopEnd: 0.102 });
     const reports = () =>
       processor.port.postMessage.mock.calls
         .map(([msg]) => msg)
@@ -36,18 +36,18 @@ describe('loop range clamping', () => {
     [0, 9999],
   ])('keeps a long loop covering trim at %f..%f unquantized', async (loopStart, loopEnd) => {
     const processor = await startProcessor([0.3, 0.7], [0.004, 0.01]);
-    render(processor, makeParameters({ startPoint: 0.25, endPoint: 0.75, loopStart, loopEnd }), 1);
+    render(processor, makeParameters({ trimStart: 0.25, trimEnd: 0.75, loopStart, loopEnd }), 1);
     const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
     const loop = messages.find((message) => message.type === 'loop:range');
     const trim = messages.find((message) => message.type === 'trim:range');
-    expect(loop.loopStart).toBe(trim.startPoint);
-    expect(loop.loopEnd).toBe(trim.endPoint);
+    expect(loop.loopStart).toBe(trim.trimStart);
+    expect(loop.loopEnd).toBe(trim.trimEnd);
   });
 
-  it('wraps to startPoint when loopStart sits before it', async () => {
+  it('wraps to trimStart when loopStart sits before it', async () => {
     const processor = await startProcessor();
     // Default loopStart of 0 is outside a playback range starting at 0.5 s.
-    const parameters = makeParameters({ startPoint: 0.5, endPoint: 1, loopEnd: 0.75 });
+    const parameters = makeParameters({ trimStart: 0.5, trimEnd: 1, loopEnd: 0.75 });
 
     render(processor, parameters, TEST_SAMPLE_RATE / 4 + 100);
 
@@ -68,8 +68,8 @@ describe('loop range clamping', () => {
         loopLength > 92 ? [loopLength / TEST_SAMPLE_RATE, 0.101] : undefined,
       );
       const parameters = makeParameters({
-        startPoint: start / TEST_SAMPLE_RATE,
-        endPoint: 1,
+        trimStart: start / TEST_SAMPLE_RATE,
+        trimEnd: 1,
         loopStart: start / TEST_SAMPLE_RATE,
         loopEnd: (start + loopLength) / TEST_SAMPLE_RATE,
       });
@@ -92,8 +92,8 @@ describe('loop range clamping', () => {
     const loopLength = 92;
     const processor = await startProcessor([0.5, (end - 20) / TEST_SAMPLE_RATE]);
     const parameters = makeParameters({
-      startPoint: 0.5,
-      endPoint: end / TEST_SAMPLE_RATE,
+      trimStart: 0.5,
+      trimEnd: end / TEST_SAMPLE_RATE,
       loopStart: (end - loopLength) / TEST_SAMPLE_RATE,
       loopEnd: end / TEST_SAMPLE_RATE,
     });
@@ -116,7 +116,7 @@ describe('loop range clamping', () => {
   // then cycle it backward (SFZ loop_type=backward).
   it('cycles inverted loop points backward over the same region', async () => {
     const processor = await startProcessor();
-    const parameters = makeParameters({ endPoint: 1, loopStart: 0.75, loopEnd: 0.5 });
+    const parameters = makeParameters({ trimEnd: 1, loopStart: 0.75, loopEnd: 0.5 });
 
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 1.3; frame++) {
@@ -145,7 +145,7 @@ describe('loop range clamping', () => {
     processor.port.onmessage?.({
       data: { type: 'voice:setPlaybackDirection', playbackDirection: direction },
     } as MessageEvent);
-    const parameters = makeParameters({ startPoint: 0.9, endPoint: 0.5 });
+    const parameters = makeParameters({ trimStart: 0.9, trimEnd: 0.5 });
 
     const positions: number[] = [];
     for (let frame = 0; frame < length * 3; frame++) {
@@ -167,7 +167,7 @@ describe('loop range clamping', () => {
   // crossings must not widen to them.
   it('keeps a trim between two zero crossings unsnapped', async () => {
     const processor = await startProcessor([0.5, 0.6]);
-    const parameters = makeParameters({ startPoint: 0.55, endPoint: 0.56 });
+    const parameters = makeParameters({ trimStart: 0.55, trimEnd: 0.56 });
 
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.03; frame++) {
@@ -185,7 +185,7 @@ describe('loop range clamping', () => {
     const processor = await startProcessor([0.3, 0.5, 0.7]);
     // Straddle the 0.5 crossing so either snap would leave 0.6x the threshold.
     const half = (0.6 * processor.engine.pitchPreservationThreshold) / TEST_SAMPLE_RATE;
-    const parameters = makeParameters({ endPoint: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
+    const parameters = makeParameters({ trimEnd: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
 
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.8; frame++) {
@@ -211,8 +211,8 @@ describe('loop range clamping', () => {
       };
       const at = (d: number) =>
         makeParameters({
-          startPoint: 0.2 + d,
-          endPoint: 0.9 + d,
+          trimStart: 0.2 + d,
+          trimEnd: 0.9 + d,
           loopStart: 0.4 + d,
           loopEnd: 0.4 + d + loopLength / TEST_SAMPLE_RATE,
         });
@@ -245,12 +245,12 @@ describe('loop range clamping', () => {
     const min = processor.engine.minRangeSamples / TEST_SAMPLE_RATE;
 
     // Zero-length loop lifts to the minimum range.
-    render(processor, makeParameters({ endPoint: 1, loopStart: 0.5, loopEnd: 0.5 }), 1);
+    render(processor, makeParameters({ trimEnd: 1, loopStart: 0.5, loopEnd: 0.5 }), 1);
     expect(posts()).toHaveLength(1);
     expect(posts()[0].loopStart).toBeCloseTo(0.5, 4);
     expect(posts()[0].loopEnd).toBeCloseTo(0.5 + min, 4);
 
-    const moved = makeParameters({ endPoint: 1, loopStart: 0.25, loopEnd: 0.5 });
+    const moved = makeParameters({ trimEnd: 1, loopStart: 0.25, loopEnd: 0.5 });
     render(processor, moved, 1);
     expect(posts()).toHaveLength(1);
 
@@ -279,7 +279,7 @@ describe('loop range clamping', () => {
       processor.port.onmessage?.({
         data: { type: 'voice:setLoopPingPong', value: pingPong },
       } as MessageEvent);
-      render(processor, makeParameters({ endPoint: 1, loopStart, loopEnd }), 1);
+      render(processor, makeParameters({ trimEnd: 1, loopStart, loopEnd }), 1);
 
       const loop = processor.port.postMessage.mock.calls
         .map(([msg]) => msg)
@@ -291,21 +291,21 @@ describe('loop range clamping', () => {
   // trim:range reports the resolved trim: ordered, snapped inward to zero crossings.
   it('posts the resolved trim as trim:range', async () => {
     const processor = await startProcessor([0.3, 0.6]);
-    render(processor, makeParameters({ startPoint: 0.7, endPoint: 0.2 }), 1);
+    render(processor, makeParameters({ trimStart: 0.7, trimEnd: 0.2 }), 1);
 
     const posts = processor.port.postMessage.mock.calls
       .map(([msg]) => msg)
       .filter((msg) => msg.type === 'trim:range');
     expect(posts).toHaveLength(1);
-    expect(posts[0].startPoint).toBeCloseTo(0.3, 4);
-    expect(posts[0].endPoint).toBeCloseTo(0.6, 4);
+    expect(posts[0].trimStart).toBeCloseTo(0.3, 4);
+    expect(posts[0].trimEnd).toBeCloseTo(0.6, 4);
     expect(posts[0].inverted).toBe(true);
   });
 
   // Turning the loop off mid-note plays on through the rest of the trim range, then ends.
   it('plays to the range end after the loop is switched off', async () => {
     const processor = await startProcessor();
-    const parameters = makeParameters({ endPoint: 0.75, loopStart: 0.25, loopEnd: 0.5 });
+    const parameters = makeParameters({ trimEnd: 0.75, loopStart: 0.25, loopEnd: 0.5 });
     render(processor, parameters, TEST_SAMPLE_RATE * 0.6);
 
     processor.port.onmessage?.({

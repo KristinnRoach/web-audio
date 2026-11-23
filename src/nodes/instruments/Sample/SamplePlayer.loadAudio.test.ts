@@ -189,7 +189,7 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
     ]) {
       player.setLoopStart(start);
       player.setLoopEnd(end);
-      player.scrollLoopPoints(requested);
+      player.scrollLoopPosition(requested);
       expect(player.loopStart).toBeCloseTo(expectedStart);
       expect(player.loopEnd).toBeCloseTo(expectedEnd);
       expect(player.loopEnd - player.loopStart).toBeCloseTo(end - start);
@@ -241,11 +241,20 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
     expect(player.audiobuffer?.length).toBe(480);
     // Band-limited resampling isn't bit-exact over a round trip; crop the originals.
     await player.loadAudio(original);
-    // Inverted points crop the same 0.002..0.006 region
+    // Inverted edges crop the same 0.002..0.006 region
     const cropped = await player.cropSample(0.006, 0.002, { in: 0, out: 0 });
     expect(cropped).toBe(player.audiobuffer!);
     expect(player.audiobuffer?.length).toBe(192);
     expect(Array.from(player.audiobuffer!.getChannelData(0))).toEqual(Array(192).fill(0.5));
+    // Omitting bounds crops to the current trimStart/trimEnd getters.
+    await player.loadAudio(original);
+    player.setTrimRange(0.002, 0.006);
+    expect(player.trimStart).toBe(0.002);
+    expect(player.trimEnd).toBe(0.006);
+    await player.cropSample(undefined, undefined, { in: 0, out: 0 });
+    expect(player.audiobuffer?.length).toBe(192);
+    expect(player.trimStart).toBe(0);
+    expect(player.trimEnd).toBe(player.sampleDuration);
     // A silent crop is still a valid reload.
     original.getChannelData(0).fill(0, 0, 300);
     await player.loadAudio(original);

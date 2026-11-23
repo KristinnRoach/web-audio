@@ -30,8 +30,8 @@ describe('a-rate loop points and duration glide', () => {
   it('exposes loop points as a-rate while trim stays k-rate', () => {
     expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.loopStart.automationRate).toBe('a-rate');
     expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.loopEnd.automationRate).toBe('a-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.startPoint.automationRate).toBe('k-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.endPoint.automationRate).toBe('k-rate');
+    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.trimStart.automationRate).toBe('k-rate');
+    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.trimEnd.automationRate).toBe('k-rate');
   });
 
   it.each(
@@ -57,7 +57,7 @@ describe('a-rate loop points and duration glide', () => {
         } as MessageEvent);
       }
       for (let quantum = 0; quantum < 8; quantum++) {
-        const params = makeParameters({ endPoint: 0.01 });
+        const params = makeParameters({ trimEnd: 0.01 });
         params.loopStart = Float32Array.from({ length: 128 }, (_, i) => (quantum * 128 + i) / 1e7);
         params.loopEnd = Float32Array.from(
           params.loopStart,
@@ -207,7 +207,7 @@ describe('a-rate loop points and duration glide', () => {
     processor.port.onmessage?.({
       data: { type: 'voice:setLoopLengthGlide', value: 0 },
     } as MessageEvent);
-    const params = makeParameters({ startPoint: 0.001, endPoint: 0.01 });
+    const params = makeParameters({ trimStart: 0.001, trimEnd: 0.01 });
     params.loopStart = Float32Array.from({ length: 128 }, (_, i) => i / 1000);
     params.loopEnd = Float32Array.from(
       params.loopStart,

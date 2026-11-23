@@ -162,8 +162,8 @@ describe('audio-rate loop movement smoothing', () => {
         [],
         [[new Float32Array(1)]],
         makeParameters({
-          startPoint: trimStart / TEST_SAMPLE_RATE,
-          endPoint: (trimStart + 1000) / TEST_SAMPLE_RATE,
+          trimStart: trimStart / TEST_SAMPLE_RATE,
+          trimEnd: (trimStart + 1000) / TEST_SAMPLE_RATE,
           loopStart: start / TEST_SAMPLE_RATE,
           loopEnd: (start + period) / TEST_SAMPLE_RATE,
         }),

@@ -17,7 +17,7 @@ async function measureRate(playbackRate: number, envCents: number, lfoCents: num
       loopDurationDriftAmount: 0,
       playbackRate,
       detune: envCents,
-      startPoint: 0,
+      trimStart: 0,
       masterGain: 1,
     },
   });

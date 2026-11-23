@@ -123,6 +123,8 @@ export class SamplePlayer {
 
   #masterOut: GainNode;
 
+  #trimStart = 0;
+  #trimEnd = 0;
   #loopStart = 0;
   #loopEnd = 0;
   #gainLFO: LFO | null = null;
@@ -250,7 +252,7 @@ export class SamplePlayer {
         }
 
         this.#assertNotDisposed();
-        this.#resetLoopPoints();
+        this.#resetLoopRange();
 
         this.#initialized = true;
       } catch (error) {
@@ -475,8 +477,8 @@ export class SamplePlayer {
     this.#sendUpstreamMessage('voice-pool:initialized', { voiceCount: this.#voices.length });
   }
 
-  // TODO: Check whether this is still needed after moving loop points to processor
-  #resetLoopPoints() {
+  // TODO: Check whether this is still needed after moving loop range to processor
+  #resetLoopRange() {
     this.#loopStart = 0;
     this.#loopEnd = this.#bufferDuration;
     this.#setParams(
@@ -630,8 +632,8 @@ export class SamplePlayer {
       this.#pitchPeriodsSent = false;
       this.#sendPitchPeriods();
 
-      this.#resetLoopPoints();
-      // Trim points are seconds: one left from the previous sample (or set while
+      this.#resetLoopRange();
+      // Trim edges are seconds: one left from the previous sample (or set while
       // none was loaded) would cut the new one short.
       this.setTrimRange(0, this.#bufferDuration);
 
@@ -646,15 +648,15 @@ export class SamplePlayer {
   }
 
   /**
-   * Replace the loaded sample with the region between its start and end points,
+   * Replace the loaded sample with the region between its trim edges,
    * reloading it without re-running preprocessing.
    *
-   * Points may be in either order. Seconds are clamped to the buffer. Returns null if there is no sample
+   * Edges may be in either order. Seconds are clamped to the buffer. Returns null if there is no sample
    * loaded, the bounds aren't finite, or the region is empty.
    */
   async cropSample(
-    startSeconds = this.getStartPoint(),
-    endSeconds = this.getEndPoint(),
+    startSeconds = this.trimStart,
+    endSeconds = this.trimEnd,
     fadeMs: FadeMs = { in: 'default', out: 'default' },
   ): Promise<AudioBuffer | null> {
     this.#assertNotDisposed();
@@ -918,19 +920,37 @@ export class SamplePlayer {
     return this;
   }
 
-  setSampleStartPoint(seconds: number): this {
-    this.#setParam('startPoint', seconds);
+  setTrimStart(seconds: number): this {
+    return this.#setTrimEdge('start', seconds);
+  }
+
+  setTrimEnd(seconds: number): this {
+    return this.#setTrimEdge('end', seconds);
+  }
+
+  #setTrimEdge(trimEdge: 'start' | 'end', seconds: number): this {
+    seconds = clamp(seconds, 0, this.#bufferDuration);
+    if (trimEdge === 'start') {
+      if (seconds === this.trimStart) return this;
+      this.#setParam('trimStart', seconds);
+      this.#trimStart = seconds;
+    } else {
+      if (seconds === this.trimEnd) return this;
+      this.#setParam('trimEnd', seconds);
+      this.#trimEnd = seconds;
+    }
     return this;
   }
 
-  setSampleEndPoint(seconds: number): this {
-    this.#setParam('endPoint', seconds);
-    return this;
-  }
-
-  /** Set both trim points at once so both edges land at one event time. */
+  /** Set both trim edges at once so both land at one event time. */
   setTrimRange(startSeconds: number, endSeconds: number): this {
-    this.#setParams({ startPoint: startSeconds, endPoint: endSeconds });
+    const trimStart = clamp(startSeconds, 0, this.#bufferDuration);
+    const trimEnd = clamp(endSeconds, 0, this.#bufferDuration);
+    if (trimStart === this.trimStart && trimEnd === this.trimEnd) return this;
+
+    this.#setParams({ trimStart, trimEnd });
+    this.#trimStart = trimStart;
+    this.#trimEnd = trimEnd;
     return this;
   }
 
@@ -1077,7 +1097,7 @@ export class SamplePlayer {
 
   /**
    * Ping-pong loops turn around at both loop edges instead of jumping back, so
-   * loop point order no longer matters. Without it, loop points set in reverse
+   * loop edge order no longer matters. Without it, loop edges set in reverse
    * order (start after end) make a backward loop: the voice plays through the
    * loop once, then cycles it backward. A short pitched loop played ping-pong
    * sounds an octave lower, since one cycle covers the loop twice.
@@ -1089,7 +1109,7 @@ export class SamplePlayer {
 
   /**
    * While looping is on, notes start at the loop instead of the trim start:
-   * at the lower loop point, or the higher one when playing in reverse. Trim
+   * at the lower loop edge, or the higher one when playing in reverse. Trim
    * still bounds playback. With looping off, notes start at trim as usual.
    */
   setStartFromLoop(enabled: boolean): this {
@@ -1138,15 +1158,15 @@ export class SamplePlayer {
   }
 
   setLoopStart = (seconds: number) => {
-    return this.#setLoopPoint('start', seconds, this.loopEnd);
+    return this.#setLoopEdge('start', seconds, this.loopEnd);
   };
 
   setLoopEnd = (seconds: number) => {
-    return this.#setLoopPoint('end', this.loopStart, seconds);
+    return this.#setLoopEdge('end', this.loopStart, seconds);
   };
 
   setLoopDuration = (seconds: number) =>
-    this.#setLoopPoint('end', this.loopStart, this.loopStart + seconds);
+    this.#setLoopEdge('end', this.loopStart, this.loopStart + seconds);
 
   // Keytrack loop length to the played note (0 = fixed samples, 1 = constant loop time)
   setKeytrackLoopAmount(amount: number) {
@@ -1158,18 +1178,18 @@ export class SamplePlayer {
 
   getKeytrackLoopAmount = () => this.#keytrackLoopAmount;
 
-  #setLoopPoint(loopPoint: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
+  #setLoopEdge(loopEdge: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.
     // The processor resolves ordering, pitch quantization, zero-crossing snapping
     // and trim containment.
     const seconds = clamp(
-      loopPoint === 'start' ? loopStartSeconds : loopEndSeconds,
+      loopEdge === 'start' ? loopStartSeconds : loopEndSeconds,
       0,
       this.#bufferDuration,
     );
     const timestamp = this.context.currentTime;
 
-    if (loopPoint === 'start') {
+    if (loopEdge === 'start') {
       if (seconds === this.loopStart) return this;
       this.#setParam('loopStart', seconds, timestamp);
       this.#loopStart = seconds;
@@ -1179,15 +1199,10 @@ export class SamplePlayer {
       this.#loopEnd = seconds;
     }
 
-    this.#sendUpstreamMessage('loop-points:updated', {
-      loopStart: this.loopStart,
-      loopEnd: this.loopEnd,
-    });
-
     return this;
   }
 
-  /** Set both loop points at once: one voice update, one loop-points:updated. */
+  /** Set both loop edges at once: one voice update. */
   setLoopRange(loopStartSeconds: number, loopEndSeconds: number) {
     const loopStart = clamp(loopStartSeconds, 0, this.#bufferDuration);
     const loopEnd = clamp(loopEndSeconds, 0, this.#bufferDuration);
@@ -1198,15 +1213,10 @@ export class SamplePlayer {
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
 
-    this.#sendUpstreamMessage('loop-points:updated', {
-      loopStart: this.loopStart,
-      loopEnd: this.loopEnd,
-    });
-
     return this;
   }
 
-  scrollLoopPoints(loopStart: number) {
+  scrollLoopPosition(loopStart: number) {
     const loopDuration = this.loopEnd - this.loopStart;
     loopStart = clamp(
       loopStart,
@@ -1230,15 +1240,6 @@ export class SamplePlayer {
   }
 
   /** PARAM GETTERS  */
-
-  // TODO: Consider keeping these in fields or MacroParams, symmetrical with the loop start/end points
-  getStartPoint(): number {
-    return this.#worklet?.parameters.get('startPoint')?.value ?? 0;
-  }
-
-  getEndPoint(): number {
-    return this.#worklet?.parameters.get('endPoint')?.value ?? this.sampleDuration;
-  }
 
   getLoopLengthGlide(): number {
     return this.#loopLengthGlide;
@@ -1590,6 +1591,14 @@ export class SamplePlayer {
   /** Modulates voice detune; depth is in cents. */
   setPitchLFODepth(cents: number): void {
     this.#pitchLFO?.setDepth(cents);
+  }
+
+  get trimStart(): number {
+    return this.#trimStart;
+  }
+
+  get trimEnd(): number {
+    return this.#trimEnd;
   }
 
   get loopStart(): number {

@@ -156,7 +156,7 @@
           durationSeconds: buffer.duration,
         });
         const now = ctx.currentTime;
-        param('endPoint').setValueAtTime(buffer.duration, now);
+        param('trimEnd').setValueAtTime(buffer.duration, now);
         param('loopEnd').setValueAtTime(buffer.duration, now);
         $('status').textContent = `Loaded ${buffer.duration.toFixed(2)} s`;
       }

@@ -13,7 +13,7 @@ it('applies a loop-end step within a real render quantum', async () => {
       // can't break this test. Drift is random.
       loopDurationDriftAmount: 0,
       playbackRate: 1,
-      startPoint: 0,
+      trimStart: 0,
       masterGain: 1,
     },
   });

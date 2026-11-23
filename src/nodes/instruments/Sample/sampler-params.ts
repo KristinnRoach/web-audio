@@ -278,7 +278,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 0,
     step: 0.001,
     format: secondsOrMilliseconds,
-    apply: (p, v) => p.setSampleStartPoint(v * p.sampleDuration),
+    apply: (p, v) => p.setTrimStart(v * p.sampleDuration),
   },
   trimEnd: {
     label: 'End',
@@ -287,7 +287,7 @@ export const samplerParams = defineSamplerParams({
     defaultValue: 1,
     step: 0.001,
     format: secondsOrMilliseconds,
-    apply: (p, v) => p.setSampleEndPoint(v * p.sampleDuration),
+    apply: (p, v) => p.setTrimEnd(v * p.sampleDuration),
   },
   loopStart: {
     label: 'Loop Start',

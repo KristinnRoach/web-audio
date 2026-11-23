@@ -21,8 +21,8 @@ function makeParameters(overrides: Record<string, number>): Parameters {
     detune: 0,
     loopStart: 0,
     loopEnd: 9999,
-    startPoint: 0,
-    endPoint: 9999,
+    trimStart: 0,
+    trimEnd: 9999,
     playbackPosition: 0,
     loopDurationDriftAmount: 0,
     maxLoopCount: 999_999,
@@ -75,8 +75,8 @@ describe('loop period', () => {
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
     const parameters = makeParameters({
-      startPoint: loopStart,
-      endPoint: loopEnd,
+      trimStart: loopStart,
+      trimEnd: loopEnd,
       loopStart,
       loopEnd,
       playbackRate: rate,

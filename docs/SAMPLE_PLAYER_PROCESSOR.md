@@ -8,7 +8,7 @@ The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/
 
 - `processorOptions: { voiceCount }`, `numberOfInputs: 0`, `numberOfOutputs: voiceCount * 2`.
 - Output `2i`: voice `i`'s stereo audio. Output `2i + 1`: voice `i`'s filter envelope in cents (mono), connected to that voice's `lpf.detune`; silent when the envelope is off.
-- AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `startPoint`, `endPoint`, `loopDurationDriftAmount`, `maxLoopCount`) belong to the node and are shared by every voice. `SamplePlayer` sets them on its worklet: `startPoint`, `endPoint`, `loopStart`, `loopEnd` (both at one event time when set together) and `loopDurationDriftAmount`; the pitch LFO drives `detune`.
+- AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `trimStart`, `trimEnd`, `loopDurationDriftAmount`, `maxLoopCount`) belong to the node and are shared by every voice. `SamplePlayer` sets them on its worklet: `trimStart`, `trimEnd`, `loopStart`, `loopEnd` (both at one event time when set together) and `loopDurationDriftAmount`; the pitch LFO drives `detune`.
 
 ## The `voice` tag
 
@@ -59,7 +59,7 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 | `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The player emits `voice:stopped`.              |
 | `loop:enabled`    | `enabled`                                                                                                 | echo of `voice:setLoopEnabled`, once per voice; ignored (the player emits its own).            |
 | `loop:range`      | `loopStart`, `loopEnd`, `triggerId`; playing: `loopMode`, `isInPitchLoop`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.           |
-| `trim:range`      | `startPoint`, `endPoint`, `inverted`, `triggerId`                                                         | throttled.                                                                                     |
+| `trim:range`      | `trimStart`, `trimEnd`, `inverted`, `triggerId`                                                           | throttled.                                                                                     |
 | `voice:position`  | `position` (0..1), `triggerId`                                                                            | ~60 Hz, only while position tracking is on.                                                    |
 
 ## Pitch
