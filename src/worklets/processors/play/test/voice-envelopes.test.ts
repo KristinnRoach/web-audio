@@ -96,7 +96,7 @@ it('drives the engine output and ends the note when the release tail does', () =
   engine.setEnvelope('gain', { shape: adsr('sustain') });
   engine.start(1, 0);
 
-  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+  const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
   const output = new Float32Array(128);
   engine.render([output], parameters, 0, 0);
   expect(output[64]).toBeGreaterThan(0);
@@ -119,7 +119,7 @@ it.each([0, 0.03, 0.064])(
 
     engine.release(releaseTime);
     const output = new Float32Array(128);
-    const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+    const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
     // The processor renders only while canRender is true.
     for (let block = 0; block < 2; block++) {
       if (engine.canRender) engine.render([output], parameters, block * 128, (block * 128) / SR);
@@ -145,13 +145,13 @@ it('plays a pending note and its tail when release is scheduled after its start'
 
   expect(engine.isPlaying).toBe(true);
   const output = new Float32Array(128);
-  engine.render([output], makeParameters({ endPoint: 1, loopEnd: 1 }), 0, 0);
+  engine.render([output], makeParameters({ trimEnd: 1, loopEnd: 1 }), 0, 0);
 
   expect(output.slice(0, 64).every((sample) => sample === 0)).toBe(true);
   expect(output[85]).toBeGreaterThan(0);
   expect(output[95]).toBeGreaterThan(0);
   for (let block = 1; block < 4 && engine.canRender; block++)
-    engine.render([output.fill(0)], makeParameters({ endPoint: 1, loopEnd: 1 }), block * 128, 0);
+    engine.render([output.fill(0)], makeParameters({ trimEnd: 1, loopEnd: 1 }), block * 128, 0);
   expect(engine.isPlaying).toBe(false);
   expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
     [{ type: 'voice:ended', triggerId: 7 }],
@@ -172,7 +172,7 @@ it.each(['sustain', 'loop'] as const)(
     for (let frame = 128; frame < 1024 && engine.canRender; frame += 128)
       engine.render(
         [new Float32Array(128)],
-        makeParameters({ endPoint: 1, loopEnd: 0.05 }),
+        makeParameters({ trimEnd: 1, loopEnd: 0.05 }),
         frame,
         frame / SR,
       );
@@ -188,7 +188,7 @@ it('starts gain from the beginning when first enabled during a note, preserving 
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.loopEnabled = true;
-  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+  const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
   const render = (frame: number, length = 128) => {
     const output = new Float32Array(length);
     engine.render([output], parameters, frame, frame / SR);
@@ -218,7 +218,7 @@ it('starts gain from the beginning when first enabled during a note, preserving 
 it('starts any envelope first enabled during a note', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  const parameters = makeParameters({ endPoint: 1 });
+  const parameters = makeParameters({ trimEnd: 1 });
   engine.start(1, 0);
   engine.render([new Float32Array(128)], parameters, 0, 0);
 
@@ -234,7 +234,7 @@ it('keeps a scheduled stop when gain is first enabled after note-off', () => {
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.loopEnabled = true;
   engine.start(1, 0);
-  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+  const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
   engine.render([new Float32Array(128)], parameters, 0, 0);
   engine.release(0.2);
   engine.setEnvelope('gain', { shape: adsr('sustain') });
@@ -321,7 +321,7 @@ it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)
 
     // A 0.25 s loop: the full-buffer timeline plays 4x faster, once per wrap.
     const parameters = makeParameters({
-      endPoint: 1,
+      trimEnd: 1,
       loopEnd: 0.25,
       detune: source === 'detune param' ? 1200 : 0,
     });
@@ -363,7 +363,7 @@ it('smooths a vertical segment instead of stepping in one sample', () => {
   engine.start(1, 0);
 
   const output = new Float32Array(256);
-  engine.render([output], makeParameters({ endPoint: 1 }), 0, 0);
+  engine.render([output], makeParameters({ trimEnd: 1 }), 0, 0);
   // After the start fade, unsmoothed the jump is 0.5 * 0.8 = 0.4 in one sample.
   let maxStep = 0;
   for (let i = 32; i < output.length; i++) {
@@ -389,7 +389,7 @@ it('a detune envelope bends the playback rate the loop and read step use', () =>
   });
   engine.start(1, 0);
 
-  engine.render([new Float32Array(128)], makeParameters({ endPoint: 1 }), 0, 0);
+  engine.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
   expect(engine.playbackPosition).toBeCloseTo(256, 0);
 });
 
@@ -411,7 +411,7 @@ it('a pan envelope adds to the pan param, clamped to hard right', () => {
 
   const left = new Float32Array(128);
   const right = new Float32Array(128);
-  engine.render([left, right], makeParameters({ pan: 0.5, endPoint: 1 }), 0, 0);
+  engine.render([left, right], makeParameters({ pan: 0.5, trimEnd: 1 }), 0, 0);
   expect(right[64]).toBeGreaterThan(0);
   expect(left[64]).toBe(0);
 });
@@ -419,7 +419,7 @@ it('a pan envelope adds to the pan param, clamped to hard right', () => {
 it('a filter envelope renders cents to the control output and leaves the audio alone', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  const parameters = makeParameters({ endPoint: 1 });
+  const parameters = makeParameters({ trimEnd: 1 });
   const render = () => {
     const audio = new Float32Array(128);
     const filter = new Float32Array(128);
@@ -443,7 +443,7 @@ it('takes rate and velocity from voice:start, so the first note is synced and sc
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
   // The playbackRate param is a multiplier now; a stale 1 must not leak into the note.
-  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+  const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
   engine.start(1, 0, { playbackRate: 2, velocity: 127 });
   engine.render([new Float32Array(128)], parameters, 0, 0);
@@ -465,7 +465,7 @@ it('renders queued retunes in timestamp order, keeping same-frame arrival order 
   engine.setNoteRate(0.01, 2);
   engine.setNoteRate(0.02, 4);
   engine.setNoteRate(0.021, 8, 0.01);
-  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+  const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
   engine.render([new Float32Array(10)], parameters, 0, 0);
   expect(engine.playbackPosition).toBeCloseTo(10);
@@ -483,7 +483,7 @@ it('uses a due retune target for subsequent playback-synced envelope segments', 
   engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
   engine.start(1, 0);
   engine.setNoteRate(0.005, 2, 0.05);
-  const parameters = makeParameters({ endPoint: 1 });
+  const parameters = makeParameters({ trimEnd: 1 });
   engine.render([new Float32Array(5)], parameters, 0, 0);
   expect(engine.envelopes.gain.envelope.timeScale).toBe(1);
   engine.render([new Float32Array(5)], parameters, 5, 0.005);
@@ -499,7 +499,7 @@ it('discards the previous note’s queued retunes when a new note starts', () =>
   engine.start(1, 0);
   engine.setNoteRate(0.01, 4);
   engine.start(2, 0, { playbackRate: 2 });
-  engine.render([new Float32Array(128)], makeParameters({ endPoint: 1 }), 0, 0);
+  engine.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
   expect(engine.noteRate).toBe(2);
   expect(engine.playbackPosition).toBeCloseTo(256);
 });
@@ -507,7 +507,7 @@ it('discards the previous note’s queued retunes when a new note starts', () =>
 it('glides the note rate from glideFrom and retunes on voice:setRate', () => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post: () => {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  const parameters = makeParameters({ endPoint: 1, loopEnd: 1 });
+  const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
   engine.start(1, 0, { playbackRate: 2, glideFrom: 1, glideSeconds: 0.05 });
   engine.render([new Float32Array(128)], parameters, 0, 0);

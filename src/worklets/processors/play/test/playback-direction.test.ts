@@ -49,7 +49,7 @@ function trace(processor: DirectionProcessor, parameters: unknown, frames: numbe
 describe('playback direction', () => {
   setupProcessorGlobals();
 
-  const trim = { startPoint: toSeconds(100), endPoint: toSeconds(200) };
+  const trim = { trimStart: toSeconds(100), trimEnd: toSeconds(200) };
 
   // Trim and loop lengths stay above the ~92-sample minimum range.
   it('reverse reads exactly the positions forward reads, in reverse order', async () => {
@@ -62,7 +62,7 @@ describe('playback direction', () => {
   });
 
   it('reverses the same positions when a zero-length trim grows to a fractional length', async () => {
-    const params = makeParameters({ startPoint: 0, endPoint: 0 });
+    const params = makeParameters({ trimStart: 0, trimEnd: 0 });
     const forward = trace((await startRamp('forward')).processor, params, 500);
     const reverse = trace((await startRamp('reverse')).processor, params, 500);
 
@@ -111,7 +111,7 @@ describe('playback direction', () => {
 
   it('reverse from trim start 0 ends instead of restarting at the trim end', async () => {
     const { processor } = await startRamp('reverse');
-    const params = makeParameters({ startPoint: 0, endPoint: toSeconds(100) });
+    const params = makeParameters({ trimStart: 0, trimEnd: toSeconds(100) });
     const positions = trace(processor, params, 200);
 
     expect(positions.slice(-3)).toEqual([2, 1, 0]);
@@ -120,7 +120,7 @@ describe('playback direction', () => {
 
   it('a reverse loop cycles through the same positions as a forward loop', async () => {
     // Multiples of 375 samples (1/128 s) survive the float32 seconds round trip exactly.
-    const loop = { loopStart: toSeconds(375), loopEnd: toSeconds(750), endPoint: toSeconds(750) };
+    const loop = { loopStart: toSeconds(375), loopEnd: toSeconds(750), trimEnd: toSeconds(750) };
     const forward = trace((await startRamp('forward', true)).processor, makeParameters(loop), 1500);
     const reverse = trace((await startRamp('reverse', true)).processor, makeParameters(loop), 1500);
 
@@ -137,7 +137,7 @@ describe('loop types', () => {
 
   const LO = toSeconds(375);
   const HI = toSeconds(750);
-  const trim = { startPoint: 0, endPoint: toSeconds(1000) };
+  const trim = { trimStart: 0, trimEnd: toSeconds(1000) };
   const backward = makeParameters({ ...trim, loopStart: HI, loopEnd: LO });
   const forwardLoop = makeParameters({ ...trim, loopStart: LO, loopEnd: HI });
   const indexOfRun = (values: number[], run: number[]) =>
@@ -215,7 +215,7 @@ describe('start from loop', () => {
   setupProcessorGlobals();
 
   // Multiples of 375 samples are exact in float32 seconds.
-  const trim = { startPoint: toSeconds(375), endPoint: toSeconds(1500) };
+  const trim = { trimStart: toSeconds(375), trimEnd: toSeconds(1500) };
   const loop = { ...trim, loopStart: toSeconds(750), loopEnd: toSeconds(1125) };
 
   async function firstPositions(

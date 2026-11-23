@@ -919,18 +919,18 @@ export class SamplePlayer {
   }
 
   setTrimStart(seconds: number): this {
-    this.#setParam('startPoint', seconds);
+    this.#setParam('trimStart', seconds);
     return this;
   }
 
   setTrimEnd(seconds: number): this {
-    this.#setParam('endPoint', seconds);
+    this.#setParam('trimEnd', seconds);
     return this;
   }
 
   /** Set both trim points at once so both edges land at one event time. */
   setTrimRange(startSeconds: number, endSeconds: number): this {
-    this.#setParams({ startPoint: startSeconds, endPoint: endSeconds });
+    this.#setParams({ trimStart: startSeconds, trimEnd: endSeconds });
     return this;
   }
 
@@ -1584,11 +1584,11 @@ export class SamplePlayer {
   }
 
   get trimStart(): number {
-    return this.#worklet?.parameters.get('startPoint')?.value ?? 0;
+    return this.#worklet?.parameters.get('trimStart')?.value ?? 0;
   }
 
   get trimEnd(): number {
-    return this.#worklet?.parameters.get('endPoint')?.value ?? this.sampleDuration;
+    return this.#worklet?.parameters.get('trimEnd')?.value ?? this.sampleDuration;
   }
 
   get loopStart(): number {

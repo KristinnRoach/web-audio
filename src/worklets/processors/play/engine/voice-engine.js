@@ -146,8 +146,8 @@ export class VoiceEngine {
 
     // Reused per block and per sample, so rendering doesn't allocate.
     this.positionParams = {
-      startPointSamples: 0,
-      endPointSamples: 0,
+      trimStartSamples: 0,
+      trimEndSamples: 0,
       loopStartSamples: 0,
       loopEndSamples: 0,
     };
@@ -575,8 +575,8 @@ export class VoiceEngine {
    */
   #extractPositionParams(parameters) {
     const samples = this.positionParams;
-    samples.startPointSamples = Math.floor(parameters.startPoint[0] * this.sampleRate);
-    samples.endPointSamples = Math.floor(parameters.endPoint[0] * this.sampleRate);
+    samples.trimStartSamples = Math.floor(parameters.trimStart[0] * this.sampleRate);
+    samples.trimEndSamples = Math.floor(parameters.trimEnd[0] * this.sampleRate);
     // Keep loop points fractional: the loop length sets the pitch of an audio-rate
     // loop, and flooring rounded it to whole source samples (~5 cents at a
     // C5-length loop). Playback position and interpolation are already
@@ -593,7 +593,7 @@ export class VoiceEngine {
    */
   #calculatePlaybackRange(params) {
     const bufferLength = this.buffer?.[0]?.length || 0;
-    const { startPointSamples: a, endPointSamples: b } = params;
+    const { trimStartSamples: a, trimEndSamples: b } = params;
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
 
@@ -890,8 +890,8 @@ export class VoiceEngine {
     const inputs = this.idleLoopInputs;
     inputs[0] = parameters.loopStart[0];
     inputs[1] = parameters.loopEnd[0];
-    inputs[2] = parameters.startPoint[0];
-    inputs[3] = parameters.endPoint[0];
+    inputs[2] = parameters.trimStart[0];
+    inputs[3] = parameters.trimEnd[0];
     inputs[4] = this.buffer;
     inputs[5] = this.zeroCrossings;
     inputs[6] = this.loopQuantizePeriods;

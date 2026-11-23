@@ -18,8 +18,8 @@ it('renders from injected time, randomness and message sink', () => {
       detune: 0,
       loopStart: 0,
       loopEnd: 1024 / SR,
-      startPoint: 0,
-      endPoint: 1,
+      trimStart: 0,
+      trimEnd: 1,
       loopDurationDriftAmount: 0.01,
       maxLoopCount: 999_999,
     }).map(([name, value]) => [name, new Float32Array([value])]),
@@ -83,7 +83,7 @@ it.each(['linear', 'hermite', 'sinc'] as const)(
     const output = new Float32Array(32);
     engine.render(
       [output],
-      makeParameters({ startPoint: 100.25 / SR, endPoint: 400 / SR, playbackRate: 0.5 }),
+      makeParameters({ trimStart: 100.25 / SR, trimEnd: 400 / SR, playbackRate: 0.5 }),
       0,
       0,
     );
@@ -100,7 +100,7 @@ it('keeps an outgoing head inside its saved trim when the current trim moves', (
   engine.start(1, 0);
   engine.render(
     [new Float32Array(1)],
-    makeParameters({ startPoint: 100 / SR, endPoint: 400 / SR }),
+    makeParameters({ trimStart: 100 / SR, trimEnd: 400 / SR }),
     0,
     0,
   );
@@ -108,7 +108,7 @@ it('keeps an outgoing head inside its saved trim when the current trim moves', (
   // old endpoint (0.5), not the excluded sample (1) or the new endpoint (0).
   engine.loopCrossfade.start(99, -1, 32, false, 400, 100);
   const output = new Float32Array(1);
-  engine.render([output], makeParameters({ startPoint: 200 / SR, endPoint: 500 / SR }), 1, 1 / SR);
+  engine.render([output], makeParameters({ trimStart: 200 / SR, trimEnd: 500 / SR }), 1, 1 / SR);
   // Second output frame has opening gain 1/16.
   expect(output[0] * 16).toBeCloseTo(0.5, 6);
 });

@@ -30,11 +30,7 @@ function samplesToSeconds(samples: number) {
   return samples / TEST_SAMPLE_RATE;
 }
 
-function makeParameters(
-  loopStartSamples: number,
-  loopEndSamples: number,
-  endPoint = 1,
-): Parameters {
+function makeParameters(loopStartSamples: number, loopEndSamples: number, trimEnd = 1): Parameters {
   return {
     masterGain: new Float32Array([1]),
     pan: new Float32Array([0]),
@@ -42,8 +38,8 @@ function makeParameters(
     detune: new Float32Array([0]),
     loopStart: new Float32Array([samplesToSeconds(loopStartSamples)]),
     loopEnd: new Float32Array([samplesToSeconds(loopEndSamples)]),
-    startPoint: new Float32Array([0]),
-    endPoint: new Float32Array([endPoint]),
+    trimStart: new Float32Array([0]),
+    trimEnd: new Float32Array([trimEnd]),
     playbackPosition: new Float32Array([0]),
     loopDurationDriftAmount: new Float32Array([0]),
     maxLoopCount: new Float32Array([999_999]),
@@ -117,8 +113,8 @@ describe('loop wrap with an overshoot larger than the loop', () => {
 
     // End the playback range at the loop end so reverse starts inside the loop
     // rather than descending the whole buffer to reach it.
-    const endPoint = WIDE_LOOP_SAMPLES / TEST_SAMPLE_RATE;
-    const wide = makeParameters(0, WIDE_LOOP_SAMPLES, endPoint);
+    const trimEnd = WIDE_LOOP_SAMPLES / TEST_SAMPLE_RATE;
+    const wide = makeParameters(0, WIDE_LOOP_SAMPLES, trimEnd);
     render(processor, wide, WIDE_LOOP_SAMPLES - 100);
     expect(processor.engine.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES);
 
@@ -126,7 +122,7 @@ describe('loop wrap with an overshoot larger than the loop', () => {
     const narrow = makeParameters(
       WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES,
       WIDE_LOOP_SAMPLES,
-      endPoint,
+      trimEnd,
     );
     render(processor, narrow, 1);
 

@@ -58,8 +58,8 @@ describe('loop position glide timing', () => {
   });
 
   it.each([
-    ['start', { startPoint: 0.05 }, 0],
-    ['end', { endPoint: 0.05 }, 4800],
+    ['start', { trimStart: 0.05 }, 0],
+    ['end', { trimEnd: 0.05 }, 4800],
   ])('keeps the loop length when trim %s moves past the glide', async (_, trim, settleFrames) => {
     const { process } = await setup(0.02);
     process(0.1, 0.104, settleFrames || 1);
@@ -71,7 +71,7 @@ describe('loop position glide timing', () => {
     const { process, isMoveFading } = await setup(0.02);
     process(0.1, 0.104);
     expect(isMoveFading()).toBe(false);
-    process(0.1, 0.104, 1, { startPoint: 0.05 });
+    process(0.1, 0.104, 1, { trimStart: 0.05 });
     expect(isMoveFading()).toBe(true);
   });
 });
@@ -105,7 +105,7 @@ describe('trim end moving under an outgoing crossfade head', () => {
     const trimEnd = position + offset;
     // Marks where a head would stick if it read up to the new trim end
     if (poke) data.fill(0, Math.floor(trimEnd) - 3, Math.ceil(trimEnd) + 2);
-    return block({ endPoint: trimEnd / TEST_SAMPLE_RATE });
+    return block({ trimEnd: trimEnd / TEST_SAMPLE_RATE });
   }
 
   it.each([

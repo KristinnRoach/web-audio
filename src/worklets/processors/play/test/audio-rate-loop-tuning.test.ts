@@ -42,8 +42,8 @@ function makeParameters(
     detune: new Float32Array([0]),
     loopStart: new Float32Array([0]),
     loopEnd: new Float32Array([loopLengthSamples / TEST_SAMPLE_RATE]),
-    startPoint: new Float32Array([0]),
-    endPoint: new Float32Array([1]),
+    trimStart: new Float32Array([0]),
+    trimEnd: new Float32Array([1]),
     loopDurationDriftAmount: new Float32Array([driftAmount]),
     maxLoopCount: new Float32Array([999_999]),
   };

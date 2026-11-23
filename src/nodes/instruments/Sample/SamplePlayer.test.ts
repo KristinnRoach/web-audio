@@ -983,8 +983,8 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
 
   it('schedules both trim points at one event time even if the audio clock advances', async () => {
     const { player, worklet } = await setup();
-    const start = vi.spyOn(worklet.parameters.get('startPoint')!, 'setValueAtTime');
-    const end = vi.spyOn(worklet.parameters.get('endPoint')!, 'setValueAtTime');
+    const start = vi.spyOn(worklet.parameters.get('trimStart')!, 'setValueAtTime');
+    const end = vi.spyOn(worklet.parameters.get('trimEnd')!, 'setValueAtTime');
     vi.spyOn(player, 'now', 'get')
       .mockReturnValueOnce(2)
       .mockReturnValue(2 + 128 / 48000);
@@ -997,8 +997,8 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
 
   it('sets individual trim edges via setTrimStart and setTrimEnd', async () => {
     const { player, worklet } = await setup();
-    const start = vi.spyOn(worklet.parameters.get('startPoint')!, 'setValueAtTime');
-    const end = vi.spyOn(worklet.parameters.get('endPoint')!, 'setValueAtTime');
+    const start = vi.spyOn(worklet.parameters.get('trimStart')!, 'setValueAtTime');
+    const end = vi.spyOn(worklet.parameters.get('trimEnd')!, 'setValueAtTime');
 
     player.setTrimStart(0.1);
     expect(start).toHaveBeenCalledWith(0.1, expect.any(Number));
@@ -1009,8 +1009,8 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
 
   it('rejects a non-finite trim point without touching either param', async () => {
     const { player, worklet } = await setup();
-    const start = worklet.parameters.get('startPoint')!;
-    const end = worklet.parameters.get('endPoint')!;
+    const start = worklet.parameters.get('trimStart')!;
+    const end = worklet.parameters.get('trimEnd')!;
     const calls = [
       vi.spyOn(start, 'cancelScheduledValues'),
       vi.spyOn(start, 'setValueAtTime'),

@@ -25,7 +25,7 @@ async function setup() {
     processor.process(
       [],
       [[output]],
-      makeParameters({ startPoint: 0.125, loopStart: start, loopEnd: start + length }),
+      makeParameters({ trimStart: 0.125, loopStart: start, loopEnd: start + length }),
     );
     return output[0];
   };

@@ -70,7 +70,7 @@ describe('loop jump crossfade', () => {
     processor.process(
       [],
       [[output]],
-      makeParameters({ endPoint: 2000 / 48_000, loopEnd: 2000 / 48_000 }),
+      makeParameters({ trimEnd: 2000 / 48_000, loopEnd: 2000 / 48_000 }),
     );
 
     // A constant source stays constant through the crossfade

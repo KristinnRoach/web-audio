@@ -33,7 +33,7 @@ describe('idle loop range', () => {
     return processor;
   }
 
-  const parameters = makeParameters({ loopStart: 0, loopEnd: 0.5, endPoint: 1 });
+  const parameters = makeParameters({ loopStart: 0, loopEnd: 0.5, trimEnd: 1 });
 
   it('reports the processed loop once per change', async () => {
     const processor = await idleProcessor();
@@ -59,11 +59,11 @@ describe('idle loop range', () => {
   it('throttles reports and sends the latest change once the interval passes', async () => {
     const processor = await idleProcessor();
     render(processor, parameters, 1);
-    render(processor, makeParameters({ loopStart: 0, loopEnd: 0.4, endPoint: 1 }), 1);
+    render(processor, makeParameters({ loopStart: 0, loopEnd: 0.4, trimEnd: 1 }), 1);
     expect(idleReports(processor)).toHaveLength(1);
 
     vi.stubGlobal('currentTime', 1);
-    render(processor, makeParameters({ loopStart: 0, loopEnd: 0.4, endPoint: 1 }), 1);
+    render(processor, makeParameters({ loopStart: 0, loopEnd: 0.4, trimEnd: 1 }), 1);
     const reports = idleReports(processor);
     expect(reports).toHaveLength(2);
     expect(reports[1].loopEnd).toBeLessThan(reports[0].loopEnd);
