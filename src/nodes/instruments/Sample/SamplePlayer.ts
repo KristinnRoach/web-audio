@@ -983,7 +983,7 @@ export class SamplePlayer {
     }
   }
 
-  /** Posts `voice:position` (0..1 of the sample, ~60 Hz) per sounding voice. Off by default. */
+  /** Posts `voice:position` (fraction of the sample, can pass 1; ~60 Hz) per sounding voice. Off by default. */
   enablePositionTracking(enabled: boolean): this {
     this.#positionTracking = enabled;
     this.#post({ type: 'voice:reportPlaybackPosition', value: enabled });
