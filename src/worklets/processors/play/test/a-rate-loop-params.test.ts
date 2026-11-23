@@ -27,11 +27,57 @@ async function makeProcessor() {
 }
 
 describe('a-rate loop points and duration glide', () => {
-  it('exposes loop points as a-rate while trim stays k-rate', () => {
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.loopStart.automationRate).toBe('a-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.loopEnd.automationRate).toBe('a-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.trimStart.automationRate).toBe('k-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.trimEnd.automationRate).toBe('k-rate');
+  it.each(['loopStart', 'loopEnd', 'trimStart', 'trimEnd'] as const)(
+    'exposes %s as a-rate',
+    (name) => {
+      expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS[name].automationRate).toBe('a-rate');
+    },
+  );
+
+  const step = (before: number, after: number) =>
+    Float32Array.from({ length: 128 }, (_, i) => (i < 64 ? before : after));
+
+  it('moves trim and a pitch loop together, without clamping to the old trim', async () => {
+    const processor = await makeProcessor();
+    const params = makeParameters({ trimEnd: 0.1, loopStart: 0.01, loopEnd: 0.014 });
+    processor.process([], [[new Float32Array(1024)]], params);
+    params.trimStart = step(0, 0.5);
+    params.trimEnd = step(0.1, 0.6);
+    params.loopStart = step(0.01, 0.51);
+    params.loopEnd = step(0.014, 0.514);
+    processor.process([], [[new Float32Array(128)]], params);
+    const { start, audioStart, audioEnd } = processor.engine.loopWindow;
+    expect(start / TEST_SAMPLE_RATE).toBeCloseTo(0.51, 6);
+    expect(audioStart / TEST_SAMPLE_RATE).toBeCloseTo(0.5, 6);
+    expect(audioEnd / TEST_SAMPLE_RATE).toBeCloseTo(0.6, 4);
+    expect(processor.engine.playbackPosition).toBeGreaterThanOrEqual(start);
+    expect(processor.engine.playbackPosition).toBeLessThan(start + 0.004 * TEST_SAMPLE_RATE + 1);
+  });
+
+  it('resolves trim with the loop once per block while the loop is long', async () => {
+    const processor = await makeProcessor();
+    const params = makeParameters({ trimEnd: 0.9, loopStart: 0.1, loopEnd: 0.8 });
+    params.trimStart = step(0, 0.2);
+    processor.process([], [[new Float32Array(128)]], params);
+    expect(processor.engine.loopWindow.audioStart).toBe(0);
+    processor.process([], [[new Float32Array(128)]], { ...params, trimStart: step(0.2, 0.2) });
+    expect(processor.engine.loopWindow.audioStart).toBe(
+      Math.floor(Math.fround(0.2) * TEST_SAMPLE_RATE),
+    );
+  });
+
+  it('starts a note scheduled on a trim step at the new trim start', async () => {
+    const processor = await makeProcessor();
+    processor.port.onmessage?.({
+      data: { type: 'voice:setLoopEnabled', value: false },
+    } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'voice:start', timestamp: 64 / TEST_SAMPLE_RATE },
+    } as MessageEvent);
+    const params = makeParameters({ trimEnd: 0.9 });
+    params.trimStart = step(0, 0.5);
+    processor.process([], [[new Float32Array(128)]], params);
+    expect(processor.engine.playbackPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
   });
 
   it.each(

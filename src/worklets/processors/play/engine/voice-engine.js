@@ -571,18 +571,20 @@ export class VoiceEngine {
   /**
    * Extract and convert all position parameters from seconds to samples
    * @param {Object} parameters - AudioWorkletProcessor parameters
+   * @param {number} sample - Frame in the block to read them at
    * @returns {Object} - Converted parameters in samples, a reused object
    */
-  #extractPositionParams(parameters) {
+  #extractPositionParams(parameters, sample = 0) {
     const samples = this.positionParams;
-    samples.trimStartSamples = Math.floor(parameters.trimStart[0] * this.sampleRate);
-    samples.trimEndSamples = Math.floor(parameters.trimEnd[0] * this.sampleRate);
+    const { trimStart, trimEnd, loopStart, loopEnd } = parameters;
+    samples.trimStartSamples = Math.floor(this.#getSafeParam(trimStart, sample) * this.sampleRate);
+    samples.trimEndSamples = Math.floor(this.#getSafeParam(trimEnd, sample) * this.sampleRate);
     // Keep loop edges fractional: the loop length sets the pitch of an audio-rate
     // loop, and flooring rounded it to whole source samples (~5 cents at a
     // C5-length loop). Playback position and interpolation are already
     // fractional; every consumer that needs an index floors locally.
-    samples.loopStartSamples = parameters.loopStart[0] * this.sampleRate;
-    samples.loopEndSamples = parameters.loopEnd[0] * this.sampleRate;
+    samples.loopStartSamples = this.#getSafeParam(loopStart, sample) * this.sampleRate;
+    samples.loopEndSamples = this.#getSafeParam(loopEnd, sample) * this.sampleRate;
     return samples;
   }
 
@@ -810,7 +812,7 @@ export class VoiceEngine {
     return window;
   }
 
-  #getSafeParam(paramArray, index, isConstant) {
+  #getSafeParam(paramArray, index, isConstant = paramArray.length === 1) {
     return isConstant ? paramArray[0] : paramArray[Math.min(index, paramArray.length - 1)];
   }
 
@@ -954,9 +956,11 @@ export class VoiceEngine {
 
     const masterGain = parameters.masterGain[0];
 
-    const positionParams = this.#extractPositionParams(parameters);
+    const positionParams = this.#extractPositionParams(parameters, startOffset);
 
     const playbackRange = this.#calculatePlaybackRange(positionParams);
+    // The trim points playbackRange was resolved from.
+    let { trimStartSamples: resolvedTrimStart, trimEndSamples: resolvedTrimEnd } = positionParams;
 
     // Direction the voice travels outside a loop: 1 forward, -1 reverse. The
     // playhead reads the same source position in either direction, so a
@@ -1058,25 +1062,18 @@ export class VoiceEngine {
       const playbackRate =
         detune === 0 ? basePlaybackRate : basePlaybackRate * 2 ** (detune / 1200);
 
-      const loopStart = this.#getSafeParam(
-        parameters.loopStart,
-        sample,
-        parameters.loopStart.length === 1,
-      );
-      const loopEnd = this.#getSafeParam(
-        parameters.loopEnd,
-        sample,
-        parameters.loopEnd.length === 1,
-      );
-      positionParams.loopStartSamples = loopStart * sampleRate;
-      positionParams.loopEndSamples = loopEnd * sampleRate;
+      this.#extractPositionParams(parameters, sample);
+      const trimChanged =
+        positionParams.trimStartSamples !== resolvedTrimStart ||
+        positionParams.trimEndSamples !== resolvedTrimEnd;
 
-      // Recalculate the range only when something moved. Short loops follow
-      // their points per sample: their length is pitch. Long loops follow them
+      // Recalculate the ranges only when something moved. Short loops follow
+      // trim and loop points per sample: their length is pitch. Long loops follow them
       // once per block, as k-rate did; per-sample zero-crossing snapping for
       // 16 voices overran the audio thread. The 2x margin keeps loops near the
       // audio-rate boundary (Float32 noise can lift them over it) per sample.
       const rangeInputsChanged =
+        trimChanged ||
         positionParams.loopStartSamples !== this.previousRequestedLoop.start ||
         positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
         playbackRate !== previousPlaybackRate;
@@ -1089,6 +1086,12 @@ export class VoiceEngine {
         this.isLoopPositionGliding ||
         driftPending
       ) {
+        // Trim and loop resolve together, so a window never mixes old trim with new points.
+        if (trimChanged) {
+          this.#calculatePlaybackRange(positionParams); // updates playbackRange in place
+          resolvedTrimStart = positionParams.trimStartSamples;
+          resolvedTrimEnd = positionParams.trimEndSamples;
+        }
         loopWindow = this.#calculateLoopWindow(
           positionParams,
           playbackRange,
@@ -1104,7 +1107,8 @@ export class VoiceEngine {
 
       // Set per sample, not in #calculateLoopWindow: direction follows a-rate points
       // even when a time window's bounds resolve once per block. Turns wait for an edge.
-      loopWindow.direction = loopStart > loopEnd ? -1 : 1;
+      loopWindow.direction =
+        positionParams.loopStartSamples > positionParams.loopEndSamples ? -1 : 1;
       // The rest of this sample plays the window the playhead follows.
       const playWindow = this.#carryPlayhead(loopWindow);
 
