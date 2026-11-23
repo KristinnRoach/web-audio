@@ -944,14 +944,14 @@ export class SamplePlayer {
     values: Partial<Record<SamplePlayerWorkletAudioParamKey, number>>,
     timestamp?: number,
   ) {
-    const params = this.#worklet?.parameters;
-    if (!params) return;
     // Validate first so a bad value can't leave a pair half-scheduled.
     for (const [name, value] of Object.entries(values)) {
       if (value !== undefined && !Number.isFinite(value)) {
         throw new RangeError(`${name} must be a finite number, got ${value}`);
       }
     }
+    const params = this.#worklet?.parameters;
+    if (!params) return;
     const now = this.now;
     const cancelAt = timestamp ?? now;
     const at = Math.max(cancelAt, now + 0.001);
@@ -1194,9 +1194,9 @@ export class SamplePlayer {
     if (loopStart === this.loopStart && loopEnd === this.loopEnd) return this;
 
     const timestamp = this.context.currentTime;
+    this.#setParams({ loopStart, loopEnd }, timestamp);
     this.#loopStart = loopStart;
     this.#loopEnd = loopEnd;
-    this.#setParams({ loopStart, loopEnd }, timestamp);
 
     this.#sendUpstreamMessage('loop-points:updated', {
       loopStart: this.loopStart,
