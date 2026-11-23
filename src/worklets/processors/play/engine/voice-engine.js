@@ -18,7 +18,6 @@ import {
   glideToward,
   isInQuantizationRange,
   loopDriftSamples,
-  longestPeriodWithin,
   quantizeLoopLength,
 } from './loop-length.js';
 
@@ -577,15 +576,36 @@ export class VoiceEngine {
   #extractPositionParams(parameters, sample = 0) {
     const samples = this.positionParams;
     const { trimStart, trimEnd, loopStart, loopEnd } = parameters;
-    samples.trimStartSamples = Math.floor(this.#getSafeParam(trimStart, sample) * this.sampleRate);
-    samples.trimEndSamples = Math.floor(this.#getSafeParam(trimEnd, sample) * this.sampleRate);
-    // Keep loop edges fractional: the loop length sets the pitch of an audio-rate
-    // loop, and flooring rounded it to whole source samples (~5 cents at a
-    // C5-length loop). Playback position and interpolation are already
-    // fractional; every consumer that needs an index floors locally.
+    // Keep edges fractional: a short range's length is its pitch, and flooring
+    // rounded it to whole source samples (~5 cents at a C5-length loop). Playback
+    // position and interpolation are already fractional; every consumer that
+    // needs an index rounds locally.
+    samples.trimStartSamples = this.#getSafeParam(trimStart, sample) * this.sampleRate;
+    samples.trimEndSamples = this.#getSafeParam(trimEnd, sample) * this.sampleRate;
     samples.loopStartSamples = this.#getSafeParam(loopStart, sample) * this.sampleRate;
     samples.loopEndSamples = this.#getSafeParam(loopEnd, sample) * this.sampleRate;
     return samples;
+  }
+
+  // Trim and loop share these rules. A range up to the pitch cutoff has a pitch: its
+  // length is quantized to the scale and kept. A longer one snaps inward to zero
+  // crossings, unless that would take it below the cutoff.
+  #rangeLength(a, b) {
+    return quantizeLoopLength(
+      Math.max(this.minRangeSamples, Math.abs(b - a)),
+      this.loopQuantizePeriods,
+    );
+  }
+
+  // Directional searches clamp to the outermost crossing, which can be outward.
+  #snapStart(start, end) {
+    const snapped = this.#findNearestZeroCrossing(start, 'right');
+    return snapped >= start && end - snapped > this.pitchPreservationThreshold ? snapped : start;
+  }
+
+  #snapEnd(start, end) {
+    const snapped = this.#findNearestZeroCrossing(end, 'left');
+    return snapped <= end && snapped - start > this.pitchPreservationThreshold ? snapped : end;
   }
 
   /**
@@ -596,26 +616,25 @@ export class VoiceEngine {
   #calculatePlaybackRange(params) {
     const bufferLength = this.buffer?.[0]?.length || 0;
     const { trimStartSamples: a, trimEndSamples: b } = params;
-    const lo = Math.min(a, b);
-    const hi = Math.max(a, b);
-
-    // Snap inward to zero crossings, then resolve like the loop edges. Directional
-    // snaps clamp to the outermost crossing, so keep them only if they stay inside.
-    const snapStart = this.#findNearestZeroCrossing(lo, 'right');
-    const snapEnd = this.#findNearestZeroCrossing(hi, 'left');
-    const inward = lo <= snapStart && snapStart < snapEnd && snapEnd <= hi;
-    const resolved = resolveRange(
-      inward ? snapStart : lo,
-      inward ? snapEnd : hi,
-      0,
-      bufferLength,
-      this.minRangeSamples,
-    );
+    let start = Math.min(a, b);
+    let end = Math.max(a, b);
+    const length = this.#rangeLength(a, b);
+    if (length <= this.pitchPreservationThreshold) {
+      start = Math.max(0, Math.min(start, bufferLength - length));
+      end = start + length;
+    }
+    const resolved = resolveRange(start, end, 0, bufferLength, this.minRangeSamples);
+    start = resolved[0];
+    end = resolved[1];
+    if (length > this.pitchPreservationThreshold) {
+      start = this.#snapStart(start, end);
+      end = this.#snapEnd(start, end);
+    }
 
     const range = this.playbackRange;
-    range.startSamples = resolved[0];
-    range.endSamples = resolved[1];
-    range.durationSamples = resolved[1] - resolved[0];
+    range.startSamples = start;
+    range.endSamples = end;
+    range.durationSamples = end - start;
     range.inverted = a > b; // start past end plays the range backward
     return range;
   }
@@ -694,21 +713,14 @@ export class VoiceEngine {
     let lpEnd = Math.max(params.loopStartSamples, params.loopEndSamples);
 
     // An audio-rate loop's length is its pitch. Shift it inside effective trim
-    // to preserve its length when possible; longer loops clamp below.
+    // to preserve its length; longer loops clamp below. Trim has priority: a loop
+    // longer than it takes trim's length, which is already quantized when short.
     // A zero-length loop (end dragged onto start) floors at minRangeSamples,
     // which quantization lifts to the shortest period when a scale is set.
-    let targetLoopLength = quantizeLoopLength(
-      Math.max(this.minRangeSamples, lpEnd - lpStart),
-      this.loopQuantizePeriods,
+    const targetLoopLength = Math.min(
+      this.#rangeLength(lpStart, lpEnd),
+      playbackRange.durationSamples,
     );
-    if (
-      targetLoopLength > playbackRange.durationSamples &&
-      playbackRange.durationSamples <= this.pitchPreservationThreshold
-    ) {
-      targetLoopLength =
-        longestPeriodWithin(playbackRange.durationSamples, this.loopQuantizePeriods) ??
-        targetLoopLength;
-    }
     const glidedLoopLength = this.#glideLoopLength(targetLoopLength);
     // Decided on the requested length. A longer loop clipped short by trim is fitted as a
     // time loop here, then typed as a pitch loop by its resolved length below.
@@ -766,17 +778,8 @@ export class VoiceEngine {
     // Re-derive the duration after keytrack before drift sizes its minimum length.
     baseDuration = calcLoopEnd - calcLoopStart;
 
-    const minZeroCrossingLength = Math.max(this.pitchPreservationThreshold, this.minRangeSamples);
-
     // Only snap time loops: a pitch loop's length is its pitch.
-    // Snaps move both ends inward, so each is kept only if the loop stays above the
-    // pitch cutoff and minimum: without an interior crossing, both could coincide.
-    if (!isPitchLoop) {
-      const snappedStart = this.#findNearestZeroCrossing(calcLoopStart, 'right');
-      if (calcLoopEnd - snappedStart > minZeroCrossingLength) {
-        calcLoopStart = snappedStart;
-      }
-    }
+    if (!isPitchLoop) calcLoopStart = this.#snapStart(calcLoopStart, calcLoopEnd);
 
     calcLoopEnd = this.#applyLoopDrift(
       calcLoopStart,
@@ -792,10 +795,7 @@ export class VoiceEngine {
     // Skip the snap when the end sits in the silent tail: zero crossings only exist
     // inside the buffer, so snapping there would erase the padding.
     if (!isPitchLoop && calcLoopEnd <= playbackRange.endSamples) {
-      const snappedEnd = this.#findNearestZeroCrossing(calcLoopEnd, 'left');
-      if (snappedEnd - calcLoopStart > minZeroCrossingLength) {
-        calcLoopEnd = snappedEnd;
-      }
+      calcLoopEnd = this.#snapEnd(calcLoopStart, calcLoopEnd);
     }
 
     // Two reused slots instead of a new object per sample: render() compares
@@ -979,8 +979,8 @@ export class VoiceEngine {
 
     // ===== Init playback position =====
 
-    // Last position on the unit-rate grid, even when minimum-length growth is fractional.
-    const lastPosition = playbackRange.startSamples + Math.ceil(playbackRange.durationSamples) - 1;
+    // Where reverse playback starts.
+    const lastPosition = playbackRange.endSamples - 1;
 
     // Both directions play the source samples [startSamples, endSamples).
     if (this.needsStartPosition) {
@@ -991,7 +991,7 @@ export class VoiceEngine {
         // Start at the requested loop edge, kept inside trim. Loop resolution is unchanged.
         const { loopStartSamples: a, loopEndSamples: b } = positionParams;
         first = Math.min(Math.max(Math.min(a, b), first), lastPosition);
-        last = Math.min(Math.max(Math.ceil(Math.max(a, b)) - 1, first), lastPosition);
+        last = Math.min(Math.max(Math.max(a, b) - 1, first), lastPosition);
       }
       this.playbackPosition = approachDirection < 0 ? last : first;
       this.timestretch.reset(this.playbackPosition);

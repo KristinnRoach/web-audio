@@ -103,38 +103,6 @@ describe('trim and loop minimum lengths', () => {
     }
   });
 
-  it.each([0.501, 0.503])(
-    'fills trim ending at %f when a quantized period cannot fit, respecting the trim minimum',
-    async (trimEnd) => {
-      const processor = await startProcessor([], [0.004]);
-      render(
-        processor,
-        makeParameters({
-          trimStart: 0.5,
-          trimEnd,
-          loopStart: 0.5005,
-          loopEnd: 0.5045,
-        }),
-        1,
-      );
-
-      const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
-      const loop = messages.find((message) => message.type === 'loop:range');
-      const trim = messages.find((message) => message.type === 'trim:range');
-      const expectedLength = Math.max(
-        (trimEnd - 0.5) * TEST_SAMPLE_RATE,
-        processor.engine.minRangeSamples,
-      );
-
-      expect(loop.loopStart).toBe(trim.trimStart);
-      expect(loop.loopEnd).toBe(trim.trimEnd);
-      // Position params arrive as float32 seconds and trim resolves to source samples.
-      expect(
-        Math.abs((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE - expectedLength),
-      ).toBeLessThan(1);
-    },
-  );
-
   // Equal trim points resolve to the minimum range.
   it.each([[0.5, 0.5]])(
     'resolves trim points %f..%f to the minimum range',
@@ -151,8 +119,8 @@ describe('trim and loop minimum lengths', () => {
 
       const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
       expect(wraps.length).toBeGreaterThanOrEqual(2);
-      // Trim points are floored to whole samples, so allow a few samples of slack.
-      expect(Math.abs(wraps[1] - wraps[0] - length)).toBeLessThan(5);
+      // Fractional minimum, so wraps land on neighbouring whole samples.
+      expect(Math.abs(wraps[1] - wraps[0] - length)).toBeLessThan(1);
       expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
     },
   );

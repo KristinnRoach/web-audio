@@ -54,6 +54,16 @@ describe('a-rate loop points and duration glide', () => {
     expect(processor.engine.playbackPosition).toBeLessThan(start + 0.004 * TEST_SAMPLE_RATE + 1);
   });
 
+  it('keeps a pitch loop at its quantized length when trim is set to the same points', async () => {
+    const processor = await makeProcessor();
+    const points = { trimStart: 0.3, trimEnd: 0.3039, loopStart: 0.3, loopEnd: 0.3039 };
+    processor.process([], [[new Float32Array(128)]], makeParameters(points));
+    const { start, length, audioStart, audioEnd } = processor.engine.loopWindow;
+    expect(length).toBeCloseTo(0.004 * TEST_SAMPLE_RATE, 6);
+    expect(start).toBe(audioStart);
+    expect(start + length).toBe(audioEnd);
+  });
+
   it('resolves trim with the loop once per block while the loop is long', async () => {
     const processor = await makeProcessor();
     const params = makeParameters({ trimEnd: 0.9, loopStart: 0.1, loopEnd: 0.8 });
@@ -61,9 +71,7 @@ describe('a-rate loop points and duration glide', () => {
     processor.process([], [[new Float32Array(128)]], params);
     expect(processor.engine.loopWindow.audioStart).toBe(0);
     processor.process([], [[new Float32Array(128)]], { ...params, trimStart: step(0.2, 0.2) });
-    expect(processor.engine.loopWindow.audioStart).toBe(
-      Math.floor(Math.fround(0.2) * TEST_SAMPLE_RATE),
-    );
+    expect(processor.engine.loopWindow.audioStart).toBeCloseTo(0.2 * TEST_SAMPLE_RATE, 2);
   });
 
   it('starts a note scheduled on a trim step at the new trim start', async () => {

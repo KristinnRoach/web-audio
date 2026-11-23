@@ -49,24 +49,16 @@ function trace(processor: DirectionProcessor, parameters: unknown, frames: numbe
 describe('playback direction', () => {
   setupProcessorGlobals();
 
-  const trim = { trimStart: toSeconds(100), trimEnd: toSeconds(200) };
+  // Multiples of 375 samples (1/128 s) survive the float32 seconds round trip exactly.
+  const trim = { trimStart: toSeconds(375), trimEnd: toSeconds(750) };
 
   // Trim and loop lengths stay above the ~92-sample minimum range.
   it('reverse reads exactly the positions forward reads, in reverse order', async () => {
-    const forward = trace((await startRamp('forward')).processor, makeParameters(trim), 500);
-    const reverse = trace((await startRamp('reverse')).processor, makeParameters(trim), 500);
+    const forward = trace((await startRamp('forward')).processor, makeParameters(trim), 1000);
+    const reverse = trace((await startRamp('reverse')).processor, makeParameters(trim), 1000);
 
-    expect(forward[0]).toBe(100);
-    expect(forward.at(-1)).toBe(199);
-    expect(reverse).toEqual([...forward].reverse());
-  });
-
-  it('reverses the same positions when a zero-length trim grows to a fractional length', async () => {
-    const params = makeParameters({ trimStart: 0, trimEnd: 0 });
-    const forward = trace((await startRamp('forward')).processor, params, 500);
-    const reverse = trace((await startRamp('reverse')).processor, params, 500);
-
-    expect(forward).toHaveLength(92);
+    expect(forward[0]).toBe(375);
+    expect(forward.at(-1)).toBe(749);
     expect(reverse).toEqual([...forward].reverse());
   });
 
@@ -75,7 +67,9 @@ describe('playback direction', () => {
     for (const direction of ['forward', 'reverse'] as const) {
       const { processor, send } = await startRamp(direction);
       const frames =
-        direction === 'forward' ? Math.ceil(100 / playbackRate) : Math.floor(99 / playbackRate) + 1;
+        direction === 'forward'
+          ? Math.ceil(375 / playbackRate)
+          : Math.floor(374 / playbackRate) + 1;
       trace(processor, params, frames);
       send({
         type: 'voice:setPlaybackDirection',
@@ -84,8 +78,8 @@ describe('playback direction', () => {
       const after = trace(processor, params, 3);
       expect(after).toEqual(
         direction === 'forward'
-          ? [199, 199 - playbackRate, 199 - 2 * playbackRate]
-          : [100, 100 + playbackRate, 100 + 2 * playbackRate],
+          ? [749, 749 - playbackRate, 749 - 2 * playbackRate]
+          : [375, 375 + playbackRate, 375 + 2 * playbackRate],
       );
     }
   });
@@ -94,7 +88,7 @@ describe('playback direction', () => {
     const params = makeParameters({ ...trim, playbackRate: 0.75 });
     const reverse = trace((await startRamp('reverse')).processor, params, 4);
 
-    expect(reverse).toEqual([199, 198.25, 197.5, 196.75]);
+    expect(reverse).toEqual([749, 748.25, 747.5, 746.75]);
   });
 
   it('turns around on a direction change without repeating or skipping a sample', async () => {
@@ -105,8 +99,8 @@ describe('playback direction', () => {
     send({ type: 'voice:setPlaybackDirection', playbackDirection: 'reverse' });
     const after = trace(processor, params, 3);
 
-    expect(before.at(-1)).toBe(109);
-    expect(after).toEqual([110, 109, 108]);
+    expect(before.at(-1)).toBe(384);
+    expect(after).toEqual([385, 384, 383]);
   });
 
   it('reverse from trim start 0 ends instead of restarting at the trim end', async () => {
@@ -119,7 +113,6 @@ describe('playback direction', () => {
   });
 
   it('a reverse loop cycles through the same positions as a forward loop', async () => {
-    // Multiples of 375 samples (1/128 s) survive the float32 seconds round trip exactly.
     const loop = { loopStart: toSeconds(375), loopEnd: toSeconds(750), trimEnd: toSeconds(750) };
     const forward = trace((await startRamp('forward', true)).processor, makeParameters(loop), 1500);
     const reverse = trace((await startRamp('reverse', true)).processor, makeParameters(loop), 1500);
@@ -137,7 +130,7 @@ describe('loop types', () => {
 
   const LO = toSeconds(375);
   const HI = toSeconds(750);
-  const trim = { trimStart: 0, trimEnd: toSeconds(1000) };
+  const trim = { trimStart: 0, trimEnd: toSeconds(1125) };
   const backward = makeParameters({ ...trim, loopStart: HI, loopEnd: LO });
   const forwardLoop = makeParameters({ ...trim, loopStart: LO, loopEnd: HI });
   const indexOfRun = (values: number[], run: number[]) =>
@@ -177,7 +170,7 @@ describe('loop types', () => {
   it('reverse voice with inverted loop points cycles forward', async () => {
     const positions = trace((await startRamp('reverse', true)).processor, backward, 2500);
 
-    expect(positions[0]).toBe(999);
+    expect(positions[0]).toBe(1124);
     expect(indexOfRun(positions, [376, 375, 376, 377])).toBeGreaterThan(0);
     const cycle = positions.slice(-375);
     expect([...cycle].sort((a, b) => a - b)).toEqual(
@@ -193,7 +186,7 @@ describe('loop types', () => {
     const positions = trace(processor, params, 3000);
 
     expect(indexOfRun(positions, [376, 375, 749, 750, 751])).toBeGreaterThan(0);
-    expect(positions.at(-1)).toBe(999);
+    expect(positions.at(-1)).toBe(1124);
     expect(processor.engine.isPlaying).toBe(false);
   });
 

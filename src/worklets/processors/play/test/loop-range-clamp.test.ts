@@ -140,12 +140,12 @@ describe('loop range clamping', () => {
     ['forward', true],
     ['reverse', false],
   ])('plays inverted trim points backward (global %s)', async (direction, backward) => {
-    const length = TEST_SAMPLE_RATE * 0.4;
+    const length = TEST_SAMPLE_RATE * 0.375;
     const processor = await startProcessor();
     processor.port.onmessage?.({
       data: { type: 'voice:setPlaybackDirection', playbackDirection: direction },
     } as MessageEvent);
-    const parameters = makeParameters({ trimStart: 0.9, trimEnd: 0.5 });
+    const parameters = makeParameters({ trimStart: 0.875, trimEnd: 0.5 });
 
     const positions: number[] = [];
     for (let frame = 0; frame < length * 3; frame++) {
@@ -160,7 +160,7 @@ describe('loop range clamping', () => {
     expect(wraps.length).toBeGreaterThanOrEqual(2);
     expect(Math.abs(wraps[1] - wraps[0] - length)).toBeLessThan(5);
     expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2 - 1);
-    expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.9);
+    expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.875);
   });
 
   // Directional snaps clamp to the outermost crossing; a trim between two
