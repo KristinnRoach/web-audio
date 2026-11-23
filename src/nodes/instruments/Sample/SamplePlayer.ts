@@ -377,7 +377,8 @@ export class SamplePlayer {
 
   /**
    * Voice reports name their voice; `initialized` and `flushed` are node-wide.
-   * Voice records mirror the audio thread; reports about an old note are dropped.
+   * Voice records hold the last reported note. The audio thread owns voice state and
+   * may be ahead of them; reports about an old note are dropped.
    */
   #receive(data: any) {
     const { type, voice: index, ...report } = data;

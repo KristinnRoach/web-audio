@@ -91,7 +91,7 @@ Features add files only when they arrive, such as `engine/morph.js`, `engine/gra
 
 ## Voice ownership — in progress
 
-one processor per `SamplePlayer` owns the shared sample, allocation, note scheduling, pitch and envelopes. `SamplePlayer` mirrors lifecycle reports in plain voice records. Per-voice filters, AM and feedback remain in main-thread `VoiceEffects`; AM and feedback follow note reports. Next migration steps move these effects into the engine, then mix voices to one stereo output and delete `VoiceEffects`. See the [voice migration plan](SAMPLE_PLAYER_VOICE_MIGRATION.md) and [processor contract](SAMPLE_PLAYER_PROCESSOR.md).
+one processor per `SamplePlayer` owns the shared sample, allocation, note scheduling, pitch and envelopes. `SamplePlayer` keeps the last reported note per voice. Per-voice filters, AM and feedback remain in main-thread `VoiceEffects`; AM and feedback follow note reports. Next migration steps move these effects into the engine, then mix voices to one stereo output and delete `VoiceEffects`. See the [voice migration plan](SAMPLE_PLAYER_VOICE_MIGRATION.md) and [processor contract](SAMPLE_PLAYER_PROCESSOR.md).
 
 ## Later decisions
 
