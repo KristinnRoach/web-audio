@@ -100,6 +100,8 @@ export class VoiceEngine {
 
     this.loopEnabled = false;
     this.reversePlayback = false;
+    // Note-on starts at the loop instead of trim while looping is on.
+    this.startFromLoop = false;
     this.panDriftEnabled = true;
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
@@ -729,7 +731,7 @@ export class VoiceEngine {
     this.previousRequestedLoop.start = params.loopStartSamples;
     this.previousRequestedLoop.end = params.loopEndSamples;
 
-    // Same rule as the trim range, inside it. An unset loop (loopEnd's 99999
+    // Same rule as the trim range, inside it. An unset loop (loopEnd's 9999
     // default) clamps to the full range.
     const resolved = resolveRange(lpStart, lpEnd, rangeStart, rangeEnd, this.minRangeSamples);
     let calcLoopStart = resolved[0];
@@ -979,7 +981,15 @@ export class VoiceEngine {
     // Both directions play the source samples [startSamples, endSamples).
     if (this.needsStartPosition) {
       this.needsStartPosition = false;
-      this.playbackPosition = approachDirection < 0 ? lastPosition : playbackRange.startSamples;
+      let first = playbackRange.startSamples;
+      let last = lastPosition;
+      if (this.startFromLoop && this.loopEnabled) {
+        // Start at the requested loop edge, kept inside trim. Loop resolution is unchanged.
+        const { loopStartSamples: a, loopEndSamples: b } = positionParams;
+        first = Math.min(Math.max(Math.min(a, b), first), lastPosition);
+        last = Math.min(Math.max(Math.ceil(Math.max(a, b)) - 1, first), lastPosition);
+      }
+      this.playbackPosition = approachDirection < 0 ? last : first;
       this.timestretch.reset(this.playbackPosition);
     }
 

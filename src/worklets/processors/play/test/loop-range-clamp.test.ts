@@ -33,7 +33,7 @@ describe('loop range clamping', () => {
   it.each([
     [0.25, 0.75],
     [0, 1],
-    [0, 99_999],
+    [0, 9999],
   ])('keeps a long loop covering trim at %f..%f unquantized', async (loopStart, loopEnd) => {
     const processor = await startProcessor([0.3, 0.7], [0.004, 0.01]);
     render(processor, makeParameters({ startPoint: 0.25, endPoint: 0.75, loopStart, loopEnd }), 1);
@@ -274,10 +274,10 @@ describe('loop range clamping', () => {
     async (loopMode, loopEnabled, loopStart, loopEnd, pingPong) => {
       const processor = await startProcessor();
       processor.port.onmessage?.({
-        data: { type: 'setLoopEnabled', value: loopEnabled },
+        data: { type: 'voice:setLoopEnabled', value: loopEnabled },
       } as MessageEvent);
       processor.port.onmessage?.({
-        data: { type: 'setLoopPingPong', value: pingPong },
+        data: { type: 'voice:setLoopPingPong', value: pingPong },
       } as MessageEvent);
       render(processor, makeParameters({ endPoint: 1, loopStart, loopEnd }), 1);
 
@@ -308,7 +308,9 @@ describe('loop range clamping', () => {
     const parameters = makeParameters({ endPoint: 0.75, loopStart: 0.25, loopEnd: 0.5 });
     render(processor, parameters, TEST_SAMPLE_RATE * 0.6);
 
-    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: false } } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'voice:setLoopEnabled', value: false },
+    } as MessageEvent);
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.6; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);

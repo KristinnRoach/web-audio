@@ -29,12 +29,12 @@ it.skipIf(!process.env.SAMPLE_PLAYER_TIMING).each(renderScenarios)(
     );
     for (const { processor } of voices) {
       processor.port.onmessage?.({
-        data: { type: 'setInterpolation', value: interpolation },
+        data: { type: 'voice:setInterpolation', value: interpolation },
       } as MessageEvent);
       if (!envelopes) continue;
       for (const target of ['gain', 'detune', 'pan', 'filter']) {
         processor.port.onmessage?.({
-          data: { type: 'setEnvelope', target, value: { shape: loopShape, loopSync: true } },
+          data: { type: 'voice:setEnvelope', target, value: { shape: loopShape, loopSync: true } },
         } as MessageEvent);
       }
     }

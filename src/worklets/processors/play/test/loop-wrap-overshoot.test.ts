@@ -62,7 +62,9 @@ async function startProcessor(playbackDirection: 'forward' | 'reverse') {
       durationSeconds: 1,
     },
   } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+  processor.port.onmessage?.({
+    data: { type: 'voice:setLoopEnabled', value: true },
+  } as MessageEvent);
   if (playbackDirection === 'reverse') {
     processor.port.onmessage?.({
       data: { type: 'voice:setPlaybackDirection', playbackDirection },

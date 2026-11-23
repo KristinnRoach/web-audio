@@ -18,16 +18,16 @@ export async function createRenderScenario(scenario: RenderScenario, voice = 0) 
     (_, i) => 0.4 * Math.sin((2 * Math.PI * i) / 96) * (0.6 + 0.4 * Math.cos(i / 700)),
   );
   send({ type: 'voice:setBuffer', buffer: [left, Float32Array.from(left, (x) => -0.5 * x)] });
-  send({ type: 'setLoopEnabled', value: scenario !== 'stretch' });
-  send({ type: 'setLoopPingPong', value: scenario === 'ping-pong' });
-  send({ type: 'setPanDriftEnabled', value: false });
+  send({ type: 'voice:setLoopEnabled', value: scenario !== 'stretch' });
+  send({ type: 'voice:setLoopPingPong', value: scenario === 'ping-pong' });
+  send({ type: 'voice:setPanDriftEnabled', value: false });
   if (scenario === 'stretch' || scenario === 'looped stretch') {
     send({
       type: 'voice:setPitchPeriods',
       periods: new Float32Array(101).fill(96),
       hopSamples: 480,
     });
-    send({ type: 'setTimestretchMode', value: 'period' });
+    send({ type: 'voice:setTimestretchMode', value: 'period' });
   }
   send({ type: 'voice:start', triggerId: voice });
   const parameters = makeParameters({

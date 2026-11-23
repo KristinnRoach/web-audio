@@ -58,7 +58,7 @@ describe('loop jump crossfade', () => {
       name: 'reverse wrap',
       message: { type: 'voice:setPlaybackDirection', playbackDirection: 'reverse' },
     },
-    { name: 'ping-pong turn', message: { type: 'setLoopPingPong', value: true } },
+    { name: 'ping-pong turn', message: { type: 'voice:setLoopPingPong', value: true } },
   ])('holds the first sample when reading before the buffer on a $name', async ({ message }) => {
     const source = new Float32Array(48_000).fill(1);
     const processor = await startProcessor();
@@ -91,7 +91,7 @@ describe('loop turn crossfade', () => {
       const processor = await startProcessor();
       const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
       send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
-      send({ type: 'setLoopPingPong', value: true });
+      send({ type: 'voice:setLoopPingPong', value: true });
       send({ type: 'voice:start', triggerId: 1 });
       const output = new Float32Array(40_000);
       processor.process(
@@ -121,7 +121,7 @@ describe('loop turn crossfade', () => {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
     send({ type: 'voice:setBuffer', buffer: [sine], durationSeconds: 1 });
-    send({ type: 'setLoopPingPong', value: true });
+    send({ type: 'voice:setLoopPingPong', value: true });
     send({ type: 'voice:start', triggerId: 1 });
     const output = new Float32Array(20_000);
     processor.process(

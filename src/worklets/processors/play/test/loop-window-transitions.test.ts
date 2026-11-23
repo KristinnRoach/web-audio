@@ -18,7 +18,7 @@ async function setup() {
     durationSeconds: 1,
   });
   Object.assign(processor.engine, { enableLoopCrossfade: false });
-  send({ type: 'setLoopLengthGlide', value: 0 });
+  send({ type: 'voice:setLoopLengthGlide', value: 0 });
   send({ type: 'voice:start' });
   const render = (start: number, length = 0.004, frames = 1) => {
     const output = new Float32Array(frames);
@@ -37,7 +37,7 @@ async function setup() {
 describe('loop window coordinate transitions', () => {
   it('continues from the audible source position when looping is disabled', async () => {
     const { render, send } = await setup();
-    send({ type: 'setLoopEnabled', value: false });
+    send({ type: 'voice:setLoopEnabled', value: false });
     expect(render(0.5)).toBeCloseTo((0.25 + 33 / TEST_SAMPLE_RATE) / 2, 7);
     expect(render(0.75)).toBeCloseTo((0.25 + 34 / TEST_SAMPLE_RATE) / 2, 7);
   });

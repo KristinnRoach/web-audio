@@ -61,7 +61,9 @@ async function createProcessor(
     },
   } as MessageEvent);
   if (loop) {
-    processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'voice:setLoopEnabled', value: true },
+    } as MessageEvent);
   }
   processor.port.onmessage?.({
     data: {

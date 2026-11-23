@@ -31,7 +31,7 @@ export type TestProcessor = {
 
 type Parameters = Record<string, Float32Array>;
 
-/** Loop points default to the full 0..99999 s range, as the descriptors do. */
+/** Loop points default to the full 0..9999 s range, as the descriptors do. */
 export function makeParameters(overrides: Record<string, number> = {}): Parameters {
   const values: Record<string, number> = {
     masterGain: 1,
@@ -39,7 +39,7 @@ export function makeParameters(overrides: Record<string, number> = {}): Paramete
     playbackRate: 1,
     detune: 0,
     loopStart: 0,
-    loopEnd: 99_999,
+    loopEnd: 9999,
     startPoint: 0,
     endPoint: 9999,
     playbackPosition: 0,
@@ -62,7 +62,7 @@ export async function startProcessor(
 
   if (quantizePeriodsSeconds !== undefined) {
     processor.port.onmessage?.({
-      data: { type: 'setLoopQuantizePeriods', value: quantizePeriodsSeconds },
+      data: { type: 'voice:setLoopQuantizePeriods', value: quantizePeriodsSeconds },
     } as MessageEvent);
   }
 
@@ -76,7 +76,9 @@ export async function startProcessor(
   processor.port.onmessage?.({
     data: { type: 'voice:setZeroCrossings', zeroCrossings: zeroCrossingSeconds },
   } as MessageEvent);
-  processor.port.onmessage?.({ data: { type: 'setLoopEnabled', value: true } } as MessageEvent);
+  processor.port.onmessage?.({
+    data: { type: 'voice:setLoopEnabled', value: true },
+  } as MessageEvent);
   processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
 
   return processor;

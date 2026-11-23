@@ -13,7 +13,7 @@ describe('buffer reload settings', () => {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
     send({ type: 'voice:setPlaybackDirection', playbackDirection: 'reverse' });
-    send({ type: 'setPanDriftEnabled', value: false });
+    send({ type: 'voice:setPanDriftEnabled', value: false });
     render(processor, makeParameters(), 2);
     expect(processor.engine.playbackPosition).toBeGreaterThan(0);
 

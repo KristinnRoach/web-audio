@@ -98,15 +98,15 @@ describe('period timestretch through the processor', () => {
       (_, i) => 0.4 * Math.sin((2 * Math.PI * i) / PERIOD),
     );
     send({ type: 'voice:setBuffer', buffer: [sine], durationSeconds: 1 });
-    send({ type: 'setLoopEnabled', value: loop });
-    send({ type: 'setLoopPingPong', value: pingPong });
-    send({ type: 'setPanDriftEnabled', value: false });
+    send({ type: 'voice:setLoopEnabled', value: loop });
+    send({ type: 'voice:setLoopPingPong', value: pingPong });
+    send({ type: 'voice:setPanDriftEnabled', value: false });
     send({
       type: 'voice:setPitchPeriods',
       periods: new Float32Array(101).fill(PERIOD),
       hopSamples: 480,
     });
-    send({ type: 'setTimestretchMode', value: 'period' });
+    send({ type: 'voice:setTimestretchMode', value: 'period' });
     send({ type: 'voice:start', triggerId: 0 });
 
     const parameters = makeParameters({

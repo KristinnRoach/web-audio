@@ -56,14 +56,14 @@ describe('keytrack', () => {
   } = {}) {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
-    send({ type: 'setKeytrackLoopAmount', value: depth });
+    send({ type: 'voice:setKeytrackLoopAmount', value: depth });
     if (stretched) {
       send({
         type: 'voice:setPitchPeriods',
         periods: new Float32Array(101).fill(100),
         hopSamples: 480,
       });
-      send({ type: 'setTimestretchMode', value: 'period' });
+      send({ type: 'voice:setTimestretchMode', value: 'period' });
     }
     render(processor, makeParameters({ loopStart: 0.25, loopEnd: 0.5, playbackRate, detune }), 128);
     const loop = processor.port.postMessage.mock.calls
