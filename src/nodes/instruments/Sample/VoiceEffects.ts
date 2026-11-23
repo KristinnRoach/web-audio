@@ -152,35 +152,38 @@ export class VoiceEffects {
     if (this.#pitchOffset === semitones) return;
     this.#pitchOffset = semitones;
     if (heldNote !== null) {
-      this.followNote(heldNote, { timestamp: this.context.currentTime, glideTime: 0.01 });
+      this.followNote(heldNote, {
+        timestamp: this.context.currentTime,
+        glideTime: 0.01,
+        retuned: true,
+      });
     }
   }
 
   /**
    * Moves feedback and the AM LFO to a played note; they add the pitch offset.
-   * With `velocity` it is a new note: feedback retriggers and the LFO may glide
-   * from `glideFromNote`. Without, the sounding note is retuned.
+   * A new note restarts feedback decay and the LFO may glide from `glideFromNote`.
+   * With `retuned`, the sounding note only changes pitch.
    */
   followNote(
     midiNote: number,
     note: {
       timestamp: number;
       glideTime: number;
-      velocity?: number;
+      retuned?: boolean;
       glideFromNote?: number | null;
     },
   ) {
-    const { timestamp, glideTime, velocity, glideFromNote = null } = note;
+    const { timestamp, glideTime, retuned = false, glideFromNote = null } = note;
     const soundingNote = midiNote + this.#pitchOffset;
     const amNote = soundingNote + this.#am_lfo_semitone_offset;
-    if (velocity === undefined) {
+    if (retuned) {
       this.#feedback?.setPitch(soundingNote, 0, timestamp, glideTime);
       this.#am_lfo?.setMusicalNote(amNote, { timestamp, glideTime });
       return;
     }
 
     this.#feedback?.trigger(soundingNote, {
-      velocity,
       secondsFromNow: Math.max(0, timestamp - this.context.currentTime),
       glideTime,
       triggerDecay: true,

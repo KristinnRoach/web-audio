@@ -79,9 +79,8 @@ it('wires its two processor outputs and follows notes with the pitch offset', as
   expect(effects.setPitch).not.toHaveBeenCalled();
 
   // The AM LFO sits an octave above the sounding note by default.
-  voice.followNote(60, { velocity: 90, timestamp: 1, glideTime: 0.2, glideFromNote: 55 });
+  voice.followNote(60, { timestamp: 1, glideTime: 0.2, glideFromNote: 55 });
   expect(effects.trigger).toHaveBeenLastCalledWith(62, {
-    velocity: 90,
     secondsFromNow: 1,
     glideTime: 0.2,
     triggerDecay: true,
@@ -94,7 +93,7 @@ it('wires its two processor outputs and follows notes with the pitch offset', as
   });
 
   // A retune moves the sounding note without retriggering.
-  voice.followNote(64, { timestamp: 2, glideTime: 0.1 });
+  voice.followNote(64, { timestamp: 2, glideTime: 0.1, retuned: true });
   expect(effects.trigger).toHaveBeenCalledOnce();
   expect(effects.setPitch).toHaveBeenLastCalledWith(66, 0, 2, 0.1);
   expect(effects.setMusicalNote).toHaveBeenLastCalledWith(78, { timestamp: 2, glideTime: 0.1 });

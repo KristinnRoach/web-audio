@@ -86,9 +86,6 @@ registerProcessor(
         ) {
           this.setBandpassFreq(event.data.hz);
         }
-        if (event.data && event.data.type === 'trigger') {
-          // Placeholder for any trigger-related functionality
-        }
       };
       // Signal to node that processor is initialized
       this.port.postMessage({ type: 'initialized' });

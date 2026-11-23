@@ -104,9 +104,8 @@ export async function initTestPlayer(
   const busSpy = vi.spyOn(busFactory, 'createInstrumentBus').mockResolvedValue({
     input: Object.assign(new FakeNode(), { gain: { setValueAtTime: vi.fn() } }),
     connect() {},
-    noteOn() {},
-    noteOff() {},
-    releaseAll() {},
+    followNote() {},
+    setPitchOffset() {},
     dispose() {},
     ...bus,
   } as unknown as InstrumentBus);

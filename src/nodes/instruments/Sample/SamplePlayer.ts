@@ -222,6 +222,7 @@ export class SamplePlayer {
         this.#post({ type: 'pool:setLegato', value: this.#legato });
         this.#post({ type: 'pool:setPitchOffset', value: this.#pitchOffset });
         this.#voices.forEach((voice) => voice.effects.setPitchOffset(this.#pitchOffset, null));
+        this.#outBus.setPitchOffset(this.#pitchOffset, null);
         this.#post({ type: 'pool:setPitchEnabled', value: this.#pitchEnabled });
         if (this.#interpolationMode !== null) {
           this.#post({ type: 'voice:setInterpolation', value: this.#interpolationMode });
@@ -404,9 +405,9 @@ export class SamplePlayer {
         if (voice.midiNote !== null) this.#voiceStopped(voice);
         const { midiNote, velocity, timestamp, glideTime, glideFromNote, triggerId } = report;
         Object.assign(voice, { midiNote, triggerId });
-        this.#followVoice(report, false);
+        this.#followNote(report, false);
         this.#emitFrom(voice, type, { voiceId, midiNote, velocity, timestamp, glideTime });
-        voice.effects.followNote(midiNote, { velocity, timestamp, glideTime, glideFromNote });
+        voice.effects.followNote(midiNote, { timestamp, glideTime, glideFromNote });
         return;
       }
 
@@ -416,8 +417,9 @@ export class SamplePlayer {
         voice.effects.followNote(report.midiNote, {
           timestamp: report.timestamp,
           glideTime: report.glideTime,
+          retuned: true,
         });
-        return this.#followVoice(report, true);
+        return this.#followNote(report, true);
 
       case 'voice:releasing':
         if (voice.midiNote === null) return;
@@ -694,16 +696,12 @@ export class SamplePlayer {
       console.warn(`Invalid midiNote: ${midiNote}`);
       return null;
     }
-    // Voices are keyed by the played note so release() still finds them after
-    // a transpose; anything that tracks pitch gets the sounding note.
-    const soundingNote = midiNote + this.#pitchOffset;
-    this.#lastPlayedNote = midiNote;
-    this.#syncLFOsToNote(soundingNote);
 
     if (!this.#voices.length || !this.#buffer) return null;
-    // The audio thread picks the voice when the note is due and works out its rate
-    // and glide origin; the bus follows its report (`voice:started` or `voice:retuned`)
-    // in #followVoice.
+    // Voices are keyed by the played note so release() still finds them after
+    // a transpose. The audio thread picks the voice when the note is due and
+    // works out its rate and glide origin; the bus and note-tracking LFOs
+    // follow its report (`voice:started` or `voice:retuned`) in #followNote.
     this.#post({
       type: 'pool:noteOn',
       triggerId: ++this.#noteId,
@@ -728,10 +726,8 @@ export class SamplePlayer {
     // Remove from sustained notes if it was there
     this.#sustainedNotes.delete(midiNote);
 
-    // A legato voice falling back to an earlier held note reports `voice:retuned` with `fallback`.
+    // A legato voice falling back to an earlier held note reports `voice:retuned`.
     this.#post({ type: 'pool:noteOff', midiNote, timestamp: this.now + secondsFromNow });
-    this.#outBus.noteOff(midiNote + this.#pitchOffset);
-    this.#sendUpstreamMessage('note:off', { midiNote });
     return this;
   }
 
@@ -739,7 +735,6 @@ export class SamplePlayer {
     this.#sustainedNotes.clear();
     // Releases every held note and drops the ones still waiting to sound.
     this.#post({ type: 'pool:allNotesOff', timestamp: this.now });
-    this.#outBus?.releaseAll();
     return this;
   }
 
@@ -757,22 +752,12 @@ export class SamplePlayer {
     return this.#transposeSemitones + this.#fineTuneCents / 100;
   }
 
-  /**
-   * The processor reports each note once its voice is picked. The bus follows: same
-   * glide, and a legato retune doesn't restart its decay. A voice falling back
-   * to an earlier held note takes the note-tracking LFOs and bus feedback with it.
-   */
-  #followVoice(report: any, retuned: boolean) {
-    const soundingNote = report.midiNote + this.#pitchOffset;
-    const secondsFromNow = Math.max(0, report.timestamp - this.now);
-    if (!report.fallback) {
-      this.#outBus.noteOn(soundingNote, report.velocity, secondsFromNow, report.glideTime, retuned);
-      return;
-    }
-    this.#lastPlayedNote = report.midiNote;
-    const timestamp = this.now + secondsFromNow;
-    this.#syncLFOsToNote(soundingNote, timestamp);
-    this.#outBus.getFeedback()?.setPitch(soundingNote, 0, timestamp, report.glideTime);
+  /** The bus and note-tracking LFOs follow each note the processor reports. */
+  #followNote(report: any, retuned: boolean) {
+    const { midiNote, timestamp, glideTime } = report;
+    this.#lastPlayedNote = midiNote;
+    this.#syncLFOsToNote(midiNote + this.#pitchOffset, Math.max(this.now, timestamp));
+    this.#outBus.followNote(midiNote, { timestamp, glideTime, retuned });
   }
 
   #syncLFOsToNote(soundingNote: number, timestamp = this.now) {
@@ -787,11 +772,8 @@ export class SamplePlayer {
     const offset = this.#pitchOffset;
     this.#post({ type: 'pool:setPitchOffset', value: offset });
     this.#voices.forEach((voice) => voice.effects.setPitchOffset(offset, voice.midiNote));
-    if (this.#lastPlayedNote !== null) {
-      const soundingNote = this.#lastPlayedNote + offset;
-      this.#syncLFOsToNote(soundingNote);
-      this.#outBus.getFeedback()?.setPitch(soundingNote, 0, this.now, 0.01);
-    }
+    if (this.#lastPlayedNote !== null) this.#syncLFOsToNote(this.#lastPlayedNote + offset);
+    this.#outBus?.setPitchOffset(offset, this.#lastPlayedNote);
     return this;
   }
 

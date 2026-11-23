@@ -80,11 +80,7 @@ export type SetDelayCharacterMsg = {
   type: 'setCharacter';
   modes: DelayCharacter[];
 };
-export type TriggerDelayMsg = {
-  type: 'trigger';
-};
-
-export type DelayMsg = SetDelayCharacterMsg | TriggerDelayMsg;
+export type DelayMsg = SetDelayCharacterMsg;
 
 export type DelayConfig = {
   params: DelayParams;
