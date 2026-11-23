@@ -877,14 +877,12 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       { skipPreProcessing: true },
     );
     releaseAll.mockClear(); // the load releases whatever was held
-    const upstream = vi.fn();
-    player.onMessage('note:off', upstream);
     const playing = () => voices.filter((voice) => voice.state === 'PLAYING').length;
-    return { player, voices, playing, noteOff, releaseAll, setPitch, upstream, ...test };
+    return { player, voices, playing, noteOff, releaseAll, setPitch, ...test };
   }
 
   it('releases only deferred keys and drains multiple pitches and counts once', async () => {
-    const { player, voices, playing, noteOff, releaseAll, upstream } = await setup();
+    const { player, voices, playing, noteOff, releaseAll } = await setup();
     player.play(60);
     player.play(64);
     player.play(67);
@@ -895,14 +893,12 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     player.release(67);
     expect(playing()).toBe(3);
     expect(noteOff).not.toHaveBeenCalled();
-    expect(upstream).not.toHaveBeenCalled();
 
     player.setSustainPedal(false);
     expect(voices.find((voice) => voice.midiNote === 60)?.state).toBe('PLAYING');
     expect(playing()).toBe(1);
     expect(releaseAll).not.toHaveBeenCalled();
     expect(noteOff.mock.calls).toEqual([[64], [64], [67]]);
-    expect(upstream.mock.calls.map(([message]) => message.midiNote)).toEqual([64, 64, 67]);
     player.setSustainPedal(false);
     expect(noteOff).toHaveBeenCalledTimes(3);
     player.release(60);
@@ -1037,7 +1033,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
   });
 
   it('posts note-off untagged at the scheduled time and tells the bus the sounding note', async () => {
-    const { player, ofType, noteOff, upstream } = await setup();
+    const { player, ofType, noteOff } = await setup();
     player.transpose(2);
     player.play(60);
     player.release(60, 0.5);
@@ -1045,6 +1041,5 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       { type: 'pool:noteOff', midiNote: 60, timestamp: 0.5 },
     ]);
     expect(noteOff).toHaveBeenCalledWith(62);
-    expect(upstream).toHaveBeenCalledWith(expect.objectContaining({ midiNote: 60 }));
   });
 });
