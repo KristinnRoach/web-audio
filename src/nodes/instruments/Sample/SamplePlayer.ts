@@ -123,6 +123,8 @@ export class SamplePlayer {
 
   #masterOut: GainNode;
 
+  #trimStart = 0;
+  #trimEnd = 0;
   #loopStart = 0;
   #loopEnd = 0;
   #gainLFO: LFO | null = null;
@@ -919,18 +921,36 @@ export class SamplePlayer {
   }
 
   setTrimStart(seconds: number): this {
-    this.#setParam('trimStart', seconds);
-    return this;
+    return this.#setTrimEdge('start', seconds);
   }
 
   setTrimEnd(seconds: number): this {
-    this.#setParam('trimEnd', seconds);
+    return this.#setTrimEdge('end', seconds);
+  }
+
+  #setTrimEdge(trimEdge: 'start' | 'end', seconds: number): this {
+    seconds = clamp(seconds, 0, this.#bufferDuration);
+    if (trimEdge === 'start') {
+      if (seconds === this.trimStart) return this;
+      this.#setParam('trimStart', seconds);
+      this.#trimStart = seconds;
+    } else {
+      if (seconds === this.trimEnd) return this;
+      this.#setParam('trimEnd', seconds);
+      this.#trimEnd = seconds;
+    }
     return this;
   }
 
   /** Set both trim edges at once so both land at one event time. */
   setTrimRange(startSeconds: number, endSeconds: number): this {
-    this.#setParams({ trimStart: startSeconds, trimEnd: endSeconds });
+    const trimStart = clamp(startSeconds, 0, this.#bufferDuration);
+    const trimEnd = clamp(endSeconds, 0, this.#bufferDuration);
+    if (trimStart === this.trimStart && trimEnd === this.trimEnd) return this;
+
+    this.#setParams({ trimStart, trimEnd });
+    this.#trimStart = trimStart;
+    this.#trimEnd = trimEnd;
     return this;
   }
 
@@ -1574,11 +1594,11 @@ export class SamplePlayer {
   }
 
   get trimStart(): number {
-    return this.#worklet?.parameters.get('trimStart')?.value ?? 0;
+    return this.#trimStart;
   }
 
   get trimEnd(): number {
-    return this.#worklet?.parameters.get('trimEnd')?.value ?? this.sampleDuration;
+    return this.#trimEnd;
   }
 
   get loopStart(): number {
