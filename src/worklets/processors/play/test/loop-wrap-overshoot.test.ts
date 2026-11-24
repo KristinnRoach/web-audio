@@ -111,7 +111,7 @@ describe('loop wrap with an overshoot larger than the loop', () => {
   it('keeps the playhead inside the loop when loopStart moves past it in reverse', async () => {
     const processor = await startProcessor('reverse');
 
-    // End the playback range at the loop end so reverse starts inside the loop
+    // End trim at the loop end so reverse starts inside the loop
     // rather than descending the whole buffer to reach it.
     const trimEnd = WIDE_LOOP_SAMPLES / TEST_SAMPLE_RATE;
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES, trimEnd);

@@ -13,9 +13,7 @@ export class LoopCrossfade {
   #heads = Array.from({ length: MAX_OUTGOING_HEADS }, () => ({
     position: 0,
     direction: 1,
-    fadesTail: false,
-    audioStart: 0,
-    audioEnd: 0,
+    tailEnd: Infinity,
     mix: 0,
     length: 0,
     progress: 0,
@@ -28,7 +26,7 @@ export class LoopCrossfade {
   }
 
   /**
-   * Outgoing head `i`, oldest first: its read `position`, whether it `fadesTail`,
+   * Outgoing head `i`, oldest first: its read `position`, its `tailEnd`,
    * and its `mix`, the weight of what plays inside it (0 when it starts, rising to 1).
    */
   head(i) {
@@ -40,21 +38,17 @@ export class LoopCrossfade {
    * @param {1 | -1} direction Its direction before turning (differs from the
    *   playhead's only for a turn).
    * @param {number} length Fade length in source samples.
-   * @param {boolean} fadesTail Whether that position's loop has a silent tail.
-   * @param {number} audioEnd That position's trim end. Trim can move during the fade;
-   *   the head keeps reading what was audible.
-   * @param {number} audioStart That position's trim start, saved with the trim end.
+   * @param {number} tailEnd Where that position's loop runs into silence, or Infinity.
+   *   Trim can move during the fade; the head keeps reading what was audible.
    */
-  start(position, direction, length, fadesTail, audioEnd, audioStart = 0) {
+  start(position, direction, length, tailEnd = Infinity) {
     if (length < 1) return;
     // ponytail: drops the oldest head at the cap, a small step if it was still fading
     if (this.#count === MAX_OUTGOING_HEADS) this.#remove(0);
     const head = this.#heads[this.#count++];
     head.position = position;
     head.direction = direction;
-    head.fadesTail = fadesTail;
-    head.audioStart = audioStart;
-    head.audioEnd = audioEnd;
+    head.tailEnd = tailEnd;
     head.mix = 0;
     head.length = length;
     head.progress = 0;
@@ -71,17 +65,12 @@ export class LoopCrossfade {
     }
   }
 
-  /**
-   * Moves every head with a playhead carried by a moving loop. The heads then read
-   * the new window, so they take its trim and tail.
-   */
-  shift(delta, fadesTail, audioEnd, audioStart) {
+  /** Moves every head with a playhead carried by a moving pitch loop, which has no silent tail. */
+  shift(delta) {
     for (let i = 0; i < this.#count; i++) {
       const head = this.#heads[i];
       head.position += delta;
-      head.fadesTail = fadesTail;
-      head.audioStart = audioStart;
-      head.audioEnd = audioEnd;
+      head.tailEnd = Infinity;
     }
   }
 

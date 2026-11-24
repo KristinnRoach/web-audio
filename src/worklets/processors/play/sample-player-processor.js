@@ -161,14 +161,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:setPlaybackDirection': {
-        // Global invert; inverted trim points flip it again in the engine
         engine.reversePlayback = playbackDirection === 'reverse';
         break;
       }
 
-      // Starts at the requested loop edge, clamped to trim.
-      // ponytail: if note-on needs the resolved edge, choose the start position
-      // after calculating the first loop window and reuse that window for playback.
+      // Starts on the resolved loop.
       case 'voice:setStartFromLoop':
         engine.startFromLoop = value;
         break;

@@ -7,7 +7,7 @@ setupProcessorGlobals();
 describe('LoopCrossfade', () => {
   it('fades each head over its length in source samples at any rate', () => {
     const fade = new LoopCrossfade();
-    fade.start(100, -1, 8, false, 1000);
+    fade.start(100, -1, 8);
     expect(fade.head(0).mix).toBe(0);
     fade.advance(2);
     expect(fade.head(0).position).toBe(98);
@@ -18,19 +18,19 @@ describe('LoopCrossfade', () => {
 
   it('keeps overlapping heads oldest first and drops finished ones', () => {
     const fade = new LoopCrossfade();
-    fade.start(100, 1, 4, false, 1000);
+    fade.start(100, 1, 4);
     fade.advance(1);
-    fade.start(200, 1, 8, true, 1000);
+    fade.start(200, 1, 8, 1000);
     expect(fade.count).toBe(2);
     expect(fade.head(1).position).toBe(200);
     fade.advance(3);
     expect(fade.count).toBe(1);
-    expect(fade.head(0)).toMatchObject({ position: 203, fadesTail: true, mix: 3 / 8 });
+    expect(fade.head(0)).toMatchObject({ position: 203, tailEnd: 1000, mix: 3 / 8 });
   });
 
   it('ignores fades shorter than a sample', () => {
     const fade = new LoopCrossfade();
-    fade.start(100, 1, 0.5, false, 1000);
+    fade.start(100, 1, 0.5);
     expect(fade.count).toBe(0);
   });
 });

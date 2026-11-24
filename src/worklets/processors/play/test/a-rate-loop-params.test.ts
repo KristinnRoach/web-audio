@@ -27,11 +27,52 @@ async function makeProcessor() {
 }
 
 describe('a-rate loop points and duration glide', () => {
-  it('exposes loop points as a-rate while trim stays k-rate', () => {
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.loopStart.automationRate).toBe('a-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.loopEnd.automationRate).toBe('a-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.trimStart.automationRate).toBe('k-rate');
-    expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS.trimEnd.automationRate).toBe('k-rate');
+  it.each(['loopStart', 'loopEnd', 'trimStart', 'trimEnd'] as const)(
+    'exposes %s as a-rate',
+    (name) => {
+      expect(SAMPLE_PLAYER_WORKLET_AUDIOPARAMS[name].automationRate).toBe('a-rate');
+    },
+  );
+
+  const step = (before: number, after: number) =>
+    Float32Array.from({ length: 128 }, (_, i) => (i < 64 ? before : after));
+
+  it('plays a moving pitch loop the same while trim moves around it', async () => {
+    const render = async (movingTrim: boolean) => {
+      const processor = await makeProcessor();
+      Object.assign(processor.engine, { enableLoopCrossfade: true });
+      const output = new Float32Array(128 * 40);
+      for (let block = 0; block < 40; block++) {
+        const params = makeParameters({ trimEnd: 1 });
+        // A jump every 3 blocks: faster than the 20 ms move fade.
+        const start = 0.1 + Math.floor(block / 3) * 0.0041;
+        params.loopStart = step(start, start + 0.0003);
+        params.loopEnd = params.loopStart.map((value) => value + 0.0039);
+        // Let the note reach the loop before moving trim, so both start alike.
+        if (block === 0) params.trimStart = params.loopStart;
+        if (movingTrim && block > 0) {
+          params.trimStart = params.loopStart.map((value) => value - 0.02);
+          params.trimEnd = params.loopEnd.map((value) => value + 0.02);
+        }
+        processor.process([], [[output.subarray(block * 128, (block + 1) * 128)]], params);
+      }
+      return output;
+    };
+    expect(await render(true)).toEqual(await render(false));
+  });
+
+  it('starts a note scheduled on a trim step at the new trim start', async () => {
+    const processor = await makeProcessor();
+    processor.port.onmessage?.({
+      data: { type: 'voice:setLoopEnabled', value: false },
+    } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'voice:start', timestamp: 64 / TEST_SAMPLE_RATE },
+    } as MessageEvent);
+    const params = makeParameters({ trimEnd: 0.9 });
+    params.trimStart = step(0, 0.5);
+    processor.process([], [[new Float32Array(128)]], params);
+    expect(processor.engine.playbackPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
   });
 
   it.each(
@@ -200,31 +241,5 @@ describe('a-rate loop points and duration glide', () => {
           Math.exp(-37 / TEST_SAMPLE_RATE / 0.01 - 19 / TEST_SAMPLE_RATE / 0.02),
     );
     expect(state.loopWindow.length / TEST_SAMPLE_RATE).toBeCloseTo(expected, 10);
-  });
-
-  it('contains every modulated range inside trim without rounding fractional lengths', async () => {
-    const processor = await startProcessor([], [100.5 / TEST_SAMPLE_RATE]);
-    processor.port.onmessage?.({
-      data: { type: 'voice:setLoopLengthGlide', value: 0 },
-    } as MessageEvent);
-    const params = makeParameters({ trimStart: 0.001, trimEnd: 0.01 });
-    params.loopStart = Float32Array.from({ length: 128 }, (_, i) => i / 1000);
-    params.loopEnd = Float32Array.from(
-      params.loopStart,
-      (start) => start + 100.5 / TEST_SAMPLE_RATE,
-    );
-    processor.process([], [[new Float32Array(128)]], params);
-    const range = (
-      processor.engine as typeof processor.engine & {
-        loopWindow: {
-          start: number;
-          end: number;
-          length: number;
-        };
-      }
-    ).loopWindow;
-    expect(range.start).toBeGreaterThanOrEqual(Math.floor(0.001 * TEST_SAMPLE_RATE));
-    expect(range.end).toBeLessThanOrEqual(Math.floor(0.01 * TEST_SAMPLE_RATE));
-    expect(range.length).toBeCloseTo(100.5, 7);
   });
 });

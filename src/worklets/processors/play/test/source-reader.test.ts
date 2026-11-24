@@ -55,24 +55,20 @@ describe('source reader', () => {
     }
   });
 
-  it('reuses weights without caching source content or bounds', () => {
+  it('reuses weights without caching source content', () => {
     const kernel = new SincKernel();
     const source = new ClampedSourceReader(new Float32Array([0.2, 0.4, 0.6]));
     kernel.read(source, 1.25, 2);
-    source.lastIndex = 0;
-    expect(kernel.read(source, 1.25, 2)).toBeCloseTo(0.2, 7);
     source.samples = new Float32Array([0.75]);
     expect(kernel.read(source, 1.25, 2)).toBeCloseTo(0.75, 14);
   });
 
-  it('reflects through the first sample and repeats the last of the head’s range', () => {
-    const source = new ClampedSourceReader(new Float32Array([2, 4, 8, 16]), 0, 2);
-    // Before the start: 2 * first - mirrored tap, the mirror clamped to the range
+  it('reflects through the first sample and repeats the last', () => {
+    const source = new ClampedSourceReader(new Float32Array([2, 4, 8]));
+    // Before the start: 2 * first - mirrored tap, the mirror clamped to the source
     expect([-100, -2, -1, 0, 1, 2, 3, 100].map((index) => source.readTap(index))).toEqual([
       -4, -4, 0, 2, 4, 8, 8, 8,
     ]);
-    const trimmed = new ClampedSourceReader(new Float32Array([2, 4, 8, 16]), 1, 3);
-    expect([-1, 0, 1, 4].map((index) => trimmed.readTap(index))).toEqual([-8, 0, 4, 16]);
   });
 
   it('returns silence for empty sources and repeats a single sample', () => {
@@ -82,18 +78,6 @@ describe('source reader', () => {
         expect(source.readTap(index)).toBe(samples?.length ? 0.5 : 0);
       }
     }
-  });
-
-  it('keeps head bounds independent while reusing a reader across channels', () => {
-    const samples = new Float32Array([1, 2, 3, 4]);
-    const outgoing = new ClampedSourceReader(samples, 0, 2);
-    const current = new ClampedSourceReader(samples, 0, 3);
-    current.lastIndex = 1;
-    expect(outgoing.readTap(10)).toBe(3);
-    expect(current.readTap(10)).toBe(2);
-    outgoing.samples = new Float32Array([5, 6, 7, 8]);
-    expect(outgoing.readTap(10)).toBe(7);
-    expect(current.readTap(10)).toBe(2);
   });
 
   it('lets the source define continuation for every kernel', () => {
