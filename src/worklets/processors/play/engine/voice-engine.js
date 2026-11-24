@@ -131,7 +131,6 @@ export class VoiceEngine {
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
     // play higher), 1 = real-time loop duration constant across notes. Period stretch loops on
     // a unit-rate timeline and mirrors that: 0 = constant loop time, 1 = loop time / playbackRate.
-    // NOTE: Using keytrackLoopAmount > 0 means that audio-rate loop lengths no longer quantize to midinote
     this.keytrackLoopAmount = 0;
     // Reused during rendering to avoid allocating options per sample.
     this.loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
@@ -333,6 +332,7 @@ export class VoiceEngine {
     this.isLoopLengthGliding = false;
     this.glidedLoopLogLength = null;
     this.isLoopPositionGliding = false;
+    this.isLoopStartClamped = false;
     this.glidedLoopStart = null;
     // Raw loop edges in samples (start may pass end), from the last range calculation.
     this.previousRequestedLoop.start = null;
@@ -416,7 +416,7 @@ export class VoiceEngine {
   // Meanwhile the playhead follows the held window: the new length and direction at
   // the old start, so pitch still follows the loop per sample.
   // Returns the window the playhead follows.
-  #carryPlayhead(window, trimRange) {
+  #carryPlayhead(window, direction, trimRange) {
     const previous = this.loopWindow;
     this.loopWindow = window;
     if (
@@ -429,23 +429,26 @@ export class VoiceEngine {
     ) {
       return window;
     }
-    const fades = this.enableLoopCrossfade && !this.isLoopPositionGliding;
+    const fades =
+      this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped);
     if (fades && this.loopMoveFadeLeft > 0) {
       const heldStart = previous.start; // read first: previous may be the held window
       // Bounded by the buffer, not trim: a trim drag pushes the loop too, and its moves
       // wait like any other. A move can't wait when the new length pushes the held window
-      // past the buffer, or leaves the playhead outside both it and trim (the note would end).
-      const heldEnd = heldStart + window.length;
+      // past the buffer, or leaves the playhead traveling toward it from past the trim end
+      // (the note would end).
+      const held = this.heldLoopWindow;
+      held.start = heldStart;
+      held.length = window.length;
+      held.direction = window.direction;
+      held.isPitchLoop = true;
+      const position = this.playbackPosition;
+      const leftTrim =
+        direction > 0 ? position >= trimRange.endSamples : position < trimRange.startSamples;
       if (
-        heldEnd <= this.buffer[0].length &&
-        (this.previousPlaybackPosition <= heldEnd ||
-          this.previousPlaybackPosition >= trimRange.startSamples)
+        held.end <= this.buffer[0].length &&
+        !(leftTrim && isApproachingLoopWindow(position, direction, held))
       ) {
-        const held = this.heldLoopWindow;
-        held.start = heldStart;
-        held.length = window.length;
-        held.direction = window.direction;
-        held.isPitchLoop = true;
         this.loopWindow = held;
         return held;
       }
@@ -676,8 +679,12 @@ export class VoiceEngine {
       const glidedLength = this.#glideLoopLength(targetLength);
       const fittedLength = Math.min(glidedLength, trimLength);
       const maxStart = trimEnd - fittedLength;
+      this.isLoopStartClamped = false;
       if (this.glidedLoopStart !== null) {
-        this.glidedLoopStart = Math.min(Math.max(this.glidedLoopStart, trimStart), maxStart);
+        const clamped = Math.min(Math.max(this.glidedLoopStart, trimStart), maxStart);
+        // Trim pushed the glide: over a sample is a jump to crossfade.
+        this.isLoopStartClamped = Math.abs(clamped - this.glidedLoopStart) > 1;
+        this.glidedLoopStart = clamped;
       }
       calcLoopStart = this.#glideLoopPosition(
         Math.min(Math.max(calcLoopStart, trimStart), maxStart),
@@ -725,8 +732,11 @@ export class VoiceEngine {
     // Re-derive the duration after keytrack before drift sizes its minimum length.
     baseDuration = calcLoopEnd - calcLoopStart;
 
-    // Only snap time loops: a pitch loop's length is its pitch.
-    if (!isPitchLoop) calcLoopStart = this.#snapStart(calcLoopStart, calcLoopEnd);
+    // Only snap time loops: a pitch loop's length is its pitch. Up to trimEnd, so the start
+    // can't snap into a keytracked loop's silent tail.
+    if (!isPitchLoop) {
+      calcLoopStart = this.#snapStart(calcLoopStart, Math.min(calcLoopEnd, trimEnd));
+    }
 
     calcLoopEnd = this.#applyLoopDrift(
       calcLoopStart,
@@ -925,21 +935,6 @@ export class VoiceEngine {
     // Where reverse playback starts.
     const lastPosition = trimRange.endSamples - 1;
 
-    // Both directions play the source samples [startSamples, endSamples).
-    if (this.needsStartPosition) {
-      this.needsStartPosition = false;
-      let first = trimRange.startSamples;
-      let last = lastPosition;
-      if (this.startFromLoop && this.loopEnabled) {
-        // Start on the resolved loop. No drift yet: it is rolled from the keytracked length.
-        const window = this.#calculateLoopWindow(positionParams, trimRange);
-        first = window.start;
-        last = Math.min(window.end - 1, lastPosition);
-      }
-      this.playbackPosition = approachDirection < 0 ? last : first;
-      this.timestretch.reset(this.playbackPosition);
-    }
-
     // A turn can happen after the preceding block advanced past a trim edge.
     if (
       this.previousApproachDirection !== null &&
@@ -1038,6 +1033,16 @@ export class VoiceEngine {
         previousPlaybackRate = playbackRate;
       }
 
+      // Both directions play the source samples [startSamples, endSamples).
+      if (this.needsStartPosition) {
+        this.needsStartPosition = false;
+        const fromLoop = this.startFromLoop && this.loopEnabled;
+        const first = fromLoop ? loopWindow.start : trimRange.startSamples;
+        const last = fromLoop ? Math.min(loopWindow.end - 1, lastPosition) : lastPosition;
+        this.playbackPosition = approachDirection < 0 ? last : first;
+        this.timestretch.reset(this.playbackPosition);
+      }
+
       this.loopWrapped = false;
 
       const envelopeGain = envelopes.gain.active ? envelopes.gain.value : 1;
@@ -1047,7 +1052,11 @@ export class VoiceEngine {
       loopWindow.direction =
         positionParams.loopStartSamples > positionParams.loopEndSamples ? -1 : 1;
       // The rest of this sample plays the window the playhead follows.
-      const playWindow = this.#carryPlayhead(loopWindow, trimRange);
+      const playWindow = this.#carryPlayhead(
+        loopWindow,
+        this.loopTurned ? -approachDirection : approachDirection,
+        trimRange,
+      );
 
       this.smoothedPanDrift +=
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;

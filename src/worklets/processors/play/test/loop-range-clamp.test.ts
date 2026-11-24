@@ -389,6 +389,82 @@ describe('loop range clamping', () => {
     },
   );
 
+  it.each([
+    ['forward', 2000],
+    ['reverse', 3999],
+  ])('starts %s on the keytracked loop', async (direction, position) => {
+    const processor = await startProcessor([0, 4500 / TEST_SAMPLE_RATE, 1]);
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 1 });
+    send(processor, { type: 'voice:setStartFromLoop', value: true });
+    send(processor, { type: 'voice:setPlaybackDirection', playbackDirection: direction });
+    const loop = { loopStart: 2000 / TEST_SAMPLE_RATE, loopEnd: 6000 / TEST_SAMPLE_RATE };
+    const parameters = makeParameters({ trimEnd: 1, ...loop });
+    parameters.playbackRate[0] = 0.5;
+    render(processor, parameters, 1);
+    expect(Math.abs(processor.engine.playbackPosition - position)).toBeLessThan(2);
+  });
+
+  it('keeps a note when trim reverses just after its pitch loop moved', async () => {
+    const processor = await startProcessor(
+      [],
+      [395.5, 1000, 1200].map((period) => period / TEST_SAMPLE_RATE),
+    );
+    send(processor, { type: 'voice:setLoopLengthGlide', value: 0 });
+    Object.assign(processor.engine, { enableLoopCrossfade: true });
+    send(processor, { type: 'voice:setStartFromLoop', value: true });
+    send(processor, { type: 'voice:start' });
+    const points = (loopStart: number, loopEnd: number, trimStart = 0, trimEnd = 48000) =>
+      makeParameters(
+        Object.fromEntries(
+          Object.entries({ loopStart, loopEnd, trimStart, trimEnd }).map(([name, samples]) => [
+            name,
+            samples / TEST_SAMPLE_RATE,
+          ]),
+        ),
+      );
+    render(processor, points(5000, 6000), 395);
+    render(processor, points(6000, 7000), 1);
+    processor.port.postMessage.mockClear();
+    render(processor, points(8000, 8395.5, 14000, 8000), 2000);
+    expect(messages(processor, 'voice:ended')).toHaveLength(0);
+  });
+
+  it('crossfades when trim pushes a gliding pitch loop', async () => {
+    const processor = await startProcessor([], [200 / TEST_SAMPLE_RATE, 1000 / TEST_SAMPLE_RATE]);
+    Object.assign(processor.engine, { enableLoopCrossfade: true });
+    const source = (_: unknown, i: number) => (i < 5000 ? 0.5 : -0.5);
+    send(processor, {
+      type: 'voice:setBuffer',
+      buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, source)],
+      durationSeconds: 1,
+    });
+    send(processor, { type: 'voice:setLoopPositionGlide', value: 0.125 });
+    send(processor, { type: 'voice:setStartFromLoop', value: true });
+    send(processor, { type: 'voice:start' });
+    const at = (loopStart: number, trimStart: number) =>
+      makeParameters({
+        trimStart: trimStart / TEST_SAMPLE_RATE,
+        loopStart: loopStart / TEST_SAMPLE_RATE,
+        loopEnd: (loopStart + 200) / TEST_SAMPLE_RATE,
+      });
+    render(processor, at(1000, 0), 400);
+    render(processor, at(10000, 0), 128);
+    const output = new Float32Array(1);
+    processor.process([], [[output]], at(10000, 6000));
+    expect(output[0]).toBeGreaterThan(0.4);
+  });
+
+  it('keeps a keytracked time loop start out of its silent tail', async () => {
+    const start = 6000 / TEST_SAMPLE_RATE;
+    const processor = await startProcessor([7500 / TEST_SAMPLE_RATE]);
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 1 });
+    const points = { trimStart: start, trimEnd: 6750 / TEST_SAMPLE_RATE, loopEnd: 1 };
+    const parameters = makeParameters(points);
+    parameters.playbackRate[0] = 4;
+    render(processor, parameters, 1);
+    expect(messages(processor, 'loop:range')[0].loopStart).toBeCloseTo(start, 5);
+  });
+
   it('rolls the first drift from the keytracked length when starting from the loop', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     const processor = await startProcessor();
@@ -402,9 +478,9 @@ describe('loop range clamping', () => {
     });
     parameters.playbackRate[0] = 0.25;
     render(processor, parameters, 1);
-    // 0.6 s keytracked to 0.15 s, less 30%.
+    // 0.6 s keytracked to 0.15 s, less 26% (30% scaled down for its length).
     const loop = messages(processor, 'loop:range')[0];
-    expect(loop.loopEnd - loop.loopStart).toBeGreaterThan(0.1);
+    expect(loop.loopEnd - loop.loopStart).toBeCloseTo(0.1106, 3);
     vi.restoreAllMocks();
   });
 
