@@ -9,7 +9,7 @@ The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/
 - `processorOptions: { voiceCount }`, `numberOfInputs: 0`, `numberOfOutputs: voiceCount * 2`.
 - Output `2i`: voice `i`'s stereo audio. Output `2i + 1`: voice `i`'s filter envelope in cents (mono), connected to that voice's `lpf.detune`; silent when the envelope is off.
 - AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `trimStart`, `trimEnd`, `loopDurationDriftAmount`, `maxLoopCount`) belong to the node and are shared by every voice. `SamplePlayer` sets them on its worklet: `trimStart`, `trimEnd`, `loopStart`, `loopEnd` (both at one event time when set together) and `loopDurationDriftAmount`; the pitch LFO drives `detune`.
-- `trimStart`, `trimEnd`, `loopStart` and `loopEnd` are a-rate. Trim and time loops resolve once per block; pitch loops follow their points per sample. Trim bounds a time loop. A pitch loop is bounded only by the buffer, and trim widens to contain it while looping.
+- `trimStart`, `trimEnd`, `loopStart` and `loopEnd` are a-rate. Trim and time loops resolve once per block; pitch loops follow their points per sample. Loop points never move trim. The loop type comes from the requested length. A time loop fits inside trim, or loops all of it when what is left inside is too short. A pitch loop is bounded only by the buffer; outside trim, a note reaches it with start from loop, and otherwise ends at the trim end. Crossed trim points swap.
 
 ## The `voice` tag
 
@@ -60,7 +60,7 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 | `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The player emits `voice:stopped`.         |
 | `loop:enabled`    | `enabled`                                                                                                 | echo of `voice:setLoopEnabled`, once per voice; ignored (the player emits its own).       |
 | `loop:range`      | `loopStart`, `loopEnd`, `triggerId`; playing: `loopMode`, `isInPitchLoop`; idle: `keytrackAmount`, `idle` | throttled; `idle` reports describe the next note and are dropped on the main thread.      |
-| `trim:range`      | `trimStart`, `trimEnd`, `inverted`, `triggerId`                                                           | throttled.                                                                                |
+| `trim:range`      | `trimStart`, `trimEnd`, `triggerId`                                                                       | throttled.                                                                                |
 | `voice:position`  | `position` (fraction of the sample, can pass 1), `triggerId`                                              | ~60 Hz, only while position tracking is on.                                               |
 
 ## Pitch

@@ -133,32 +133,26 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.75);
   });
 
-  // Inverted trim points play the range backward; the global reverse flag inverts that again.
   it.each([
-    ['forward', true],
-    ['reverse', false],
-  ])('plays inverted trim points backward (global %s)', async (direction, backward) => {
-    const length = TEST_SAMPLE_RATE * 0.375;
+    ['forward', 1],
+    ['reverse', -1],
+  ])('swaps crossed trim points and plays %s', async (direction, step) => {
     const processor = await startProcessor();
     processor.port.onmessage?.({
       data: { type: 'voice:setPlaybackDirection', playbackDirection: direction },
     } as MessageEvent);
     const parameters = makeParameters({ trimStart: 0.875, trimEnd: 0.5 });
 
-    const positions: number[] = [];
-    for (let frame = 0; frame < length * 3; frame++) {
-      processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playbackPosition);
-    }
+    render(processor, parameters, 1);
+    const position = processor.engine.playbackPosition;
+    render(processor, parameters, 1);
+    expect(processor.engine.playbackPosition - position).toBeCloseTo(step);
 
-    expect(positions[1] < positions[0]).toBe(backward);
-    const wraps = positions.flatMap((p, i) =>
-      i > 0 && (backward ? p > positions[i - 1] : p < positions[i - 1]) ? [i] : [],
-    );
-    expect(wraps.length).toBeGreaterThanOrEqual(2);
-    expect(Math.abs(wraps[1] - wraps[0] - length)).toBeLessThan(5);
-    expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2 - 1);
-    expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.875);
+    const trim = processor.port.postMessage.mock.calls
+      .map(([message]) => message)
+      .find((message) => message.type === 'trim:range');
+    expect(trim.trimStart).toBe(0.5);
+    expect(trim.trimEnd).toBe(0.875);
   });
 
   // Directional snaps clamp to the outermost crossing; a trim between two
@@ -289,7 +283,7 @@ describe('loop range clamping', () => {
   // trim:range reports the resolved trim: ordered, snapped inward to zero crossings.
   it('posts the resolved trim as trim:range', async () => {
     const processor = await startProcessor([0.3, 0.6]);
-    render(processor, makeParameters({ trimStart: 0.7, trimEnd: 0.2 }), 1);
+    render(processor, makeParameters({ trimStart: 0.2, trimEnd: 0.7 }), 1);
 
     const posts = processor.port.postMessage.mock.calls
       .map(([msg]) => msg)
@@ -297,7 +291,6 @@ describe('loop range clamping', () => {
     expect(posts).toHaveLength(1);
     expect(posts[0].trimStart).toBeCloseTo(0.3, 4);
     expect(posts[0].trimEnd).toBeCloseTo(0.6, 4);
-    expect(posts[0].inverted).toBe(true);
   });
 
   // Turning the loop off mid-note plays on through the rest of the trim range, then ends.
@@ -318,5 +311,99 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeGreaterThan(TEST_SAMPLE_RATE * 0.74);
     const ended = processor.port.postMessage.mock.calls.filter(([m]) => m.type === 'voice:ended');
     expect(ended).toHaveLength(1);
+  });
+
+  // ===== Loops outside trim =====
+
+  const outside = { trimStart: 0.25, trimEnd: 0.5 };
+  const pitchLoopAfter = { ...outside, loopStart: 0.75, loopEnd: 0.76 };
+  const pitchLoopBefore = { ...outside, loopStart: 0.1, loopEnd: 0.11 };
+
+  const messages = (processor: TestProcessor, type: string) =>
+    processor.port.postMessage.mock.calls.map(([m]) => m).filter((m) => m.type === type);
+  const send = (processor: TestProcessor, data: Record<string, unknown>) =>
+    processor.port.onmessage?.({ data } as MessageEvent);
+
+  it.each([
+    ['after', 'forward', pitchLoopAfter],
+    ['after', 'reverse', pitchLoopAfter],
+    ['before', 'forward', pitchLoopBefore],
+    ['before', 'reverse', pitchLoopBefore],
+  ])('plays trim once with a pitch loop %s it, %s', async (_, direction, points) => {
+    const processor = await startProcessor();
+    send(processor, { type: 'voice:setPlaybackDirection', playbackDirection: direction });
+    const parameters = makeParameters(points);
+    render(processor, parameters, TEST_SAMPLE_RATE / 4 - 1);
+    expect(messages(processor, 'voice:ended')).toHaveLength(0);
+    render(processor, parameters, 10);
+    expect(messages(processor, 'voice:ended')).toHaveLength(1);
+    expect(messages(processor, 'trim:range')).toMatchObject([outside]);
+  });
+
+  it.each([
+    ['after', 'forward', pitchLoopAfter],
+    ['after', 'reverse', pitchLoopAfter],
+    ['before', 'forward', pitchLoopBefore],
+    ['before', 'reverse', pitchLoopBefore],
+  ])('holds a pitch loop %s trim when starting from it, %s', async (_, direction, points) => {
+    const processor = await startProcessor();
+    send(processor, { type: 'voice:setStartFromLoop', value: true });
+    send(processor, { type: 'voice:setPlaybackDirection', playbackDirection: direction });
+    const parameters = makeParameters({ ...points, loopDurationDriftAmount: 0.5 });
+    for (let i = 0; i < 50; i++) {
+      render(processor, parameters, 480);
+      const position = processor.engine.playbackPosition / TEST_SAMPLE_RATE;
+      expect(position).toBeGreaterThan(points.loopStart - 0.005);
+      expect(position).toBeLessThan(points.loopEnd + 0.005);
+    }
+    expect(messages(processor, 'voice:ended')).toHaveLength(0);
+  });
+
+  it.each([
+    ['looping stops outside trim', true],
+    ['trim moves past the playhead', false],
+  ])('fades out when %s', async (_, startsInLoop) => {
+    const processor = await startProcessor();
+    send(processor, {
+      type: 'voice:setBuffer',
+      buffer: [new Float32Array(TEST_SAMPLE_RATE).fill(0.5)],
+      durationSeconds: 1,
+    });
+    send(processor, { type: 'voice:setStartFromLoop', value: startsInLoop });
+    send(processor, { type: 'voice:setLoopEnabled', value: startsInLoop });
+    send(processor, { type: 'voice:start' });
+    const parameters = makeParameters(startsInLoop ? pitchLoopAfter : outside);
+    render(processor, parameters, 2400);
+    processor.port.postMessage.mockClear(); // the buffer swap ended a note
+
+    if (startsInLoop) send(processor, { type: 'voice:setLoopEnabled', value: false });
+    else {
+      parameters.trimStart[0] = 0;
+      parameters.trimEnd[0] = 0.1;
+    }
+    const out: number[] = [0.5];
+    for (let frame = 0; frame < 128; frame++) {
+      const block = new Float32Array(1);
+      processor.process([], [[block]], parameters);
+      out.push(block[0]);
+    }
+    expect(out.at(-1)).toBe(0);
+    const steps = out.slice(1).map((value, i) => Math.abs(value - out[i]));
+    expect(Math.max(...steps)).toBeLessThan(0.02);
+    expect(messages(processor, 'voice:ended')).toHaveLength(1);
+  });
+
+  it.each([
+    ['after', 0.75, 1],
+    ['before', 0, 0.2],
+    ['mostly outside', 0.49, 0.8],
+  ])('loops the whole trim when a time loop is %s it', async (_, loopStart, loopEnd) => {
+    const processor = await startProcessor();
+    render(processor, makeParameters({ ...outside, loopStart, loopEnd }), 1);
+    expect(messages(processor, 'loop:range')[0]).toMatchObject({
+      loopStart: outside.trimStart,
+      loopEnd: outside.trimEnd,
+      isInPitchLoop: false,
+    });
   });
 });
