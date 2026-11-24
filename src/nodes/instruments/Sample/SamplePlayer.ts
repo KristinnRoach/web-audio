@@ -154,7 +154,6 @@ export class SamplePlayer {
   /** One processor renders every voice; each voice's effects take two of its outputs. */
   #worklet: AudioWorkletNode | null = null;
   #voices: Voice[] = [];
-  #loadedVoices = 0;
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
   #flushId = 0;
@@ -377,7 +376,7 @@ export class SamplePlayer {
   }
 
   /**
-   * Voice reports name their voice; `initialized` and `flushed` are node-wide.
+   * Voice reports name their voice; `initialized`, `flushed` and `voice:loaded` are node-wide.
    * Voice records hold the last reported note. The audio thread owns voice state and
    * may be ahead of them; reports about an old note are dropped.
    */
@@ -389,16 +388,14 @@ export class SamplePlayer {
       this.#pendingFlushes.delete(report.id);
       return;
     }
+    if (type === 'voice:loaded') {
+      this.#onSampleLoaded();
+      return this.#emitFrom(this.#voices[this.#voices.length - 1], 'sample:loaded', report);
+    }
     const voice = this.#voices[index];
     const voiceId = voice.effects.nodeId;
 
     switch (type) {
-      case 'voice:loaded':
-        // Every voice reports the one buffer; announce it once.
-        if (++this.#loadedVoices !== this.#voices.length) return;
-        this.#onSampleLoaded();
-        return this.#emitFrom(voice, 'sample:loaded', report);
-
       // The pool picked this voice on the audio thread; its effects follow from here.
       case 'voice:started': {
         // Stolen: the note it held ends without a report of its own.
@@ -419,7 +416,8 @@ export class SamplePlayer {
           glideTime: report.glideTime,
           retuned: true,
         });
-        return this.#followNote(report, true);
+        this.#followNote(report, true);
+        return this.#emitFrom(voice, type, { voiceId, ...report });
 
       case 'voice:releasing':
         if (voice.midiNote === null) return;
@@ -616,7 +614,6 @@ export class SamplePlayer {
         });
       });
 
-      this.#loadedVoices = 0;
       // One copy for the processor, which every voice plays from. Copied so the
       // caller's buffer is left alone in Brave.
       const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>

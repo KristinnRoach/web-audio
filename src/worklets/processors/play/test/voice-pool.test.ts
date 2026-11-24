@@ -259,7 +259,8 @@ describe('sample-player processor voices', () => {
     processor.process([], outputs, makeParameters());
 
     // One note: the first voice sounds on its outputs, the second stays silent.
-    expect(reports('voice:loaded').map((message: any) => message.voice)).toEqual([0, 1]);
+    expect(reports('voice:loaded')).toHaveLength(1);
+    expect(reports('voice:loaded')[0]).not.toHaveProperty('voice');
     expect(reports('voice:started')).toEqual([expect.objectContaining({ voice: 0, midiNote: 60 })]);
     expect(outputs[0][0].some((sample) => sample !== 0)).toBe(true);
     expect(outputs[2][0].every((sample) => sample === 0)).toBe(true);

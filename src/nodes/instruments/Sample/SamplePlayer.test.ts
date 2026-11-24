@@ -754,7 +754,13 @@ it('mirrors voice reports and passes on only those about the note each voice pla
   const player = new SamplePlayer({ context: context as unknown as AudioContext, polyphony: 2 });
   const { report } = await initTestPlayer(player);
   const upstream: any[] = [];
-  for (const type of ['voice:started', 'voice:releasing', 'voice:stopped', 'loop:range']) {
+  for (const type of [
+    'voice:started',
+    'voice:retuned',
+    'voice:releasing',
+    'voice:stopped',
+    'loop:range',
+  ]) {
     player.onMessage(type, (message: object) => upstream.push(message));
   }
   const started = { type: 'voice:started', velocity: 100, timestamp: 0, glideTime: 0 };
@@ -778,13 +784,22 @@ it('mirrors voice reports and passes on only those about the note each voice pla
 
     const voiceId = upstream[0].voiceId;
     expect(voiceId).toMatch(/^\d+-sample-voice$/);
-    expect(upstream.slice(0, 2)).toEqual([
+    expect(upstream.slice(0, 3)).toEqual([
       { ...started, senderId: voiceId, voiceId, midiNote: 60 },
       { type: 'loop:range', senderId: voiceId, voiceId, midiNote: 60, loopStart: 0, loopEnd: 1 },
+      {
+        type: 'voice:retuned',
+        senderId: voiceId,
+        voiceId,
+        midiNote: 64,
+        timestamp: 0,
+        glideTime: 0,
+      },
     ]);
     expect(upstream.map(({ type, midiNote }) => [type, midiNote])).toEqual([
       ['voice:started', 60],
       ['loop:range', 60],
+      ['voice:retuned', 64],
       ['voice:stopped', 64],
       ['voice:started', 67],
       ['voice:releasing', 67],
@@ -847,7 +862,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
           pool.schedule(message);
           pool.advance(Infinity);
         } else if (message.type === 'voice:setBuffer') {
-          voices.forEach((_, voice) => test.report({ type: 'voice:loaded', voice }));
+          test.report({ type: 'voice:loaded' });
         }
       },
     });

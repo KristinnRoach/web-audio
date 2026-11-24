@@ -17,14 +17,12 @@ vi.mock('@/utils/audiodata/convert/resampleAudioBuffer', () => ({
   resampleAudioBuffer: vi.fn(),
 }));
 
-/** Answers each buffer the way the processor does: one `voice:loaded` per voice. */
-async function initLoadingPlayer(player: SamplePlayer, voiceCount: number) {
+/** Answers each buffer the way the processor does: one `voice:loaded`. */
+async function initLoadingPlayer(player: SamplePlayer) {
   const test = await initTestPlayer(player, {
     onPost: (message) => {
       if (message.type !== 'voice:setBuffer') return;
-      for (let voice = 0; voice < voiceCount; voice++) {
-        test.report({ type: 'voice:loaded', voice, durationSeconds: message.durationSeconds });
-      }
+      test.report({ type: 'voice:loaded', durationSeconds: message.durationSeconds });
     },
   });
   return test;
@@ -132,7 +130,7 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
     if (buffer === later) throw failure;
     return buffer;
   });
-  const { posted, ofType } = await initLoadingPlayer(player, 2);
+  const { posted, ofType } = await initLoadingPlayer(player);
   const loaded = vi.fn();
   player.onMessage('sample:loaded', loaded);
 
@@ -292,7 +290,7 @@ it('sends pitch periods once per load, only in period mode', async () => {
     copyFromChannel: (destination: Float32Array) =>
       destination.set(new Float32Array(48000).fill(0.5)),
   } as unknown as AudioBuffer;
-  const { ofType } = await initLoadingPlayer(player, 16);
+  const { ofType } = await initLoadingPlayer(player);
   const sent = () => ofType('voice:setPitchPeriods').length;
 
   // Choosing the mode before any audio has nothing to detect yet.

@@ -81,6 +81,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     for (const target of index === undefined ? this.voices : [this.voices[index]]) {
       this.#handleVoiceMessage(target, event.data);
     }
+    // Once per buffer, after every voice it addressed has it.
+    if (type === 'voice:setBuffer') {
+      const { durationSeconds } = event.data;
+      this.port.postMessage({ type: 'voice:loaded', durationSeconds, time: currentTime });
+    }
   }
 
   #handleVoiceMessage({ engine, voice, post }, data) {
@@ -89,7 +94,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       value,
       buffer,
       timestamp,
-      durationSeconds,
       zeroCrossings,
       periods,
       hopSamples,
@@ -113,12 +117,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           post(ended);
         }
         engine.setBuffer(buffer);
-
-        post({
-          type: 'voice:loaded',
-          durationSeconds,
-          time: currentTime,
-        });
         break;
       }
 
