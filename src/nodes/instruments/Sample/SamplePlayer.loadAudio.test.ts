@@ -150,7 +150,7 @@ it('loads one buffer, preserves it on failure, and permits retry', async () => {
       { type: 'voice:setBuffer', buffer: [new Float32Array([0.5])], durationSeconds: 1 },
     ]);
     expect(ofType('voice:setZeroCrossings')).toEqual([]);
-    // Both voices acknowledged; the player announces the sample once.
+    // The player announces the sample once.
     expect(loaded).toHaveBeenCalledOnce();
     expect(player.isLoaded).toBe(true);
     expect(player.audiobuffer).toBe(firstBuffer);

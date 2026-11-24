@@ -143,11 +143,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'voice:setLoopEnabled':
         engine.loopEnabled = value;
-
-        post({
-          type: 'loop:enabled',
-          enabled: value,
-        });
         break;
 
       case 'voice:setLoopPingPong':

@@ -32,7 +32,7 @@ it('applies a loop-end step within a real render quantum', async () => {
   loopEnd.setValueAtTime(95.5 / 48_000, 65 / 48_000);
   await new Promise<void>((resolve) => {
     node.port.onmessage = ({ data }) => {
-      if (data.type === 'loop:enabled') resolve();
+      if (data.type === 'flushed') resolve();
     };
     // Processor state that resets only by message; voice:setBuffer doesn't touch it.
     node.port.postMessage({ type: 'voice:setKeytrackLoopAmount', value: 0 });
@@ -40,6 +40,7 @@ it('applies a loop-end step within a real render quantum', async () => {
     node.port.postMessage({ type: 'voice:setTimestretchMode', value: 'off' });
     node.port.postMessage({ type: 'voice:start' });
     node.port.postMessage({ type: 'voice:setLoopEnabled', value: true });
+    node.port.postMessage({ type: 'flush', id: 1 });
   });
   node.connect(context.destination);
   const audio = await context.startRendering();
