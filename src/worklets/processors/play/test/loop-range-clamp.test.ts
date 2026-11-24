@@ -452,6 +452,10 @@ describe('loop range clamping', () => {
     const output = new Float32Array(1);
     processor.process([], [[output]], at(10000, 6000));
     expect(output[0]).toBeGreaterThan(0.4);
+    // Past the 20 ms move fade it plays only the new place.
+    render(processor, at(10000, 6000), 2000);
+    processor.process([], [[output]], at(10000, 6000));
+    expect(output[0]).toBeCloseTo(-0.5, 5);
   });
 
   it('keeps a keytracked time loop start out of its silent tail', async () => {
