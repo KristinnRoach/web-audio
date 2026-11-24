@@ -146,7 +146,7 @@ describe('trim and loop minimum lengths', () => {
   });
 
   // loopEnd dragged onto loopStart: the loop floors at 1 sample and quantizes up to the
-  // shortest allowed period, instead of falling back to the full playback range.
+  // shortest allowed period, instead of falling back to the full trim.
   it('quantizes a zero-length loop to the shortest period', async () => {
     const shortestPeriod = 46;
     const processor = await startProcessor();

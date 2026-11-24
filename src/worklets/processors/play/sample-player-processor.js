@@ -165,7 +165,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
       }
 
-      // Starts on the resolved loop. A pitch loop's can be outside trim.
+      // Starts on the resolved loop.
       case 'voice:setStartFromLoop':
         engine.startFromLoop = value;
         break;

@@ -37,8 +37,8 @@ describe('a-rate loop points and duration glide', () => {
   const step = (before: number, after: number) =>
     Float32Array.from({ length: 128 }, (_, i) => (i < 64 ? before : after));
 
-  it('plays a moving pitch loop the same with trim linked to it', async () => {
-    const render = async (linked: boolean) => {
+  it('plays a moving pitch loop the same while trim moves around it', async () => {
+    const render = async (movingTrim: boolean) => {
       const processor = await makeProcessor();
       Object.assign(processor.engine, { enableLoopCrossfade: true });
       const output = new Float32Array(128 * 40);
@@ -48,9 +48,12 @@ describe('a-rate loop points and duration glide', () => {
         const start = 0.1 + Math.floor(block / 3) * 0.0041;
         params.loopStart = step(start, start + 0.0003);
         params.loopEnd = params.loopStart.map((value) => value + 0.0039);
-        // Let the note reach the loop before linking, so both start alike.
+        // Let the note reach the loop before moving trim, so both start alike.
         if (block === 0) params.trimStart = params.loopStart;
-        if (linked) [params.trimStart, params.trimEnd] = [params.loopStart, params.loopEnd];
+        if (movingTrim && block > 0) {
+          params.trimStart = params.loopStart.map((value) => value - 0.02);
+          params.trimEnd = params.loopEnd.map((value) => value + 0.02);
+        }
         processor.process([], [[output.subarray(block * 128, (block + 1) * 128)]], params);
       }
       return output;

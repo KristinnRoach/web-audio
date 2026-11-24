@@ -2,11 +2,10 @@
 '@kidlib/web-audio': minor
 ---
 
-Trim and loops are independent:
+Trim and loop range simplification:
 
-- A pitch loop keeps its place and length wherever trim is. Moving trim over it, or moving both together, no longer changes its pitch or clicks. It can be outside trim: start from loop plays it directly, otherwise the note ends at the trim end.
-- A loop is a pitch loop or a time loop by its requested length; trim no longer turns one into the other. A time loop stays inside trim, and loops all of trim when too little of it is inside.
-- If trim start passes trim end, the two swap. Use the playback direction control to reverse playback. `trim:range` no longer has `inverted`.
-- Turning looping off outside trim, or moving trim past the playhead, fades out instead of clicking.
-- Interpolation and loop crossfades can read a few milliseconds of audio outside trim.
+- Trim is independent of loop points: loop points never move trim, and inverted trim points (`trimStart > trimEnd`) reverse playback (consistent with inverted loop points).
+- Both pitch and time loops stay within trim. The loop type comes from the requested length; trim no longer turns one into the other. A pitch loop keeps its quantized length as long as it fits in trim, shifting its position inside trim instead of clipping; a time loop clamps to trim and loops all of trim when too little of it is inside.
+- Moving trim past the playhead fades out instead of clicking, and moving trim over a sounding pitch loop no longer clicks.
+- Interpolation and loop crossfades can read a few milliseconds of audio outside trim, and a pitch loop pushed by a trim move sounds at its old place for up to 20 ms.
 - Trim points are no longer rounded to whole samples. `trimStart` and `trimEnd` are a-rate, read at a block's first audible frame, so a note scheduled on a trim change starts at the new trim start.

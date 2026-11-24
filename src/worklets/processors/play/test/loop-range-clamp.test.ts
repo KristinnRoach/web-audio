@@ -8,7 +8,7 @@ import {
   setupProcessorGlobals,
 } from './range-test-helpers';
 
-// The loop is a subrange of the playback range: loop points clamp into it instead
+// The loop is a subrange of trim: loop points clamp into it instead
 // of being dropped for the whole range.
 describe('loop range clamping', () => {
   setupProcessorGlobals();
@@ -46,7 +46,7 @@ describe('loop range clamping', () => {
 
   it('wraps to trimStart when loopStart sits before it', async () => {
     const processor = await startProcessor();
-    // Default loopStart of 0 is outside a playback range starting at 0.5 s.
+    // Default loopStart of 0 is outside a trim starting at 0.5 s.
     const parameters = makeParameters({ trimStart: 0.5, trimEnd: 1, loopEnd: 0.75 });
 
     render(processor, parameters, TEST_SAMPLE_RATE / 4 + 100);
@@ -133,10 +133,11 @@ describe('loop range clamping', () => {
     expect(Math.max(...positions)).toBeLessThanOrEqual(TEST_SAMPLE_RATE * 0.75);
   });
 
+  // Inverted trim points play the range backward; the global reverse flag inverts that again.
   it.each([
-    ['forward', 1],
-    ['reverse', -1],
-  ])('swaps crossed trim points and plays %s', async (direction, step) => {
+    ['forward', -1],
+    ['reverse', 1],
+  ])('plays inverted trim points backward (global %s)', async (direction, step) => {
     const processor = await startProcessor();
     processor.port.onmessage?.({
       data: { type: 'voice:setPlaybackDirection', playbackDirection: direction },
@@ -153,6 +154,7 @@ describe('loop range clamping', () => {
       .find((message) => message.type === 'trim:range');
     expect(trim.trimStart).toBe(0.5);
     expect(trim.trimEnd).toBe(0.875);
+    expect(trim.inverted).toBe(true);
   });
 
   // Directional snaps clamp to the outermost crossing; a trim between two
@@ -325,62 +327,102 @@ describe('loop range clamping', () => {
     processor.port.onmessage?.({ data } as MessageEvent);
 
   it.each([
-    ['after', 'forward', pitchLoopAfter],
-    ['after', 'reverse', pitchLoopAfter],
-    ['before', 'forward', pitchLoopBefore],
-    ['before', 'reverse', pitchLoopBefore],
-  ])('plays trim once with a pitch loop %s it, %s', async (_, direction, points) => {
-    const processor = await startProcessor();
-    send(processor, { type: 'voice:setPlaybackDirection', playbackDirection: direction });
-    const parameters = makeParameters(points);
-    render(processor, parameters, TEST_SAMPLE_RATE / 4 - 1);
-    expect(messages(processor, 'voice:ended')).toHaveLength(0);
-    render(processor, parameters, 10);
-    expect(messages(processor, 'voice:ended')).toHaveLength(1);
-    expect(messages(processor, 'trim:range')).toMatchObject([outside]);
+    ['after', pitchLoopAfter, 0.49, 0.5],
+    ['before', pitchLoopBefore, 0.25, 0.26],
+  ])(
+    'clamps a pitch loop %s trim into trim while keeping its length',
+    async (_, points, expectedStart, expectedEnd) => {
+      const processor = await startProcessor();
+      render(processor, makeParameters(points), 1);
+      expect(messages(processor, 'trim:range')).toMatchObject([outside]);
+      const loop = messages(processor, 'loop:range')[0];
+      expect(loop.loopStart).toBeCloseTo(expectedStart, 5);
+      expect(loop.loopEnd).toBeCloseTo(expectedEnd, 5);
+    },
+  );
+
+  it('caps a pitch loop to the trim length when trim is narrower', async () => {
+    const processor = await startProcessor([], [0.004, 0.01]);
+    render(
+      processor,
+      makeParameters({ trimStart: 0.4, trimEnd: 0.405, loopStart: 0.4, loopEnd: 0.409 }),
+      1,
+    );
+    const loop = messages(processor, 'loop:range')[0];
+    expect(loop.loopStart).toBeCloseTo(0.4, 5);
+    expect(loop.loopEnd).toBeCloseTo(0.405, 5);
   });
 
-  it.each([
-    ['after', 'forward', pitchLoopAfter],
-    ['after', 'reverse', pitchLoopAfter],
-    ['before', 'forward', pitchLoopBefore],
-    ['before', 'reverse', pitchLoopBefore],
-  ])('holds a pitch loop %s trim when starting from it, %s', async (_, direction, points) => {
+  // Pointer events arrive faster than the move fade; after 22 of them trim start passes
+  // trim end and reverses playback.
+  it.each(['trimStart', 'trimEnd'] as const)(
+    'plays on without clicks when dragging %s pushes a sounding pitch loop',
+    async (edge) => {
+      const processor = await startProcessor([], [0.005, 0.0081, 0.012]);
+      Object.assign(processor.engine, { enableLoopCrossfade: true });
+      const wave = (_: unknown, i: number) => Math.sin(i / 20) * 0.2;
+      send(processor, {
+        type: 'voice:setBuffer',
+        buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, wave)],
+        durationSeconds: 1,
+      });
+      send(processor, { type: 'voice:setStartFromLoop', value: true });
+      send(processor, { type: 'voice:start' });
+      processor.port.postMessage.mockClear(); // the buffer swap ended a note
+
+      let previous = 0;
+      let largestStep = 0;
+      for (let block = 0; block < 0.5 * TEST_SAMPLE_RATE; block += 128) {
+        const moved = Math.floor(block / 768) * 0.032;
+        const trim = { trimStart: 0.1, trimEnd: 0.788 };
+        trim[edge] += edge === 'trimStart' ? moved : -moved;
+        const output = new Float32Array(128);
+        const points = { ...trim, loopStart: 0.45, loopEnd: 0.4581 };
+        processor.process([], [[output]], makeParameters(points));
+        for (const value of output) {
+          largestStep = Math.max(largestStep, Math.abs(value - previous));
+          previous = value;
+        }
+      }
+      expect(largestStep).toBeLessThan(0.02); // the source's own largest step is 0.01
+      expect(messages(processor, 'voice:ended')).toHaveLength(0);
+    },
+  );
+
+  it('rolls the first drift from the keytracked length when starting from the loop', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const processor = await startProcessor();
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 1 });
     send(processor, { type: 'voice:setStartFromLoop', value: true });
-    send(processor, { type: 'voice:setPlaybackDirection', playbackDirection: direction });
-    const parameters = makeParameters({ ...points, loopDurationDriftAmount: 0.5 });
-    for (let i = 0; i < 50; i++) {
-      render(processor, parameters, 480);
-      const position = processor.engine.playbackPosition / TEST_SAMPLE_RATE;
-      expect(position).toBeGreaterThan(points.loopStart - 0.005);
-      expect(position).toBeLessThan(points.loopEnd + 0.005);
-    }
-    expect(messages(processor, 'voice:ended')).toHaveLength(0);
+    const parameters = makeParameters({
+      trimEnd: 1,
+      loopStart: 0.2,
+      loopEnd: 0.8,
+      loopDurationDriftAmount: 0.3,
+    });
+    parameters.playbackRate[0] = 0.25;
+    render(processor, parameters, 1);
+    // 0.6 s keytracked to 0.15 s, less 30%.
+    const loop = messages(processor, 'loop:range')[0];
+    expect(loop.loopEnd - loop.loopStart).toBeGreaterThan(0.1);
+    vi.restoreAllMocks();
   });
 
-  it.each([
-    ['looping stops outside trim', true],
-    ['trim moves past the playhead', false],
-  ])('fades out when %s', async (_, startsInLoop) => {
+  it('fades out when trim moves past the playhead', async () => {
     const processor = await startProcessor();
     send(processor, {
       type: 'voice:setBuffer',
       buffer: [new Float32Array(TEST_SAMPLE_RATE).fill(0.5)],
       durationSeconds: 1,
     });
-    send(processor, { type: 'voice:setStartFromLoop', value: startsInLoop });
-    send(processor, { type: 'voice:setLoopEnabled', value: startsInLoop });
+    send(processor, { type: 'voice:setLoopEnabled', value: false });
     send(processor, { type: 'voice:start' });
-    const parameters = makeParameters(startsInLoop ? pitchLoopAfter : outside);
+    const parameters = makeParameters(outside);
     render(processor, parameters, 2400);
     processor.port.postMessage.mockClear(); // the buffer swap ended a note
 
-    if (startsInLoop) send(processor, { type: 'voice:setLoopEnabled', value: false });
-    else {
-      parameters.trimStart[0] = 0;
-      parameters.trimEnd[0] = 0.1;
-    }
+    parameters.trimStart[0] = 0;
+    parameters.trimEnd[0] = 0.1;
     const out: number[] = [0.5];
     for (let frame = 0; frame < 128; frame++) {
       const block = new Float32Array(1);
