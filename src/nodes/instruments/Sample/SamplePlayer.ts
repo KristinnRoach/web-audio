@@ -1087,7 +1087,7 @@ export class SamplePlayer {
   }
 
   /**
-   * While looping is on, notes start at the loop instead of the trim start:
+   * When enabled, notes start at the loop instead of the trim start while looping:
    * at the lower loop edge, or the higher one when playing in reverse. Trim
    * still bounds playback. With looping off, notes start at trim as usual.
    */
@@ -1578,6 +1578,11 @@ export class SamplePlayer {
 
   get trimEnd(): number {
     return this.#trimEnd;
+  }
+
+  /** Whether notes start at the loop instead of the trim start while looping is on. */
+  get startFromLoop(): boolean {
+    return this.#startFromLoop;
   }
 
   get loopStart(): number {
