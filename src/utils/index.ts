@@ -14,7 +14,6 @@ export * from './music-theory';
 export * from './code/assert';
 export * from './code/tryCatch';
 export * from './throttle';
-export * from './code/generate/generateProcessorCode';
 
 // Search utils
 export * from './search';

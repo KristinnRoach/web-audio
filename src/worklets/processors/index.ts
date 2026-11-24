@@ -13,8 +13,3 @@ import './distortion/distortion-processor';
 import './follower/envelope-follower-processor';
 import './monitor/level-meter-processor';
 // import './spectral/spectral-freeze-processor';
-
-// For dev de-bugging / testing:
-// import './debug/js-test-processor.js';
-// export * from './debug/ts-test-processor.js'; // ts version
-// export * from './debug/buffer-player-processor.js'; // ts

@@ -473,7 +473,6 @@ export class SamplePlayer {
     this.#post({ type: 'voice:setLoopPositionGlide', value: this.#loopPositionGlide });
     this.#post({ type: 'voice:reportPlaybackPosition', value: this.#positionTracking });
     this.#sendUpstreamMessage('sample-player:initialized', {});
-    this.#sendUpstreamMessage('voice-pool:initialized', { voiceCount: this.#voices.length });
   }
 
   // TODO: Check whether this is still needed after moving loop range to processor
@@ -713,7 +712,10 @@ export class SamplePlayer {
     return midiNote;
   }
 
-  /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
+  /**
+   * Hold and sustain apply when called, not when a scheduled release is due.
+   * `secondsFromNow` is ignored while the sustain pedal holds the note.
+   */
   release(midiNote: MidiValue, secondsFromNow = 0): this {
     if (this.#disposed) return this;
     if (this.holdEnabled || this.#holdLocked) return this;
@@ -1464,69 +1466,6 @@ export class SamplePlayer {
       voice.effects.feedback?.setDelayMultiplier(value);
     });
   }
-
-  /* === I/O === */
-
-  // async initMidiController(): Promise<boolean> {
-  //   if (this.#midiController?.isInitialized) {
-  //     return true;
-  //   }
-
-  //   if (!this.#midiController) {
-  //     this.#midiController = new MidiController();
-  //   }
-
-  //   assert(
-  //     this.#midiController,
-  //     `SamplePlayer: Failed to create MIDI controller`
-  //   );
-
-  //   const result = await tryCatch(() => this.#midiController!.initialize());
-  //   assert(!result.error, `SamplePlayer: Failed to initialize MIDI`);
-  //   return result.data;
-  // }
-
-  // setMidiController(midiController: MidiController): this {
-  //   this.#midiController = midiController;
-  //   return this;
-  // }
-
-  // async enableMIDI(
-  //   midiController?: MidiController,
-  //   channel: number | 'all' = 'all'
-  // ): Promise<this> {
-  //   if (!midiController) {
-  //     midiController = new MidiController();
-  //     await midiController.initialize();
-  //   }
-
-  //   if (midiController.isInitialized) {
-  //     this.#midiController = midiController;
-  //     midiController.connectInstrument(this, channel);
-
-  //     this.#sendUpstreamMessage('midi:enabled', { channel });
-  //   }
-  //   return this;
-  // }
-
-  // disableMIDI(
-  //   midiController?: MidiController,
-  //   channel: number | 'all' = 'all'
-  // ): this {
-  //   const controller = midiController || this.#midiController;
-  //   controller?.disconnectInstrument(this, channel);
-  //   if (controller === this.#midiController) {
-  //     this.#midiController = null;
-  //   }
-
-  //   this.#sendUpstreamMessage('midi:disabled', { channel });
-
-  //   return this;
-  // }
-
-  // switchMIDIChannel(channel: number | 'all') {
-  //   this.#midiController?.switchInstrumentChannel(this, channel);
-  // }
 
   /* === PUBLIC GETTERS === */
 

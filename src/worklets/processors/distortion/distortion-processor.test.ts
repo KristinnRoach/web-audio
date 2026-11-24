@@ -6,7 +6,7 @@ beforeAll(async () => {
   const g = globalThis as any;
   g.sampleRate = 48000;
   g.AudioWorkletProcessor = class {
-    port = { postMessage: (_: unknown) => {} };
+    port = { postMessage() {} };
   };
   g.registerProcessor = (_name: string, ctor: any) => (DistortionProcessor = ctor);
   await import('./distortion-processor.js');
