@@ -37,41 +37,25 @@ describe('a-rate loop points and duration glide', () => {
   const step = (before: number, after: number) =>
     Float32Array.from({ length: 128 }, (_, i) => (i < 64 ? before : after));
 
-  it('moves trim and a pitch loop together, without clamping to the old trim', async () => {
-    const processor = await makeProcessor();
-    const params = makeParameters({ trimEnd: 0.1, loopStart: 0.01, loopEnd: 0.014 });
-    processor.process([], [[new Float32Array(1024)]], params);
-    params.trimStart = step(0, 0.5);
-    params.trimEnd = step(0.1, 0.6);
-    params.loopStart = step(0.01, 0.51);
-    params.loopEnd = step(0.014, 0.514);
-    processor.process([], [[new Float32Array(128)]], params);
-    const { start, audioStart, audioEnd } = processor.engine.loopWindow;
-    expect(start / TEST_SAMPLE_RATE).toBeCloseTo(0.51, 6);
-    expect(audioStart / TEST_SAMPLE_RATE).toBeCloseTo(0.5, 6);
-    expect(audioEnd / TEST_SAMPLE_RATE).toBeCloseTo(0.6, 4);
-    expect(processor.engine.playbackPosition).toBeGreaterThanOrEqual(start);
-    expect(processor.engine.playbackPosition).toBeLessThan(start + 0.004 * TEST_SAMPLE_RATE + 1);
-  });
-
-  it('keeps a pitch loop at its quantized length when trim is set to the same points', async () => {
-    const processor = await makeProcessor();
-    const points = { trimStart: 0.3, trimEnd: 0.3039, loopStart: 0.3, loopEnd: 0.3039 };
-    processor.process([], [[new Float32Array(128)]], makeParameters(points));
-    const { start, length, audioStart, audioEnd } = processor.engine.loopWindow;
-    expect(length).toBeCloseTo(0.004 * TEST_SAMPLE_RATE, 6);
-    expect(start).toBe(audioStart);
-    expect(start + length).toBe(audioEnd);
-  });
-
-  it('resolves trim with the loop once per block while the loop is long', async () => {
-    const processor = await makeProcessor();
-    const params = makeParameters({ trimEnd: 0.9, loopStart: 0.1, loopEnd: 0.8 });
-    params.trimStart = step(0, 0.2);
-    processor.process([], [[new Float32Array(128)]], params);
-    expect(processor.engine.loopWindow.audioStart).toBe(0);
-    processor.process([], [[new Float32Array(128)]], { ...params, trimStart: step(0.2, 0.2) });
-    expect(processor.engine.loopWindow.audioStart).toBeCloseTo(0.2 * TEST_SAMPLE_RATE, 2);
+  it('plays a moving pitch loop the same with trim linked to it', async () => {
+    const render = async (linked: boolean) => {
+      const processor = await makeProcessor();
+      Object.assign(processor.engine, { enableLoopCrossfade: true });
+      const output = new Float32Array(128 * 40);
+      for (let block = 0; block < 40; block++) {
+        const params = makeParameters({ trimEnd: 1 });
+        // A jump every 3 blocks: faster than the 20 ms move fade.
+        const start = 0.1 + Math.floor(block / 3) * 0.0041;
+        params.loopStart = step(start, start + 0.0003);
+        params.loopEnd = params.loopStart.map((value) => value + 0.0039);
+        // Let the note reach the loop before linking, so both start alike.
+        if (block === 0) params.trimStart = params.loopStart;
+        if (linked) [params.trimStart, params.trimEnd] = [params.loopStart, params.loopEnd];
+        processor.process([], [[output.subarray(block * 128, (block + 1) * 128)]], params);
+      }
+      return output;
+    };
+    expect(await render(true)).toEqual(await render(false));
   });
 
   it('starts a note scheduled on a trim step at the new trim start', async () => {
@@ -254,31 +238,5 @@ describe('a-rate loop points and duration glide', () => {
           Math.exp(-37 / TEST_SAMPLE_RATE / 0.01 - 19 / TEST_SAMPLE_RATE / 0.02),
     );
     expect(state.loopWindow.length / TEST_SAMPLE_RATE).toBeCloseTo(expected, 10);
-  });
-
-  it('contains every modulated range inside trim without rounding fractional lengths', async () => {
-    const processor = await startProcessor([], [100.5 / TEST_SAMPLE_RATE]);
-    processor.port.onmessage?.({
-      data: { type: 'voice:setLoopLengthGlide', value: 0 },
-    } as MessageEvent);
-    const params = makeParameters({ trimStart: 0.001, trimEnd: 0.01 });
-    params.loopStart = Float32Array.from({ length: 128 }, (_, i) => i / 1000);
-    params.loopEnd = Float32Array.from(
-      params.loopStart,
-      (start) => start + 100.5 / TEST_SAMPLE_RATE,
-    );
-    processor.process([], [[new Float32Array(128)]], params);
-    const range = (
-      processor.engine as typeof processor.engine & {
-        loopWindow: {
-          start: number;
-          end: number;
-          length: number;
-        };
-      }
-    ).loopWindow;
-    expect(range.start).toBeGreaterThanOrEqual(Math.floor(0.001 * TEST_SAMPLE_RATE));
-    expect(range.end).toBeLessThanOrEqual(Math.floor(0.01 * TEST_SAMPLE_RATE));
-    expect(range.length).toBeCloseTo(100.5, 7);
   });
 });

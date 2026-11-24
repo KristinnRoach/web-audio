@@ -21,9 +21,9 @@ export type TestProcessor = {
     minRangeSamples: number;
     readonly loopCrossfade: {
       readonly count: number;
-      head(i: number): { position: number; audioStart: number; audioEnd: number };
+      head(i: number): { position: number };
     };
-    readonly loopWindow: { start: number; length: number; audioStart: number; audioEnd: number };
+    readonly loopWindow: { start: number };
   };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;

@@ -9,7 +9,7 @@ The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/
 - `processorOptions: { voiceCount }`, `numberOfInputs: 0`, `numberOfOutputs: voiceCount * 2`.
 - Output `2i`: voice `i`'s stereo audio. Output `2i + 1`: voice `i`'s filter envelope in cents (mono), connected to that voice's `lpf.detune`; silent when the envelope is off.
 - AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `trimStart`, `trimEnd`, `loopDurationDriftAmount`, `maxLoopCount`) belong to the node and are shared by every voice. `SamplePlayer` sets them on its worklet: `trimStart`, `trimEnd`, `loopStart`, `loopEnd` (both at one event time when set together) and `loopDurationDriftAmount`; the pitch LFO drives `detune`.
-- `trimStart`, `trimEnd`, `loopStart` and `loopEnd` are a-rate and resolve together: per sample while the loop window is short (under twice the pitch-loop cutoff), otherwise once per block. A range no longer than the pitch cutoff keeps its scale-quantized length; a longer one snaps inward to zero crossings. Trim has priority: the loop resolves inside it. Trim direction and the reported `trim:range` update once per block.
+- `trimStart`, `trimEnd`, `loopStart` and `loopEnd` are a-rate. Trim and time loops resolve once per block; pitch loops follow their points per sample. Trim bounds a time loop. A pitch loop is bounded only by the buffer, and trim widens to contain it while looping.
 
 ## The `voice` tag
 

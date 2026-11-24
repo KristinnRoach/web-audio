@@ -87,7 +87,7 @@ describe('loop range clamping', () => {
     },
   );
 
-  it('keeps an audio-rate loop at its length when the range end moves before it', async () => {
+  it('keeps an audio-rate loop at its length when the range end snaps inside it', async () => {
     const end = TEST_SAMPLE_RATE * 0.75;
     const loopLength = 92;
     const processor = await startProcessor([0.5, (end - 20) / TEST_SAMPLE_RATE]);
@@ -107,8 +107,6 @@ describe('loop range clamping', () => {
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
     expect(wraps.length).toBeGreaterThanOrEqual(2);
     expect(wraps[1] - wraps[0]).toBeCloseTo(loopLength, 0);
-    // Never plays past the snapped range end (within Float32 parameter precision).
-    expect(Math.max(...positions)).toBeLessThan(end - 20 + 1);
   });
 
   // Loop points arrive raw (web-audio#86), so a start past the end selects the

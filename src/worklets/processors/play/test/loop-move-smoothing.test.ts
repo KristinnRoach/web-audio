@@ -53,40 +53,6 @@ describe('audio-rate loop movement smoothing', () => {
     expect(output[1]).toBeCloseTo(output[0], 5);
   });
 
-  it.each([
-    { frames: 2500, expected: 0 },
-    { frames: 2385, expected: 0.4 * (30 / 64) },
-  ])(
-    'retains the old tail gain when relocating after $frames frames',
-    async ({ frames, expected }) => {
-      const processor = await startProcessor();
-      const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
-      send({
-        type: 'voice:setBuffer',
-        buffer: [new Float32Array(4800).fill(0.4), new Float32Array(4800)],
-        durationSeconds: 0.1,
-      });
-      send({ type: 'voice:setKeytrackLoopAmount', value: 1 });
-      send({ type: 'voice:start' });
-      processor.process(
-        [],
-        [[new Float32Array(frames), new Float32Array(frames)]],
-        makeParameters({ loopEnd: 0.1, playbackRate: 2 }),
-      );
-
-      const output = [new Float32Array(1), new Float32Array(1)];
-      processor.process(
-        [],
-        [output],
-        makeParameters({ loopStart: 0.05, loopEnd: 0.06, playbackRate: 2 }),
-      );
-      // The new short loop has no padded tail. Relocation must restore the old
-      // loop's audible continuation, including its silence or partial tail fade.
-      expect(output[0][0]).toBeCloseTo(expected, 6);
-      expect(output[1][0]).toBe(0);
-    },
-  );
-
   it('keeps the waveform advancing during continuous a-rate movement', async () => {
     const processor = await startProcessor([], [0.004, 0.008]);
     processor.port.onmessage?.({
@@ -144,40 +110,6 @@ describe('audio-rate loop movement smoothing', () => {
     const position = processor.engine.playbackPosition;
     expect(position).toBeGreaterThanOrEqual(start - 1);
     expect(position).toBeLessThanOrEqual(start + period + 1);
-  });
-
-  it('gives running wrap fades the new trim when a move carries them', async () => {
-    const period = 48;
-    const processor = await startProcessor([], [period / TEST_SAMPLE_RATE]);
-    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
-    send({
-      type: 'voice:setBuffer',
-      buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) => Math.sin(i / 23) * 0.2)],
-      durationSeconds: 1,
-    });
-    send({ type: 'voice:setLoopEnabled', value: true });
-    send({ type: 'voice:start' });
-    const render = (start: number, trimStart: number) =>
-      processor.process(
-        [],
-        [[new Float32Array(1)]],
-        makeParameters({
-          trimStart: trimStart / TEST_SAMPLE_RATE,
-          trimEnd: (trimStart + 1000) / TEST_SAMPLE_RATE,
-          loopStart: start / TEST_SAMPLE_RATE,
-          loopEnd: (start + period) / TEST_SAMPLE_RATE,
-        }),
-      );
-    // Just past the first wrap, so its fade is running
-    for (let frame = 0; frame < period + 2; frame++) render(0, 0);
-    const fades = processor.engine.loopCrossfade;
-    expect(fades.count).toBe(1);
-    render(4000, 4000);
-    // The carried head reads the new region with its trim, not clamped to the old one
-    const window = processor.engine.loopWindow;
-    expect(fades.head(0).position).toBeGreaterThan(window.start);
-    expect(fades.head(0).audioStart).toBe(window.audioStart);
-    expect(fades.head(0).audioEnd).toBe(window.audioEnd);
   });
 
   it('fades a minimum-length loop move over the move fade time, between the two windows', async () => {

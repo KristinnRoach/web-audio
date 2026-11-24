@@ -63,10 +63,7 @@ describe('trim and loop minimum lengths', () => {
       );
       const messages = processor.port.postMessage.mock.calls.map(([message]) => message);
       const loop = messages.find((message) => message.type === 'loop:range');
-      const trim = messages.find((message) => message.type === 'trim:range');
 
-      expect(loop.loopStart).toBeGreaterThanOrEqual(trim.trimStart);
-      expect(loop.loopEnd).toBeLessThanOrEqual(trim.trimEnd);
       expect((loop.loopEnd - loop.loopStart) * TEST_SAMPLE_RATE).toBeGreaterThanOrEqual(
         processor.engine.minRangeSamples - 1e-8,
       );

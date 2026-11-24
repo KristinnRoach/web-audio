@@ -71,48 +71,6 @@ it.each([null, [new Float32Array(256)]])(
   },
 );
 
-it.each(['linear', 'hermite', 'sinc'] as const)(
-  'excludes audio before the trim start during fractional playback in %s mode',
-  (mode) => {
-    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
-    const samples = new Float32Array(512);
-    samples[99] = 1;
-    engine.setBuffer([samples]);
-    engine.interpolation = mode;
-    engine.start(1, 0);
-    const output = new Float32Array(32);
-    engine.render(
-      [output],
-      makeParameters({ trimStart: 100.25 / SR, trimEnd: 400 / SR, playbackRate: 0.5 }),
-      0,
-      0,
-    );
-    expect(Array.from(output)).toEqual(Array(32).fill(0));
-  },
-);
-
-it('keeps an outgoing head inside its saved trim when the current trim moves', () => {
-  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
-  const samples = new Float32Array(512);
-  samples.fill(0.5, 100, 200);
-  samples.fill(1, 0, 100);
-  engine.setBuffer([samples]);
-  engine.start(1, 0);
-  engine.render(
-    [new Float32Array(1)],
-    makeParameters({ trimStart: 100 / SR, trimEnd: 400 / SR }),
-    0,
-    0,
-  );
-  // A reverse outgoing head has crossed its old trim start. It must hold the
-  // old endpoint (0.5), not the excluded sample (1) or the new endpoint (0).
-  engine.loopCrossfade.start(99, -1, 32, false, 400, 100);
-  const output = new Float32Array(1);
-  engine.render([output], makeParameters({ trimStart: 200 / SR, trimEnd: 500 / SR }), 1, 1 / SR);
-  // Second output frame has opening gain 1/16.
-  expect(output[0] * 16).toBeCloseTo(0.5, 6);
-});
-
 describe('host stop', () => {
   const STOP_FRAME = 200;
   const FADE = 64;
