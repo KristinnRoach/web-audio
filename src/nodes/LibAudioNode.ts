@@ -36,8 +36,8 @@ export interface ILibAudioNode<T extends AudioNode | AudioWorkletNode = AudioNod
 /** Extends ILibAudioNode with core Instrument features */
 export interface ILibInstrumentNode extends ILibAudioNode {
   // Core instrument capabilities
-  play(midiNote: MidiValue, velocity?: number): MidiValue | null;
-  release(note: MidiValue): this;
+  play(midiNote: number, velocity?: number): number | null;
+  release(note: number): this;
   releaseAll(): this;
 }
 

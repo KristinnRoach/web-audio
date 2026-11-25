@@ -162,7 +162,7 @@ export class SamplePlayer {
   #outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
-  #sustainedNotes = new Map<MidiValue, number>();
+  #sustainedNotes = new Map<number, number>();
 
   // Nodes on a closed context go silent without throwing
   #onContextStateChange = () => {
@@ -681,11 +681,11 @@ export class SamplePlayer {
    * when the note sounds, from whatever is playing then.
    */
   play(
-    midiNote: MidiValue,
-    velocity: MidiValue = 100,
+    midiNote: number,
+    velocity = 100,
     glideTime = this.getGlideTime(),
     secondsFromNow = 0,
-  ): MidiValue | null {
+  ): number | null {
     if (this.#disposed) return null;
     const safeVelocity = isMidiValue(velocity) ? velocity : 100;
     if (!isMidiValue(midiNote)) {
@@ -713,7 +713,7 @@ export class SamplePlayer {
    * Hold and sustain apply when called, not when a scheduled release is due.
    * `secondsFromNow` is ignored while the sustain pedal holds the note.
    */
-  release(midiNote: MidiValue, secondsFromNow = 0): this {
+  release(midiNote: number, secondsFromNow = 0): this {
     if (this.#disposed) return this;
     if (this.holdEnabled || this.#holdLocked) return this;
 
@@ -1451,8 +1451,6 @@ export class SamplePlayer {
       this.#voices.forEach((voice) => {
         voice.effects.feedback?.setAmountMacro(currAmount);
       });
-    } else {
-      console.info('Feedback mode set to double-trouble, radical!');
     }
   }
 

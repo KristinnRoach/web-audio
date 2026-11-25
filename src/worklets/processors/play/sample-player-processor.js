@@ -9,7 +9,7 @@ import { PoolVoice, VoicePool } from './engine/voice-pool.js';
  *
  * Voice messages with a `voice` index go to that voice; untagged ones go to all.
  * Pool commands and flush are node-wide. Voice reports carry their index;
- * initialized/flushed are node-wide.
+ * initialized, flushed and voice:loaded are node-wide.
  * Messages and ordering: docs/SAMPLE_PLAYER_PROCESSOR.md.
  */
 export class SamplePlayerProcessor extends AudioWorkletProcessor {

@@ -26,6 +26,3 @@ export * from './math/second-diff';
 
 // JS data-type utils
 export * from './code/set-utils';
-
-// Loading utils
-// export * from './load/xhr-utils';

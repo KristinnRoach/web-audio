@@ -53,8 +53,6 @@ async function load(context: BaseAudioContext): Promise<InitResult> {
     URL.revokeObjectURL(processorUrl);
   }
 
-  console.info('Audiolib: AudioWorklet module loaded.');
-
   return {
     success: true,
     loadedPath: 'blob-url',

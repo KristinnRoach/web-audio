@@ -8,7 +8,8 @@
     "url": "git+https://github.com/KristinnRoach/web-audio.git"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/processors"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
