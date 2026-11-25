@@ -1070,17 +1070,19 @@ export class VoiceEngine {
       const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
 
       const canStretch = this.timestretch.canStretch;
-      // Wait for the playhead to reach the loop, and for the original-speed position if stretch is available.
-      const inLoop =
-        this.loopEnabled &&
-        (this.loopTurned ||
-          (!isApproachingLoopWindow(this.playheadPosition, approachDirection, playWindow) &&
-            (!canStretch ||
-              !isApproachingLoopWindow(
-                this.timestretch.originalSpeedPosition,
-                approachDirection,
-                playWindow,
-              ))));
+      // Loop rules apply once the playhead, and the original-speed position if stretch
+      // is available, have reached the loop.
+      const reachedLoop =
+        !isApproachingLoopWindow(this.playheadPosition, approachDirection, playWindow) &&
+        !(
+          canStretch &&
+          isApproachingLoopWindow(
+            this.timestretch.originalSpeedPosition,
+            approachDirection,
+            playWindow,
+          )
+        );
+      const inLoop = this.loopEnabled && (this.loopTurned || reachedLoop);
 
       this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
       const timestretchActive = !this.isInPitchLoop && canStretch;
