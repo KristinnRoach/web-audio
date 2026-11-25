@@ -26,7 +26,6 @@ describe('buffer reload settings', () => {
       panDriftEnabled: false,
       isPlaying: false,
       playbackPosition: 0,
-      loopDriftPassCount: 0,
       loopWindow: null,
     });
 

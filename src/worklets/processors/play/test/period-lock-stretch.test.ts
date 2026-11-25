@@ -218,12 +218,8 @@ describe('period timestretch through the processor', () => {
         : { loopStart: 2000 / TEST_SAMPLE_RATE, loopEnd: 7000 / TEST_SAMPLE_RATE };
     async function edges(playbackRate: number) {
       const frames: number[] = [];
-      let count: number | undefined = 0;
       await renderSine(playbackRate, true, points, kind === 'ping-pong', (engine, frame) => {
-        if (engine.loopDriftPassCount !== count) {
-          frames.push(frame);
-          count = engine.loopDriftPassCount;
-        }
+        if (engine.loopWrapped) frames.push(frame);
       });
       return frames;
     }

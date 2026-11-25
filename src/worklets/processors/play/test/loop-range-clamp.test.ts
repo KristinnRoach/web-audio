@@ -200,9 +200,7 @@ describe('loop range clamping', () => {
     'keeps a moving audio-rate loop at its length (%f s per block)',
     async (perBlock) => {
       const loopLength = 96;
-      const processor = (await startProcessor()) as TestProcessor & {
-        engine: { loopDriftPassCount: number };
-      };
+      const processor = await startProcessor();
       const at = (d: number) =>
         makeParameters({
           trimStart: 0.2 + d,
@@ -212,16 +210,21 @@ describe('loop range clamping', () => {
         });
 
       const block = 128;
-      const counts: number[] = [];
+      const phases: number[] = [];
+      const output = [new Float32Array(1)];
       for (let k = 0; k < 340; k++) {
         const parameters = at(Math.max(0, k - 300) * perBlock);
         for (let i = 0; i < block; i++) {
-          processor.process([], [[new Float32Array(1)]], parameters);
-          counts.push(processor.engine.loopDriftPassCount);
+          processor.process([], [output], parameters);
+          const { playbackPosition, loopWindow } = processor.engine;
+          // Measure wraps relative to the moving loop start.
+          phases.push(playbackPosition - loopWindow.start);
         }
       }
 
-      const wraps = counts.flatMap((c, i) => (i > 300 * block && c > counts[i - 1] ? [i] : []));
+      const wraps = phases.flatMap((phase, i) =>
+        i > 300 * block && phase < phases[i - 1] ? [i] : [],
+      );
       const cycles = wraps.slice(1).map((w, i) => w - wraps[i]);
       expect(cycles.length).toBeGreaterThan(40);
       for (const cycle of cycles) expect(Math.abs(cycle - loopLength)).toBeLessThanOrEqual(1);

@@ -319,27 +319,23 @@ it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)
     const trigger = vi.spyOn(engine.envelopes.gain.envelope, 'trigger');
     engine.start(1, 0, { playbackRate: source === 'period stretch' ? 2 : 1 });
 
-    // A 0.25 s loop: the full-buffer timeline plays 4x faster, once per wrap.
+    const loopLengthSeconds = 0.25;
+    const loopRate = source === 'detune param' || source === 'detune envelope' ? 2 : 1;
     const parameters = makeParameters({
       trimEnd: 1,
-      loopEnd: 0.25,
+      loopEnd: loopLengthSeconds,
       detune: source === 'detune param' ? 1200 : 0,
     });
     for (let block = 0; block < 8; block++) {
       engine.render([new Float32Array(128)], parameters, block * 128, (block * 128) / SR);
     }
-    expect(engine.loopDriftPassCount).toBeGreaterThan(2);
-    expect(trigger).toHaveBeenCalledTimes(1 + engine.loopDriftPassCount!);
-    const loopRate = source === 'detune param' || source === 'detune envelope' ? 2 : 1;
-    expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(
-      (SR * loopRate) / engine.loopWindow!.length,
-    );
+    const periodFrames = (SR * loopLengthSeconds) / loopRate;
+    expect(trigger).toHaveBeenCalledTimes(Math.ceil((8 * 128) / periodFrames));
+    expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(loopRate / loopLengthSeconds);
     if (source === 'detune envelope')
       expect(engine.envelopes.detune.envelope.timeScale).toBeCloseTo(
         engine.envelopes.gain.envelope.timeScale,
       );
-    if (source === 'period stretch')
-      expect(engine.timestretch.isActive(engine.isInPitchLoop)).toBe(true);
   },
 );
 

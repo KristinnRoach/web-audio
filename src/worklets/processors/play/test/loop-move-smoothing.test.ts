@@ -257,10 +257,8 @@ describe('audio-rate loop movement smoothing', () => {
       expect(Math.abs(movedAgain[0][0] - moved[0][1])).toBeLessThan(0.1);
       expect(Math.abs(movedAgain[1][0] - moved[1][1])).toBeLessThan(0.1);
       const state = processor.engine as typeof processor.engine & {
-        loopDriftPassCount: number;
         loopWindow: { start: number; length: number };
       };
-      expect(state.loopDriftPassCount).toBe(0);
       expect(state.loopWindow.length).toBeCloseTo(192);
       expect(processor.engine.playbackPosition - state.loopWindow.start).toBeCloseTo(35 * rate, 4);
 

@@ -82,6 +82,9 @@ function isApproachingLoopWindow(position, approachDirection, loopWindow) {
 }
 
 export class VoiceEngine {
+  #loopDriftPassCount = 0;
+  #loopDriftRolled = false;
+
   /**
    * @param {Object} options
    * @param {number} options.sampleRate - Context sample rate
@@ -322,8 +325,8 @@ export class VoiceEngine {
     this.loopMoveFadeLeft = 0; // output frames left in the pitch loop move fade
     this.#resetLoopGlides(); // new notes start on the target range
 
-    this.loopDriftPassCount = 0;
-    this.loopDriftRolled = false; // roll fresh drift for this note
+    this.#loopDriftPassCount = 0;
+    this.#loopDriftRolled = false; // roll fresh drift for this note
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
     this.smoothedPanDrift = 0;
@@ -402,8 +405,8 @@ export class VoiceEngine {
     this.loopWrapped = true;
 
     // Wraps and turns both advance the drift cadence.
-    this.loopDriftPassCount++;
-    this.loopDriftRolled = false;
+    this.#loopDriftPassCount++;
+    this.#loopDriftRolled = false;
   }
 
   // A pitch loop's length is its pitch. The playhead is in source coordinates, so
@@ -795,7 +798,7 @@ export class VoiceEngine {
       return loopEnd;
     }
 
-    if (!this.loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration, isPitchLoop);
+    if (!this.#loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration, isPitchLoop);
 
     return driftLoopEnd(loopStart, loopEnd, baseDuration, this.currentLoopDrift, playbackEnd);
   }
@@ -804,17 +807,17 @@ export class VoiceEngine {
   #rollLoopDrift(driftAmount, baseDuration, isPitchLoop) {
     const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
 
-    if (this.loopDriftPassCount % updateInterval === 0) {
+    if (this.#loopDriftPassCount % updateInterval === 0) {
       this.currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
       // Pitch loop drift is scaled down and rounded to whole samples, often to nothing,
       // so pan rolls its own value there.
       const panDrift = isPitchLoop
         ? (this.random() - 0.5) * 2 * driftAmount
         : this.currentLoopDrift / baseDuration;
-      this.currentPanDrift = this.panDriftEnabled && this.loopDriftPassCount > 0 ? panDrift : 0;
+      this.currentPanDrift = this.panDriftEnabled && this.#loopDriftPassCount > 0 ? panDrift : 0;
     }
 
-    this.loopDriftRolled = true;
+    this.#loopDriftRolled = true;
   }
 
   /**
@@ -1019,7 +1022,7 @@ export class VoiceEngine {
         positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
         playbackRate !== previousPlaybackRate;
       const followsPointsPerSample = loopWindow?.length < 2 * this.pitchPreservationThreshold;
-      const driftPending = driftAmount > 0 && this.loopEnabled && !this.loopDriftRolled;
+      const driftPending = driftAmount > 0 && this.loopEnabled && !this.#loopDriftRolled;
       if (
         !loopWindow ||
         (rangeInputsChanged && followsPointsPerSample) ||

@@ -40,7 +40,6 @@ function makeParameters(loopStartSamples: number, loopEndSamples: number, trimEn
     loopEnd: new Float32Array([samplesToSeconds(loopEndSamples)]),
     trimStart: new Float32Array([0]),
     trimEnd: new Float32Array([trimEnd]),
-    playbackPosition: new Float32Array([0]),
     loopDurationDriftAmount: new Float32Array([0]),
   };
 }
