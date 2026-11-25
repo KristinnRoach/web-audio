@@ -20,7 +20,7 @@ type TestProcessor = {
   engine: {
     isPlaying: boolean;
     pendingStartFrame: number;
-    playbackPosition: number;
+    playheadPosition: number;
   };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
@@ -104,7 +104,7 @@ describe('scheduled sample start', () => {
     processor.process([], [[output]], makeParameters(0.2));
 
     expect(output.every((sample) => sample === 0)).toBe(true);
-    expect(processor.engine.playbackPosition).toBe(0);
+    expect(processor.engine.playheadPosition).toBe(0);
     expect(random).not.toHaveBeenCalled();
     expect(processor.engine.pendingStartFrame).toBe(BLOCK_SIZE * 2);
   });
@@ -122,7 +122,7 @@ describe('scheduled sample start', () => {
     expect(output[startOffset]).toBe(0);
     expect(output[startOffset + 1]).toBeGreaterThan(0);
     expect(output[BLOCK_SIZE - 1]).toBeGreaterThan(0);
-    expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE - startOffset);
+    expect(processor.engine.playheadPosition).toBe(BLOCK_SIZE - startOffset);
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
 
@@ -135,7 +135,7 @@ describe('scheduled sample start', () => {
 
     expect(output[0]).toBe(0);
     expect(output[1]).toBeGreaterThan(0);
-    expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE);
+    expect(processor.engine.playheadPosition).toBe(BLOCK_SIZE);
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
 

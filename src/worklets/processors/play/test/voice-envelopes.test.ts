@@ -386,7 +386,7 @@ it('a detune envelope bends the playback rate the loop and read step use', () =>
   engine.start(1, 0);
 
   engine.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
-  expect(engine.playbackPosition).toBeCloseTo(256, 0);
+  expect(engine.playheadPosition).toBeCloseTo(256, 0);
 });
 
 it('a pan envelope adds to the pan param, clamped to hard right', () => {
@@ -464,11 +464,11 @@ it('renders queued retunes in timestamp order, keeping same-frame arrival order 
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
   engine.render([new Float32Array(10)], parameters, 0, 0);
-  expect(engine.playbackPosition).toBeCloseTo(10);
+  expect(engine.playheadPosition).toBeCloseTo(10);
   engine.render([new Float32Array(10)], parameters, 10, 0.01);
-  expect(engine.playbackPosition).toBeCloseTo(30);
+  expect(engine.playheadPosition).toBeCloseTo(30);
   engine.render([new Float32Array(1)], parameters, 20, 0.02);
-  expect(engine.playbackPosition).toBeCloseTo(34);
+  expect(engine.playheadPosition).toBeCloseTo(34);
   engine.render([new Float32Array(1)], parameters, 21, 0.021);
   expect(engine.noteRate).toBeCloseTo(4 + 4 * (1 - Math.exp(-0.1)));
 });
@@ -497,7 +497,7 @@ it('discards the previous note’s queued retunes when a new note starts', () =>
   engine.start(2, 0, { playbackRate: 2 });
   engine.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
   expect(engine.noteRate).toBe(2);
-  expect(engine.playbackPosition).toBeCloseTo(256);
+  expect(engine.playheadPosition).toBeCloseTo(256);
 });
 
 it('glides the note rate from glideFrom and retunes on voice:setRate', () => {

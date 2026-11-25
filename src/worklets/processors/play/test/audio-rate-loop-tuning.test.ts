@@ -41,10 +41,10 @@ async function measureLoopPeriod(
   );
   const output = [new Float32Array(1)];
   const wrapFrames: number[] = [];
-  let previousPosition = processor.engine.playbackPosition;
+  let previousPosition = processor.engine.playheadPosition;
   for (let frame = 0; frame < maxFrames && wrapFrames.length < WRAPS_TO_MEASURE; frame++) {
     processor.process([], [output], parameters);
-    const position = processor.engine.playbackPosition;
+    const position = processor.engine.playheadPosition;
     if (frame > 0 && (position - previousPosition) * direction < 0) wrapFrames.push(frame);
     previousPosition = position;
   }

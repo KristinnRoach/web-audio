@@ -111,7 +111,7 @@ describe('trim and loop minimum lengths', () => {
       const positions: number[] = [];
       for (let frame = 0; frame < length * 3; frame++) {
         processor.process([], [[new Float32Array(1)]], parameters);
-        positions.push(processor.engine.playbackPosition);
+        positions.push(processor.engine.playheadPosition);
       }
 
       const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -136,7 +136,7 @@ describe('trim and loop minimum lengths', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < start + minLength * 4; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playbackPosition);
+      positions.push(processor.engine.playheadPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -161,7 +161,7 @@ describe('trim and loop minimum lengths', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE / 2 + shortestPeriod * 4; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playbackPosition);
+      positions.push(processor.engine.playheadPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));

@@ -162,7 +162,7 @@ describe('period timestretch through the processor', () => {
     const rendered = await renderSine(...args);
     const jumps = spy.mock.calls
       .filter((_, call) => spy.mock.results[call].value !== null)
-      .map(([, playbackPosition]) => playbackPosition);
+      .map(([, playheadPosition]) => playheadPosition);
     spy.mockRestore();
     return { rendered, jumps };
   }

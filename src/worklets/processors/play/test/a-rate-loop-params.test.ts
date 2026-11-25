@@ -72,7 +72,7 @@ describe('a-rate loop points and duration glide', () => {
     const params = makeParameters({ trimEnd: 0.9 });
     params.trimStart = step(0, 0.5);
     processor.process([], [[new Float32Array(128)]], params);
-    expect(processor.engine.playbackPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
+    expect(processor.engine.playheadPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
   });
 
   it.each(
@@ -119,7 +119,7 @@ describe('a-rate loop points and duration glide', () => {
         }
         expect(output.some((value) => value !== 0)).toBe(true);
         expect(output).toEqual(expected);
-        expect(block.engine.playbackPosition).toBe(singles.engine.playbackPosition);
+        expect(block.engine.playheadPosition).toBe(singles.engine.playheadPosition);
       }
     },
   );
@@ -142,8 +142,8 @@ describe('a-rate loop points and duration glide', () => {
           loopWindow: { start: number };
         }
       ).loopWindow.start;
-      expect(moving.engine.playbackPosition - actualStart).toBeCloseTo(
-        fixed.engine.playbackPosition,
+      expect(moving.engine.playheadPosition - actualStart).toBeCloseTo(
+        fixed.engine.playheadPosition,
         5,
       );
     }
@@ -156,12 +156,12 @@ describe('a-rate loop points and duration glide', () => {
     } as MessageEvent);
     const params = makeParameters({ loopStart: 0.002, loopEnd: 0 });
     processor.process([], [[new Float32Array(98)]], params);
-    const position = processor.engine.playbackPosition;
+    const position = processor.engine.playheadPosition;
     expect(position).toBeCloseTo(94, 3);
     params.loopStart = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0.002 : 0));
     params.loopEnd = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0 : 0.002));
     processor.process([], [[new Float32Array(16)]], params);
-    expect(processor.engine.playbackPosition).toBeCloseTo(position - 16, 3);
+    expect(processor.engine.playheadPosition).toBeCloseTo(position - 16, 3);
   });
 
   it('generates drift once before the first edge, even with per-sample point changes', async () => {

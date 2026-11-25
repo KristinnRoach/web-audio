@@ -107,7 +107,7 @@ describe('audio-rate loop movement smoothing', () => {
     // (a wrap every 192 samples, fades of 48)
     expect(mostFades).toBeLessThanOrEqual(1);
     // The playhead still follows the loop: it ends inside the moved window
-    const position = processor.engine.playbackPosition;
+    const position = processor.engine.playheadPosition;
     expect(position).toBeGreaterThanOrEqual(start - 1);
     expect(position).toBeLessThanOrEqual(start + period + 1);
   });
@@ -260,7 +260,7 @@ describe('audio-rate loop movement smoothing', () => {
         loopWindow: { start: number; length: number };
       };
       expect(state.loopWindow.length).toBeCloseTo(192);
-      expect(processor.engine.playbackPosition - state.loopWindow.start).toBeCloseTo(35 * rate, 4);
+      expect(processor.engine.playheadPosition - state.loopWindow.start).toBeCloseTo(35 * rate, 4);
 
       // The held second move takes up after the first fade, then fades in turn
       const settled = render(0.2, 2048);

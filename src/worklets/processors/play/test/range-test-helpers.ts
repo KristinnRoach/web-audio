@@ -17,7 +17,7 @@ class MockAudioWorkletProcessor {
 export type TestProcessor = {
   engine: {
     readonly pitchPreservationThreshold: number;
-    playbackPosition: number;
+    playheadPosition: number;
     minRangeSamples: number;
     readonly loopCrossfade: {
       readonly count: number;

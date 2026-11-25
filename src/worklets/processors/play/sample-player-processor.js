@@ -162,8 +162,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         engine.startFromLoop = value;
         break;
 
-      case 'voice:reportPlaybackPosition':
-        engine.reportPlaybackPosition = value;
+      case 'voice:reportPlayheadPosition':
+        engine.reportPlayheadPosition = value;
         break;
 
       case 'voice:setLoopLengthGlide':

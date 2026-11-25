@@ -469,7 +469,7 @@ export class SamplePlayer {
     SAMPLE_ENVELOPE_IDS.forEach((id) => this.#postEnvelope(id, this.getEnvelope(id)));
     this.#post({ type: 'voice:setLoopLengthGlide', value: this.#loopLengthGlide });
     this.#post({ type: 'voice:setLoopPositionGlide', value: this.#loopPositionGlide });
-    this.#post({ type: 'voice:reportPlaybackPosition', value: this.#positionTracking });
+    this.#post({ type: 'voice:reportPlayheadPosition', value: this.#positionTracking });
     this.#sendUpstreamMessage('sample-player:initialized', {});
   }
 
@@ -964,7 +964,7 @@ export class SamplePlayer {
   /** Posts `voice:position` (fraction of the sample, can pass 1; ~60 Hz) per sounding voice. Off by default. */
   enablePositionTracking(enabled: boolean): this {
     this.#positionTracking = enabled;
-    this.#post({ type: 'voice:reportPlaybackPosition', value: enabled });
+    this.#post({ type: 'voice:reportPlayheadPosition', value: enabled });
     return this;
   }
 

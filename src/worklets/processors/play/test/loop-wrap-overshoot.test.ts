@@ -19,7 +19,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  engine: { enableLoopCrossfade: boolean; playbackPosition: number };
+  engine: { enableLoopCrossfade: boolean; playheadPosition: number };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -97,13 +97,13 @@ describe('loop wrap with an overshoot larger than the loop', () => {
 
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES);
     render(processor, wide, WIDE_LOOP_SAMPLES - 99);
-    expect(processor.engine.playbackPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
+    expect(processor.engine.playheadPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
 
     // loopEnd jumps back behind the playhead: overshoot is ~18x the new loop length.
     const narrow = makeParameters(0, NARROW_LOOP_SAMPLES);
     render(processor, narrow, 1);
 
-    expect(processor.engine.playbackPosition).toBeCloseTo(1);
+    expect(processor.engine.playheadPosition).toBeCloseTo(1);
   });
 
   it('keeps the playhead inside the loop when loopStart moves past it in reverse', async () => {
@@ -114,7 +114,7 @@ describe('loop wrap with an overshoot larger than the loop', () => {
     const trimEnd = WIDE_LOOP_SAMPLES / TEST_SAMPLE_RATE;
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES, trimEnd);
     render(processor, wide, WIDE_LOOP_SAMPLES - 100);
-    expect(processor.engine.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES);
+    expect(processor.engine.playheadPosition).toBeLessThan(WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES);
 
     // loopStart jumps forward past the playhead, leaving a 100-sample loop at the top.
     const narrow = makeParameters(
@@ -126,9 +126,9 @@ describe('loop wrap with an overshoot larger than the loop', () => {
 
     // The playhead travels with the loop start, so it lands near the top of the
     // narrow loop rather than exactly one sample below its end.
-    expect(processor.engine.playbackPosition).toBeGreaterThanOrEqual(
+    expect(processor.engine.playheadPosition).toBeGreaterThanOrEqual(
       WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES,
     );
-    expect(processor.engine.playbackPosition).toBeLessThan(WIDE_LOOP_SAMPLES);
+    expect(processor.engine.playheadPosition).toBeLessThan(WIDE_LOOP_SAMPLES);
   });
 });

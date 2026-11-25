@@ -46,9 +46,9 @@ export class PeriodLockStretcher {
     return this.#originalSpeedPosition;
   }
 
-  setEnabled(enabled, playbackPosition) {
+  setEnabled(enabled, playheadPosition) {
     this.#enabled = enabled;
-    this.reset(playbackPosition);
+    this.reset(playheadPosition);
   }
 
   reset(position = 0) {
@@ -64,15 +64,15 @@ export class PeriodLockStretcher {
    * Decides before the current output sample is rendered whether the head jumps after it.
    * @returns {number | null} Where the head lands, to pass to `advance`, or null for no jump.
    */
-  prepareJump(active, playbackPosition, playbackRate, startSamples, endSamples) {
+  prepareJump(active, playheadPosition, playbackRate, startSamples, endSamples) {
     if (this.#fadeOutPosition !== null) {
       if (
         !active ||
         Math.sign(playbackRate) !== this.#fadeDirection ||
         this.#fadeOutPosition < startSamples ||
         this.#fadeOutPosition >= endSamples ||
-        playbackPosition < startSamples ||
-        playbackPosition >= endSamples
+        playheadPosition < startSamples ||
+        playheadPosition >= endSamples
       ) {
         this.#fadeOutPosition = null;
       } else {
@@ -83,18 +83,18 @@ export class PeriodLockStretcher {
     if (!active) return null;
 
     const period = this.#periodAt(this.#originalSpeedPosition);
-    const drift = playbackPosition - this.#originalSpeedPosition;
+    const drift = playheadPosition - this.#originalSpeedPosition;
     if (Math.abs(drift) <= period) return null;
 
     // The head lands where it would be next sample, less whole periods, so the phase carries over.
-    const jumpTarget = playbackPosition + playbackRate - Math.round(drift / period) * period;
+    const jumpTarget = playheadPosition + playbackRate - Math.round(drift / period) * period;
     if (jumpTarget < startSamples || jumpTarget >= endSamples) return null;
 
-    if (playbackRate !== 0 && playbackPosition >= startSamples && playbackPosition < endSamples) {
+    if (playbackRate !== 0 && playheadPosition >= startSamples && playheadPosition < endSamples) {
       const available =
         playbackRate > 0
-          ? endSamples - Math.max(playbackPosition, jumpTarget)
-          : Math.min(playbackPosition, jumpTarget) - startSamples;
+          ? endSamples - Math.max(playheadPosition, jumpTarget)
+          : Math.min(playheadPosition, jumpTarget) - startSamples;
       // Jumps recur every period / ||rate| - 1| output samples; at most half of that may fade.
       const jumpInterval = period / Math.abs(Math.abs(playbackRate) - 1);
       this.#fadeLength = Math.min(
@@ -102,7 +102,7 @@ export class PeriodLockStretcher {
         Math.floor(available / Math.abs(playbackRate)),
       );
       if (this.#fadeLength >= 2) {
-        this.#fadeOutPosition = playbackPosition;
+        this.#fadeOutPosition = playheadPosition;
         this.#fadeIndex = 0;
         this.#fadeDirection = Math.sign(playbackRate);
       }
@@ -115,8 +115,8 @@ export class PeriodLockStretcher {
    * Advances the original-speed position by one sample, or syncs it to the playhead when inactive.
    * Returns the next playhead position.
    */
-  advance(active, playbackPosition, playbackRate, jumpTarget) {
-    const nextPosition = jumpTarget ?? playbackPosition + playbackRate;
+  advance(active, playheadPosition, playbackRate, jumpTarget) {
+    const nextPosition = jumpTarget ?? playheadPosition + playbackRate;
 
     if (!active) {
       this.reset(nextPosition);
