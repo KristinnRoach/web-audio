@@ -257,7 +257,7 @@ export class VoiceEngine {
     this.pendingRates.sort((a, b) => a.frame - b.frame);
   }
 
-  /** Routes an envelope config to 'gain' or 'detune', or null to follow that param. */
+  /** Routes an envelope config to its target, or clears it with null. */
   setEnvelope(target, config) {
     // Without a gain envelope a pending or running release would never end the note.
     const endsRelease = target === 'gain' && !config && this.envelopes.gain.active;
@@ -1010,7 +1010,9 @@ export class VoiceEngine {
 
       positionParams.loopStartSamples =
         this.#getSafeParam(parameters.loopStart, sample) * sampleRate;
-      positionParams.loopEndSamples = this.#getSafeParam(parameters.loopEnd, sample) * sampleRate;
+      const loopEndOffset = envelopes.loopEnd.active ? envelopes.loopEnd.value : 0;
+      positionParams.loopEndSamples =
+        (this.#getSafeParam(parameters.loopEnd, sample) + loopEndOffset) * sampleRate;
 
       // Recalculate the range only when something moved. Short loops follow
       // their points per sample: their length is pitch. Long loops follow them
