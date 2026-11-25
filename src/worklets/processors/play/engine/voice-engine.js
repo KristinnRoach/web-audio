@@ -133,7 +133,7 @@ export class VoiceEngine {
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
     // play higher), 1 = real-time loop duration constant across notes. Period stretch loops on
-    // the unit-rate timestretch timeline and mirrors that: 0 = constant loop time, 1 = loop time / playbackRate.
+    // the original-speed position and mirrors that: 0 = constant loop time, 1 = loop time / playbackRate.
     this.keytrackLoopAmount = 0;
     // Reused during rendering to avoid allocating options per sample.
     this.loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
@@ -157,7 +157,7 @@ export class VoiceEngine {
     this.trimMessage = { type: 'trim:range', trimStart: 0, trimEnd: 0, inverted: false };
     this.loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
     this.positionMessage = { type: 'voice:position', position: 0 };
-    // Everything sounding this sample: the playhead, the stretcher's outgoing head
+    // Everything sounding this sample: the playhead, the stretcher's fade-out head
     // and the crossfade heads.
     this.readHeads = Array.from({ length: MAX_OUTGOING_HEADS + 2 }, () => ({
       position: 0,
@@ -1070,7 +1070,7 @@ export class VoiceEngine {
       const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
 
       const canStretch = this.timestretch.canStretch;
-      // Wait for the playhead to reach the loop, and for the timestretch timeline if stretch is available.
+      // Wait for the playhead to reach the loop, and for the original-speed position if stretch is available.
       const inLoop =
         this.loopEnabled &&
         (this.loopTurned ||
@@ -1106,7 +1106,7 @@ export class VoiceEngine {
         inLoop ? Math.min(trimRange.endSamples, playWindow.end) : trimRange.endSamples,
       );
 
-      // End playback when the playhead, or the active timestretch timeline,
+      // End playback when the playhead, or the original-speed position while stretching,
       // leaves [startSamples, endSamples) in its direction of travel.
       // Don't stop in a keytracked loop's silent tail past trimEnd, or in a pitch loop
       // waiting to move inside a trim that moved.

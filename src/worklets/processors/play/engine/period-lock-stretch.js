@@ -2,7 +2,7 @@
 const UNCLEAR_PITCH_PERIOD_MS = 10;
 
 /**
- * Keeps the playhead near the unit-rate timestretch timeline by jumping whole pitch periods.
+ * Keeps the playhead near the original-speed position by jumping whole pitch periods.
  * A jump of whole periods continues the same waveform, so the pitch follows the playback rate exactly,
  * and jumps recur at a rate tied to the pitch.
  * Periods come from detectPitchPeriods.
@@ -112,7 +112,7 @@ export class PeriodLockStretcher {
   }
 
   /**
-   * Advances the timestretch timeline at unit rate, or syncs it to the playhead when inactive.
+   * Advances the original-speed position by one sample, or syncs it to the playhead when inactive.
    * Returns the next playhead position.
    */
   advance(active, playbackPosition, playbackRate, jumpTarget) {
