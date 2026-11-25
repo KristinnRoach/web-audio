@@ -33,7 +33,7 @@
   "scripts": {
     "changeset": "vp exec changeset",
     "bump": "vp run test:all && vp exec changeset version",
-    "release": "npm login && vp exec changeset publish",
+    "release": "npm login && vp exec changeset publish && git push --follow-tags",
     "check": "vp check --fix",
     "last": "vpr --last-details",
     "build:worklets": "node build-processors.js",
@@ -69,5 +69,5 @@
     "vite-plus": "catalog:",
     "vitest": "catalog:"
   },
-  "packageManager": "pnpm@12.21.0"
+  "packageManager": "pnpm@12.23.0"
 }
