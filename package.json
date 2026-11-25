@@ -33,7 +33,7 @@
   "scripts": {
     "changeset": "vp exec changeset",
     "bump": "vp run test:all && vp exec changeset version",
-    "release": "npm login && vp exec changeset publish && git push --follow-tags",
+    "release": "npm login && vp exec changeset publish && git push origin HEAD --follow-tags",
     "check": "vp check --fix",
     "last": "vpr --last-details",
     "build:worklets": "node build-processors.js",
@@ -48,7 +48,7 @@
     "test:watch": "vp test",
     "test:all": "vp check --fix && vp run build && vp run test && vp run test:browser",
     "prepare": "vp config",
-    "upgrade:toolchain": "vp dlx --package=vite-plus@latest vp migrate --no-interactive --no-agent --no-editor --no-hooks && pnpm self-update && vp install",
+    "upgrade:toolchain": "vp upgrade && vp migrate --no-interactive --no-agent --no-editor --no-hooks && pnpm self-update && vp install",
     "test:sample-timing": "SAMPLE_PLAYER_TIMING=1 vp test run src/worklets/processors/play/test/voice-timing.test.ts --disableConsoleIntercept"
   },
   "dependencies": {
