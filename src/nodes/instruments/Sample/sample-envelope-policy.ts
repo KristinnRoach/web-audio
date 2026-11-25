@@ -82,7 +82,7 @@ const SAMPLE_ENVELOPE_UNITS: Record<
   pan: { scale: 1, rest: 0, linear: true },
   pitch: { scale: PITCH_ENVELOPE_SEMITONES * 100, rest: 0, linear: true },
   filter: { scale: FILTER_ENVELOPE_OCTAVES * 1200, rest: 0, linear: true },
-  loopEnd: { scale: 1, rest: 0, linear: true },
+  loopEnd: { scale: 0.1, rest: 0, linear: true },
 };
 
 /**
