@@ -1,6 +1,5 @@
 //**  Exports for the main thread **//
 export { initProcessors } from './init-processors';
-export { processorFileRegistry } from './processor-registry';
 
 //** Audio Param Descriptors **//
 export {

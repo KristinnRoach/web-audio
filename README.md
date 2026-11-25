@@ -140,7 +140,7 @@ browser rejects `video: false`, and `audio: false` produces no recordable audio)
 
 An explicit microphone `deviceId` is required to match: if unavailable, the call
 rejects instead of opening a different microphone. The app decides whether to
-retry with the default input. Device-list helpers in `@kidlib/web-audio/io` only
+retry with the default input. Device-list helpers in `@kidlib/web-audio` only
 enumerate; they do not request microphone or camera access. Device labels and
 the available list may be limited until the app obtains capture permission.
 

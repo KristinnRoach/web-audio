@@ -9,7 +9,7 @@ import { PoolVoice, VoicePool } from './engine/voice-pool.js';
  *
  * Voice messages with a `voice` index go to that voice; untagged ones go to all.
  * Pool commands and flush are node-wide. Voice reports carry their index;
- * initialized/flushed are node-wide.
+ * initialized, flushed and voice:loaded are node-wide.
  * Messages and ordering: docs/SAMPLE_PLAYER_PROCESSOR.md.
  */
 export class SamplePlayerProcessor extends AudioWorkletProcessor {
@@ -81,6 +81,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     for (const target of index === undefined ? this.voices : [this.voices[index]]) {
       this.#handleVoiceMessage(target, event.data);
     }
+    // Once per buffer, after every voice it addressed has it.
+    if (type === 'voice:setBuffer') {
+      const { durationSeconds } = event.data;
+      this.port.postMessage({ type: 'voice:loaded', durationSeconds, time: currentTime });
+    }
   }
 
   #handleVoiceMessage({ engine, voice, post }, data) {
@@ -89,7 +94,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       value,
       buffer,
       timestamp,
-      durationSeconds,
       zeroCrossings,
       periods,
       hopSamples,
@@ -113,12 +117,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
           post(ended);
         }
         engine.setBuffer(buffer);
-
-        post({
-          type: 'voice:loaded',
-          durationSeconds,
-          time: currentTime,
-        });
         break;
       }
 
@@ -145,11 +143,6 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       case 'voice:setLoopEnabled':
         engine.loopEnabled = value;
-
-        post({
-          type: 'loop:enabled',
-          enabled: value,
-        });
         break;
 
       case 'voice:setLoopPingPong':

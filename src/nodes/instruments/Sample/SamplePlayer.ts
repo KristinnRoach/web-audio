@@ -154,7 +154,6 @@ export class SamplePlayer {
   /** One processor renders every voice; each voice's effects take two of its outputs. */
   #worklet: AudioWorkletNode | null = null;
   #voices: Voice[] = [];
-  #loadedVoices = 0;
   #legato: LegatoSettings = { mode: 'off' };
   #noteId = 0;
   #flushId = 0;
@@ -163,7 +162,7 @@ export class SamplePlayer {
   #outBus!: InstrumentBus; // todo: fix use of '!'
 
   // ? move to input controller ?
-  #sustainedNotes = new Map<MidiValue, number>();
+  #sustainedNotes = new Map<number, number>();
 
   // Nodes on a closed context go silent without throwing
   #onContextStateChange = () => {
@@ -377,7 +376,7 @@ export class SamplePlayer {
   }
 
   /**
-   * Voice reports name their voice; `initialized` and `flushed` are node-wide.
+   * Voice reports name their voice; `initialized`, `flushed` and `voice:loaded` are node-wide.
    * Voice records hold the last reported note. The audio thread owns voice state and
    * may be ahead of them; reports about an old note are dropped.
    */
@@ -389,16 +388,14 @@ export class SamplePlayer {
       this.#pendingFlushes.delete(report.id);
       return;
     }
+    if (type === 'voice:loaded') {
+      this.#onSampleLoaded();
+      return this.#emitFrom(this.#voices[this.#voices.length - 1], 'sample:loaded', report);
+    }
     const voice = this.#voices[index];
     const voiceId = voice.effects.nodeId;
 
     switch (type) {
-      case 'voice:loaded':
-        // Every voice reports the one buffer; announce it once.
-        if (++this.#loadedVoices !== this.#voices.length) return;
-        this.#onSampleLoaded();
-        return this.#emitFrom(voice, 'sample:loaded', report);
-
       // The pool picked this voice on the audio thread; its effects follow from here.
       case 'voice:started': {
         // Stolen: the note it held ends without a report of its own.
@@ -419,7 +416,8 @@ export class SamplePlayer {
           glideTime: report.glideTime,
           retuned: true,
         });
-        return this.#followNote(report, true);
+        this.#followNote(report, true);
+        return this.#emitFrom(voice, type, { voiceId, ...report });
 
       case 'voice:releasing':
         if (voice.midiNote === null) return;
@@ -473,7 +471,6 @@ export class SamplePlayer {
     this.#post({ type: 'voice:setLoopPositionGlide', value: this.#loopPositionGlide });
     this.#post({ type: 'voice:reportPlaybackPosition', value: this.#positionTracking });
     this.#sendUpstreamMessage('sample-player:initialized', {});
-    this.#sendUpstreamMessage('voice-pool:initialized', { voiceCount: this.#voices.length });
   }
 
   // TODO: Check whether this is still needed after moving loop range to processor
@@ -617,7 +614,6 @@ export class SamplePlayer {
         });
       });
 
-      this.#loadedVoices = 0;
       // One copy for the processor, which every voice plays from. Copied so the
       // caller's buffer is left alone in Brave.
       const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
@@ -685,11 +681,11 @@ export class SamplePlayer {
    * when the note sounds, from whatever is playing then.
    */
   play(
-    midiNote: MidiValue,
-    velocity: MidiValue = 100,
+    midiNote: number,
+    velocity = 100,
     glideTime = this.getGlideTime(),
     secondsFromNow = 0,
-  ): MidiValue | null {
+  ): number | null {
     if (this.#disposed) return null;
     const safeVelocity = isMidiValue(velocity) ? velocity : 100;
     if (!isMidiValue(midiNote)) {
@@ -713,8 +709,11 @@ export class SamplePlayer {
     return midiNote;
   }
 
-  /** `secondsFromNow` is ignored while the sustain pedal holds the note. */
-  release(midiNote: MidiValue, secondsFromNow = 0): this {
+  /**
+   * Hold and sustain apply when called, not when a scheduled release is due.
+   * `secondsFromNow` is ignored while the sustain pedal holds the note.
+   */
+  release(midiNote: number, secondsFromNow = 0): this {
     if (this.#disposed) return this;
     if (this.holdEnabled || this.#holdLocked) return this;
 
@@ -1452,8 +1451,6 @@ export class SamplePlayer {
       this.#voices.forEach((voice) => {
         voice.effects.feedback?.setAmountMacro(currAmount);
       });
-    } else {
-      console.info('Feedback mode set to double-trouble, radical!');
     }
   }
 
@@ -1464,69 +1461,6 @@ export class SamplePlayer {
       voice.effects.feedback?.setDelayMultiplier(value);
     });
   }
-
-  /* === I/O === */
-
-  // async initMidiController(): Promise<boolean> {
-  //   if (this.#midiController?.isInitialized) {
-  //     return true;
-  //   }
-
-  //   if (!this.#midiController) {
-  //     this.#midiController = new MidiController();
-  //   }
-
-  //   assert(
-  //     this.#midiController,
-  //     `SamplePlayer: Failed to create MIDI controller`
-  //   );
-
-  //   const result = await tryCatch(() => this.#midiController!.initialize());
-  //   assert(!result.error, `SamplePlayer: Failed to initialize MIDI`);
-  //   return result.data;
-  // }
-
-  // setMidiController(midiController: MidiController): this {
-  //   this.#midiController = midiController;
-  //   return this;
-  // }
-
-  // async enableMIDI(
-  //   midiController?: MidiController,
-  //   channel: number | 'all' = 'all'
-  // ): Promise<this> {
-  //   if (!midiController) {
-  //     midiController = new MidiController();
-  //     await midiController.initialize();
-  //   }
-
-  //   if (midiController.isInitialized) {
-  //     this.#midiController = midiController;
-  //     midiController.connectInstrument(this, channel);
-
-  //     this.#sendUpstreamMessage('midi:enabled', { channel });
-  //   }
-  //   return this;
-  // }
-
-  // disableMIDI(
-  //   midiController?: MidiController,
-  //   channel: number | 'all' = 'all'
-  // ): this {
-  //   const controller = midiController || this.#midiController;
-  //   controller?.disconnectInstrument(this, channel);
-  //   if (controller === this.#midiController) {
-  //     this.#midiController = null;
-  //   }
-
-  //   this.#sendUpstreamMessage('midi:disabled', { channel });
-
-  //   return this;
-  // }
-
-  // switchMIDIChannel(channel: number | 'all') {
-  //   this.#midiController?.switchInstrumentChannel(this, channel);
-  // }
 
   /* === PUBLIC GETTERS === */
 

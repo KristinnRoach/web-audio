@@ -14,7 +14,6 @@ export * from './music-theory';
 export * from './code/assert';
 export * from './code/tryCatch';
 export * from './throttle';
-export * from './code/generate/generateProcessorCode';
 
 // Search utils
 export * from './search';
@@ -27,6 +26,3 @@ export * from './math/second-diff';
 
 // JS data-type utils
 export * from './code/set-utils';
-
-// Loading utils
-// export * from './load/xhr-utils';

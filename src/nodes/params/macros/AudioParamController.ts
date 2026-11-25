@@ -1,5 +1,5 @@
 import { LibNode } from '@/nodes/LibNode';
-import { unregisterNode, registerNode } from '@/nodes/node-store';
+import { unregisterNode, registerNode, type NodeID } from '@/nodes/node-store';
 
 export class AudioParamController implements LibNode {
   readonly nodeId: NodeID;

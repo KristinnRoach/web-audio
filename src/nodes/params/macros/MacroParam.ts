@@ -5,6 +5,7 @@ import { AudioParamController } from './AudioParamController';
 import { ValueSnapper } from '../helpers/ValueSnapper';
 import { assert } from '@/utils';
 import { NodeType } from '@/nodes/LibNode';
+import type { NodeID } from '@/nodes/node-store';
 import type { NormalizeOptions } from '@/nodes/params/param-types';
 
 export class MacroParam {

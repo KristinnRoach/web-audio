@@ -33,12 +33,12 @@ async function measureRate(playbackRate: number, envCents: number, lfoCents: num
   });
   await new Promise<void>((resolve) => {
     node.port.onmessage = ({ data }) => {
-      if (data.type === 'loop:enabled') resolve();
+      if (data.type === 'flushed') resolve();
     };
     node.port.postMessage({ type: 'voice:setTimestretchMode', value: 'off' });
     node.port.postMessage({ type: 'voice:start' });
     // voice:start has no ack; this reply confirms it landed before rendering.
-    node.port.postMessage({ type: 'voice:setLoopEnabled', value: false });
+    node.port.postMessage({ type: 'flush', id: 1 });
   });
   const lfo = new ConstantSourceNode(context, { offset: lfoCents });
   lfo.connect(node.parameters.get('detune')!);
