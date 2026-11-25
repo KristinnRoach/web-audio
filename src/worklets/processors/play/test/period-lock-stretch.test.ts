@@ -221,9 +221,9 @@ describe('period timestretch through the processor', () => {
       const frames: number[] = [];
       let count: number | undefined = 0;
       await renderSine(playbackRate, true, points, kind === 'ping-pong', (engine, frame) => {
-        if (engine.loopCount !== count) {
+        if (engine.loopDriftPassCount !== count) {
           frames.push(frame);
-          count = engine.loopCount;
+          count = engine.loopDriftPassCount;
         }
       });
       return frames;

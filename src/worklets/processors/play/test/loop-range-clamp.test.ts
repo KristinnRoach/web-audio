@@ -201,7 +201,7 @@ describe('loop range clamping', () => {
     async (perBlock) => {
       const loopLength = 96;
       const processor = (await startProcessor()) as TestProcessor & {
-        engine: { loopCount: number };
+        engine: { loopDriftPassCount: number };
       };
       const at = (d: number) =>
         makeParameters({
@@ -217,7 +217,7 @@ describe('loop range clamping', () => {
         const parameters = at(Math.max(0, k - 300) * perBlock);
         for (let i = 0; i < block; i++) {
           processor.process([], [[new Float32Array(1)]], parameters);
-          counts.push(processor.engine.loopCount);
+          counts.push(processor.engine.loopDriftPassCount);
         }
       }
 

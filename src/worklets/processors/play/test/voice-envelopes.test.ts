@@ -328,8 +328,8 @@ it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)
     for (let block = 0; block < 8; block++) {
       engine.render([new Float32Array(128)], parameters, block * 128, (block * 128) / SR);
     }
-    expect(engine.loopCount).toBeGreaterThan(2);
-    expect(trigger).toHaveBeenCalledTimes(1 + engine.loopCount!);
+    expect(engine.loopDriftPassCount).toBeGreaterThan(2);
+    expect(trigger).toHaveBeenCalledTimes(1 + engine.loopDriftPassCount!);
     const loopRate = source === 'detune param' || source === 'detune envelope' ? 2 : 1;
     expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(
       (SR * loopRate) / engine.loopWindow!.length,

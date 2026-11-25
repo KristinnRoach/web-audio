@@ -51,7 +51,7 @@ it('renders from injected time, randomness and message sink', () => {
   expect(output.some((value) => value !== 0)).toBe(true);
   expect(random).toHaveBeenCalled();
   // First wrap: the note starts at startFrame and reaches the drifted loop end.
-  expect(engine.loopCount).toBeGreaterThan(0);
+  expect(engine.loopDriftPassCount).toBeGreaterThan(0);
 });
 
 it.each([null, [new Float32Array(256)]])(

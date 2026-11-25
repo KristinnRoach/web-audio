@@ -158,15 +158,15 @@ describe('a-rate loop points and duration glide', () => {
     processor.process([], [[new Float32Array(98)]], params);
     const state = processor.engine as typeof processor.engine & {
       loopTurned: boolean;
-      loopCount: number;
+      loopDriftPassCount: number;
     };
     expect(state.loopTurned).toBe(true);
-    expect(state.loopCount).toBe(1);
+    expect(state.loopDriftPassCount).toBe(1);
     params.loopStart = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0.002 : 0));
     params.loopEnd = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0 : 0.002));
     processor.process([], [[new Float32Array(16)]], params);
     expect(state.loopTurned).toBe(true);
-    expect(state.loopCount).toBe(1);
+    expect(state.loopDriftPassCount).toBe(1);
   });
 
   it('generates drift once before the first edge, even with per-sample point changes', async () => {

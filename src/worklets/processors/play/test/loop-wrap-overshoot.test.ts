@@ -19,7 +19,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  engine: { enableLoopCrossfade: boolean; loopCount: number; playbackPosition: number };
+  engine: { enableLoopCrossfade: boolean; playbackPosition: number };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };

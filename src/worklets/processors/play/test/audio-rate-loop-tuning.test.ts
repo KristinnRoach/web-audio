@@ -23,7 +23,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  engine: { enableLoopCrossfade: boolean; loopCount: number };
+  engine: { enableLoopCrossfade: boolean; loopDriftPassCount: number };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -82,13 +82,13 @@ async function measureLoopPeriod(
     driftAmount,
   );
   const wrapFrames: number[] = [];
-  let previousLoopCount = 0;
+  let previousPassCount = 0;
 
   for (let frame = 0; wrapFrames.length < WRAPS_TO_MEASURE; frame++) {
     processor.process([], [[new Float32Array(1)]], parameters);
-    if (processor.engine.loopCount !== previousLoopCount) {
+    if (processor.engine.loopDriftPassCount !== previousPassCount) {
       wrapFrames.push(frame);
-      previousLoopCount = processor.engine.loopCount;
+      previousPassCount = processor.engine.loopDriftPassCount;
     }
   }
 

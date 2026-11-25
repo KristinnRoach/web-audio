@@ -314,7 +314,6 @@ export class VoiceEngine {
     // True while cycling a loop against the approach direction (backward loops,
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
-    this.loopCount = 0;
     this.loopWrapped = false;
     this.loopWindow = null;
     this.loopRate = 1;
@@ -322,6 +321,7 @@ export class VoiceEngine {
     this.loopMoveFadeLeft = 0; // output frames left in the pitch loop move fade
     this.#resetLoopGlides(); // new notes start on the target range
 
+    this.loopDriftPassCount = 0;
     this.loopDriftRolled = false; // roll fresh drift for this note
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
@@ -398,10 +398,10 @@ export class VoiceEngine {
     }
     this.playbackPosition = nextPosition;
     if (timestretchActive) this.timestretch.reset(nextPosition);
-    this.loopCount++;
     this.loopWrapped = true;
 
-    // Reset drift flag to generate new drift for next loop iteration
+    // Wraps and turns both advance the drift cadence.
+    this.loopDriftPassCount++;
     this.loopDriftRolled = false;
   }
 
@@ -803,14 +803,14 @@ export class VoiceEngine {
   #rollLoopDrift(driftAmount, baseDuration, isPitchLoop) {
     const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
 
-    if (this.loopCount % updateInterval === 0) {
+    if (this.loopDriftPassCount % updateInterval === 0) {
       this.currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
       // Pitch loop drift is scaled down and rounded to whole samples, often to nothing,
       // so pan rolls its own value there.
       const panDrift = isPitchLoop
         ? (this.random() - 0.5) * 2 * driftAmount
         : this.currentLoopDrift / baseDuration;
-      this.currentPanDrift = this.panDriftEnabled && this.loopCount > 0 ? panDrift : 0;
+      this.currentPanDrift = this.panDriftEnabled && this.loopDriftPassCount > 0 ? panDrift : 0;
     }
 
     this.loopDriftRolled = true;
