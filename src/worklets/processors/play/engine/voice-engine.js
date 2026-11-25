@@ -83,7 +83,7 @@ function isApproachingLoopWindow(position, approachDirection, loopWindow) {
 
 export class VoiceEngine {
   #loopDriftPassCount = 0;
-  #loopDriftRolled = false;
+  #driftPending = true;
 
   /**
    * @param {Object} options
@@ -326,7 +326,7 @@ export class VoiceEngine {
     this.#resetLoopGlides(); // new notes start on the target range
 
     this.#loopDriftPassCount = 0;
-    this.#loopDriftRolled = false; // roll fresh drift for this note
+    this.#driftPending = true;
     this.currentLoopDrift = 0;
     this.currentPanDrift = 0;
     this.smoothedPanDrift = 0;
@@ -406,7 +406,7 @@ export class VoiceEngine {
 
     // Wraps and turns both advance the drift cadence.
     this.#loopDriftPassCount++;
-    this.#loopDriftRolled = false;
+    this.#driftPending = true;
   }
 
   // A pitch loop's length is its pitch. The playhead is in source coordinates, so
@@ -718,9 +718,8 @@ export class VoiceEngine {
     const keytrackAmount = isPitchLoop ? 0 : this.keytrackLoopAmount;
     if (keytrackAmount > 0) {
       // Only time loops get here, so stretch applies whenever it is on.
-      const isStretched = this.timestretch.isActive(false);
       const keytrackOptions = this.loopKeytrackOptions;
-      keytrackOptions.depth = isStretched ? -keytrackAmount : keytrackAmount;
+      keytrackOptions.depth = this.timestretch.canStretch ? -keytrackAmount : keytrackAmount;
       // Sounding note from the rate, detune included; temporary, see docs/modulation/MIGRATION.md.
       const midiNote = keytrackOptions.rootNote + 12 * Math.log2(Math.abs(playbackRate));
       baseDuration = Math.max(
@@ -798,13 +797,13 @@ export class VoiceEngine {
       return loopEnd;
     }
 
-    if (!this.#loopDriftRolled) this.#rollLoopDrift(driftAmount, baseDuration, isPitchLoop);
+    if (this.#driftPending) this.#updateLoopDrift(driftAmount, baseDuration, isPitchLoop);
 
     return driftLoopEnd(loopStart, loopEnd, baseDuration, this.currentLoopDrift, playbackEnd);
   }
 
-  /** Runs once per loop iteration. Audio-rate loops re-roll less often. */
-  #rollLoopDrift(driftAmount, baseDuration, isPitchLoop) {
+  /** Checks once per loop pass whether drift is due for a new roll. */
+  #updateLoopDrift(driftAmount, baseDuration, isPitchLoop) {
     const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
 
     if (this.#loopDriftPassCount % updateInterval === 0) {
@@ -817,7 +816,7 @@ export class VoiceEngine {
       this.currentPanDrift = this.panDriftEnabled && this.#loopDriftPassCount > 0 ? panDrift : 0;
     }
 
-    this.#loopDriftRolled = true;
+    this.#driftPending = false;
   }
 
   /**
@@ -1022,7 +1021,7 @@ export class VoiceEngine {
         positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
         playbackRate !== previousPlaybackRate;
       const followsPointsPerSample = loopWindow?.length < 2 * this.pitchPreservationThreshold;
-      const driftPending = driftAmount > 0 && this.loopEnabled && !this.#loopDriftRolled;
+      const driftPending = driftAmount > 0 && this.loopEnabled && this.#driftPending;
       if (
         !loopWindow ||
         (rangeInputsChanged && followsPointsPerSample) ||
@@ -1069,20 +1068,19 @@ export class VoiceEngine {
       const envelopePan = envelopes.pan.active ? envelopes.pan.value : 0;
       const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
 
-      // Loop rules apply once head and timeline are in the loop, not on the way to it.
-      const approachingLoop =
+      // Loop rules apply once both the playhead and the timeline reach the loop.
+      const inLoop =
         this.loopEnabled &&
-        !this.loopTurned &&
-        (isApproachingLoopWindow(this.playbackPosition, approachDirection, playWindow) ||
-          isApproachingLoopWindow(
-            this.timestretch.timelinePosition,
-            approachDirection,
-            playWindow,
-          ));
-      const inLoop = this.loopEnabled && !approachingLoop;
+        (this.loopTurned ||
+          (!isApproachingLoopWindow(this.playbackPosition, approachDirection, playWindow) &&
+            !isApproachingLoopWindow(
+              this.timestretch.timelinePosition,
+              approachDirection,
+              playWindow,
+            )));
 
       this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
-      const timestretchActive = this.timestretch.isActive(this.isInPitchLoop);
+      const timestretchActive = !this.isInPitchLoop && this.timestretch.canStretch;
       // Only a keytracked time loop runs past trimEnd, into silence.
       const tailEnd =
         !playWindow.isPitchLoop && playWindow.end > trimRange.endSamples
@@ -1117,9 +1115,8 @@ export class VoiceEngine {
           ? transportPosition - trimRange.endSamples
           : trimRange.startSamples - transportPosition;
       const leftTrimRange = direction > 0 ? overshoot >= 0 : overshoot > 0;
-      const holdsLoop = this.loopEnabled && this.#isWithin(playWindow);
 
-      if (leftTrimRange && !holdsLoop) {
+      if (leftTrimRange && !(this.loopEnabled && this.#isWithin(playWindow))) {
         // More than one step past the end: trim moved past the playhead. Fade instead of cutting.
         if (overshoot <= Math.max(1, Math.abs(playbackStep))) return this.#halt();
         this.pendingStopFrame = Math.min(this.pendingStopFrame ?? Infinity, frame);

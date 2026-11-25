@@ -30,7 +30,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         sampleRate,
         random: () => Math.random(),
         post: (message) => {
-          voice.observe(message);
+          if (message.type === 'voice:ended') voice.markAvailable();
           post(message);
         },
       });
@@ -112,9 +112,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // own first, but a note the pool started meanwhile is news to it.
         // Allocation can already be available while a scheduled stop is still pending.
         if (engine.isPlaying) {
-          const ended = { type: 'voice:ended', triggerId: engine.triggerId };
-          voice.observe(ended);
-          post(ended);
+          voice.markAvailable();
+          post({ type: 'voice:ended', triggerId: engine.triggerId });
         }
         engine.setBuffer(buffer);
         break;

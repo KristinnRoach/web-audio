@@ -62,7 +62,7 @@ describe('VoicePool', () => {
     expect(engine.start).toHaveBeenCalledOnce();
 
     // The first note ends before the second is due, so nothing is stolen.
-    voice.observe({ type: 'voice:ended' });
+    voice.markAvailable();
     pool.advance(1.5);
     expect(voice.midiNote).toBe(64);
     expect(engine.stop).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe('VoicePool', () => {
       glideFrom: 2,
       glideSeconds: 0.1,
     });
-    voice.observe({ type: 'voice:ended' });
+    voice.markAvailable();
 
     pool.setPitchEnabled(false, 1);
     noteOn(72, 1, 0.1);

@@ -34,16 +34,11 @@ export class PoolVoice {
   }
 
   stop(timestamp) {
-    this.#free();
+    this.markAvailable();
     this.engine.stop(timestamp);
   }
 
-  /** Engine reports pass through here on their way to the node. */
-  observe(message) {
-    if (message.type === 'voice:ended') this.#free();
-  }
-
-  #free() {
+  markAvailable() {
     this.state = 'AVAILABLE';
     this.midiNote = null;
   }
