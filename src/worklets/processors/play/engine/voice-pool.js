@@ -10,7 +10,6 @@ export class PoolVoice {
   state = 'AVAILABLE';
   midiNote = null;
   triggerTimestamp = -1;
-  #inPitchLoop = false;
 
   /** `post` reaches this voice's node. */
   constructor(engine, post) {
@@ -19,14 +18,13 @@ export class PoolVoice {
   }
 
   get isInPitchLoop() {
-    return this.state === 'PLAYING' && this.engine.loopEnabled && this.#inPitchLoop;
+    return this.state === 'PLAYING' && this.engine.loopEnabled && this.engine.isInPitchLoop;
   }
 
   start(triggerId, timestamp, note = {}) {
     this.state = 'PLAYING';
     this.midiNote = note.midiNote ?? null;
     this.triggerTimestamp = timestamp ?? 0;
-    this.#inPitchLoop = false;
     this.engine.start(triggerId, timestamp, note);
   }
 
@@ -43,9 +41,6 @@ export class PoolVoice {
   /** Engine reports pass through here on their way to the node. */
   observe(message) {
     if (message.type === 'voice:ended') this.#free();
-    else if (message.type === 'loop:range' && !message.idle) {
-      this.#inPitchLoop = !!message.isInPitchLoop;
-    }
   }
 
   #free() {

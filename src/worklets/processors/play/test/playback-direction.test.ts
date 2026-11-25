@@ -191,6 +191,20 @@ describe('loop types', () => {
     expect(processor.engine.isPlaying).toBe(false);
   });
 
+  it('clears a ping-pong turn only after rendering with looping off', async () => {
+    const { processor, send } = await startRamp('reverse', true, true);
+    trace(processor, forwardLoop, 850); // turned at 375, now moving forward
+
+    send({ type: 'voice:setLoopEnabled', value: false });
+    send({ type: 'voice:setLoopEnabled', value: true });
+    expect(trace(processor, forwardLoop, 2)).toEqual([476, 477]);
+
+    send({ type: 'voice:setLoopEnabled', value: false });
+    expect(trace(processor, forwardLoop, 1)).toEqual([478]);
+    send({ type: 'voice:setLoopEnabled', value: true });
+    expect(trace(processor, forwardLoop, 2)).toEqual([477, 476]);
+  });
+
   it('a loop type change takes effect at the next loop edge', async () => {
     const { processor } = await startRamp('forward', true);
     trace(processor, backward, 900); // turned at 750, now cycling backward

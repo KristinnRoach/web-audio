@@ -56,8 +56,8 @@ export class PeriodLockStretcher {
     this.#outgoingPosition = null;
   }
 
-  isActive(inLoop, isPitchLoop) {
-    return this.#enabled && Boolean(this.#periods?.length) && (!inLoop || !isPitchLoop);
+  isActive(inPitchLoop) {
+    return this.#enabled && Boolean(this.#periods?.length) && !inPitchLoop;
   }
 
   /**

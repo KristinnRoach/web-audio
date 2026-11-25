@@ -339,7 +339,7 @@ it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)
         engine.envelopes.gain.envelope.timeScale,
       );
     if (source === 'period stretch')
-      expect(engine.timestretch.isActive(true, engine.loopWindow!.isPitchLoop)).toBe(true);
+      expect(engine.timestretch.isActive(engine.isInPitchLoop)).toBe(true);
   },
 );
 

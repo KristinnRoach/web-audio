@@ -315,6 +315,7 @@ export class VoiceEngine {
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
     this.loopWrapped = false;
+    this.isInPitchLoop = false;
     this.loopWindow = null;
     this.loopRate = 1;
     this.loopCrossfade.reset();
@@ -714,7 +715,7 @@ export class VoiceEngine {
     const keytrackAmount = isPitchLoop ? 0 : this.keytrackLoopAmount;
     if (keytrackAmount > 0) {
       // Only time loops get here, so stretch applies whenever it is on.
-      const isStretched = this.timestretch.isActive(true, false);
+      const isStretched = this.timestretch.isActive(false);
       const keytrackOptions = this.loopKeytrackOptions;
       keytrackOptions.depth = isStretched ? -keytrackAmount : keytrackAmount;
       // Sounding note from the rate, detune included; temporary, see docs/modulation/MIGRATION.md.
@@ -906,6 +907,8 @@ export class VoiceEngine {
       if (startOffset >= outputChannels[0].length) return;
     }
     this.pendingStartFrame = 0;
+    // Loop enablement changes between blocks. When off, play in the approach direction.
+    if (!this.loopEnabled) this.loopTurned = false;
 
     // ===== GET PARAM VALUES =====
 
@@ -1075,19 +1078,16 @@ export class VoiceEngine {
           ));
       const inLoop = this.loopEnabled && !approachingLoop;
 
-      const timestretchActive = this.timestretch.isActive(inLoop, playWindow.isPitchLoop);
+      this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
+      const timestretchActive = this.timestretch.isActive(this.isInPitchLoop);
       // Only a keytracked time loop runs past trimEnd, into silence.
       const tailEnd =
         !playWindow.isPitchLoop && playWindow.end > trimRange.endSamples
           ? trimRange.endSamples
           : Infinity;
 
-      // Handle looping
-      this.loopMessage.isInPitchLoop = inLoop && playWindow.isPitchLoop;
       if (this.loopEnabled) {
         this.#passLoopEdge(approachDirection, playWindow, tailEnd, timestretchActive);
-      } else {
-        this.loopTurned = false;
       }
       const direction = this.loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(playbackRate);
@@ -1171,6 +1171,7 @@ export class VoiceEngine {
     // Effective range at the last audible sample, still throttled per voice.
     this.loopMessage.loopStart = loopWindow.start / sampleRate;
     this.loopMessage.loopEnd = loopWindow.end / sampleRate;
+    this.loopMessage.isInPitchLoop = this.isInPitchLoop;
     this.loopMessage.loopMode = this.loopPingPong
       ? 'pingPong'
       : loopWindow.direction < 0
