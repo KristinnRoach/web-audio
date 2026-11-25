@@ -318,6 +318,7 @@ export class VoiceEngine {
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
     this.loopWrapped = false;
+    this.inLoop = false; // as of the previous sample
     this.isInPitchLoop = false;
     this.loopWindow = null;
     this.loopRate = 1;
@@ -996,6 +997,7 @@ export class VoiceEngine {
         this.loopWrapped,
         this.loopWindow,
         this.buffer[0].length,
+        this.inLoop,
       );
       if (envelopes.gainDone && this.pendingStopFrame === null) {
         // The stop fade covers a tail that doesn't end at zero.
@@ -1085,6 +1087,7 @@ export class VoiceEngine {
           )
         );
       const inLoop = this.loopEnabled && (this.loopTurned || reachedLoop);
+      this.inLoop = inLoop;
 
       this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
       const timestretchActive = !this.isInPitchLoop && canStretch;
