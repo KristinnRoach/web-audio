@@ -103,6 +103,10 @@ export class VoiceEngine {
     this.startFromLoop = false;
     this.panDriftEnabled = true;
     this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
+    // Per-voice unison offsets applied on top of shared params.
+    this.detuneOffset = 0;
+    this.panOffset = 0;
+    this.unisonGain = 1;
 
     this.reportPlaybackPosition = false;
 
@@ -996,7 +1000,8 @@ export class VoiceEngine {
         this.pendingStopFrame = blockFrame + sample;
       }
 
-      let detune = this.#getSafeParam(parameters.detune, sample, isConstant.detune);
+      let detune =
+        this.#getSafeParam(parameters.detune, sample, isConstant.detune) + this.detuneOffset;
       if (envelopes.detune.active) detune += envelopes.detune.value;
       if (filterOutput && envelopes.filter.active) filterOutput[sample] = envelopes.filter.value;
       const playbackRate =
@@ -1061,7 +1066,10 @@ export class VoiceEngine {
       this.smoothedPanDrift +=
         (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
       const envelopePan = envelopes.pan.active ? envelopes.pan.value : 0;
-      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
+      const effectivePan = Math.max(
+        -1,
+        Math.min(1, basePan + this.panOffset + this.smoothedPanDrift + envelopePan),
+      );
 
       // Loop rules apply once head and timeline are in the loop, not on the way to it.
       const approachingLoop =
@@ -1139,7 +1147,8 @@ export class VoiceEngine {
           const old = this.#mixReadHeads(channel, Math.abs(playbackStep), this.loopMoveOffset);
           mixed = old + (1 - this.loopMoveFadeLeft / this.loopMoveFadeFrames) * (mixed - old);
         }
-        const finalSample = mixed * velocityGain * envelopeGain * masterGain * startGain * stopGain;
+        const finalSample =
+          mixed * velocityGain * envelopeGain * masterGain * startGain * stopGain * this.unisonGain;
 
         // Apply pan (only affects stereo output)
         let panAdjustedSample = finalSample;

@@ -54,6 +54,37 @@ export class PoolVoice {
   }
 }
 
+/** Symmetric spread positions in [-1, 1] across `count` voices (0 for a single voice). */
+const spreadOffset = (index, count) => (count <= 1 ? 0 : (2 * index) / (count - 1) - 1);
+
+/**
+ * One allocatable unison stack: `voices` start, retune, release and steal
+ * together so `VoiceAllocator` treats the stack as one note.
+ */
+class VoiceGroup {
+  constructor(voices) {
+    this.voices = voices;
+  }
+
+  get state() {
+    if (this.voices.some((voice) => voice.state === 'PLAYING')) return 'PLAYING';
+    if (this.voices.some((voice) => voice.state === 'RELEASING')) return 'RELEASING';
+    return 'AVAILABLE';
+  }
+
+  get midiNote() {
+    return this.voices.find((voice) => voice.midiNote !== null)?.midiNote ?? null;
+  }
+
+  get triggerTimestamp() {
+    return this.voices[0].triggerTimestamp;
+  }
+
+  get isInPitchLoop() {
+    return this.voices.some((voice) => voice.isInPitchLoop);
+  }
+}
+
 /**
  * A player's voices on the audio thread. Note events wait in a queue until
  * they are due, so the allocator decides from the voices as they are when the
@@ -68,12 +99,56 @@ export class VoicePool {
   pitchOffset = 0;
   /** Off plays every note at rate 1. */
   pitchEnabled = true;
+  #voices = [];
+  #unison = { voices: 1, detune: 0, pan: 0 };
   #queue = [];
   // The played note a new note glides from, updated as events are applied.
   #glideOrigin = 60;
 
   addVoice(voice) {
-    this.allocator.voices.push(voice);
+    this.#voices.push(voice);
+    this.#rebuildGroups();
+  }
+
+  /**
+   * Groups pool voices into unison stacks of `voices` copies with symmetric
+   * `detune` (+/- cents) and `pan` (+/- pan) spread. Remainder voices stay idle.
+   */
+  setUnison({ voices = 1, detune = 0, pan = 0 } = {}) {
+    this.#unison = { voices: Math.max(1, Math.floor(voices)), detune, pan };
+    this.#rebuildGroups();
+  }
+
+  #rebuildGroups() {
+    const count = this.#voices.length;
+    if (!count) {
+      this.allocator.voices = [];
+      return;
+    }
+    const groupSize = Math.min(this.#unison.voices, count);
+    const groupCount = Math.floor(count / groupSize);
+    const gain = 1 / Math.sqrt(groupSize);
+    const groups = [];
+
+    for (let g = 0; g < groupCount; g++) {
+      const members = this.#voices.slice(g * groupSize, (g + 1) * groupSize);
+      members.forEach((voice, i) => {
+        const spread = spreadOffset(i, groupSize);
+        voice.engine.detuneOffset = spread * this.#unison.detune;
+        voice.engine.panOffset = spread * this.#unison.pan;
+        voice.engine.unisonGain = gain;
+      });
+      groups.push(new VoiceGroup(members));
+    }
+
+    for (let i = groupCount * groupSize; i < count; i++) {
+      this.#voices[i].engine.detuneOffset = 0;
+      this.#voices[i].engine.panOffset = 0;
+      this.#voices[i].engine.unisonGain = 1;
+    }
+
+    this.allocator.clear();
+    this.allocator.voices = groups;
   }
 
   /** `pool:noteOn`, `pool:noteOff` or `pool:allNotesOff`, each with a `timestamp` in seconds. */
@@ -81,7 +156,7 @@ export class VoicePool {
     if (event.type === 'pool:allNotesOff') {
       // Takes notes that have not sounded yet with it.
       this.#queue.length = 0;
-      for (const voice of this.allocator.voices) {
+      for (const voice of this.#voices) {
         if (voice.state === 'PLAYING') this.#release(voice, event.timestamp);
       }
       return;
@@ -130,11 +205,11 @@ export class VoicePool {
     this.pitchEnabled = enabled;
     // Time constants: about 95% there after 0.1 s (off) or 0.01 s (on).
     if (enabled) this.#retuneAll(time, 0.01 / 3);
-    else for (const voice of this.allocator.voices) voice.engine.setNoteRate(time, 1, 0.1 / 3);
+    else for (const voice of this.#voices) voice.engine.setNoteRate(time, 1, 0.1 / 3);
   }
 
   #retuneAll(time, glideSeconds) {
-    for (const voice of this.allocator.voices) {
+    for (const voice of this.#voices) {
       if (voice.midiNote !== null) {
         voice.engine.setNoteRate(time, this.rate(voice.midiNote), glideSeconds);
       }
@@ -151,14 +226,12 @@ export class VoicePool {
 
     if (event.type === 'pool:noteOff') {
       for (const action of this.allocator.noteOff(midiNote)) {
-        if (action.type === 'release') this.#release(action.voice, timestamp);
-        else
-          this.#retune(
-            action.voice,
-            { midiNote: action.midiNote, timestamp },
-            action.glideTime,
-            true,
-          );
+        for (const voice of action.voice.voices) {
+          if (voice.state !== 'PLAYING') continue;
+          if (action.type === 'release') this.#release(voice, timestamp);
+          else
+            this.#retune(voice, { midiNote: action.midiNote, timestamp }, action.glideTime, true);
+        }
       }
       return;
     }
@@ -169,15 +242,24 @@ export class VoicePool {
     if (!decision) return;
     const { glideTime } = decision;
 
-    for (const { type, voice } of decision.actions) {
+    for (const { type, voice: group } of decision.actions) {
       // ponytail: the start that follows replaces the stolen note from the top of this
       // block, up to one block (~3 ms) before `timestamp`. Exact once the engine can
       // hold a pending note while the old one plays out.
-      if (type === 'steal') voice.stop(timestamp);
-      else if (type === 'release') this.#release(voice, timestamp);
-      else {
-        if (type === 'retune') this.#retune(voice, event, glideTime, false);
-        else this.#start(voice, event, glideTime, glideFromNote);
+      if (type === 'steal') {
+        for (const voice of group.voices) voice.stop(timestamp);
+      } else if (type === 'release') {
+        for (const voice of group.voices) {
+          if (voice.state === 'PLAYING') this.#release(voice, timestamp);
+        }
+      } else {
+        for (const voice of group.voices) {
+          if (type === 'retune') {
+            if (voice.state === 'PLAYING') this.#retune(voice, event, glideTime, false);
+          } else {
+            this.#start(voice, event, glideTime, glideFromNote);
+          }
+        }
         decision.commit();
       }
     }

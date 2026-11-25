@@ -181,6 +181,50 @@ describe('VoicePool', () => {
     ]);
     expect(idle.mock.calls).toEqual([[2, 1, 0.1 / 3]]);
   });
+
+  it('groups voices in unison with symmetric detune/pan spread and moves the group together', () => {
+    const { pool, voices, noteOn } = setup(7);
+    pool.setUnison({ voices: 3, detune: 12, pan: 0.8 });
+
+    // Two 3-voice stacks, seventh voice left idle with neutral offsets.
+    expect(voices.slice(0, 3).map(({ engine }: any) => engine.detuneOffset)).toEqual([-12, 0, 12]);
+    expect(voices.slice(0, 3).map(({ engine }: any) => engine.panOffset)).toEqual([-0.8, 0, 0.8]);
+    expect(voices[0].engine).toMatchObject({ unisonGain: 1 / Math.sqrt(3) });
+    expect(voices[6].engine).toMatchObject({ detuneOffset: 0, panOffset: 0, unisonGain: 1 });
+
+    // One note starts all three voices in the first stack.
+    noteOn(60, 0);
+    pool.advance(1);
+    expect(voices.map(({ voice }) => voice.state)).toEqual([
+      'PLAYING',
+      'PLAYING',
+      'PLAYING',
+      'AVAILABLE',
+      'AVAILABLE',
+      'AVAILABLE',
+      'AVAILABLE',
+    ]);
+
+    // A second note takes the second stack; a third steals the first stack together.
+    noteOn(64, 1);
+    noteOn(67, 2);
+    pool.advance(3);
+    expect(voices.slice(0, 3).every(({ engine }) => engine.stop.mock.calls.length === 1)).toBe(
+      true,
+    );
+    expect(voices.slice(0, 3).map(({ voice }) => voice.midiNote)).toEqual([67, 67, 67]);
+    expect(voices.slice(3, 6).map(({ voice }) => voice.midiNote)).toEqual([64, 64, 64]);
+    expect(voices[6].voice.state).toBe('AVAILABLE');
+
+    // Note-off releases the whole stack.
+    pool.schedule({ type: 'pool:noteOff', midiNote: 64, timestamp: 4 });
+    pool.advance(5);
+    expect(voices.slice(3, 6).map(({ voice }) => voice.state)).toEqual([
+      'RELEASING',
+      'RELEASING',
+      'RELEASING',
+    ]);
+  });
 });
 
 describe('sample-player processor voices', () => {

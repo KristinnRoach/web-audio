@@ -2,6 +2,10 @@ import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-pa
 import { VoiceEngine } from './engine/voice-engine.js';
 import { PoolVoice, VoicePool } from './engine/voice-pool.js';
 
+// Prototype defaults for listening in hljod-smali (controls deferred).
+// Skipped on 1-2 voice pools so low-voice engine tests stay 1:1.
+const PROTO_UNISON = { voices: 3, detune: 12, pan: 0.8 };
+
 /**
  * One processor per player. It owns every voice: `processorOptions.voiceCount`
  * engines sharing one `VoicePool` and one set of AudioParams. Voice `i` renders
@@ -38,6 +42,9 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       this.pool.addVoice(voice);
       return { engine, voice, post };
     });
+    if (this.voices.length >= PROTO_UNISON.voices) {
+      this.pool.setUnison(PROTO_UNISON);
+    }
     // The first voice: the engine tests drive a one-voice processor through it.
     ({ engine: this.engine, voice: this.voice } = this.voices[0]);
 
