@@ -126,6 +126,11 @@ export class VoiceEngine {
     // Where the window a pitch loop move fades from reads, relative to the playhead
     // (old start - new start).
     this.loopMoveOffset = 0;
+    // Prototype: frame 2 position and move-fade latch (independent of frame 1's latch).
+    this.frame2Start = null;
+    this.frame2MoveFadeLeft = 0;
+    this.frame2MoveOffset = 0;
+    this.previousMorphOffsetSamples = null;
     // Ping-pong turns around at both loop edges and overrides loop edge order.
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
@@ -320,6 +325,10 @@ export class VoiceEngine {
     this.loopRate = 1;
     this.loopCrossfade.reset();
     this.loopMoveFadeLeft = 0; // output frames left in the pitch loop move fade
+    this.frame2Start = null;
+    this.frame2MoveFadeLeft = 0;
+    this.frame2MoveOffset = 0;
+    this.previousMorphOffsetSamples = null;
     this.#resetLoopGlides(); // new notes start on the target range
 
     this.loopDriftRolled = false; // roll fresh drift for this note
@@ -470,6 +479,52 @@ export class VoiceEngine {
 
   #isWithin(window) {
     return this.playbackPosition >= window.start && this.playbackPosition <= window.end;
+  }
+
+  // Prototype: resolves frame 2 at playWindow.start + morphOffsetSamples, clamped
+  // inside the buffer. Moving frame 2 (or frame 1 carrying it) uses the same
+  // move-fade latch as frame 1, while morphAmount blends continuously without latching.
+  #updateFrame2(playWindow, morphActive, morphAmount, morphOffsetSamples) {
+    if (!morphActive) {
+      this.frame2Start = null;
+      this.frame2MoveFadeLeft = 0;
+      this.frame2MoveOffset = 0;
+      this.previousMorphOffsetSamples = null;
+      return;
+    }
+    const bufferLength = this.buffer[0].length;
+    const maxStart = Math.max(0, bufferLength - playWindow.length);
+    const target = Math.min(Math.max(playWindow.start + morphOffsetSamples, 0), maxStart);
+    const offsetChanged = morphOffsetSamples !== this.previousMorphOffsetSamples;
+    this.previousMorphOffsetSamples = morphOffsetSamples;
+
+    if (this.frame2Start === null || morphAmount <= 0) {
+      this.frame2Start = target;
+      this.frame2MoveFadeLeft = 0;
+      this.frame2MoveOffset = 0;
+      return;
+    }
+    if (target === this.frame2Start) return;
+
+    const glidingWithFrame1 =
+      !offsetChanged && this.isLoopPositionGliding && !this.isLoopStartClamped;
+    const fades = this.enableLoopCrossfade && !glidingWithFrame1;
+    if (
+      fades &&
+      this.frame2MoveFadeLeft > 0 &&
+      this.frame2Start + playWindow.length <= bufferLength
+    ) {
+      return;
+    }
+    const delta = target - this.frame2Start;
+    if (fades) {
+      this.frame2MoveFadeLeft = this.loopMoveFadeFrames;
+      this.frame2MoveOffset = -delta;
+    } else {
+      this.frame2MoveFadeLeft = 0;
+      this.frame2MoveOffset = 0;
+    }
+    this.frame2Start = target;
   }
 
   #addReadHead(position, gain, mix) {
@@ -775,10 +830,14 @@ export class VoiceEngine {
     this.constantFlags ??= {
       playbackRate: true,
       detune: true,
+      morphAmount: true,
+      morphOffset: true,
     };
 
     this.constantFlags.playbackRate = parameters.playbackRate.length === 1;
     this.constantFlags.detune = parameters.detune.length === 1;
+    this.constantFlags.morphAmount = !parameters.morphAmount || parameters.morphAmount.length === 1;
+    this.constantFlags.morphOffset = !parameters.morphOffset || parameters.morphOffset.length === 1;
 
     return this.constantFlags;
   }
@@ -1127,17 +1186,39 @@ export class VoiceEngine {
         this.pendingStopFrame = Math.min(this.pendingStopFrame ?? Infinity, frame);
       }
 
+      const rawMorphAmount = parameters.morphAmount
+        ? this.#getSafeParam(parameters.morphAmount, sample, isConstant.morphAmount)
+        : 0;
+      const morphAmount = Math.max(0, Math.min(1, rawMorphAmount));
+      const morphOffsetSamples = parameters.morphOffset
+        ? this.#getSafeParam(parameters.morphOffset, sample, isConstant.morphOffset) * sampleRate
+        : 0;
+      const morphActive = canWrapLoop && inLoop && playWindow.isPitchLoop;
+      this.#updateFrame2(playWindow, morphActive, morphAmount, morphOffsetSamples);
+      const morphBlend = morphActive && morphAmount > 0;
+      const frame2Offset = morphBlend ? this.frame2Start - playWindow.start : 0;
+
       // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail
       this.#collectReadHeads(tailGainAt(this.playbackPosition, tailEnd));
       // Generate output for each channel
+      const step = Math.abs(playbackStep);
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
         if (!outputChannels[channel]) continue;
 
-        let mixed = this.#mixReadHeads(channel, Math.abs(playbackStep));
+        let mixed = this.#mixReadHeads(channel, step);
         if (this.loopMoveFadeLeft > 0) {
-          const old = this.#mixReadHeads(channel, Math.abs(playbackStep), this.loopMoveOffset);
+          const old = this.#mixReadHeads(channel, step, this.loopMoveOffset);
           mixed = old + (1 - this.loopMoveFadeLeft / this.loopMoveFadeFrames) * (mixed - old);
+        }
+        if (morphBlend) {
+          let frame2 = this.#mixReadHeads(channel, step, frame2Offset);
+          if (this.frame2MoveFadeLeft > 0) {
+            const old2 = this.#mixReadHeads(channel, step, frame2Offset + this.frame2MoveOffset);
+            frame2 =
+              old2 + (1 - this.frame2MoveFadeLeft / this.loopMoveFadeFrames) * (frame2 - old2);
+          }
+          mixed = morphAmount === 1 ? frame2 : mixed + morphAmount * (frame2 - mixed);
         }
         const finalSample = mixed * velocityGain * envelopeGain * masterGain * startGain * stopGain;
 
@@ -1159,8 +1240,9 @@ export class VoiceEngine {
           Math.min(1, isFinite(panAdjustedSample) ? panAdjustedSample : 0),
         );
       }
-      this.loopCrossfade.advance(Math.abs(playbackStep));
+      this.loopCrossfade.advance(step);
       if (this.loopMoveFadeLeft > 0) this.loopMoveFadeLeft--;
+      if (this.frame2MoveFadeLeft > 0) this.frame2MoveFadeLeft--;
 
       // Remember the rendered position, before a fractional step can overshoot
       // the edge. The next sample must carry that overshoot with a moving loop.

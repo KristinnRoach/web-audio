@@ -77,6 +77,22 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 999999,
     automationRate: 'k-rate',
   },
+  // Prototype: 2-frame pitch loop morph (0 = frame 1 only, 1 = frame 2 only).
+  morphAmount: {
+    name: 'morphAmount',
+    defaultValue: 0,
+    minValue: 0,
+    maxValue: 1,
+    automationRate: 'a-rate',
+  },
+  // Prototype: frame 2 offset from frame 1 in seconds, clamped inside the buffer.
+  morphOffset: {
+    name: 'morphOffset',
+    defaultValue: 0,
+    minValue: -9999,
+    maxValue: 9999,
+    automationRate: 'a-rate',
+  },
 } as const satisfies Record<string, AudioParamDescriptor>;
 
 export const SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS = Object.values(

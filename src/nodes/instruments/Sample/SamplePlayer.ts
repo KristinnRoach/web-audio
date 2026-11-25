@@ -1204,6 +1204,23 @@ export class SamplePlayer {
     return this.setLoopRange(loopStart, loopStart + loopDuration);
   }
 
+  /** Prototype: blend between pitch-loop frame 1 (0) and frame 2 (1). */
+  setMorphAmount(amount: number): this {
+    this.#setParam('morphAmount', clamp(amount, 0, 1));
+    return this;
+  }
+
+  /** Prototype: frame 2 offset from frame 1 in seconds (clamped inside the buffer). */
+  setMorphOffset(seconds: number): this {
+    this.#setParam('morphOffset', seconds);
+    return this;
+  }
+
+  /** Prototype: direct access to a processor AudioParam for demo modulation. */
+  getWorkletParam(name: SamplePlayerWorkletAudioParamKey): AudioParam | null {
+    return this.#worklet?.parameters.get(name) ?? null;
+  }
+
   applyParams(params: SamplerParams): this {
     Object.entries(params).forEach(([key, value]) => {
       const descriptor = samplerParams[key as SamplerParamKey] as
