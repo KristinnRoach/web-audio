@@ -388,7 +388,7 @@ export class VoiceEngine {
     const { start: loopStart, end: loopEnd } = loopWindow;
     const turns = this.loopPingPong || this.loopTurned !== loopWindow.direction < 0;
     const position = timestretchActive
-      ? this.timestretch.timestretchTimelinePosition
+      ? this.timestretch.originalSpeedPosition
       : this.playbackPosition;
     const nextPosition = turns
       ? reflectLoopPosition(position, direction, loopStart, loopEnd)
@@ -491,8 +491,8 @@ export class VoiceEngine {
   #collectReadHeads(tailGain) {
     this.readHeadCount = 0;
     this.#addReadHead(this.playbackPosition, tailGain, 0);
-    if (this.timestretch.outgoingPosition !== null) {
-      this.#addReadHead(this.timestretch.outgoingPosition, tailGain, this.timestretch.crossfadeMix);
+    if (this.timestretch.fadeOutPosition !== null) {
+      this.#addReadHead(this.timestretch.fadeOutPosition, tailGain, this.timestretch.crossfadeMix);
     }
     const crossfade = this.loopCrossfade;
     for (let i = crossfade.count - 1; i >= 0; i--) {
@@ -1077,7 +1077,7 @@ export class VoiceEngine {
           (!isApproachingLoopWindow(this.playbackPosition, approachDirection, playWindow) &&
             (!canStretch ||
               !isApproachingLoopWindow(
-                this.timestretch.timestretchTimelinePosition,
+                this.timestretch.originalSpeedPosition,
                 approachDirection,
                 playWindow,
               ))));
@@ -1111,7 +1111,7 @@ export class VoiceEngine {
       // Don't stop in a keytracked loop's silent tail past trimEnd, or in a pitch loop
       // waiting to move inside a trim that moved.
       const transportPosition = timestretchActive
-        ? this.timestretch.timestretchTimelinePosition
+        ? this.timestretch.originalSpeedPosition
         : this.playbackPosition;
       const overshoot =
         direction > 0

@@ -71,7 +71,7 @@ describe('PeriodLockStretcher', () => {
     const stretch = stretcher();
     prepare(stretch, PERIOD + 1, rate);
     let frames = 0;
-    while (stretch.outgoingPosition !== null) {
+    while (stretch.fadeOutPosition !== null) {
       stretch.advance(true, 0, rate, null);
       frames++;
     }

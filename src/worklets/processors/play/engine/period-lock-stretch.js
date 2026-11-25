@@ -12,8 +12,8 @@ export class PeriodLockStretcher {
   #periods = null;
   #hopSamples = 1;
   #unclearPitchPeriod;
-  #timestretchTimelinePosition = 0;
-  #outgoingPosition = null;
+  #originalSpeedPosition = 0;
+  #fadeOutPosition = null;
   #fadeIndex = 0;
   #fadeLength = 0;
   #fadeDirection = 1;
@@ -32,8 +32,8 @@ export class PeriodLockStretcher {
     this.#hopSamples = hopSamples;
   }
 
-  get outgoingPosition() {
-    return this.#outgoingPosition;
+  get fadeOutPosition() {
+    return this.#fadeOutPosition;
   }
 
   /** Smooth equal-gain fade: heads a whole period apart are strongly correlated. */
@@ -42,8 +42,8 @@ export class PeriodLockStretcher {
     return t * t * (3 - 2 * t);
   }
 
-  get timestretchTimelinePosition() {
-    return this.#timestretchTimelinePosition;
+  get originalSpeedPosition() {
+    return this.#originalSpeedPosition;
   }
 
   setEnabled(enabled, playbackPosition) {
@@ -52,8 +52,8 @@ export class PeriodLockStretcher {
   }
 
   reset(position = 0) {
-    this.#timestretchTimelinePosition = position;
-    this.#outgoingPosition = null;
+    this.#originalSpeedPosition = position;
+    this.#fadeOutPosition = null;
   }
 
   get canStretch() {
@@ -65,16 +65,16 @@ export class PeriodLockStretcher {
    * @returns {number | null} Where the head lands, to pass to `advance`, or null for no jump.
    */
   prepareJump(active, playbackPosition, playbackRate, startSamples, endSamples) {
-    if (this.#outgoingPosition !== null) {
+    if (this.#fadeOutPosition !== null) {
       if (
         !active ||
         Math.sign(playbackRate) !== this.#fadeDirection ||
-        this.#outgoingPosition < startSamples ||
-        this.#outgoingPosition >= endSamples ||
+        this.#fadeOutPosition < startSamples ||
+        this.#fadeOutPosition >= endSamples ||
         playbackPosition < startSamples ||
         playbackPosition >= endSamples
       ) {
-        this.#outgoingPosition = null;
+        this.#fadeOutPosition = null;
       } else {
         // Finish this overlap before starting another jump.
         return null;
@@ -82,8 +82,8 @@ export class PeriodLockStretcher {
     }
     if (!active) return null;
 
-    const period = this.#periodAt(this.#timestretchTimelinePosition);
-    const drift = playbackPosition - this.#timestretchTimelinePosition;
+    const period = this.#periodAt(this.#originalSpeedPosition);
+    const drift = playbackPosition - this.#originalSpeedPosition;
     if (Math.abs(drift) <= period) return null;
 
     // The head lands where it would be next sample, less whole periods, so the phase carries over.
@@ -102,7 +102,7 @@ export class PeriodLockStretcher {
         Math.floor(available / Math.abs(playbackRate)),
       );
       if (this.#fadeLength >= 2) {
-        this.#outgoingPosition = playbackPosition;
+        this.#fadeOutPosition = playbackPosition;
         this.#fadeIndex = 0;
         this.#fadeDirection = Math.sign(playbackRate);
       }
@@ -123,13 +123,13 @@ export class PeriodLockStretcher {
       return nextPosition;
     }
 
-    if (this.#outgoingPosition !== null) {
-      this.#outgoingPosition += playbackRate;
-      if (++this.#fadeIndex >= this.#fadeLength) this.#outgoingPosition = null;
+    if (this.#fadeOutPosition !== null) {
+      this.#fadeOutPosition += playbackRate;
+      if (++this.#fadeIndex >= this.#fadeLength) this.#fadeOutPosition = null;
     }
 
     const direction = playbackRate < 0 ? -1 : 1;
-    this.#timestretchTimelinePosition += direction;
+    this.#originalSpeedPosition += direction;
     return nextPosition;
   }
 
