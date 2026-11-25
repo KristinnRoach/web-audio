@@ -46,8 +46,9 @@
     "test:browser": "vpr build:worklets && vp test run --config vitest.browser.config.ts",
     "test:coverage": "vp test run --coverage",
     "test:watch": "vp test",
-    "test:all": "vp check --fix && pnpm build && vp run test && vp run test:browser",
+    "test:all": "vp check --fix && vp run build && vp run test && vp run test:browser",
     "prepare": "vp config",
+    "upgrade:toolchain": "vp dlx --package=vite-plus@latest vp migrate --no-interactive --no-agent --no-editor --no-hooks && pnpm self-update && vp install",
     "test:sample-timing": "SAMPLE_PLAYER_TIMING=1 vp test run src/worklets/processors/play/test/voice-timing.test.ts --disableConsoleIntercept"
   },
   "dependencies": {
@@ -68,5 +69,5 @@
     "vite-plus": "catalog:",
     "vitest": "catalog:"
   },
-  "packageManager": "pnpm@11.5.2"
+  "packageManager": "pnpm@12.21.0"
 }
