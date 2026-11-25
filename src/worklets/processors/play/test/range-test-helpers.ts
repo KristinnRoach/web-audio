@@ -44,7 +44,6 @@ export function makeParameters(overrides: Record<string, number> = {}): Paramete
     trimEnd: 9999,
     playbackPosition: 0,
     loopDurationDriftAmount: 0,
-    maxLoopCount: 999_999,
     ...overrides,
   };
 

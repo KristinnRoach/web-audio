@@ -1083,15 +1083,12 @@ export class VoiceEngine {
           : Infinity;
 
       // Handle looping
-      const maxLoopCount = parameters.maxLoopCount[0];
-      const canWrapLoop = this.loopEnabled && this.loopCount < maxLoopCount;
-      this.loopMessage.isInPitchLoop = canWrapLoop && inLoop && playWindow.isPitchLoop;
-      if (canWrapLoop) {
+      this.loopMessage.isInPitchLoop = inLoop && playWindow.isPitchLoop;
+      if (this.loopEnabled) {
         this.#passLoopEdge(approachDirection, playWindow, tailEnd, timestretchActive);
+      } else {
+        this.loopTurned = false;
       }
-      // Out of loop passes (the edge just passed may have been the last), or
-      // loop off: play out in the approach direction
-      if (!this.loopEnabled || this.loopCount >= maxLoopCount) this.loopTurned = false;
       const direction = this.loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(playbackRate);
       // Next sample's envelope timing uses the transport rate that produced its loop state.
@@ -1101,10 +1098,8 @@ export class VoiceEngine {
         timestretchActive,
         this.playbackPosition,
         playbackStep,
-        canWrapLoop && inLoop ? playWindow.start : trimRange.startSamples,
-        canWrapLoop && inLoop
-          ? Math.min(trimRange.endSamples, playWindow.end)
-          : trimRange.endSamples,
+        inLoop ? playWindow.start : trimRange.startSamples,
+        inLoop ? Math.min(trimRange.endSamples, playWindow.end) : trimRange.endSamples,
       );
 
       // End of playback: the playhead (or the stretcher's unit-rate timeline)
@@ -1119,7 +1114,7 @@ export class VoiceEngine {
           ? transportPosition - trimRange.endSamples
           : trimRange.startSamples - transportPosition;
       const leftTrimRange = direction > 0 ? overshoot >= 0 : overshoot > 0;
-      const holdsLoop = canWrapLoop && this.#isWithin(playWindow);
+      const holdsLoop = this.loopEnabled && this.#isWithin(playWindow);
 
       if (leftTrimRange && !holdsLoop) {
         // More than one step past the end: trim moved past the playhead. Fade instead of cutting.

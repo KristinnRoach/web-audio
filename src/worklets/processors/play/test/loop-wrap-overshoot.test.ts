@@ -42,7 +42,6 @@ function makeParameters(loopStartSamples: number, loopEndSamples: number, trimEn
     trimEnd: new Float32Array([trimEnd]),
     playbackPosition: new Float32Array([0]),
     loopDurationDriftAmount: new Float32Array([0]),
-    maxLoopCount: new Float32Array([999_999]),
   };
 }
 

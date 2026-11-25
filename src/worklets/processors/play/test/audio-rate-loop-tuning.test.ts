@@ -45,7 +45,6 @@ function makeParameters(
     trimStart: new Float32Array([0]),
     trimEnd: new Float32Array([1]),
     loopDurationDriftAmount: new Float32Array([driftAmount]),
-    maxLoopCount: new Float32Array([999_999]),
   };
 }
 

@@ -41,7 +41,6 @@ function makeParameters(driftAmount = 0): Parameters {
     trimEnd: new Float32Array([1]),
     playbackPosition: new Float32Array([0]),
     loopDurationDriftAmount: new Float32Array([driftAmount]),
-    maxLoopCount: new Float32Array([999_999]),
   };
 }
 

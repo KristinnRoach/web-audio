@@ -21,7 +21,6 @@ it('renders from injected time, randomness and message sink', () => {
       trimStart: 0,
       trimEnd: 1,
       loopDurationDriftAmount: 0.01,
-      maxLoopCount: 999_999,
     }).map(([name, value]) => [name, new Float32Array([value])]),
   );
 
