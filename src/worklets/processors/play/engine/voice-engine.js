@@ -133,7 +133,7 @@ export class VoiceEngine {
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
     // play higher), 1 = real-time loop duration constant across notes. Period stretch loops on
-    // a unit-rate timeline and mirrors that: 0 = constant loop time, 1 = loop time / playbackRate.
+    // the unit-rate timestretch timeline and mirrors that: 0 = constant loop time, 1 = loop time / playbackRate.
     this.keytrackLoopAmount = 0;
     // Reused during rendering to avoid allocating options per sample.
     this.loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
@@ -387,8 +387,9 @@ export class VoiceEngine {
     const direction = this.loopTurned ? -approachDirection : approachDirection;
     const { start: loopStart, end: loopEnd } = loopWindow;
     const turns = this.loopPingPong || this.loopTurned !== loopWindow.direction < 0;
-    // Stretch changes the read rate, while loop duration follows the unit-rate transport.
-    const position = timestretchActive ? this.timestretch.timelinePosition : this.playbackPosition;
+    const position = timestretchActive
+      ? this.timestretch.timestretchTimelinePosition
+      : this.playbackPosition;
     const nextPosition = turns
       ? reflectLoopPosition(position, direction, loopStart, loopEnd)
       : wrapLoopPosition(position, direction, loopStart, loopEnd);
@@ -1068,19 +1069,21 @@ export class VoiceEngine {
       const envelopePan = envelopes.pan.active ? envelopes.pan.value : 0;
       const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
 
-      // Loop rules apply once both the playhead and the timeline reach the loop.
+      const canStretch = this.timestretch.canStretch;
+      // Wait for the playhead to reach the loop, and for the timestretch timeline if stretch is available.
       const inLoop =
         this.loopEnabled &&
         (this.loopTurned ||
           (!isApproachingLoopWindow(this.playbackPosition, approachDirection, playWindow) &&
-            !isApproachingLoopWindow(
-              this.timestretch.timelinePosition,
-              approachDirection,
-              playWindow,
-            )));
+            (!canStretch ||
+              !isApproachingLoopWindow(
+                this.timestretch.timestretchTimelinePosition,
+                approachDirection,
+                playWindow,
+              ))));
 
       this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
-      const timestretchActive = !this.isInPitchLoop && this.timestretch.canStretch;
+      const timestretchActive = !this.isInPitchLoop && canStretch;
       // Only a keytracked time loop runs past trimEnd, into silence.
       const tailEnd =
         !playWindow.isPitchLoop && playWindow.end > trimRange.endSamples
@@ -1103,12 +1106,12 @@ export class VoiceEngine {
         inLoop ? Math.min(trimRange.endSamples, playWindow.end) : trimRange.endSamples,
       );
 
-      // End of playback: the playhead (or the stretcher's unit-rate timeline)
-      // has left [startSamples, endSamples) in its direction of travel.
+      // End playback when the playhead, or the active timestretch timeline,
+      // leaves [startSamples, endSamples) in its direction of travel.
       // Don't stop in a keytracked loop's silent tail past trimEnd, or in a pitch loop
       // waiting to move inside a trim that moved.
       const transportPosition = timestretchActive
-        ? this.timestretch.timelinePosition
+        ? this.timestretch.timestretchTimelinePosition
         : this.playbackPosition;
       const overshoot =
         direction > 0

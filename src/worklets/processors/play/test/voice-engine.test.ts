@@ -54,6 +54,20 @@ it.each([null, [new Float32Array(256)]])(
   },
 );
 
+it('keeps a moved pitch loop eligible for legato with timestretch off', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+  engine.setBuffer([new Float32Array(SR)]);
+  engine.loopEnabled = true;
+  engine.enableLoopCrossfade = false;
+  engine.start(1, 0);
+  engine.render([new Float32Array(QUANTUM)], makeParameters({ loopEnd: 0.004 }), 0, 0);
+  expect(engine.isInPitchLoop).toBe(true);
+
+  const moved = makeParameters({ loopStart: 0.25, loopEnd: 0.254 });
+  engine.render([new Float32Array(1)], moved, QUANTUM, QUANTUM / SR);
+  expect(engine.isInPitchLoop).toBe(true);
+});
+
 describe('host stop', () => {
   const STOP_FRAME = 200;
   const FADE = 64;

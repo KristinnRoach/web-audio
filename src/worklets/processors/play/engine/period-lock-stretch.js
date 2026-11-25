@@ -2,7 +2,7 @@
 const UNCLEAR_PITCH_PERIOD_MS = 10;
 
 /**
- * Timestretch that stays near the unit-rate timeline by jumping whole pitch periods.
+ * Keeps the playhead near the unit-rate timestretch timeline by jumping whole pitch periods.
  * A jump of whole periods continues the same waveform, so the pitch follows the playback rate exactly,
  * and jumps recur at a rate tied to the pitch.
  * Periods come from detectPitchPeriods.
@@ -12,7 +12,7 @@ export class PeriodLockStretcher {
   #periods = null;
   #hopSamples = 1;
   #unclearPitchPeriod;
-  #timelinePosition = 0;
+  #timestretchTimelinePosition = 0;
   #outgoingPosition = null;
   #fadeIndex = 0;
   #fadeLength = 0;
@@ -42,8 +42,8 @@ export class PeriodLockStretcher {
     return t * t * (3 - 2 * t);
   }
 
-  get timelinePosition() {
-    return this.#timelinePosition;
+  get timestretchTimelinePosition() {
+    return this.#timestretchTimelinePosition;
   }
 
   setEnabled(enabled, playbackPosition) {
@@ -52,7 +52,7 @@ export class PeriodLockStretcher {
   }
 
   reset(position = 0) {
-    this.#timelinePosition = position;
+    this.#timestretchTimelinePosition = position;
     this.#outgoingPosition = null;
   }
 
@@ -82,8 +82,8 @@ export class PeriodLockStretcher {
     }
     if (!active) return null;
 
-    const period = this.#periodAt(this.#timelinePosition);
-    const drift = playbackPosition - this.#timelinePosition;
+    const period = this.#periodAt(this.#timestretchTimelinePosition);
+    const drift = playbackPosition - this.#timestretchTimelinePosition;
     if (Math.abs(drift) <= period) return null;
 
     // The head lands where it would be next sample, less whole periods, so the phase carries over.
@@ -112,7 +112,8 @@ export class PeriodLockStretcher {
   }
 
   /**
-   * Advances the timeline after one output sample and returns the next playhead position.
+   * Advances the timestretch timeline at unit rate, or syncs it to the playhead when inactive.
+   * Returns the next playhead position.
    */
   advance(active, playbackPosition, playbackRate, jumpTarget) {
     const nextPosition = jumpTarget ?? playbackPosition + playbackRate;
@@ -128,7 +129,7 @@ export class PeriodLockStretcher {
     }
 
     const direction = playbackRate < 0 ? -1 : 1;
-    this.#timelinePosition += direction;
+    this.#timestretchTimelinePosition += direction;
     return nextPosition;
   }
 
