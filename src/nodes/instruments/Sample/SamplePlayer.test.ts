@@ -763,7 +763,13 @@ it('mirrors voice reports and passes on only those about the note each voice pla
   ]) {
     player.onMessage(type, (message: object) => upstream.push(message));
   }
-  const started = { type: 'voice:started', velocity: 100, timestamp: 0, glideTime: 0 };
+  const started = {
+    type: 'voice:started',
+    velocity: 100,
+    timestamp: 0,
+    glideTime: 0,
+    glideFromNote: null,
+  };
   const range = { type: 'loop:range', loopStart: 0, loopEnd: 1 };
 
   try {

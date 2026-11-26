@@ -403,7 +403,14 @@ export class SamplePlayer {
         const { midiNote, velocity, timestamp, glideTime, glideFromNote, triggerId } = report;
         Object.assign(voice, { midiNote, triggerId });
         this.#followNote(report, false);
-        this.#emitFrom(voice, type, { voiceId, midiNote, velocity, timestamp, glideTime });
+        this.#emitFrom(voice, type, {
+          voiceId,
+          midiNote,
+          velocity,
+          timestamp,
+          glideFromNote,
+          glideTime,
+        });
         voice.effects.followNote(midiNote, { timestamp, glideTime, glideFromNote });
         return;
       }
