@@ -21,7 +21,7 @@ import {
   quantizeLoopLength,
 } from './loop-length.js';
 
-const DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS = 1 / 32.703;
+const DEFAULT_PITCH_CUTOFF_SECONDS = 1 / 32.703;
 // Loop jump and turn crossfade length in source samples (~5 ms at 48 kHz).
 const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
 // U-turn crossfade: a ping-pong or backward-loop turn has no step, but its slope
@@ -174,16 +174,15 @@ export class VoiceEngine {
     this.reset();
   }
 
-  // C5's wavelength, lowered to the shortest quantized target period so scales above C5 keep their pitch.
+  // C5's wavelength, lowered to the shortest loop quantize period so periods above C5 keep their pitch.
   get minRangeSamples() {
     return Math.min(this.sampleRate / 523.25, this.loopQuantizePeriods?.[0] ?? Infinity);
   }
 
-  // Source-domain short-loop cutoff in samples, shared by musical loop policies.
-  get pitchPreservationThreshold() {
+  // Pitch cutoff in source samples: the longest loop that counts as a pitch loop.
+  get pitchCutoff() {
     return (
-      this.loopQuantizePeriods?.at(-1) ??
-      Math.floor(this.sampleRate * DEFAULT_PITCH_PRESERVATION_THRESHOLD_SECONDS)
+      this.loopQuantizePeriods?.at(-1) ?? Math.floor(this.sampleRate * DEFAULT_PITCH_CUTOFF_SECONDS)
     );
   }
 
@@ -559,12 +558,12 @@ export class VoiceEngine {
   // Directional searches clamp to the outermost crossing, which can be outward.
   #snapStart(start, end) {
     const snapped = this.#findNearestZeroCrossing(start, 'right');
-    return snapped >= start && end - snapped > this.pitchPreservationThreshold ? snapped : start;
+    return snapped >= start && end - snapped > this.pitchCutoff ? snapped : start;
   }
 
   #snapEnd(start, end) {
     const snapped = this.#findNearestZeroCrossing(end, 'left');
-    return snapped <= end && snapped - start > this.pitchPreservationThreshold ? snapped : end;
+    return snapped <= end && snapped - start > this.pitchCutoff ? snapped : end;
   }
 
   /**
@@ -672,12 +671,12 @@ export class VoiceEngine {
 
     // Loop type, decided once, from the requested length. Nothing below changes it:
     // not trim, quantize, keytrack, snap or drift.
-    const isPitchLoop = calcLoopEnd - calcLoopStart <= this.pitchPreservationThreshold;
+    const isPitchLoop = calcLoopEnd - calcLoopStart <= this.pitchCutoff;
 
     if (isPitchLoop) {
       // Constrained to trim while keeping its quantized/glided length as long as it fits.
       // A zero-length loop (end dragged onto start) floors at minRangeSamples,
-      // which quantization lifts to the shortest period when a scale is set.
+      // which quantization lifts to the shortest loop quantize period, if any.
       const targetLength = quantizeLoopLength(
         Math.max(this.minRangeSamples, calcLoopEnd - calcLoopStart),
         this.loopQuantizePeriods,
@@ -702,7 +701,7 @@ export class VoiceEngine {
       calcLoopStart = Math.min(Math.max(calcLoopStart, trimStart), trimEnd);
       calcLoopEnd = Math.min(Math.max(calcLoopEnd, trimStart), trimEnd);
       // Too little of it inside trim to be a time loop: loop the whole trim.
-      if (calcLoopEnd - calcLoopStart <= this.pitchPreservationThreshold) {
+      if (calcLoopEnd - calcLoopStart <= this.pitchCutoff) {
         calcLoopStart = trimStart;
         calcLoopEnd = trimEnd;
       }
@@ -806,7 +805,7 @@ export class VoiceEngine {
 
   /** Checks once per loop pass whether drift is due for a new roll. */
   #updateLoopDrift(driftAmount, baseDuration, isPitchLoop) {
-    const updateInterval = driftRollInterval(baseDuration, this.pitchPreservationThreshold);
+    const updateInterval = driftRollInterval(baseDuration, this.pitchCutoff);
 
     if (this.#loopDriftPassCount % updateInterval === 0) {
       this.currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
@@ -1029,7 +1028,7 @@ export class VoiceEngine {
         positionParams.loopStartSamples !== this.previousRequestedLoop.start ||
         positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
         playbackRate !== previousPlaybackRate;
-      const followsPointsPerSample = loopWindow?.length < 2 * this.pitchPreservationThreshold;
+      const followsPointsPerSample = loopWindow?.length < 2 * this.pitchCutoff;
       const driftPending = driftAmount > 0 && this.loopEnabled && this.#driftPending;
       if (
         !loopWindow ||

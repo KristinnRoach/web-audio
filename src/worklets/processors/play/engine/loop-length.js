@@ -12,7 +12,7 @@ export function glideToward(current, target, coefficient, snapDistance) {
   return Math.abs(target - next) > snapDistance ? next : target;
 }
 
-// `periods` is ascending, or undefined when no scale is set.
+// `periods` is ascending, or undefined when no loop quantize periods are set.
 export function isInQuantizationRange(length, periods) {
   return !!periods?.length && length >= 1 && length <= periods.at(-1);
 }
@@ -33,8 +33,8 @@ export function quantizeLoopLength(length, periods) {
 }
 
 // Loop iterations between drift rolls. Audio-rate loops re-roll less often.
-export function driftRollInterval(duration, pitchPreservationThreshold) {
-  return Math.max(1, Math.floor(pitchPreservationThreshold / duration));
+export function driftRollInterval(duration, pitchCutoff) {
+  return Math.max(1, Math.floor(pitchCutoff / duration));
 }
 
 /**

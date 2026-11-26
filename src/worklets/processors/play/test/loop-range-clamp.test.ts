@@ -178,7 +178,7 @@ describe('loop range clamping', () => {
   it('keeps a long loop with no zero crossing inside it at its length', async () => {
     const processor = await startProcessor([0.3, 0.5, 0.7]);
     // Straddle the 0.5 crossing so either snap would leave 0.6x the threshold.
-    const half = (0.6 * processor.engine.pitchPreservationThreshold) / TEST_SAMPLE_RATE;
+    const half = (0.6 * processor.engine.pitchCutoff) / TEST_SAMPLE_RATE;
     const parameters = makeParameters({ trimEnd: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
 
     const positions: number[] = [];
