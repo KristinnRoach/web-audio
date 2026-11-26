@@ -1,13 +1,13 @@
 // A voice's envelopes, one fixed slot per engine target, stepped on the processor
 // clock. Configs follow the sampler's EnvelopeConfig, `{ shape, depth = 1,
 // timeScale = 1, playbackRateSync, loopSync }`, plus `base = 0`, in the target's
-// units: gain for 'gain', cents for 'detune' and 'filter', -1..1 for 'pan'. A slot without a config is inactive
-// and the engine falls back to the matching AudioParam.
+// units: gain, cents for 'detune' and 'filter', -1..1 for 'pan', seconds for 'loopEnd'.
+// A slot without a config is inactive and the engine falls back to the matching AudioParam.
 
 import { BreakpointEnvelope } from './breakpoint-envelope.js';
 import { glideCoefficient } from './loop-length.js';
 
-export const ENVELOPE_TARGETS = ['gain', 'detune', 'pan', 'filter'];
+export const ENVELOPE_TARGETS = ['gain', 'detune', 'pan', 'filter', 'loopEnd'];
 
 // One-pole on every envelope output: rounds off vertical segments, step curves and
 // loop-sync cuts. Also softens the fastest attack by about this much.
@@ -36,7 +36,8 @@ export class VoiceEnvelopes {
     this.pan = new EnvelopeSlot(sampleRate);
     // Not applied by the engine: rendered to a control output for the voice's filter.
     this.filter = new EnvelopeSlot(sampleRate);
-    this.slots = [this.gain, this.detune, this.pan, this.filter];
+    this.loopEnd = new EnvelopeSlot(sampleRate);
+    this.slots = [this.gain, this.detune, this.pan, this.filter, this.loopEnd];
     this.pendingReleaseFrame = null;
     this.noteRate = 1;
   }
@@ -80,7 +81,7 @@ export class VoiceEnvelopes {
    * (null before the note's first), `loopWrapped` true on the sample after a wrap.
    * `loopRate` is the transport's source samples per output sample (1 under period stretch).
    */
-  advance(frame, loopRate, loopEnabled, loopWrapped, loopWindow, bufferLength) {
+  advance(frame, loopRate, loopEnabled, loopWrapped, loopWindow, bufferLength, inLoop) {
     const released = this.pendingReleaseFrame !== null && frame >= this.pendingReleaseFrame;
     if (released) this.pendingReleaseFrame = null;
 
@@ -93,11 +94,15 @@ export class VoiceEnvelopes {
         loopEnabled &&
         config.shape.mode.type === 'loop' &&
         !released &&
-        !envelope.released;
+        (slot.triggerPending || !envelope.released);
       const restart = slot.triggerPending || (loopWrapped && loopSync);
 
-      if (restart && loopSync && !loopWindow) {
-        // Wait one sample for the loop length; hold the opening value meanwhile.
+      // The loopEnd envelope starts when the playhead enters the loop; a note-off ends the wait.
+      const waitsForLoop =
+        slot === this.loopEnd && slot.triggerPending && (!loopEnabled || !inLoop) && !released;
+
+      if (waitsForLoop || (restart && loopSync && !loopWindow)) {
+        // Hold the opening value until the loop is entered, or one sample for its length.
         slot.smoothed = config.shape.points[0].value;
       } else {
         // Each new segment uses current timing. Loop sync follows the loop transport;

@@ -257,7 +257,7 @@ export class VoiceEngine {
     this.pendingRates.sort((a, b) => a.frame - b.frame);
   }
 
-  /** Routes an envelope config to 'gain' or 'detune', or null to follow that param. */
+  /** Routes an envelope config to its target, or clears it with null. */
   setEnvelope(target, config) {
     // Without a gain envelope a pending or running release would never end the note.
     const endsRelease = target === 'gain' && !config && this.envelopes.gain.active;
@@ -318,6 +318,7 @@ export class VoiceEngine {
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
     this.loopWrapped = false;
+    this.inLoop = false; // as of the previous sample
     this.isInPitchLoop = false;
     this.loopWindow = null;
     this.loopRate = 1;
@@ -996,6 +997,7 @@ export class VoiceEngine {
         this.loopWrapped,
         this.loopWindow,
         this.buffer[0].length,
+        this.inLoop,
       );
       if (envelopes.gainDone && this.pendingStopFrame === null) {
         // The stop fade covers a tail that doesn't end at zero.
@@ -1010,7 +1012,12 @@ export class VoiceEngine {
 
       positionParams.loopStartSamples =
         this.#getSafeParam(parameters.loopStart, sample) * sampleRate;
-      positionParams.loopEndSamples = this.#getSafeParam(parameters.loopEnd, sample) * sampleRate;
+      const loopEndOffset = envelopes.loopEnd.active ? envelopes.loopEnd.value : 0;
+      const baseLoopEndSamples = Math.min(
+        this.#getSafeParam(parameters.loopEnd, sample) * sampleRate,
+        this.buffer[0].length,
+      );
+      positionParams.loopEndSamples = baseLoopEndSamples + loopEndOffset * sampleRate;
 
       // Recalculate the range only when something moved. Short loops follow
       // their points per sample: their length is pitch. Long loops follow them
@@ -1083,6 +1090,7 @@ export class VoiceEngine {
           )
         );
       const inLoop = this.loopEnabled && (this.loopTurned || reachedLoop);
+      this.inLoop = inLoop;
 
       this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
       const timestretchActive = !this.isInPitchLoop && canStretch;

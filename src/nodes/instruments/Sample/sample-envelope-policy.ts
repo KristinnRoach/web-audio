@@ -5,11 +5,11 @@ import type { EnvelopeConfig } from './envelope-config';
  * Sampler defaults and units for the envelopes the sample-player processor plays.
  */
 
-export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter', 'pan'] as const;
+export const SAMPLE_ENVELOPE_IDS = ['amp', 'pitch', 'filter', 'pan', 'loopEnd'] as const;
 export type SampleEnvelopeId = (typeof SAMPLE_ENVELOPE_IDS)[number];
 
 export function getSampleEnvelopeIds(hasVoiceFilter: boolean): readonly SampleEnvelopeId[] {
-  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch', 'pan'];
+  return hasVoiceFilter ? SAMPLE_ENVELOPE_IDS : ['amp', 'pitch', 'pan', 'loopEnd'];
 }
 
 /**
@@ -26,7 +26,7 @@ const PITCH_ENVELOPE_SEMITONES = 12;
  */
 const FILTER_ENVELOPE_OCTAVES = 10;
 
-/** Flat at 0, so a bipolar env (pitch, pan) is an identity until someone edits it. */
+/** Flat at 0, so a bipolar envelope leaves its target unmodulated until edited. */
 function flatBipolarShape(durationSeconds: number): EnvelopeShape {
   return {
     mode: { type: 'once' },
@@ -64,7 +64,7 @@ export function createDefaultSampleEnvelopeConfig(
 /** Processor target; 'filter' goes out on the processor's second output to lpf.detune. */
 export function getSampleEnvelopeProcessorTarget(
   id: SampleEnvelopeId,
-): 'gain' | 'detune' | 'pan' | 'filter' {
+): 'gain' | 'detune' | 'pan' | 'filter' | 'loopEnd' {
   return id === 'amp' ? 'gain' : id === 'pitch' ? 'detune' : id;
 }
 
@@ -72,7 +72,7 @@ export function getSampleEnvelopeProcessorTarget(
  * Per-target units. `scale` maps shape units to the target's units; `rest` is the shape
  * value that leaves the target unmodulated. Depth mixes from rest (0) to the full shape (1).
  * `linear` replaces non-step curves: pitch and filter are cents, already exponential in Hz,
- * and pan is bipolar, which exponential curves can't cross.
+ * and pan and loopEnd offsets can cross zero.
  */
 const SAMPLE_ENVELOPE_UNITS: Record<
   SampleEnvelopeId,
@@ -82,6 +82,7 @@ const SAMPLE_ENVELOPE_UNITS: Record<
   pan: { scale: 1, rest: 0, linear: true },
   pitch: { scale: PITCH_ENVELOPE_SEMITONES * 100, rest: 0, linear: true },
   filter: { scale: FILTER_ENVELOPE_OCTAVES * 1200, rest: 0, linear: true },
+  loopEnd: { scale: 0.1, rest: 0, linear: true },
 };
 
 /**

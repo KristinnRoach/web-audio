@@ -5,7 +5,7 @@ export type EnvelopeConfig = {
   readonly enabled: boolean;
   /**
    * Mix from unmodulated (0) to the full shape (1), default 1. Shape value 1 is unity gain
-   * for amp, 1200 cents for pitch, 12000 cents for filter. Negative depth inverts the shape.
+   * for amp, 1200 cents for pitch, 12000 cents for filter, 0.1 seconds for loopEnd. Negative depth inverts the shape.
    */
   readonly depth?: number;
   /** Timing multiplier; values above 1 play the envelope faster. */
