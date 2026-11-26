@@ -15,7 +15,7 @@ describe('buffer reload settings', () => {
     send({ type: 'voice:setPlaybackDirection', playbackDirection: 'reverse' });
     send({ type: 'voice:setPanDriftEnabled', value: false });
     render(processor, makeParameters(), 2);
-    expect(processor.engine.playbackPosition).toBeGreaterThan(0);
+    expect(processor.engine.playheadPosition).toBeGreaterThan(0);
 
     const buffer = [new Float32Array(480)];
     send({ type: 'voice:setBuffer', buffer, durationSeconds: 0.01 });
@@ -25,14 +25,13 @@ describe('buffer reload settings', () => {
       reversePlayback: true,
       panDriftEnabled: false,
       isPlaying: false,
-      playbackPosition: 0,
-      loopCount: 0,
+      playheadPosition: 0,
       loopWindow: null,
     });
 
     // The saved direction also applies to the newly loaded audio.
     send({ type: 'voice:start' });
     render(processor, makeParameters(), 1);
-    expect(processor.engine.playbackPosition).toBe(478);
+    expect(processor.engine.playheadPosition).toBe(478);
   });
 });

@@ -7,6 +7,7 @@ function setup(voiceCount = 2) {
   const voices = Array.from({ length: voiceCount }, () => {
     const engine = {
       loopEnabled: false,
+      isInPitchLoop: false,
       start: vi.fn(),
       stop: vi.fn(),
       release: vi.fn(),
@@ -61,7 +62,7 @@ describe('VoicePool', () => {
     expect(engine.start).toHaveBeenCalledOnce();
 
     // The first note ends before the second is due, so nothing is stolen.
-    voice.observe({ type: 'voice:ended' });
+    voice.markAvailable();
     pool.advance(1.5);
     expect(voice.midiNote).toBe(64);
     expect(engine.stop).not.toHaveBeenCalled();
@@ -109,7 +110,7 @@ describe('VoicePool', () => {
       glideFrom: 2,
       glideSeconds: 0.1,
     });
-    voice.observe({ type: 'voice:ended' });
+    voice.markAvailable();
 
     pool.setPitchEnabled(false, 1);
     noteOn(72, 1, 0.1);
@@ -273,5 +274,56 @@ describe('sample-player processor voices', () => {
     // A message with an index reaches only that voice.
     send({ type: 'voice:stop', voice: 1, timestamp: 0 });
     expect(processor.voices.map(({ voice }: any) => voice.state)).toEqual(['PLAYING', 'AVAILABLE']);
+  });
+
+  it('uses the latest rendered pitch-loop state while range reports are throttled', async ({
+    onTestFinished,
+  }) => {
+    const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
+    const processor = new (SamplePlayerProcessor as any)();
+    const send = (data: object) => processor.port.onmessage({ data });
+    const noteOn = (midiNote: number, timestamp: number) =>
+      send({ type: 'pool:noteOn', triggerId: midiNote, midiNote, timestamp });
+    const reports = (type: string) =>
+      processor.port.postMessage.mock.calls
+        .map(([message]: any) => message)
+        .filter((message: any) => message.type === type);
+
+    let frame = 0;
+    const renderBlock = (loopEnd: number) => {
+      const output = new Float32Array(128);
+      vi.stubGlobal('currentFrame', frame);
+      vi.stubGlobal('currentTime', frame / TEST_SAMPLE_RATE);
+      processor.process([], [[output]], makeParameters({ loopStart: 0.004, loopEnd }));
+      frame += output.length;
+    };
+    onTestFinished(() => {
+      vi.stubGlobal('currentFrame', 0);
+      vi.stubGlobal('currentTime', 0);
+    });
+
+    send({ type: 'voice:setBuffer', buffer: [new Float32Array(TEST_SAMPLE_RATE)] });
+    send({ type: 'voice:setLoopEnabled', value: true });
+    send({ type: 'pool:setLegato', value: { mode: 'pitchLoop' } });
+    noteOn(60, 0);
+    renderBlock(0.006); // approaching the pitch loop
+    renderBlock(0.006); // entered the pitch loop
+    expect(reports('loop:range')).toEqual([expect.objectContaining({ isInPitchLoop: false })]);
+
+    noteOn(64, frame / TEST_SAMPLE_RATE);
+    renderBlock(0.006);
+    expect(reports('voice:retuned')).toEqual([expect.objectContaining({ midiNote: 64 })]);
+
+    // Let the display catch up, then switch to a time loop before it can post again.
+    frame = TEST_SAMPLE_RATE / 20;
+    renderBlock(0.006);
+    renderBlock(0.2);
+    expect(reports('loop:range').at(-1)).toMatchObject({ isInPitchLoop: true });
+
+    noteOn(67, frame / TEST_SAMPLE_RATE);
+    renderBlock(0.2);
+    expect(reports('voice:started').map(({ midiNote }: { midiNote: number }) => midiNote)).toEqual([
+      60, 67,
+    ]);
   });
 });

@@ -844,7 +844,14 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     }) as AudioContext;
     const pool = new VoicePool();
     const voices = [0, 1, 2].map((index) => {
-      const engine = { loopEnabled: true, start() {}, stop() {}, release() {}, setNoteRate() {} };
+      const engine = {
+        loopEnabled: true,
+        isInPitchLoop: false,
+        start() {},
+        stop() {},
+        release() {},
+        setNoteRate() {},
+      };
       const voice = new PoolVoice(engine, (message: object) =>
         test.report({ ...message, voice: index }),
       );

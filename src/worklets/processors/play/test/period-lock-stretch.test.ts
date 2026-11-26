@@ -46,23 +46,21 @@ describe('PeriodLockStretcher', () => {
     expect(prepare(stretch, 11, 2)).toBe(3);
   });
 
-  it('is inactive until it has periods, and for pitch loops', () => {
+  it('needs pitch periods to stretch', () => {
     const stretch = new PeriodLockStretcher(1000);
     stretch.setEnabled(true, 0);
-    expect(stretch.isActive(false, false)).toBe(false);
+    expect(stretch.canStretch).toBe(false);
     stretch.setPeriods(Float32Array.of(PERIOD), 1000);
-    expect(stretch.isActive(false, false)).toBe(true);
-    expect(stretch.isActive(true, true)).toBe(false);
-    expect(stretch.isActive(true, false)).toBe(true);
+    expect(stretch.canStretch).toBe(true);
   });
 
   it('stretches only in period mode, so a removed mode name turns it off', () => {
     const engine = new VoiceEngine({ sampleRate: 1000, random: Math.random, post: () => {} });
     engine.setPitchPeriods(Float32Array.of(PERIOD), 1000);
     engine.setTimestretchMode('period');
-    expect(engine.timestretch.isActive(false, false)).toBe(true);
+    expect(engine.timestretch.canStretch).toBe(true);
     engine.setTimestretchMode('splice');
-    expect(engine.timestretch.isActive(false, false)).toBe(false);
+    expect(engine.timestretch.canStretch).toBe(false);
   });
 
   // At rate 8 jumps recur every 96 / 7 samples: half of that, not half a period.
@@ -73,7 +71,7 @@ describe('PeriodLockStretcher', () => {
     const stretch = stretcher();
     prepare(stretch, PERIOD + 1, rate);
     let frames = 0;
-    while (stretch.outgoingPosition !== null) {
+    while (stretch.fadeOutPosition !== null) {
       stretch.advance(true, 0, rate, null);
       frames++;
     }
@@ -164,10 +162,15 @@ describe('period timestretch through the processor', () => {
     const rendered = await renderSine(...args);
     const jumps = spy.mock.calls
       .filter((_, call) => spy.mock.results[call].value !== null)
-      .map(([, playbackPosition]) => playbackPosition);
+      .map(([, playheadPosition]) => playheadPosition);
     spy.mockRestore();
     return { rendered, jumps };
   }
+
+  it('skips period jumps in a pitch loop', async () => {
+    const { jumps } = await renderRecordingJumps(2, true, { loopEnd: 192 / TEST_SAMPLE_RATE });
+    expect(jumps).toEqual([]);
+  });
 
   it.each([
     ['ping-pong', 0.5, true],
@@ -219,12 +222,8 @@ describe('period timestretch through the processor', () => {
         : { loopStart: 2000 / TEST_SAMPLE_RATE, loopEnd: 7000 / TEST_SAMPLE_RATE };
     async function edges(playbackRate: number) {
       const frames: number[] = [];
-      let count: number | undefined = 0;
       await renderSine(playbackRate, true, points, kind === 'ping-pong', (engine, frame) => {
-        if (engine.loopCount !== count) {
-          frames.push(frame);
-          count = engine.loopCount;
-        }
+        if (engine.loopWrapped) frames.push(frame);
       });
       return frames;
     }

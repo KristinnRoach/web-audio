@@ -72,7 +72,7 @@ describe('a-rate loop points and duration glide', () => {
     const params = makeParameters({ trimEnd: 0.9 });
     params.trimStart = step(0, 0.5);
     processor.process([], [[new Float32Array(128)]], params);
-    expect(processor.engine.playbackPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
+    expect(processor.engine.playheadPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
   });
 
   it.each(
@@ -119,7 +119,7 @@ describe('a-rate loop points and duration glide', () => {
         }
         expect(output.some((value) => value !== 0)).toBe(true);
         expect(output).toEqual(expected);
-        expect(block.engine.playbackPosition).toBe(singles.engine.playbackPosition);
+        expect(block.engine.playheadPosition).toBe(singles.engine.playheadPosition);
       }
     },
   );
@@ -142,8 +142,8 @@ describe('a-rate loop points and duration glide', () => {
           loopWindow: { start: number };
         }
       ).loopWindow.start;
-      expect(moving.engine.playbackPosition - actualStart).toBeCloseTo(
-        fixed.engine.playbackPosition,
+      expect(moving.engine.playheadPosition - actualStart).toBeCloseTo(
+        fixed.engine.playheadPosition,
         5,
       );
     }
@@ -156,17 +156,12 @@ describe('a-rate loop points and duration glide', () => {
     } as MessageEvent);
     const params = makeParameters({ loopStart: 0.002, loopEnd: 0 });
     processor.process([], [[new Float32Array(98)]], params);
-    const state = processor.engine as typeof processor.engine & {
-      loopTurned: boolean;
-      loopCount: number;
-    };
-    expect(state.loopTurned).toBe(true);
-    expect(state.loopCount).toBe(1);
+    const position = processor.engine.playheadPosition;
+    expect(position).toBeCloseTo(94, 3);
     params.loopStart = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0.002 : 0));
     params.loopEnd = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0 : 0.002));
     processor.process([], [[new Float32Array(16)]], params);
-    expect(state.loopTurned).toBe(true);
-    expect(state.loopCount).toBe(1);
+    expect(processor.engine.playheadPosition).toBeCloseTo(position - 16, 3);
   });
 
   it('generates drift once before the first edge, even with per-sample point changes', async () => {
@@ -184,16 +179,13 @@ describe('a-rate loop points and duration glide', () => {
   it('rolls fresh drift on the first pass of every note', async () => {
     const processor = await makeProcessor();
     const params = makeParameters({ loopDurationDriftAmount: 0.01 });
-    processor.process([], [[new Float32Array(1)]], params);
+    const engine = processor.engine as typeof processor.engine & { random: () => number };
+    const random = vi.spyOn(engine, 'random').mockReturnValue(0.75);
+    processor.process([], [[new Float32Array(200)]], params);
+    random.mockClear();
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
-    const state = processor.engine as typeof processor.engine & {
-      currentLoopDrift: number;
-      loopDriftRolled: boolean;
-    };
-    state.currentLoopDrift = 12345; // stale drift from the previous note
     processor.process([], [[new Float32Array(1)]], params);
-    expect(state.loopDriftRolled).toBe(true);
-    expect(state.currentLoopDrift).not.toBe(12345);
+    expect(random).toHaveBeenCalled();
   });
 
   it.each([0, 0.01])(

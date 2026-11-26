@@ -19,9 +19,8 @@ class MockAudioWorkletProcessor {
 type TestProcessor = {
   engine: {
     isPlaying: boolean;
-    loopDriftRolled: boolean;
     pendingStartFrame: number;
-    playbackPosition: number;
+    playheadPosition: number;
   };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
@@ -39,9 +38,7 @@ function makeParameters(driftAmount = 0): Parameters {
     loopEnd: new Float32Array([0.5]),
     trimStart: new Float32Array([0]),
     trimEnd: new Float32Array([1]),
-    playbackPosition: new Float32Array([0]),
     loopDurationDriftAmount: new Float32Array([driftAmount]),
-    maxLoopCount: new Float32Array([999_999]),
   };
 }
 
@@ -99,7 +96,7 @@ describe('scheduled sample start', () => {
     vi.stubGlobal('currentTime', 0);
   });
 
-  it('leaves playback and loop-drift state untouched before the start block', async () => {
+  it('leaves playback silent and draws no drift before the start block', async () => {
     const random = vi.spyOn(Math, 'random');
     const processor = await createProcessor(BLOCK_SIZE * 2);
     const output = new Float32Array(BLOCK_SIZE);
@@ -107,8 +104,7 @@ describe('scheduled sample start', () => {
     processor.process([], [[output]], makeParameters(0.2));
 
     expect(output.every((sample) => sample === 0)).toBe(true);
-    expect(processor.engine.playbackPosition).toBe(0);
-    expect(processor.engine.loopDriftRolled).toBe(false);
+    expect(processor.engine.playheadPosition).toBe(0);
     expect(random).not.toHaveBeenCalled();
     expect(processor.engine.pendingStartFrame).toBe(BLOCK_SIZE * 2);
   });
@@ -126,7 +122,7 @@ describe('scheduled sample start', () => {
     expect(output[startOffset]).toBe(0);
     expect(output[startOffset + 1]).toBeGreaterThan(0);
     expect(output[BLOCK_SIZE - 1]).toBeGreaterThan(0);
-    expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE - startOffset);
+    expect(processor.engine.playheadPosition).toBe(BLOCK_SIZE - startOffset);
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
 
@@ -139,7 +135,7 @@ describe('scheduled sample start', () => {
 
     expect(output[0]).toBe(0);
     expect(output[1]).toBeGreaterThan(0);
-    expect(processor.engine.playbackPosition).toBe(BLOCK_SIZE);
+    expect(processor.engine.playheadPosition).toBe(BLOCK_SIZE);
     expect(processor.engine.pendingStartFrame).toBe(0);
   });
 

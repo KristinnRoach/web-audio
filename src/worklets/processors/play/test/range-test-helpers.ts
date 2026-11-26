@@ -17,7 +17,7 @@ class MockAudioWorkletProcessor {
 export type TestProcessor = {
   engine: {
     readonly pitchPreservationThreshold: number;
-    playbackPosition: number;
+    playheadPosition: number;
     minRangeSamples: number;
     readonly loopCrossfade: {
       readonly count: number;
@@ -42,9 +42,7 @@ export function makeParameters(overrides: Record<string, number> = {}): Paramete
     loopEnd: 9999,
     trimStart: 0,
     trimEnd: 9999,
-    playbackPosition: 0,
     loopDurationDriftAmount: 0,
-    maxLoopCount: 999_999,
     ...overrides,
   };
 

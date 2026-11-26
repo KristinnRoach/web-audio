@@ -1,7 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { midiToPlaybackRate } from '../../../../utils/music-theory/utils/core-utils';
+import {
+  makeParameters,
+  setupProcessorGlobals,
+  startProcessor,
+  TEST_SAMPLE_RATE,
+} from './range-test-helpers';
 
-const TEST_SAMPLE_RATE = 48_000;
 const ROOT_MIDI_NOTE = 60;
 const LOOP_LENGTH_SAMPLES = 192;
 const FIRST_MIDI_NOTE = 36;
@@ -10,104 +15,46 @@ const REVERSE_TEST_MIDI_NOTE = 88;
 const WRAPS_TO_MEASURE = 32;
 const TUNING_TOLERANCE_CENTS = 3;
 
-type WorkletPort = {
-  onmessage: ((event: MessageEvent) => void) | null;
-  postMessage: ReturnType<typeof vi.fn>;
-};
-
-class MockAudioWorkletProcessor {
-  readonly port: WorkletPort = {
-    onmessage: null,
-    postMessage: vi.fn(),
-  };
-}
-
-type TestProcessor = {
-  engine: { enableLoopCrossfade: boolean; loopCount: number };
-  port: WorkletPort;
-  process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
-};
-
-type Parameters = Record<string, Float32Array>;
-
-function makeParameters(
-  playbackRate: number,
-  loopLengthSamples = LOOP_LENGTH_SAMPLES,
-  driftAmount = 0,
-): Parameters {
-  return {
-    masterGain: new Float32Array([1]),
-    pan: new Float32Array([0]),
-    playbackRate: new Float32Array([playbackRate]),
-    detune: new Float32Array([0]),
-    loopStart: new Float32Array([0]),
-    loopEnd: new Float32Array([loopLengthSamples / TEST_SAMPLE_RATE]),
-    trimStart: new Float32Array([0]),
-    trimEnd: new Float32Array([1]),
-    loopDurationDriftAmount: new Float32Array([driftAmount]),
-    maxLoopCount: new Float32Array([999_999]),
-  };
-}
-
 async function measureLoopPeriod(
   midiNote: number,
   playbackDirection: 'forward' | 'reverse' = 'forward',
   loopLengthSamples = LOOP_LENGTH_SAMPLES,
   driftAmount = 0,
 ): Promise<number> {
-  const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
-  const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
-  const channel = new Float32Array(TEST_SAMPLE_RATE);
-
-  processor.engine.enableLoopCrossfade = false;
-  processor.port.onmessage?.({
-    data: {
-      type: 'voice:setBuffer',
-      buffer: [channel],
-      durationSeconds: 1,
-    },
-  } as MessageEvent);
-  processor.port.onmessage?.({
-    data: { type: 'voice:setLoopEnabled', value: true },
-  } as MessageEvent);
+  const processor = await startProcessor();
+  Object.assign(processor.engine, { enableLoopCrossfade: false });
   if (playbackDirection === 'reverse') {
     processor.port.onmessage?.({
       data: { type: 'voice:setPlaybackDirection', playbackDirection },
     } as MessageEvent);
   }
-  processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
-
-  const parameters = makeParameters(
-    midiToPlaybackRate(midiNote, ROOT_MIDI_NOTE),
-    loopLengthSamples,
-    driftAmount,
+  const playbackRate = midiToPlaybackRate(midiNote, ROOT_MIDI_NOTE);
+  const parameters = makeParameters({
+    playbackRate,
+    loopEnd: loopLengthSamples / TEST_SAMPLE_RATE,
+    loopDurationDriftAmount: driftAmount,
+  });
+  const direction = playbackDirection === 'forward' ? 1 : -1;
+  // Allow for the reverse approach through the buffer and drift-expanded passes.
+  const maxFrames = Math.ceil(
+    (TEST_SAMPLE_RATE + 2 * loopLengthSamples * WRAPS_TO_MEASURE) / playbackRate,
   );
+  const output = [new Float32Array(1)];
   const wrapFrames: number[] = [];
-  let previousLoopCount = 0;
-
-  for (let frame = 0; wrapFrames.length < WRAPS_TO_MEASURE; frame++) {
-    processor.process([], [[new Float32Array(1)]], parameters);
-    if (processor.engine.loopCount !== previousLoopCount) {
-      wrapFrames.push(frame);
-      previousLoopCount = processor.engine.loopCount;
-    }
+  let previousPosition = processor.engine.playheadPosition;
+  for (let frame = 0; frame < maxFrames && wrapFrames.length < WRAPS_TO_MEASURE; frame++) {
+    processor.process([], [output], parameters);
+    const position = processor.engine.playheadPosition;
+    if (frame > 0 && (position - previousPosition) * direction < 0) wrapFrames.push(frame);
+    previousPosition = position;
   }
 
+  expect(wrapFrames).toHaveLength(WRAPS_TO_MEASURE);
   return (wrapFrames[wrapFrames.length - 1] - wrapFrames[0]) / (wrapFrames.length - 1);
 }
 
 describe('audio-rate loop tuning', () => {
-  beforeAll(() => {
-    vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
-    vi.stubGlobal('sampleRate', TEST_SAMPLE_RATE);
-    vi.stubGlobal('currentTime', 0);
-    vi.stubGlobal('currentFrame', 0);
-    vi.stubGlobal('registerProcessor', vi.fn());
-  });
-
-  afterAll(() => {
-    vi.unstubAllGlobals();
-  });
+  setupProcessorGlobals();
 
   afterEach(() => {
     vi.restoreAllMocks();

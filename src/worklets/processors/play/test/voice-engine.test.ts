@@ -10,20 +10,7 @@ it('renders from injected time, randomness and message sink', () => {
   const post = vi.fn();
   const random = vi.fn(() => 0.75);
   const engine = new VoiceEngine({ sampleRate: SR, random, post });
-  const parameters = Object.fromEntries(
-    Object.entries({
-      masterGain: 1,
-      pan: 0,
-      playbackRate: 1,
-      detune: 0,
-      loopStart: 0,
-      loopEnd: 1024 / SR,
-      trimStart: 0,
-      trimEnd: 1,
-      loopDurationDriftAmount: 0.01,
-      maxLoopCount: 999_999,
-    }).map(([name, value]) => [name, new Float32Array([value])]),
-  );
+  const parameters = makeParameters({ loopEnd: 1024 / SR, loopDurationDriftAmount: 0.01 });
 
   engine.reportIdle(parameters, 0); // no source yet
   expect(post).not.toHaveBeenCalled();
@@ -46,13 +33,9 @@ it('renders from injected time, randomness and message sink', () => {
   expect(output.every((value) => value === 0)).toBe(true);
   expect(random).not.toHaveBeenCalled();
 
-  for (let block = 2; block < 12; block++) {
-    engine.render([output.fill(0)], parameters, block * QUANTUM, (block * QUANTUM) / SR);
-  }
+  engine.render([output], parameters, 2 * QUANTUM, (2 * QUANTUM) / SR);
   expect(output.some((value) => value !== 0)).toBe(true);
   expect(random).toHaveBeenCalled();
-  // First wrap: the note starts at startFrame and reaches the drifted loop end.
-  expect(engine.loopCount).toBeGreaterThan(0);
 });
 
 it.each([null, [new Float32Array(256)]])(
@@ -70,6 +53,20 @@ it.each([null, [new Float32Array(256)]])(
     expect(engine.readHeads.every((head) => head.source.samples === null)).toBe(true);
   },
 );
+
+it('keeps a moved pitch loop eligible for legato with timestretch off', () => {
+  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+  engine.setBuffer([new Float32Array(SR)]);
+  engine.loopEnabled = true;
+  engine.enableLoopCrossfade = false;
+  engine.start(1, 0);
+  engine.render([new Float32Array(QUANTUM)], makeParameters({ loopEnd: 0.004 }), 0, 0);
+  expect(engine.isInPitchLoop).toBe(true);
+
+  const moved = makeParameters({ loopStart: 0.25, loopEnd: 0.254 });
+  engine.render([new Float32Array(1)], moved, QUANTUM, QUANTUM / SR);
+  expect(engine.isInPitchLoop).toBe(true);
+});
 
 describe('host stop', () => {
   const STOP_FRAME = 200;

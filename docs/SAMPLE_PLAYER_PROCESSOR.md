@@ -2,13 +2,15 @@
 
 The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/SamplePlayer.ts`) and its `SamplePlayerProcessor` (`src/worklets/processors/play/sample-player-processor.js`), as of [migration](SAMPLE_PLAYER_VOICE_MIGRATION.md) step 4b. The processor holds the pitch settings and works out every note's playback rate; no main → processor message carries a rate.
 
+This is an internal protocol. The processor registration name, worklet AudioParams, and port messages may change between releases. Apps should use `SamplePlayer` methods and events. Flag worklet changes in compatibility reviews only when they affect the public API or behavior.
+
 ## Node
 
 `createSampleWorklet(context, voiceCount)` in `SamplePlayer.ts`; `voiceCount` is the player's `polyphony` (default 16).
 
 - `processorOptions: { voiceCount }`, `numberOfInputs: 0`, `numberOfOutputs: voiceCount * 2`.
 - Output `2i`: voice `i`'s stereo audio. Output `2i + 1`: voice `i`'s filter envelope in cents (mono), connected to that voice's `lpf.detune`; silent when the envelope is off.
-- AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `trimStart`, `trimEnd`, `loopDurationDriftAmount`, `maxLoopCount`) belong to the node and are shared by every voice. `SamplePlayer` sets them on its worklet: `trimStart`, `trimEnd`, `loopStart`, `loopEnd` (both at one event time when set together) and `loopDurationDriftAmount`; the pitch LFO drives `detune`.
+- AudioParams (`masterGain`, `pan`, `playbackRate`, `detune`, `loopStart`, `loopEnd`, `trimStart`, `trimEnd`, `loopDurationDriftAmount`) belong to the node and are shared by every voice. `SamplePlayer` sets them on its worklet: `trimStart`, `trimEnd`, `loopStart`, `loopEnd` (both at one event time when set together) and `loopDurationDriftAmount`; the pitch LFO drives `detune`.
 - `trimStart`, `trimEnd`, `loopStart` and `loopEnd` are a-rate. Trim and time loops resolve once per block; loops shorter than twice the pitch cutoff follow their points per sample. Loop points never move trim; both loop types stay within trim, except that a keytracked time loop can end in silence past it. The loop type comes from the requested length: a pitch loop keeps its quantized length (up to the trim length) and clamps its position into trim; a time loop clamps to trim, or loops all of trim when too little of it is inside. Inverted trim points (`trimStart > trimEnd`) reverse playback, XORed with the playback direction control.
 
 ## The `voice` tag
@@ -35,7 +37,7 @@ The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/
 | `voice:setEnvelope`            | `target: 'gain' \| 'detune' \| 'pan' \| 'filter'`, `value`: resolved config or `null` (off) | untagged | processor `initialized`, `updateEnvelope()`; `filter` only when the chain has `lpf` |
 | `voice:setLoopLengthGlide`     | `value` (seconds)                                                                           | untagged | processor `initialized`, `setLoopLengthGlide()`                                     |
 | `voice:setLoopPositionGlide`   | `value` (seconds)                                                                           | untagged | processor `initialized`, `setLoopPositionGlide()`                                   |
-| `voice:reportPlaybackPosition` | `value: boolean`                                                                            | untagged | processor `initialized`, `enablePositionTracking()`                                 |
+| `voice:reportPlayheadPosition` | `value: boolean`                                                                            | untagged | processor `initialized`, `enablePositionTracking()`                                 |
 | `voice:setLoopEnabled`         | `value: boolean`                                                                            | untagged | `init()`, `setLoopEnabled()`, sustain pedal                                         |
 | `voice:setLoopPingPong`        | `value: boolean`                                                                            | untagged | `setLoopPingPong()`                                                                 |
 | `voice:setStartFromLoop`       | `value: boolean`                                                                            | untagged | `init()`, `setStartFromLoop()`                                                      |

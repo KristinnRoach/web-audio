@@ -70,13 +70,6 @@ export const SAMPLE_PLAYER_WORKLET_AUDIOPARAMS = {
     maxValue: 1, // 0 = no drift, 1 = max drift (up to 100% of loop duration)
     automationRate: 'k-rate',
   },
-  maxLoopCount: {
-    name: 'maxLoopCount',
-    defaultValue: 999999,
-    minValue: 1,
-    maxValue: 999999,
-    automationRate: 'k-rate',
-  },
 } as const satisfies Record<string, AudioParamDescriptor>;
 
 export const SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS = Object.values(

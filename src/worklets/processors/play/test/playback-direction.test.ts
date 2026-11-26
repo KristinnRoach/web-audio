@@ -179,15 +179,30 @@ describe('loop types', () => {
     expect(cycle[1] - cycle[0]).toBe(1);
   });
 
-  it('out of loop passes: turns back to the approach direction and plays out the tail', async () => {
-    // Pass 1 ends at the turn, pass 2 at the first jump
-    const params = makeParameters({ ...trim, loopStart: HI, loopEnd: LO, maxLoopCount: 2 });
-    const { processor } = await startRamp('forward', true);
-    const positions = trace(processor, params, 3000);
+  it('switching off a backward loop restores the approach direction and plays out the tail', async () => {
+    const { processor, send } = await startRamp('forward', true);
+    const before = trace(processor, backward, 900);
+    expect(before.slice(-2)).toEqual([602, 601]);
 
-    expect(indexOfRun(positions, [376, 375, 749, 750, 751])).toBeGreaterThan(0);
+    send({ type: 'voice:setLoopEnabled', value: false });
+    const positions = trace(processor, backward, 1000);
+    expect(positions.slice(0, 3)).toEqual([600, 601, 602]);
     expect(positions.at(-1)).toBe(1124);
     expect(processor.engine.isPlaying).toBe(false);
+  });
+
+  it('clears a ping-pong turn only after rendering with looping off', async () => {
+    const { processor, send } = await startRamp('reverse', true, true);
+    trace(processor, forwardLoop, 850); // turned at 375, now moving forward
+
+    send({ type: 'voice:setLoopEnabled', value: false });
+    send({ type: 'voice:setLoopEnabled', value: true });
+    expect(trace(processor, forwardLoop, 2)).toEqual([476, 477]);
+
+    send({ type: 'voice:setLoopEnabled', value: false });
+    expect(trace(processor, forwardLoop, 1)).toEqual([478]);
+    send({ type: 'voice:setLoopEnabled', value: true });
+    expect(trace(processor, forwardLoop, 2)).toEqual([477, 476]);
   });
 
   it('a loop type change takes effect at the next loop edge', async () => {
