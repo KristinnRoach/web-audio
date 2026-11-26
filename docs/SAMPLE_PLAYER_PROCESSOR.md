@@ -2,6 +2,8 @@
 
 The contract between `SamplePlayer` (main thread, `src/nodes/instruments/Sample/SamplePlayer.ts`) and its `SamplePlayerProcessor` (`src/worklets/processors/play/sample-player-processor.js`), as of [migration](SAMPLE_PLAYER_VOICE_MIGRATION.md) step 4b. The processor holds the pitch settings and works out every note's playback rate; no main → processor message carries a rate.
 
+This is an internal protocol. The processor registration name, worklet AudioParams, and port messages may change between releases. Apps should use `SamplePlayer` methods and events. Flag worklet changes in compatibility reviews only when they affect the public API or behavior.
+
 ## Node
 
 `createSampleWorklet(context, voiceCount)` in `SamplePlayer.ts`; `voiceCount` is the player's `polyphony` (default 16).
