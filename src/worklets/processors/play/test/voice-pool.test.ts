@@ -106,7 +106,7 @@ describe('VoicePool', () => {
     expect(engine.start).toHaveBeenLastCalledWith(60, 0, {
       midiNote: 60,
       velocity: undefined,
-      playbackRate: 2,
+      noteRate: 2,
       glideFrom: 2,
       glideSeconds: 0.1,
     });
@@ -118,7 +118,7 @@ describe('VoicePool', () => {
     expect(engine.start.mock.lastCall?.[2]).toEqual({
       midiNote: 72,
       velocity: undefined,
-      playbackRate: 1,
+      noteRate: 1,
     });
     // The node still hears where the note glides from, for its effects.
     expect(voices[0].post).toHaveBeenLastCalledWith(
@@ -210,7 +210,7 @@ describe('sample-player processor voices', () => {
     processor.port.onmessage({
       data: { type: 'voice:start', voice: 0, triggerId: 1, timestamp: 0, midiNote: 60 },
     });
-    expect(start.mock.lastCall?.[2]).toMatchObject({ playbackRate: 2 });
+    expect(start.mock.lastCall?.[2]).toMatchObject({ noteRate: 2 });
   });
 
   it('reports completion when a buffer swap clears playback with a scheduled stop', async () => {
@@ -273,7 +273,7 @@ describe('sample-player processor voices', () => {
 
     // A message with an index reaches only that voice.
     send({ type: 'voice:stop', voice: 1, timestamp: 0 });
-    expect(processor.voices.map(({ voice }: any) => voice.state)).toEqual(['PLAYING', 'AVAILABLE']);
+    expect(processor.slots.map(({ voice }: any) => voice.state)).toEqual(['PLAYING', 'AVAILABLE']);
   });
 
   it('uses the latest rendered pitch-loop state while range reports are throttled', async ({

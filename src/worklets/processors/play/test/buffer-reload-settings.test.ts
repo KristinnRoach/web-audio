@@ -22,7 +22,7 @@ describe('buffer reload settings', () => {
 
     expect(processor.engine).toMatchObject({
       loopEnabled: true,
-      reversePlayback: true,
+      playbackDirection: 'reverse',
       panDriftEnabled: false,
       isPlaying: false,
       playheadPosition: 0,

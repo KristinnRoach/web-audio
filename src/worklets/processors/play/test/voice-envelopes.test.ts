@@ -317,7 +317,7 @@ it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)
     }
     engine.setEnvelope('gain', { shape: adsr('loop'), loopSync: true });
     const trigger = vi.spyOn(engine.envelopes.gain.envelope, 'trigger');
-    engine.start(1, 0, { playbackRate: source === 'period stretch' ? 2 : 1 });
+    engine.start(1, 0, { noteRate: source === 'period stretch' ? 2 : 1 });
 
     const loopLengthSeconds = 0.25;
     const loopRate = source === 'detune param' || source === 'detune envelope' ? 2 : 1;
@@ -441,12 +441,12 @@ it('takes rate and velocity from voice:start, so the first note is synced and sc
   // The playbackRate param is a multiplier now; a stale 1 must not leak into the note.
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
-  engine.start(1, 0, { playbackRate: 2, velocity: 127 });
+  engine.start(1, 0, { noteRate: 2, velocity: 127 });
   engine.render([new Float32Array(128)], parameters, 0, 0);
   expect(engine.envelopes.gain.envelope.timeScale).toBe(2);
   expect(engine.noteRate).toBe(2);
 
-  engine.start(2, 0, { playbackRate: 0.5, velocity: 0 });
+  engine.start(2, 0, { noteRate: 0.5, velocity: 0 });
   const output = new Float32Array(128);
   engine.render([output], parameters, 128, 0);
   expect(engine.envelopes.gain.envelope.timeScale).toBe(0.5);
@@ -494,7 +494,7 @@ it('discards the previous note’s queued retunes when a new note starts', () =>
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.start(1, 0);
   engine.setNoteRate(0.01, 4);
-  engine.start(2, 0, { playbackRate: 2 });
+  engine.start(2, 0, { noteRate: 2 });
   engine.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
   expect(engine.noteRate).toBe(2);
   expect(engine.playheadPosition).toBeCloseTo(256);
@@ -505,7 +505,7 @@ it('glides the note rate from glideFrom and retunes on voice:setRate', () => {
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
-  engine.start(1, 0, { playbackRate: 2, glideFrom: 1, glideSeconds: 0.05 });
+  engine.start(1, 0, { noteRate: 2, glideFrom: 1, glideSeconds: 0.05 });
   engine.render([new Float32Array(128)], parameters, 0, 0);
   expect(engine.noteRate).toBeGreaterThan(1.9); // 128 ms at a 50 ms time constant
   expect(engine.noteRate).toBeLessThan(2);

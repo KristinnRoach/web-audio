@@ -101,7 +101,7 @@ export class VoiceEngine {
     this.buffer = null;
 
     this.loopEnabled = false;
-    this.reversePlayback = false;
+    this.playbackDirection = 'forward';
     // Note-on starts at the loop instead of trim while looping is on.
     this.startFromLoop = false;
     this.panDriftEnabled = true;
@@ -218,13 +218,13 @@ export class VoiceEngine {
   }
 
   /**
-   * `note.playbackRate` is the note's rate, gliding there from `glideFrom` over
+   * `note.noteRate` is the note's rate, gliding there from `glideFrom` over
    * `glideSeconds` (a time constant, as setTargetAtTime). `velocity` is 0-127.
    */
   start(triggerId, timestamp, note = {}) {
-    const { playbackRate = 1, velocity = 127, glideFrom, glideSeconds = 0 } = note;
-    this.noteRateTarget = playbackRate;
-    this.noteRate = glideSeconds > 0 && glideFrom !== undefined ? glideFrom : playbackRate;
+    const { noteRate = 1, velocity = 127, glideFrom, glideSeconds = 0 } = note;
+    this.noteRateTarget = noteRate;
+    this.noteRate = glideSeconds > 0 && glideFrom !== undefined ? glideFrom : noteRate;
     this.noteRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
     this.pendingRates.length = 0;
     this.velocityGain = Math.max(0, Math.min(1, velocity / 127));
@@ -244,14 +244,14 @@ export class VoiceEngine {
     this.startFadeFrames = 0;
     this.#clearStop(); // a new note supersedes the previous note's stop
     // Envelopes start on the note's first audible sample.
-    this.envelopes.trigger(playbackRate);
+    this.envelopes.trigger(noteRate);
   }
 
   /** Retunes the sounding note at `timestamp`, gliding with a `glideSeconds` time constant. */
-  setNoteRate(timestamp, playbackRate, glideSeconds = 0) {
+  setNoteRate(timestamp, noteRate, glideSeconds = 0) {
     this.pendingRates.push({
       frame: timestamp ? Math.round(timestamp * this.sampleRate) : 0,
-      rate: playbackRate,
+      rate: noteRate,
       coefficient: glideCoefficient(glideSeconds, this.sampleRate),
     });
     this.pendingRates.sort((a, b) => a.frame - b.frame);
@@ -925,7 +925,8 @@ export class VoiceEngine {
     // Direction the voice travels outside a loop: 1 forward, -1 reverse. The
     // playhead reads the same source position in either direction, so a
     // direction change needs no position correction.
-    const approachDirection = this.reversePlayback !== trimRange.inverted ? -1 : 1;
+    const approachDirection =
+      (this.playbackDirection === 'reverse') !== trimRange.inverted ? -1 : 1;
     const driftAmount = parameters.loopDurationDriftAmount[0];
     let loopWindow;
     let previousPlaybackRate;
