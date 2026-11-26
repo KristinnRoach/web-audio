@@ -81,7 +81,7 @@ function isApproachingLoopWindow(position, approachDirection, loopWindow) {
   return approachDirection > 0 ? position < loopWindow.start : position >= loopWindow.end;
 }
 
-export class VoiceEngine {
+export class SamplePlayerVoice {
   #loopDriftPassCount = 0;
   #driftPending = true;
 

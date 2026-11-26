@@ -20,15 +20,15 @@ describe('loop position glide timing', () => {
       const params = makeParameters({ loopStart: start, loopEnd: end, ...trim });
       processor.process([], [[new Float32Array(frames)]], params);
       return (
-        processor.engine as typeof processor.engine & {
+        processor.voice as typeof processor.voice & {
           loopWindow: { start: number; length: number };
         }
       ).loopWindow;
     };
     process(0, 0.004);
     const isMoveFading = () =>
-      (processor.engine as typeof processor.engine & { loopMoveFadeLeft: number })
-        .loopMoveFadeLeft > 0;
+      (processor.voice as typeof processor.voice & { loopMoveFadeLeft: number }).loopMoveFadeLeft >
+      0;
     return { process, isMoveFading };
   }
 

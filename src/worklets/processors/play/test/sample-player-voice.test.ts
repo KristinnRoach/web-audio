@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { VoiceEngine } from '../engine/voice-engine.js';
+import { SamplePlayerVoice } from '../engine/sample-player-voice.js';
 import { makeParameters } from './range-test-helpers';
 
 const SR = 48_000;
@@ -9,7 +9,7 @@ const QUANTUM = 128;
 it('renders from injected time, randomness and message sink', () => {
   const post = vi.fn();
   const random = vi.fn(() => 0.75);
-  const engine = new VoiceEngine({ sampleRate: SR, random, post });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random, post });
   const parameters = makeParameters({ loopEnd: 1024 / SR, loopDurationDriftAmount: 0.01 });
 
   engine.reportIdle(parameters, 0); // no source yet
@@ -41,7 +41,7 @@ it('renders from injected time, randomness and message sink', () => {
 it.each([null, [new Float32Array(256)]])(
   'releases all reader samples on buffer change',
   (replacement) => {
-    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
     const samples = new Float32Array(256);
     engine.setBuffer([samples]);
     engine.start(1, 0);
@@ -55,7 +55,7 @@ it.each([null, [new Float32Array(256)]])(
 );
 
 it('keeps a moved pitch loop eligible for legato with timestretch off', () => {
-  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
   engine.setBuffer([new Float32Array(SR)]);
   engine.loopEnabled = true;
   engine.enableLoopCrossfade = false;
@@ -73,13 +73,13 @@ describe('host stop', () => {
   const FADE = 64;
 
   function playing() {
-    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
     engine.setBuffer([new Float32Array(SR).fill(0.5)]);
     engine.start(1, 0);
     return engine;
   }
 
-  function renderBlocks(engine: VoiceEngine, blocks: number) {
+  function renderBlocks(engine: SamplePlayerVoice, blocks: number) {
     const output = new Float32Array(blocks * QUANTUM);
     for (let block = 0; block < blocks; block++) {
       if (!engine.canRender) break;
@@ -121,7 +121,7 @@ describe('host stop', () => {
 
   it('keeps fade progress when stopped again during the opening ramp', () => {
     const post = vi.fn();
-    const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post });
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post });
     engine.setBuffer([new Float32Array(SR).fill(0.5)]);
     engine.start(3, 0);
     const output = new Float32Array(96);
@@ -145,7 +145,7 @@ describe('host stop', () => {
 });
 
 it.each([0.5, 1, 2])('fades a scheduled stereo start across blocks at playback rate %s', (rate) => {
-  const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5), new Float32Array(SR).fill(-0.25)]);
   engine.playbackDirection = 'reverse';
   const start = QUANTUM - 8;

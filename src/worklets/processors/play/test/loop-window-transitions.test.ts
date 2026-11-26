@@ -17,7 +17,7 @@ async function setup() {
     buffer: [Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) => i / TEST_SAMPLE_RATE / 2)],
     durationSeconds: 1,
   });
-  Object.assign(processor.engine, { enableLoopCrossfade: false });
+  Object.assign(processor.voice, { enableLoopCrossfade: false });
   send({ type: 'voice:setLoopLengthGlide', value: 0 });
   send({ type: 'voice:start' });
   const render = (start: number, length = 0.004, frames = 1) => {

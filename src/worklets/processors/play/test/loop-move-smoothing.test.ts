@@ -87,7 +87,7 @@ describe('audio-rate loop movement smoothing', () => {
     });
     send({ type: 'voice:setLoopEnabled', value: true });
     send({ type: 'voice:start' });
-    const fades = processor.engine.loopCrossfade;
+    const fades = processor.voice.loopCrossfade;
     let mostFades = 0;
     let start = 1000;
     // One frame per call, so the fade count is seen every sample
@@ -107,7 +107,7 @@ describe('audio-rate loop movement smoothing', () => {
     // (a wrap every 192 samples, fades of 48)
     expect(mostFades).toBeLessThanOrEqual(1);
     // The playhead still follows the loop: it ends inside the moved window
-    const position = processor.engine.playheadPosition;
+    const position = processor.voice.playheadPosition;
     expect(position).toBeGreaterThanOrEqual(start - 1);
     expect(position).toBeLessThanOrEqual(start + period + 1);
   });
@@ -144,9 +144,8 @@ describe('audio-rate loop movement smoothing', () => {
       return output;
     };
     render(2400, 3000);
-    const fadeFrames = (
-      processor.engine as typeof processor.engine & { loopMoveFadeFrames: number }
-    ).loopMoveFadeFrames;
+    const fadeFrames = (processor.voice as typeof processor.voice & { loopMoveFadeFrames: number })
+      .loopMoveFadeFrames;
     const output = render(7200, 2 * fadeFrames);
     const peak = (from: number) => Math.max(...output.subarray(from, from + period));
     // Still the old level at the start, halfway mid-fade, the new level after it
@@ -256,11 +255,11 @@ describe('audio-rate loop movement smoothing', () => {
       const movedAgain = render(0.2, 1);
       expect(Math.abs(movedAgain[0][0] - moved[0][1])).toBeLessThan(0.1);
       expect(Math.abs(movedAgain[1][0] - moved[1][1])).toBeLessThan(0.1);
-      const state = processor.engine as typeof processor.engine & {
+      const state = processor.voice as typeof processor.voice & {
         loopWindow: { start: number; length: number };
       };
       expect(state.loopWindow.length).toBeCloseTo(192);
-      expect(processor.engine.playheadPosition - state.loopWindow.start).toBeCloseTo(35 * rate, 4);
+      expect(processor.voice.playheadPosition - state.loopWindow.start).toBeCloseTo(35 * rate, 4);
 
       // The held second move takes up after the first fade, then fades in turn
       const settled = render(0.2, 2048);

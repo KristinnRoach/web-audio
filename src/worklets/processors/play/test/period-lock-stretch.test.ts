@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { PeriodLockStretcher } from '../engine/period-lock-stretch.js';
-import { VoiceEngine } from '../engine/voice-engine.js';
+import { SamplePlayerVoice } from '../engine/sample-player-voice.js';
 import {
   makeParameters,
   setupProcessorGlobals,
@@ -55,7 +55,7 @@ describe('PeriodLockStretcher', () => {
   });
 
   it('stretches only in period mode, so a removed mode name turns it off', () => {
-    const engine = new VoiceEngine({ sampleRate: 1000, random: Math.random, post: () => {} });
+    const engine = new SamplePlayerVoice({ sampleRate: 1000, random: Math.random, post: () => {} });
     engine.setPitchPeriods(Float32Array.of(PERIOD), 1000);
     engine.setTimestretchMode('period');
     expect(engine.timestretch.canStretch).toBe(true);
@@ -87,7 +87,7 @@ describe('period timestretch through the processor', () => {
     loop = false,
     loopRange: { loopStart?: number; loopEnd?: number } = {},
     pingPong = false,
-    onFrame?: (engine: VoiceEngine, frame: number) => void,
+    onFrame?: (engine: SamplePlayerVoice, frame: number) => void,
   ) {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
@@ -118,7 +118,7 @@ describe('period timestretch through the processor', () => {
     for (let frame = 0; frame + blockSize <= rendered.length; frame += blockSize) {
       processor.process([], [[block]], parameters);
       rendered.set(block, frame);
-      onFrame?.(processor.engine as unknown as VoiceEngine, frame);
+      onFrame?.(processor.voice as unknown as SamplePlayerVoice, frame);
     }
     return rendered;
   }

@@ -1,11 +1,12 @@
 import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
-import { VoiceEngine } from './engine/voice-engine.js';
-import { PoolVoice, VoicePool } from './engine/voice-pool.js';
+import { SamplePlayerVoice } from './engine/sample-player-voice.js';
+import { VoicePool, VoiceSlot } from './engine/voice-pool.js';
 
 /**
  * One processor per player. It owns every voice: `processorOptions.voiceCount`
- * engines sharing one `VoicePool` and one set of AudioParams. Voice `i` renders
- * to output `2i` (stereo) and `2i + 1` (its filter envelope in cents).
+ * `VoiceSlot`s (each wrapping a `SamplePlayerVoice`) sharing one `VoicePool`
+ * and one set of AudioParams. Voice `i` renders to output `2i` (stereo) and
+ * `2i + 1` (its filter envelope in cents).
  *
  * Voice messages with a `voice` index go to that voice; untagged ones go to all.
  * Pool commands and flush are node-wide. Voice reports carry their index;
@@ -24,23 +25,24 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     super();
 
     this.pool = new VoicePool();
-    // One slot per voice: its engine, pool voice and post function.
+    // One slot per voice: tracks allocator state and owns its SamplePlayerVoice and post.
     this.slots = Array.from({ length: options?.processorOptions?.voiceCount ?? 1 }, (_, index) => {
       const post = (message) => this.port.postMessage({ ...message, voice: index });
-      const engine = new VoiceEngine({
+      const voice = new SamplePlayerVoice({
         sampleRate,
         random: () => Math.random(),
         post: (message) => {
-          if (message.type === 'voice:ended') voice.markAvailable();
+          if (message.type === 'voice:ended') slot.markAvailable();
           post(message);
         },
       });
-      const voice = new PoolVoice(engine, post);
-      this.pool.addVoice(voice);
-      return { engine, voice, post };
+      const slot = new VoiceSlot(voice, post);
+      this.pool.addSlot(slot);
+      return slot;
     });
-    // The first voice: the engine tests drive a one-voice processor through it.
-    ({ engine: this.engine, voice: this.voice } = this.slots[0]);
+    // The first voice: the voice tests drive a one-voice processor through it.
+    this.slot = this.slots[0];
+    this.voice = this.slot.voice;
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -89,7 +91,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
   }
 
-  #handleVoiceMessage({ engine, voice, post }, data) {
+  #handleVoiceMessage(slot, data) {
+    const { voice, post } = slot;
     const {
       type,
       value,
@@ -105,86 +108,86 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
     switch (type) {
       case 'voice:setLoopQuantizePeriods':
-        engine.setLoopQuantizePeriods(value);
+        voice.setLoopQuantizePeriods(value);
         break;
 
       case 'voice:setBuffer': {
         // The swap drops a sounding note without a report. The node stops its
         // own first, but a note the pool started meanwhile is news to it.
         // Allocation can already be available while a scheduled stop is still pending.
-        if (engine.isPlaying) {
-          voice.markAvailable();
-          post({ type: 'voice:ended', triggerId: engine.triggerId });
+        if (voice.isPlaying) {
+          slot.markAvailable();
+          post({ type: 'voice:ended', triggerId: voice.triggerId });
         }
-        engine.setBuffer(buffer);
+        voice.setBuffer(buffer);
         break;
       }
 
       case 'voice:setZeroCrossings':
-        engine.setZeroCrossings(zeroCrossings);
+        voice.setZeroCrossings(zeroCrossings);
         break;
 
       case 'voice:setPitchPeriods':
-        engine.setPitchPeriods(periods, hopSamples);
+        voice.setPitchPeriods(periods, hopSamples);
         break;
 
-      // Engine tests start and stop a voice directly; SamplePlayer goes through the pool.
+      // Voice tests start and stop a voice directly; SamplePlayer goes through the pool.
       case 'voice:start':
-        voice.start(triggerId, timestamp, this.pool.note(data));
+        slot.start(triggerId, timestamp, this.pool.note(data));
         break;
 
       case 'voice:stop':
-        voice.stop(timestamp);
+        slot.stop(timestamp);
         break;
 
       case 'voice:setEnvelope':
-        engine.setEnvelope(target, value);
+        voice.setEnvelope(target, value);
         break;
 
       case 'voice:setLoopEnabled':
-        engine.loopEnabled = value;
+        voice.loopEnabled = value;
         break;
 
       case 'voice:setLoopPingPong':
-        engine.loopPingPong = value;
+        voice.loopPingPong = value;
         break;
 
       case 'voice:setPanDriftEnabled':
-        engine.setPanDriftEnabled(value);
+        voice.setPanDriftEnabled(value);
         break;
 
       case 'voice:setPlaybackDirection': {
-        engine.playbackDirection = playbackDirection;
+        voice.playbackDirection = playbackDirection;
         break;
       }
 
       // Starts on the resolved loop.
       case 'voice:setStartFromLoop':
-        engine.startFromLoop = value;
+        voice.startFromLoop = value;
         break;
 
       case 'voice:reportPlayheadPosition':
-        engine.reportPlayheadPosition = value;
+        voice.reportPlayheadPosition = value;
         break;
 
       case 'voice:setLoopLengthGlide':
-        engine.setLoopLengthGlide(value);
+        voice.setLoopLengthGlide(value);
         break;
 
       case 'voice:setLoopPositionGlide':
-        engine.setLoopPositionGlide(value);
+        voice.setLoopPositionGlide(value);
         break;
 
       case 'voice:setKeytrackLoopAmount':
-        engine.setKeytrackLoopAmount(value);
+        voice.setKeytrackLoopAmount(value);
         break;
 
       case 'voice:setTimestretchMode':
-        engine.setTimestretchMode(value);
+        voice.setTimestretchMode(value);
         break;
 
       case 'voice:setInterpolation':
-        engine.interpolation = value;
+        voice.interpolation = value;
         break;
     }
   }
@@ -194,12 +197,12 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     this.pool.advance(currentTime + (outputs[0]?.[0]?.length ?? 128) / sampleRate);
 
-    this.slots.forEach(({ engine }, index) => {
+    this.slots.forEach(({ voice }, index) => {
       const output = outputs[index * 2];
       if (!output) return;
-      if (!engine.canRender) return engine.reportIdle(parameters, currentTime);
+      if (!voice.canRender) return voice.reportIdle(parameters, currentTime);
       // Second output: the filter envelope in cents, silent (0) when inactive.
-      engine.render(output, parameters, currentFrame, currentTime, outputs[index * 2 + 1]?.[0]);
+      voice.render(output, parameters, currentFrame, currentTime, outputs[index * 2 + 1]?.[0]);
     });
     return true;
   }

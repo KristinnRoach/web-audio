@@ -15,7 +15,7 @@ class MockAudioWorkletProcessor {
 }
 
 export type TestProcessor = {
-  engine: {
+  voice: {
     readonly pitchCutoff: number;
     playheadPosition: number;
     minRangeSamples: number;

@@ -51,8 +51,8 @@ describe('loop range clamping', () => {
 
     render(processor, parameters, TEST_SAMPLE_RATE / 4 + 100);
 
-    expect(processor.engine.playheadPosition).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
-    expect(processor.engine.playheadPosition).toBeLessThan(TEST_SAMPLE_RATE / 2 + 200);
+    expect(processor.voice.playheadPosition).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE / 2);
+    expect(processor.voice.playheadPosition).toBeLessThan(TEST_SAMPLE_RATE / 2 + 200);
   });
 
   // The playback start snaps forward to a zero crossing, past a loop sitting on
@@ -77,7 +77,7 @@ describe('loop range clamping', () => {
       const positions: number[] = [];
       for (let frame = 0; frame < loopLength * 4; frame++) {
         processor.process([], [[new Float32Array(1)]], parameters);
-        positions.push(processor.engine.playheadPosition);
+        positions.push(processor.voice.playheadPosition);
       }
 
       // Distance between consecutive wraps is the loop length.
@@ -101,7 +101,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE / 4 + loopLength * 3; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playheadPosition);
+      positions.push(processor.voice.playheadPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -119,7 +119,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 1.3; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playheadPosition);
+      positions.push(processor.voice.playheadPosition);
     }
 
     // Jumps from the loop start back up to the loop end, one per reverse pass
@@ -145,9 +145,9 @@ describe('loop range clamping', () => {
     const parameters = makeParameters({ trimStart: 0.875, trimEnd: 0.5 });
 
     render(processor, parameters, 1);
-    const position = processor.engine.playheadPosition;
+    const position = processor.voice.playheadPosition;
     render(processor, parameters, 1);
-    expect(processor.engine.playheadPosition - position).toBeCloseTo(step);
+    expect(processor.voice.playheadPosition - position).toBeCloseTo(step);
 
     const trim = processor.port.postMessage.mock.calls
       .map(([message]) => message)
@@ -166,7 +166,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.03; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playheadPosition);
+      positions.push(processor.voice.playheadPosition);
     }
 
     expect(Math.min(...positions)).toBeGreaterThanOrEqual(TEST_SAMPLE_RATE * 0.55 - 1);
@@ -178,13 +178,13 @@ describe('loop range clamping', () => {
   it('keeps a long loop with no zero crossing inside it at its length', async () => {
     const processor = await startProcessor([0.3, 0.5, 0.7]);
     // Straddle the 0.5 crossing so either snap would leave 0.6x the threshold.
-    const half = (0.6 * processor.engine.pitchCutoff) / TEST_SAMPLE_RATE;
+    const half = (0.6 * processor.voice.pitchCutoff) / TEST_SAMPLE_RATE;
     const parameters = makeParameters({ trimEnd: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
 
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.8; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playheadPosition);
+      positions.push(processor.voice.playheadPosition);
     }
 
     const wraps = positions.flatMap((p, i) => (i > 0 && p < positions[i - 1] ? [i] : []));
@@ -216,7 +216,7 @@ describe('loop range clamping', () => {
         const parameters = at(Math.max(0, k - 300) * perBlock);
         for (let i = 0; i < block; i++) {
           processor.process([], [output], parameters);
-          const { playheadPosition, loopWindow } = processor.engine;
+          const { playheadPosition, loopWindow } = processor.voice;
           // Measure wraps relative to the moving loop start.
           phases.push(playheadPosition - loopWindow.start);
         }
@@ -239,7 +239,7 @@ describe('loop range clamping', () => {
       processor.port.postMessage.mock.calls
         .map(([msg]) => msg)
         .filter((msg) => msg.type === 'loop:range');
-    const min = processor.engine.minRangeSamples / TEST_SAMPLE_RATE;
+    const min = processor.voice.minRangeSamples / TEST_SAMPLE_RATE;
 
     // Zero-length loop lifts to the minimum range.
     render(processor, makeParameters({ trimEnd: 1, loopStart: 0.5, loopEnd: 0.5 }), 1);
@@ -310,7 +310,7 @@ describe('loop range clamping', () => {
     const positions: number[] = [];
     for (let frame = 0; frame < TEST_SAMPLE_RATE * 0.6; frame++) {
       processor.process([], [[new Float32Array(1)]], parameters);
-      positions.push(processor.engine.playheadPosition);
+      positions.push(processor.voice.playheadPosition);
     }
 
     expect(Math.max(...positions)).toBeGreaterThan(TEST_SAMPLE_RATE * 0.74);
@@ -362,7 +362,7 @@ describe('loop range clamping', () => {
     'plays on without clicks when dragging %s pushes a sounding pitch loop',
     async (edge) => {
       const processor = await startProcessor([], [0.005, 0.0081, 0.012]);
-      Object.assign(processor.engine, { enableLoopCrossfade: true });
+      Object.assign(processor.voice, { enableLoopCrossfade: true });
       const wave = (_: unknown, i: number) => Math.sin(i / 20) * 0.2;
       send(processor, {
         type: 'voice:setBuffer',
@@ -404,7 +404,7 @@ describe('loop range clamping', () => {
     const parameters = makeParameters({ trimEnd: 1, ...loop });
     parameters.playbackRate[0] = 0.5;
     render(processor, parameters, 1);
-    expect(Math.abs(processor.engine.playheadPosition - position)).toBeLessThan(2);
+    expect(Math.abs(processor.voice.playheadPosition - position)).toBeLessThan(2);
   });
 
   it('keeps a note when trim reverses just after its pitch loop moved', async () => {
@@ -413,7 +413,7 @@ describe('loop range clamping', () => {
       [395.5, 1000, 1200].map((period) => period / TEST_SAMPLE_RATE),
     );
     send(processor, { type: 'voice:setLoopLengthGlide', value: 0 });
-    Object.assign(processor.engine, { enableLoopCrossfade: true });
+    Object.assign(processor.voice, { enableLoopCrossfade: true });
     send(processor, { type: 'voice:setStartFromLoop', value: true });
     send(processor, { type: 'voice:start' });
     const points = (loopStart: number, loopEnd: number, trimStart = 0, trimEnd = 48000) =>
@@ -434,7 +434,7 @@ describe('loop range clamping', () => {
 
   it('crossfades when trim pushes a gliding pitch loop', async () => {
     const processor = await startProcessor([], [200 / TEST_SAMPLE_RATE, 1000 / TEST_SAMPLE_RATE]);
-    Object.assign(processor.engine, { enableLoopCrossfade: true });
+    Object.assign(processor.voice, { enableLoopCrossfade: true });
     const source = (_: unknown, i: number) => (i < 5000 ? 0.5 : -0.5);
     send(processor, {
       type: 'voice:setBuffer',
