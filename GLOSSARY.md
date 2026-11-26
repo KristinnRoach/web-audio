@@ -38,7 +38,7 @@ How the voice engine turns `loopStart`/`loopEnd` into what it plays (`engine/loo
 - **Loop quantize periods**: The allowed pitch-loop lengths, sent with `voice:setLoopQuantizePeriods`. A pitch loop snaps to the nearest one.
   - _Avoid_: "scale" for this list.
 - **Loop length glide vs loop position glide**: How quickly a pitch loop moves to a new length (`setLoopLengthGlide`) or a new start (`setLoopPositionGlide`). Both are time constants in seconds; 0 steps at once.
-- **Keytrack loop**: Makes a time loop's length follow the played note (`keytrackLoopAmount`, 0-1). 0 keeps its length in samples; 1 keeps its duration in seconds across notes.
+- **Keytrack loop**: Controls how a time loop's length follows the played note (`keytrackLoopAmount`, 0–1). With resampling, 0 keeps the length fixed in samples and 1 keeps the duration fixed in seconds across notes. With period stretching active, 0 keeps the duration fixed in seconds and 1 makes the duration shorter at higher notes and longer at lower notes.
 - **Loop drift**: Small random changes to the loop end, rolled again every few passes so repeats sound less mechanical (`loopDurationDriftAmount`).
   - _Not to confuse with_: **pan drift**, the same idea applied to stereo position.
 - **Loop mode**: How the playhead passes a loop edge. **Forward** jumps to the other edge (**wrap**). **Reverse** (loop start after loop end) turns around once, then wraps. **Ping-pong** turns around at every edge (**turn**). Reported as `loopMode`; set by loop point order and `voice:setLoopPingPong`.
