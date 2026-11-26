@@ -110,9 +110,9 @@ describe('loop range clamping', () => {
   });
 
   // Loop points arrive raw (web-audio#86), so a start past the end selects the
-  // same region. Inverted points make it a backward loop: play through it once,
-  // then cycle it backward (SFZ loop_type=backward).
-  it('cycles inverted loop points backward over the same region', async () => {
+  // same region. Inverted points make it a reverse loop: play through it once,
+  // then cycle it in reverse (SFZ loop_type=backward).
+  it('cycles inverted loop points in reverse over the same region', async () => {
     const processor = await startProcessor();
     const parameters = makeParameters({ trimEnd: 1, loopStart: 0.75, loopEnd: 0.5 });
 
@@ -122,7 +122,7 @@ describe('loop range clamping', () => {
       positions.push(processor.engine.playheadPosition);
     }
 
-    // Jumps from the loop start back up to the loop end, one per backward pass
+    // Jumps from the loop start back up to the loop end, one per reverse pass
     const jumps = positions.flatMap((p, i) => (i > 0 && p - positions[i - 1] > 1 ? [i] : []));
     expect(jumps.length).toBeGreaterThanOrEqual(2);
     expect(jumps[1] - jumps[0]).toBeCloseTo(TEST_SAMPLE_RATE / 4, -1);
@@ -178,7 +178,7 @@ describe('loop range clamping', () => {
   it('keeps a long loop with no zero crossing inside it at its length', async () => {
     const processor = await startProcessor([0.3, 0.5, 0.7]);
     // Straddle the 0.5 crossing so either snap would leave 0.6x the threshold.
-    const half = (0.6 * processor.engine.pitchPreservationThreshold) / TEST_SAMPLE_RATE;
+    const half = (0.6 * processor.engine.pitchCutoff) / TEST_SAMPLE_RATE;
     const parameters = makeParameters({ trimEnd: 1, loopStart: 0.5 - half, loopEnd: 0.5 + half });
 
     const positions: number[] = [];
@@ -261,10 +261,10 @@ describe('loop range clamping', () => {
 
   it.each([
     ['forward', true, 0.25, 0.5, false],
-    ['backward', true, 0.5, 0.25, false],
+    ['reverse', true, 0.5, 0.25, false],
     ['pingPong', true, 0.25, 0.5, true],
     ['forward', false, 0.25, 0.5, false],
-    ['backward', false, 0.5, 0.25, false],
+    ['reverse', false, 0.5, 0.25, false],
     ['pingPong', false, 0.25, 0.5, true],
   ])(
     'reports loopMode %s on loop:range with looping %s',

@@ -12,25 +12,25 @@ describe('trim and loop minimum lengths', () => {
 
   it('derives the crossover from periods and restores the default when cleared', async () => {
     const processor = await startProcessor();
-    const defaultThreshold = processor.engine.pitchPreservationThreshold;
+    const defaultThreshold = processor.engine.pitchCutoff;
 
     processor.port.onmessage?.({
       data: { type: 'voice:setLoopQuantizePeriods', value: [0.004, 0.01] },
     } as MessageEvent);
-    expect(processor.engine.pitchPreservationThreshold).toBe(0.01 * TEST_SAMPLE_RATE);
+    expect(processor.engine.pitchCutoff).toBe(0.01 * TEST_SAMPLE_RATE);
 
     processor.port.onmessage?.({
       data: { type: 'voice:setLoopQuantizePeriods', value: [] },
     } as MessageEvent);
-    expect(processor.engine.pitchPreservationThreshold).toBe(defaultThreshold);
+    expect(processor.engine.pitchCutoff).toBe(defaultThreshold);
   });
 
   it.each([
-    [60, []], // Raw length above the scale range but below C5.
+    [60, []], // Raw length above the loop quantize periods but below C5.
     [192, [0, 0.5 + 132 / TEST_SAMPLE_RATE, 0.504, 1]], // Start snap would leave 60 samples.
     [192, [0, 0.5, 0.5 + 60 / TEST_SAMPLE_RATE, 1]], // End snap would leave 60 samples.
   ])(
-    'keeps a %i-sample ordinary loop above the minimum with a high-only scale',
+    'keeps a %i-sample ordinary loop above the minimum with only high loop quantize periods',
     async (length, crossings) => {
       const processor = await startProcessor(crossings, [46 / TEST_SAMPLE_RATE]);
       render(
@@ -47,7 +47,7 @@ describe('trim and loop minimum lengths', () => {
     },
   );
 
-  describe.each([false, true])('clipping with scale enabled: %s', (withScale) => {
+  describe.each([false, true])('clipping with loop quantize periods set: %s', (withPeriods) => {
     it.each([
       [0.1, 0.5], // Partial overlap at the start.
       [0.5, 0.9], // Partial overlap at the end.
@@ -55,7 +55,7 @@ describe('trim and loop minimum lengths', () => {
       [0.8, 0.9], // Entirely after trim.
       [0.9, 0.1], // Inverted points covering trim.
     ])('keeps loop %f..%f above the minimum', async (loopStart, loopEnd) => {
-      const processor = await startProcessor([], withScale ? [0.004, 0.06] : undefined);
+      const processor = await startProcessor([], withPeriods ? [0.004, 0.06] : undefined);
       render(
         processor,
         makeParameters({ trimStart: 0.499, trimEnd: 0.501, loopStart, loopEnd }),

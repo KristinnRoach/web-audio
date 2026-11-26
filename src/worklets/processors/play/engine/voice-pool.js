@@ -104,7 +104,7 @@ export class VoicePool {
       midiNote,
       velocity,
       // A start without a note (engine tests) plays the sample at its own pitch.
-      playbackRate: this.rate(midiNote ?? 60),
+      noteRate: this.rate(midiNote ?? 60),
       ...(glides && { glideFrom: this.rate(glideFromNote), glideSeconds: glideTime }),
     };
   }

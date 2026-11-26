@@ -147,7 +147,7 @@ describe('host stop', () => {
 it.each([0.5, 1, 2])('fades a scheduled stereo start across blocks at playback rate %s', (rate) => {
   const engine = new VoiceEngine({ sampleRate: SR, random: () => 0.5, post() {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5), new Float32Array(SR).fill(-0.25)]);
-  engine.reversePlayback = true;
+  engine.playbackDirection = 'reverse';
   const start = QUANTUM - 8;
   engine.start(1, start / SR);
   const output = [new Float32Array(2 * QUANTUM), new Float32Array(2 * QUANTUM)];

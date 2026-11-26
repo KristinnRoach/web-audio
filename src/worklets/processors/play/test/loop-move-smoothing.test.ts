@@ -159,7 +159,7 @@ describe('audio-rate loop movement smoothing', () => {
   it.each([
     { mode: 'forward', frames: 124 },
     { mode: 'forward', frames: 125 },
-    { mode: 'backward', frames: 251 },
+    { mode: 'reverse', frames: 251 },
     { mode: 'pingPong', frames: 124 },
     { mode: 'pingPong', frames: 125 },
   ])(
@@ -192,8 +192,8 @@ describe('audio-rate loop movement smoothing', () => {
       );
       const parameters = (start: number, end: number) =>
         makeParameters({
-          loopStart: (mode === 'backward' ? end : start) / TEST_SAMPLE_RATE,
-          loopEnd: (mode === 'backward' ? start : end) / TEST_SAMPLE_RATE,
+          loopStart: (mode === 'reverse' ? end : start) / TEST_SAMPLE_RATE,
+          loopEnd: (mode === 'reverse' ? start : end) / TEST_SAMPLE_RATE,
           playbackRate: 1.5,
         });
 

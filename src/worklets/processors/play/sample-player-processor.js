@@ -24,7 +24,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     super();
 
     this.pool = new VoicePool();
-    this.voices = Array.from({ length: options?.processorOptions?.voiceCount ?? 1 }, (_, index) => {
+    // One slot per voice: its engine, pool voice and post function.
+    this.slots = Array.from({ length: options?.processorOptions?.voiceCount ?? 1 }, (_, index) => {
       const post = (message) => this.port.postMessage({ ...message, voice: index });
       const engine = new VoiceEngine({
         sampleRate,
@@ -39,7 +40,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       return { engine, voice, post };
     });
     // The first voice: the engine tests drive a one-voice processor through it.
-    ({ engine: this.engine, voice: this.voice } = this.voices[0]);
+    ({ engine: this.engine, voice: this.voice } = this.slots[0]);
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -78,7 +79,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
 
     const index = event.data.voice;
-    for (const target of index === undefined ? this.voices : [this.voices[index]]) {
+    for (const target of index === undefined ? this.slots : [this.slots[index]]) {
       this.#handleVoiceMessage(target, event.data);
     }
     // Once per buffer, after every voice it addressed has it.
@@ -153,7 +154,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         break;
 
       case 'voice:setPlaybackDirection': {
-        engine.reversePlayback = playbackDirection === 'reverse';
+        engine.playbackDirection = playbackDirection;
         break;
       }
 
@@ -193,7 +194,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     this.pool.advance(currentTime + (outputs[0]?.[0]?.length ?? 128) / sampleRate);
 
-    this.voices.forEach(({ engine }, index) => {
+    this.slots.forEach(({ engine }, index) => {
       const output = outputs[index * 2];
       if (!output) return;
       if (!engine.canRender) return engine.reportIdle(parameters, currentTime);
