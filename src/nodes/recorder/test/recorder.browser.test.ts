@@ -14,7 +14,8 @@ async function until(condition: () => boolean, timeoutMs = 2000) {
 // A take recorded before a fresh context renders audio can be too short to decode.
 async function runningContext() {
   const ctx = new AudioContext();
-  await until(() => ctx.currentTime > 0.05);
+  await ctx.resume();
+  await until(() => ctx.currentTime > 0.05, 8000);
   return ctx;
 }
 

@@ -10,6 +10,7 @@ export default defineConfig({
     // mocks both belongs in the node suite, where it runs without booting Chrome and is
     // covered by `vp check` — see Envelope.loop.test.ts and fakeParam.ts.
     include: ['**/*.browser.test.ts'],
+    testTimeout: 10000,
     browser: {
       enabled: true,
       instances: [{ browser: 'chromium' }], // or 'firefox', 'webkit'
