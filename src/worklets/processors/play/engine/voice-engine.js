@@ -1013,8 +1013,11 @@ export class VoiceEngine {
       positionParams.loopStartSamples =
         this.#getSafeParam(parameters.loopStart, sample) * sampleRate;
       const loopEndOffset = envelopes.loopEnd.active ? envelopes.loopEnd.value : 0;
-      positionParams.loopEndSamples =
-        (this.#getSafeParam(parameters.loopEnd, sample) + loopEndOffset) * sampleRate;
+      const baseLoopEndSamples = Math.min(
+        this.#getSafeParam(parameters.loopEnd, sample) * sampleRate,
+        this.buffer[0].length,
+      );
+      positionParams.loopEndSamples = baseLoopEndSamples + loopEndOffset * sampleRate;
 
       // Recalculate the range only when something moved. Short loops follow
       // their points per sample: their length is pitch. Long loops follow them

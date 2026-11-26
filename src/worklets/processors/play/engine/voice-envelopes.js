@@ -94,11 +94,12 @@ export class VoiceEnvelopes {
         loopEnabled &&
         config.shape.mode.type === 'loop' &&
         !released &&
-        !envelope.released;
+        (slot.triggerPending || !envelope.released);
       const restart = slot.triggerPending || (loopWrapped && loopSync);
 
       // The loopEnd envelope starts when the playhead enters the loop; a note-off ends the wait.
-      const waitsForLoop = slot === this.loopEnd && slot.triggerPending && !inLoop && !released;
+      const waitsForLoop =
+        slot === this.loopEnd && slot.triggerPending && (!loopEnabled || !inLoop) && !released;
 
       if (waitsForLoop || (restart && loopSync && !loopWindow)) {
         // Hold the opening value until the loop is entered, or one sample for its length.
