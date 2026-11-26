@@ -41,7 +41,8 @@ How the voice engine turns `loopStart`/`loopEnd` into what it plays (`engine/loo
 - **Keytrack loop**: Makes a time loop's length follow the played note (`keytrackLoopAmount`, 0-1). 0 keeps its length in samples; 1 keeps its duration in seconds across notes.
 - **Loop drift**: Small random changes to the loop end, rolled again every few passes so repeats sound less mechanical (`loopDurationDriftAmount`).
   - _Not to confuse with_: **pan drift**, the same idea applied to stereo position.
-- **Loop mode**: How the playhead passes a loop edge. **Forward** jumps to the other edge (**wrap**). **Backward** (loop start after loop end) turns around once, then wraps. **Ping-pong** turns around at every edge (**turn**). Reported as `loopMode`; set by loop point order and `voice:setLoopPingPong`.
-  - _Not to confuse with_: **playback direction** (`'reverse'`), which sets which way the playhead approaches the loop. The two combine, so keep `'backward'` for the loop mode.
+- **Loop mode**: How the playhead passes a loop edge. **Forward** jumps to the other edge (**wrap**). **Reverse** (loop start after loop end) turns around once, then wraps. **Ping-pong** turns around at every edge (**turn**). Reported as `loopMode`; set by loop point order and `voice:setLoopPingPong`.
+  - _Not to confuse with_: **playback direction**, which sets which way the playhead approaches the loop. Both can be `'reverse'` and they combine, so say "reverse loop" or "reverse playback", never bare "reverse".
+  - _Avoid_: "backward" for the loop mode.
 - **Loop crossfade vs move fade**: A **loop crossfade** smooths a wrap or turn by fading out an extra read head that keeps reading past the edge. A **move fade** smooths a pitch loop jumping to a new start; moves that arrive during it wait, and the playhead follows the **held loop window** (`heldLoopWindow`).
 - **Playhead carry**: When a pitch loop's window moves, the playhead moves with it so the tone keeps going. Time loops don't carry; the playhead stays put.

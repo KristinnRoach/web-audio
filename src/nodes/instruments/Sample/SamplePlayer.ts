@@ -1083,8 +1083,8 @@ export class SamplePlayer {
   /**
    * Ping-pong loops turn around at both loop edges instead of jumping back, so
    * loop edge order no longer matters. Without it, loop edges set in reverse
-   * order (start after end) make a backward loop: the voice plays through the
-   * loop once, then cycles it backward. A short pitched loop played ping-pong
+   * order (start after end) make a reverse loop: the voice plays through the
+   * loop once, then cycles it in reverse. A short pitched loop played ping-pong
    * sounds an octave lower, since one cycle covers the loop twice.
    */
   setLoopPingPong(enabled: boolean): this {

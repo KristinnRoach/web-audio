@@ -24,7 +24,7 @@ import {
 const DEFAULT_PITCH_CUTOFF_SECONDS = 1 / 32.703;
 // Loop jump and turn crossfade length in source samples (~5 ms at 48 kHz).
 const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
-// U-turn crossfade: a ping-pong or backward-loop turn has no step, but its slope
+// U-turn crossfade: a ping-pong or reverse-loop turn has no step, but its slope
 // reverses in one frame (a corner, audible at zero crossings). The crossfade
 // rounds it off, at the cost of a brief level dip. Not standard sampler practice;
 // false restores bare turns.
@@ -313,7 +313,7 @@ export class VoiceEngine {
 
   // Loop state each note starts from.
   #resetNoteLoop() {
-    // True while cycling a loop against the approach direction (backward loops,
+    // True while cycling a loop against the approach direction (reverse loops,
     // or the return half of a ping-pong). Direction = approach, negated when turned.
     this.loopTurned = false;
     this.loopWrapped = false;
@@ -379,7 +379,7 @@ export class VoiceEngine {
 
   /**
    * Moves the playhead past the loop edge it has reached, if any: jumps to the
-   * other edge, or turns around. Turning is what makes a loop backward (turn
+   * other edge, or turns around. Turning is what makes a reverse loop (turn
    * once on arrival, then jump) or ping-pong (turn at every edge). A loop mode
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
@@ -1188,7 +1188,7 @@ export class VoiceEngine {
     this.loopMessage.loopMode = this.loopPingPong
       ? 'pingPong'
       : loopWindow.direction < 0
-        ? 'backward'
+        ? 'reverse'
         : 'forward';
     this.#postRange(this.loopMessage, blockTime);
 

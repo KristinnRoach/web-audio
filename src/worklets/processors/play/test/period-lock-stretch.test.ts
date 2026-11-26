@@ -175,12 +175,12 @@ describe('period timestretch through the processor', () => {
   it.each([
     ['ping-pong', 0.5, true],
     ['ping-pong', 2, true],
-    ['backward', 0.5, false],
-    ['backward', 2, false],
+    ['reverse', 0.5, false],
+    ['reverse', 2, false],
   ] as const)('stretches inside a %s loop at rate %s', async (kind, rate, pingPong) => {
     const [low, high] = [2000 / TEST_SAMPLE_RATE, 7000 / TEST_SAMPLE_RATE];
     const points =
-      kind === 'backward' ? { loopStart: high, loopEnd: low } : { loopStart: low, loopEnd: high };
+      kind === 'reverse' ? { loopStart: high, loopEnd: low } : { loopStart: low, loopEnd: high };
     const { rendered, jumps } = await renderRecordingJumps(rate, true, points, pingPong);
     expect(jumps.length).toBeGreaterThan(20);
     expectNoClicks(rendered, rate, 12_000, 20_000);
@@ -190,8 +190,8 @@ describe('period timestretch through the processor', () => {
     it.each([
       ['ping-pong', 0.5, 2],
       ['ping-pong', 2, 2],
-      ['backward', 0.5, 1],
-      ['backward', 2, 1],
+      ['reverse', 0.5, 1],
+      ['reverse', 2, 1],
     ] as const)('in a %s loop at rate %s', async (kind, rate, minTurns) => {
       const pingPong = kind === 'ping-pong';
       const [low, high] = [2000 / TEST_SAMPLE_RATE, 7000 / TEST_SAMPLE_RATE];
@@ -211,13 +211,13 @@ describe('period timestretch through the processor', () => {
   it.each([
     ['forward', 0.5],
     ['forward', 2],
-    ['backward', 0.5],
-    ['backward', 2],
+    ['reverse', 0.5],
+    ['reverse', 2],
     ['ping-pong', 0.5],
     ['ping-pong', 2],
   ] as const)('keeps unit-rate loop timing in %s mode at rate %s', async (kind, rate) => {
     const points =
-      kind === 'backward'
+      kind === 'reverse'
         ? { loopStart: 7000 / TEST_SAMPLE_RATE, loopEnd: 2000 / TEST_SAMPLE_RATE }
         : { loopStart: 2000 / TEST_SAMPLE_RATE, loopEnd: 7000 / TEST_SAMPLE_RATE };
     async function edges(playbackRate: number) {

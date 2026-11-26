@@ -131,13 +131,13 @@ describe('loop types', () => {
   const LO = toSeconds(375);
   const HI = toSeconds(750);
   const trim = { trimStart: 0, trimEnd: toSeconds(1125) };
-  const backward = makeParameters({ ...trim, loopStart: HI, loopEnd: LO });
+  const reverseLoop = makeParameters({ ...trim, loopStart: HI, loopEnd: LO });
   const forwardLoop = makeParameters({ ...trim, loopStart: LO, loopEnd: HI });
   const indexOfRun = (values: number[], run: number[]) =>
     values.findIndex((_, i) => run.every((v, j) => values[i + j] === v));
 
-  it('backward: plays through the loop once, then cycles it backward', async () => {
-    const positions = trace((await startRamp('forward', true)).processor, backward, 2000);
+  it('reverse loop: plays through the loop once, then cycles it in reverse', async () => {
+    const positions = trace((await startRamp('forward', true)).processor, reverseLoop, 2000);
 
     // Forward from the trim start, turn at the loop end...
     expect(positions.slice(0, 3)).toEqual([0, 1, 2]);
@@ -162,13 +162,13 @@ describe('loop types', () => {
 
   it('ping-pong ignores loop point order', async () => {
     const ordered = trace((await startRamp('forward', true, true)).processor, forwardLoop, 2000);
-    const inverted = trace((await startRamp('forward', true, true)).processor, backward, 2000);
+    const inverted = trace((await startRamp('forward', true, true)).processor, reverseLoop, 2000);
 
     expect(inverted).toEqual(ordered);
   });
 
   it('reverse voice with inverted loop points cycles forward', async () => {
-    const positions = trace((await startRamp('reverse', true)).processor, backward, 2500);
+    const positions = trace((await startRamp('reverse', true)).processor, reverseLoop, 2500);
 
     expect(positions[0]).toBe(1124);
     expect(indexOfRun(positions, [376, 375, 376, 377])).toBeGreaterThan(0);
@@ -179,13 +179,13 @@ describe('loop types', () => {
     expect(cycle[1] - cycle[0]).toBe(1);
   });
 
-  it('switching off a backward loop restores the approach direction and plays out the tail', async () => {
+  it('switching off a reverse loop restores the approach direction and plays out the tail', async () => {
     const { processor, send } = await startRamp('forward', true);
-    const before = trace(processor, backward, 900);
+    const before = trace(processor, reverseLoop, 900);
     expect(before.slice(-2)).toEqual([602, 601]);
 
     send({ type: 'voice:setLoopEnabled', value: false });
-    const positions = trace(processor, backward, 1000);
+    const positions = trace(processor, reverseLoop, 1000);
     expect(positions.slice(0, 3)).toEqual([600, 601, 602]);
     expect(positions.at(-1)).toBe(1124);
     expect(processor.engine.isPlaying).toBe(false);
@@ -207,7 +207,7 @@ describe('loop types', () => {
 
   it('a loop type change takes effect at the next loop edge', async () => {
     const { processor } = await startRamp('forward', true);
-    trace(processor, backward, 900); // turned at 750, now cycling backward
+    trace(processor, reverseLoop, 900); // turned at 750, now cycling in reverse
 
     const positions = trace(processor, forwardLoop, 1000);
 

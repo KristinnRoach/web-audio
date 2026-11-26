@@ -77,7 +77,10 @@ describe('a-rate loop points and duration glide', () => {
 
   it.each(
     [0, 0.01].flatMap((lengthGlideSeconds) =>
-      ['forward', 'reverse', 'backward', 'pingPong'].map((mode) => ({ mode, lengthGlideSeconds })),
+      ['forward', 'forward under reverse playback', 'reverse', 'pingPong'].map((mode) => ({
+        mode,
+        lengthGlideSeconds,
+      })),
     ),
   )(
     'renders the same moving $mode loop in blocks and samples with length glide $lengthGlideSeconds',
@@ -88,7 +91,7 @@ describe('a-rate loop points and duration glide', () => {
         processor.port.onmessage?.({
           data: { type: 'voice:setLoopLengthGlide', value: lengthGlideSeconds },
         } as MessageEvent);
-        if (mode === 'reverse') {
+        if (mode === 'forward under reverse playback') {
           processor.port.onmessage?.({
             data: { type: 'voice:setPlaybackDirection', playbackDirection: 'reverse' },
           } as MessageEvent);
@@ -104,7 +107,7 @@ describe('a-rate loop points and duration glide', () => {
           params.loopStart,
           (start, i) => start + (i < 64 ? 0.002 : 0.004),
         );
-        if (mode === 'backward')
+        if (mode === 'reverse')
           [params.loopStart, params.loopEnd] = [params.loopEnd, params.loopStart];
         const output = new Float32Array(128);
         block.process([], [[output]], params);
@@ -149,7 +152,7 @@ describe('a-rate loop points and duration glide', () => {
     }
   });
 
-  it('keeps an existing backward turn when endpoints cross before the next edge', async () => {
+  it('keeps an existing reverse turn when endpoints cross before the next edge', async () => {
     const processor = await makeProcessor();
     processor.port.onmessage?.({
       data: { type: 'voice:setLoopLengthGlide', value: 0 },
