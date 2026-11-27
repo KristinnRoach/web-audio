@@ -80,6 +80,39 @@ describe('loop jump crossfade', () => {
     // A constant source stays constant through the crossfade
     expect(Math.min(...output.subarray(16))).toBeCloseTo(1, 4);
   });
+
+  it('sizes a stretched loop-move fade from the grain rate, not the stretch transport rate', async () => {
+    const processor = await startProcessor();
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({
+      type: 'voice:setBuffer',
+      buffer: [new Float32Array(48_000).fill(0.5)],
+      durationSeconds: 1,
+    });
+    send({
+      type: 'voice:setPitchPeriods',
+      periods: new Float32Array(101).fill(96),
+      hopSamples: 480,
+    });
+    send({ type: 'voice:setTimestretchMode', value: 'period' });
+    send({ type: 'voice:start', triggerId: 1 });
+
+    // Enter a 6000-sample (0.125 s) time loop, then move it at playback rate 2.
+    const initial = makeParameters({ playbackRate: 2, loopStart: 0, loopEnd: 0.125 });
+    processor.process([], [[new Float32Array(100)]], initial);
+
+    // Same length (0.125 s), moved start: wraps when originalSpeedPosition reaches 6000.
+    const moved = makeParameters({ playbackRate: 2, loopStart: 0.25, loopEnd: 0.375 });
+    processor.process([], [[new Float32Array(5901)]], moved);
+    expect(processor.voice.grains.count).toBe(1);
+
+    // 20 ms at 48 kHz = 960 output frames (1920 source samples at rate 2): still active halfway.
+    processor.process([], [[new Float32Array(480)]], moved);
+    expect(processor.voice.grains.count).toBe(1);
+
+    processor.process([], [[new Float32Array(480)]], moved);
+    expect(processor.voice.grains.count).toBe(0);
+  });
 });
 
 // Covers LOOP_TURN_CROSSFADE; expected to fail with it off.

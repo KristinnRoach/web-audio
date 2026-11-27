@@ -192,6 +192,22 @@ describe('loop types', () => {
     expect(processor.voice.isPlaying).toBe(false);
   });
 
+  it('shortening the loop after turning looping off does not cut the finishing pass short', async () => {
+    const { processor, send } = await startRamp('forward', true);
+    trace(processor, reverseLoop, 900); // descending inside [375, 750), at 600
+
+    send({ type: 'voice:setLoopEnabled', value: false });
+    const shortened = makeParameters({
+      ...trim,
+      loopStart: toSeconds(600),
+      loopEnd: toSeconds(450),
+    });
+    const positions = trace(processor, shortened, 1000);
+    expect(indexOfRun(positions, [376, 375, 376, 377])).toBe(224);
+    expect(positions.at(-1)).toBe(1124);
+    expect(processor.voice.isPlaying).toBe(false);
+  });
+
   it('toggling looping within a pass keeps the ping-pong turn', async () => {
     const { processor, send } = await startRamp('reverse', true, true);
     trace(processor, forwardLoop, 850); // turned at 375, now moving forward

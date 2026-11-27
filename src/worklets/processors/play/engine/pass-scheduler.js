@@ -50,6 +50,7 @@ export class PassScheduler {
   startNote(trimStart, trimEnd) {
     this.isLoopPass = false;
     this.turned = false;
+    this.pass.reset();
     this.#setPass(trimStart, trimEnd - trimStart);
   }
 
@@ -62,11 +63,11 @@ export class PassScheduler {
    * A loop pass keeps where it started and takes on a shorter resolved length, so a
    * shorter loop is heard now while a move waits for the next pass.
    */
-  pullEndIn(direction, trimRange, resolved) {
+  pullEndIn(direction, loopEnabled, trimRange, resolved) {
     const pass = this.pass;
     const end = pass.end;
     if (this.isLoopPass) {
-      if (resolved.length >= pass.length) return;
+      if (!loopEnabled || resolved.length >= pass.length) return;
       if (direction < 0) pass.start = end - resolved.length;
       pass.length = resolved.length;
     } else if (direction > 0) {
@@ -120,15 +121,19 @@ export class PassScheduler {
       return EDGE_LOOP;
     }
 
-    // Loop turned off: the next pass plays on to the trim end.
+    // Loop turned off: the next pass plays on to the trim end, or ends now if
+    // the playhead is already past it.
     const turnsBack = this.turned;
     if (turnsBack) {
       const shifted = direction > 0 ? pass.end + carried : pass.start - carried;
       this.landing = reflectLoopPosition(shifted, direction, pass.start, pass.end) ?? shifted;
       this.turnedAtEdge = true;
     }
+    const pastTrim =
+      direction > 0 ? position >= trimRange.endSamples : position < trimRange.startSamples;
     this.startNote(trimRange.startSamples, trimRange.endSamples);
-    return turnsBack ? EDGE_TURN_BACK : EDGE_NONE;
+    if (turnsBack) return EDGE_TURN_BACK;
+    return pastTrim ? EDGE_END : EDGE_NONE;
   }
 
   reset() {
@@ -136,12 +141,12 @@ export class PassScheduler {
     this.turned = false;
     this.turnedAtEdge = false;
     this.moved = false;
+    this.pass.reset();
   }
 
   #latch(window) {
     this.isLoopPass = true;
-    this.pass.direction = window.direction;
-    this.pass.isPitchLoop = window.isPitchLoop;
+    this.pass.copy(window);
     this.#setPass(window.start, window.length);
   }
 

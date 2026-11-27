@@ -510,16 +510,103 @@ describe('loop range clamping', () => {
     parameters.trimStart[0] = 0;
     parameters.trimEnd[0] = 0.1;
     const out: number[] = [0.5];
-    // The last edge's grain fade: at most 256 source samples.
+    // The last edge's grain fade (256 source samples), not the old 64-frame stop fade.
     for (let frame = 0; frame < 300; frame++) {
       const block = new Float32Array(1);
       processor.process([], [[block]], parameters);
       out.push(block[0]);
+      if (frame === 64) {
+        expect(block[0]).toBeGreaterThan(0);
+        expect(messages(processor, 'voice:ended')).toHaveLength(0);
+      }
     }
     expect(out.at(-1)).toBe(0);
     const steps = out.slice(1).map((value, i) => Math.abs(value - out[i]));
     expect(Math.max(...steps)).toBeLessThan(0.02);
     expect(messages(processor, 'voice:ended')).toHaveLength(1);
+  });
+
+  it('keeps a latched keytracked silent tail muted when the requested loop moves mid-pass', async () => {
+    const processor = await startProcessor();
+    Object.assign(processor.voice, { enableEdgeFades: true });
+    send(processor, {
+      type: 'voice:setBuffer',
+      buffer: [new Float32Array(TEST_SAMPLE_RATE).fill(0.5)],
+      durationSeconds: 1,
+    });
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 1 });
+    send(processor, { type: 'voice:setStartFromLoop', value: true });
+    send(processor, { type: 'voice:start' });
+
+    // Keytracked at rate 2: [12000, 36000) with silent tail past trimEnd (24000).
+    const initial = makeParameters({
+      trimStart: 0,
+      trimEnd: 0.5,
+      loopStart: 0.25,
+      loopEnd: 0.5,
+      playbackRate: 2,
+    });
+    render(processor, initial, 7000); // playhead at 26000, inside silent tail
+
+    // Move requested loop earlier with the same resolved length (24000) so the old pass continues.
+    const moved = makeParameters({
+      trimStart: 0,
+      trimEnd: 0.5,
+      loopStart: 0,
+      loopEnd: 0.25,
+      playbackRate: 2,
+    });
+    const out = new Float32Array(16);
+    processor.process([], [[out]], moved);
+    expect(Math.max(...out.map(Math.abs))).toBe(0);
+  });
+
+  it('stays silent when disabling looping inside a keytracked silent tail, while continuing inside trim', async () => {
+    const processor = await startProcessor();
+    Object.assign(processor.voice, { enableEdgeFades: true });
+    send(processor, {
+      type: 'voice:setBuffer',
+      buffer: [new Float32Array(TEST_SAMPLE_RATE).fill(0.5)],
+      durationSeconds: 1,
+    });
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 1 });
+    send(processor, { type: 'voice:setStartFromLoop', value: true });
+    send(processor, { type: 'voice:start' });
+
+    const params = makeParameters({
+      trimStart: 0,
+      trimEnd: 0.5,
+      loopStart: 0.25,
+      loopEnd: 0.5,
+      playbackRate: 2,
+    });
+    render(processor, params, 7000); // playhead at 26000, past trimEnd (24000)
+    processor.port.postMessage.mockClear();
+
+    send(processor, { type: 'voice:setLoopEnabled', value: false });
+    const out = new Float32Array(6000);
+    processor.process([], [[out]], params);
+    expect(Math.max(...out.map(Math.abs))).toBe(0);
+    expect(messages(processor, 'voice:ended')).toHaveLength(1);
+
+    // Disabling looping while still inside trim continues audibly toward trimEnd.
+    send(processor, { type: 'voice:setKeytrackLoopAmount', value: 0 });
+    send(processor, { type: 'voice:setLoopEnabled', value: true });
+    send(processor, { type: 'voice:start' });
+    const insideTrim = makeParameters({
+      trimStart: 0,
+      trimEnd: 0.75,
+      loopStart: 0.125,
+      loopEnd: 0.25,
+    });
+    render(processor, insideTrim, 1000);
+    processor.port.postMessage.mockClear();
+
+    send(processor, { type: 'voice:setLoopEnabled', value: false });
+    const continued = new Float32Array(6000);
+    processor.process([], [[continued]], insideTrim);
+    expect(continued.at(-1)).toBeCloseTo(0.5, 5);
+    expect(messages(processor, 'voice:ended')).toHaveLength(0);
   });
 
   it.each([

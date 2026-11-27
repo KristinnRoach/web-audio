@@ -415,9 +415,9 @@ export class SamplePlayerVoice {
 
   // Capped to a fraction of the pass, so short loops get short fades. A loop moving
   // to a new start gets its own, longer fade.
-  #crossfadeLength(passLength, moves) {
-    // Source samples per output second: the previous sample's rate.
-    if (moves) return LOOP_MOVE_CROSSFADE_SECONDS * this.sampleRate * this.#loopRate;
+  #crossfadeLength(passLength, moves, speed) {
+    // Source samples per output second: matches the rate that advances outgoing grains.
+    if (moves) return LOOP_MOVE_CROSSFADE_SECONDS * this.sampleRate * speed;
     return Math.min(LOOP_CROSSFADE_SAMPLES, passLength / 4);
   }
 
@@ -426,9 +426,10 @@ export class SamplePlayerVoice {
    * scheduler. Every edge that moves or stops the playhead fades a grain out from
    * where it was: a wrap, a turn, or the note's last edge.
    */
-  #passEdge(approachDirection, resolved, trimRange, tailEnd, timestretchActive, speed) {
+  #passEdge(approachDirection, resolved, trimRange, timestretchActive, speed) {
     const passes = this.#passes;
     const direction = passes.direction(approachDirection);
+    const tailEnd = passes.pass.tailEnd;
     const edge = passes.passEdge(
       timestretchActive ? this.timestretch.originalSpeedPosition : this.grains.current.position,
       approachDirection,
@@ -442,7 +443,7 @@ export class SamplePlayerVoice {
 
     if (this.enableEdgeFades && (!passes.turnedAtEdge || LOOP_TURN_CROSSFADE)) {
       // The outgoing grain carries on past the edge in the pre-turn direction.
-      const length = this.#crossfadeLength(passes.endedLength, passes.moved);
+      const length = this.#crossfadeLength(passes.endedLength, passes.moved, speed);
       this.grains.fadeOut(direction, length, tailEnd);
     }
     if (edge === EDGE_END) return this.grains.endCurrent();
@@ -672,7 +673,7 @@ export class SamplePlayerVoice {
         params,
         glidedLength,
       );
-      calcLoopEnd = calcLoopStart + fittedLength;
+      calcLoopEnd = Math.min(calcLoopStart + fittedLength, trimEnd);
     } else {
       calcLoopStart = Math.min(Math.max(calcLoopStart, trimStart), trimEnd);
       calcLoopEnd = Math.min(Math.max(calcLoopEnd, trimStart), trimEnd);
@@ -740,6 +741,8 @@ export class SamplePlayerVoice {
     window.start = calcLoopStart;
     window.length = calcLoopEnd - calcLoopStart;
     window.isPitchLoop = isPitchLoop;
+    // A window resolved past trimEnd plays silence past it.
+    window.tailEnd = calcLoopEnd > trimEnd ? trimEnd : Infinity;
     return window;
   }
 
@@ -1049,20 +1052,18 @@ export class SamplePlayerVoice {
       );
 
       const timestretchActive = !(inLoop && playWindow.isPitchLoop) && canStretch;
-      // Only a loop resolved past trimEnd (keytracked) plays into silence. A pass that
-      // trim moved off plays out audibly.
-      const tailEnd =
-        passes.isLoopPass && loopWindow.end > trimRange.endSamples
-          ? trimRange.endSamples
-          : Infinity;
 
       if (playing) {
-        passes.pullEndIn(passes.direction(approachDirection), trimRange, loopWindow);
+        passes.pullEndIn(
+          passes.direction(approachDirection),
+          this.loopEnabled,
+          trimRange,
+          loopWindow,
+        );
         this.#passEdge(
           approachDirection,
           loopWindow,
           trimRange,
-          tailEnd,
           timestretchActive,
           Math.abs(playbackRate),
         );
@@ -1086,7 +1087,7 @@ export class SamplePlayerVoice {
       );
 
       // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail
-      this.#collectReadHeads(tailGainAt(current.position, tailEnd));
+      this.#collectReadHeads(tailGainAt(current.position, passes.pass.tailEnd));
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
