@@ -34,6 +34,11 @@ const LOOP_MOVE_CROSSFADE_SECONDS = 0.02; // reasonable: 0.005 - 0.05
 // rounds it off, at the cost of a brief level dip. Not standard sampler practice;
 // false restores bare turns.
 const LOOP_TURN_CROSSFADE = true;
+// Time loop edits mid-pass: while a time loop plays, moves and resizes apply at once
+// instead of at the next edge (the playhead stays put; past the new edge it wraps).
+// Pitch loops always latch at the edge. false latches time loops at the edge too.
+// Used only in #followTimeLoopEdits.
+const TIME_LOOP_EDITS_MID_PASS = true;
 // Source-domain fade into a loop's silence padding; not a note release.
 const TAIL_FADE_SAMPLES = 64;
 // Note-boundary de-click ramps, independent of pitch, direction and the musical
@@ -431,6 +436,15 @@ export class SamplePlayerVoice {
     latched.direction = window.direction;
     latched.isPitchLoop = window.isPitchLoop;
     this.#isLatched = true;
+  }
+
+  // Time loop edits mid-pass (TIME_LOOP_EDITS_MID_PASS): re-latch every sample while
+  // both the latched and the resolved window are time loops, so the current pass plays
+  // the window as requested now. A switch to or from a pitch loop still waits for the edge.
+  #followTimeLoopEdits(resolved) {
+    if (!TIME_LOOP_EDITS_MID_PASS) return;
+    if (this.#latchedLoopWindow.isPitchLoop || resolved.isPitchLoop) return;
+    this.#latch(resolved);
   }
 
   /**
@@ -1086,6 +1100,8 @@ export class SamplePlayerVoice {
         )
       ) {
         this.#latch(loopWindow);
+      } else if (this.loopEnabled && this.#isLatched) {
+        this.#followTimeLoopEdits(loopWindow);
       }
       const inLoop = this.loopEnabled && this.#isLatched;
       this.#inLoop = inLoop;
