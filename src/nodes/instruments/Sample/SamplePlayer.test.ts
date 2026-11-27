@@ -842,15 +842,14 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       },
     );
     const { SamplePlayer } = await import('./SamplePlayer');
-    const { PoolVoice, VoicePool } =
-      await import('../../../worklets/processors/play/engine/voice-pool.js');
+    const { VoicePool } = await import('../../../worklets/processors/play/engine/voice-pool.js');
     const context = Object.assign(new EventTarget(), {
       currentTime: 0,
       sampleRate: 48000,
     }) as AudioContext;
     const pool = new VoicePool();
-    const voices = [0, 1, 2].map((index) => {
-      const engine = {
+    const slots = [0, 1, 2].map((index) => {
+      const voice = {
         loopEnabled: true,
         isInPitchLoop: false,
         start() {},
@@ -858,13 +857,11 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
         release() {},
         setNoteRate() {},
       };
-      const voice = new PoolVoice(engine, (message: object) =>
-        test.report({ ...message, voice: index }),
-      );
-      pool.addVoice(voice);
-      return voice;
+      return pool.addVoice(voice, {
+        postMessage: (message: object) => test.report({ ...message, voice: index }),
+      });
     });
-    player = new SamplePlayer({ context, polyphony: voices.length });
+    player = new SamplePlayer({ context, polyphony: slots.length });
     beforeInit?.(player);
     const test = await initTestPlayer(player, {
       onPost: (message) => {
@@ -891,12 +888,12 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       } as unknown as AudioBuffer,
       { skipPreProcessing: true },
     );
-    const playing = () => voices.filter((voice) => voice.state === 'PLAYING').length;
-    return { player, voices, playing, ...test };
+    const playing = () => slots.filter((slot) => slot.state === 'PLAYING').length;
+    return { player, slots, playing, ...test };
   }
 
   it('releases only deferred keys and drains multiple pitches and counts once', async () => {
-    const { player, voices, playing, ofType } = await setup();
+    const { player, slots, playing, ofType } = await setup();
     const allNotesOffBefore = ofType('pool:allNotesOff').length;
     player.play(60);
     player.play(64);
@@ -910,7 +907,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
     expect(ofType('pool:noteOff')).toEqual([]);
 
     player.setSustainPedal(false);
-    expect(voices.find((voice) => voice.midiNote === 60)?.state).toBe('PLAYING');
+    expect(slots.find((slot) => slot.midiNote === 60)?.state).toBe('PLAYING');
     expect(playing()).toBe(1);
     expect(ofType('pool:allNotesOff')).toHaveLength(allNotesOffBefore);
     expect(ofType('pool:noteOff').map(({ midiNote }) => midiNote)).toEqual([64, 64, 67]);
@@ -921,16 +918,16 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
   });
 
   it('returns a legato voice to a still-held key on pedal-up', async () => {
-    const { player, voices } = await setup();
+    const { player, slots } = await setup();
     player.setLegato({ mode: 'always' });
     player.play(60);
     player.play(64);
     player.setSustainPedal(true);
     player.release(64);
-    expect(voices[0].midiNote).toBe(64);
+    expect(slots[0].midiNote).toBe(64);
     player.setSustainPedal(false);
-    expect(voices[0].state).toBe('PLAYING');
-    expect(voices[0].midiNote).toBe(60);
+    expect(slots[0].state).toBe('PLAYING');
+    expect(slots[0].midiNote).toBe(60);
   });
 
   it.each(['hold', 'lock'] as const)('keeps explicit %s independent of the pedal', async (mode) => {

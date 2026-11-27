@@ -8,12 +8,13 @@ Internal to the worklet (`src/worklets/processors/play/`). The public API is `Sa
 
 - **Processor**: The host-facing audio unit for one player. Handles commands and parameters from the runtime host, advances the pool, and drives block rendering for all voices. _(Here: `SamplePlayerProcessor`.)_
   - _Not to confuse with_: **node**, the main-thread side (`SamplePlayer` / `AudioWorkletNode`) that sends it messages and receives its reports.
-- **Voice**: Plays one note at a time. In code it has three parts: the **voice engine** (`VoiceEngine`, renders audio), the **pool voice** (`PoolVoice`, tracks state for the allocator) and its **voice index** (the `voice` field on messages, which also picks output `2i` and `2i + 1`).
-  - _Not to confuse with_: **slot**, the processor's `{ engine, voice, post }` record for one voice (`this.slots`).
-- **Voice engine**: One voice's host-independent playback state and DSP renderer (`VoiceEngine`).
-  - _Avoid_: bare "engine" when referring to one voice (the `engine/` folder also holds the pool and allocator).
-- **Pool**: `VoicePool`. Queues note events until they are due, asks the **allocator** which voice to use, and holds the pitch settings (pitch offset, pitch on/off) shared by every voice.
-- **Allocator**: `VoiceAllocator`. Picks which voice a note event starts, steals, retunes or releases. Default: a free voice, else the oldest releasing voice, else the oldest playing one.
+- **Voice**: Plays one note at a time (`SamplePlayerVoice`). Holds one voice's host-independent playback state and DSP rendering.
+  - _Not to confuse with_: **voice slot** (`VoiceSlot`), which tracks allocator state around a voice, or the **voice index** (the `voice` field on messages, which also picks output `2i` and `2i + 1`).
+  - _Avoid_: "voice engine" or bare "engine" for one voice.
+- **Voice slot**: `VoiceSlot`. One seat in the pool (`this.voiceSlots` on the processor). Tracks allocator state (`AVAILABLE` / `PLAYING` / `RELEASING`, `midiNote`, `triggerTimestamp`) and holds its `voice` (`SamplePlayerVoice`) and `postMessage` callback.
+  - _Avoid_: bare "slot" outside `VoicePool` (use `voiceSlot` / `voiceSlots` for clarity).
+- **Pool**: `VoicePool`. Queues note events until they are due, asks the **allocator** which **voice slot** to use, and holds the pitch settings (pitch offset, pitch on/off) shared by every voice.
+- **Allocator**: `VoiceAllocator`. Picks which **voice slot** (`voiceSlots`) a note event starts, steals, retunes or releases. Default: a free slot, else the oldest releasing slot, else the oldest playing one.
 - **Pool command vs voice command**: `pool:*` messages are player-wide and go through the pool (`noteOn`, `noteOff`, legato, pitch). `voice:*` messages set up or control one voice, or all voices when no `voice` index is given.
 - **Trigger**: One start of a voice, identified by `triggerId`. Reports such as `voice:started` and `voice:ended` carry it so the node can match them to the note it asked for.
   - _Not to confuse with_: **note**, the MIDI note and velocity that a trigger plays.
@@ -21,13 +22,13 @@ Internal to the worklet (`src/worklets/processors/play/`). The public API is `Sa
 - **Note rate vs `playbackRate` param**: The **note rate** is the speed that makes the sample sound at the played note (from MIDI note + pitch offset; 1 with pitch off). The `playbackRate` AudioParam multiplies it, and `detune` adds cents on top.
   - _Avoid_: "playbackRate" for the note rate; the note object's key is `noteRate`.
 - **Trim vs loop**: **Trim** (`trimStart`/`trimEnd`) sets which part of the sample can play at all. **Loop** (`loopStart`/`loopEnd`) sets the part that repeats while the note is held. Both are in seconds.
-- **Playback direction**: `'forward'` or `'reverse'`, set with `voice:setPlaybackDirection` and stored as the voice engine's `playbackDirection`.
+- **Playback direction**: `'forward'` or `'reverse'`, set with `voice:setPlaybackDirection` and stored as the voice's `playbackDirection`.
   - _Avoid_: `reversePlayback`.
 - **Flush**: A `flush` message the processor answers with `flushed` once every earlier message is handled. Used to wait until queued commands have reached the audio thread.
 
 ## Loops
 
-How the voice engine turns `loopStart`/`loopEnd` into what it plays (`engine/loop-*.js`, `voice-engine.js`).
+How `SamplePlayerVoice` turns `loopStart`/`loopEnd` into what it plays (`engine/loop-*.js`, `sample-player-voice.js`).
 
 - **Requested loop vs loop window**: The **requested loop** is the `loopStart`/`loopEnd` params as sent. The **loop window** (`LoopWindow`) is what actually plays, in source samples, after trim, quantize, glide, keytrack and drift. The `loop:range` report carries the loop window.
   - _Avoid_: "resolved range" or "loop range"; `loop:range` is only the report's name.

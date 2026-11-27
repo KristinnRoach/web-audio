@@ -16,7 +16,7 @@ export class ClampedSourceReader {
     this.samples = samples;
   }
 
-  // The engine reuses this reader across channels, without allocating.
+  // The voice reuses this reader across channels, without allocating.
   readTap(index) {
     const samples = this.samples;
     if (!samples?.length) return 0;

@@ -7,7 +7,7 @@ const RAMP = Float32Array.from({ length: 2000 }, (_, i) => i / TEST_SAMPLE_RATE)
 const toSeconds = (samples: number) => samples / TEST_SAMPLE_RATE;
 
 type DirectionProcessor = {
-  engine: { enableLoopCrossfade: boolean; isPlaying: boolean; startFadeFrames: number };
+  voice: { enableLoopCrossfade: boolean; isPlaying: boolean; startFadeFrames: number };
   port: { onmessage: ((event: MessageEvent) => void) | null };
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: unknown): boolean;
 };
@@ -15,7 +15,7 @@ type DirectionProcessor = {
 async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPong = false) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as DirectionProcessor;
-  processor.engine.enableLoopCrossfade = false;
+  processor.voice.enableLoopCrossfade = false;
   const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
 
   send({
@@ -30,17 +30,17 @@ async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPon
   send({ type: 'voice:setPlaybackDirection', playbackDirection: direction });
   send({ type: 'voice:start' });
   // Isolate source positions from the opening gain ramp.
-  processor.engine.startFadeFrames = Infinity;
+  processor.voice.startFadeFrames = Infinity;
   return { processor, send };
 }
 
 /** Read positions, one per rendered sample, until the voice ends or `frames` run out. */
 function trace(processor: DirectionProcessor, parameters: unknown, frames: number) {
   const positions: number[] = [];
-  for (let frame = 0; frame < frames && processor.engine.isPlaying; frame++) {
+  for (let frame = 0; frame < frames && processor.voice.isPlaying; frame++) {
     const out = new Float32Array(1);
     processor.process([], [[out]], parameters);
-    if (processor.engine.isPlaying)
+    if (processor.voice.isPlaying)
       positions.push(Math.round(out[0] * TEST_SAMPLE_RATE * 1000) / 1000);
   }
   return positions;
@@ -109,7 +109,7 @@ describe('playback direction', () => {
     const positions = trace(processor, params, 200);
 
     expect(positions.slice(-3)).toEqual([2, 1, 0]);
-    expect(processor.engine.isPlaying).toBe(false);
+    expect(processor.voice.isPlaying).toBe(false);
   });
 
   it('a reverse loop cycles through the same positions as a forward loop', async () => {
@@ -188,7 +188,7 @@ describe('loop types', () => {
     const positions = trace(processor, reverseLoop, 1000);
     expect(positions.slice(0, 3)).toEqual([600, 601, 602]);
     expect(positions.at(-1)).toBe(1124);
-    expect(processor.engine.isPlaying).toBe(false);
+    expect(processor.voice.isPlaying).toBe(false);
   });
 
   it('clears a ping-pong turn only after rendering with looping off', async () => {
@@ -234,7 +234,7 @@ describe('start from loop', () => {
     const { processor, send } = await startRamp(direction, loopOn);
     send({ type: 'voice:setStartFromLoop', value: true });
     send({ type: 'voice:start' });
-    processor.engine.startFadeFrames = Infinity;
+    processor.voice.startFadeFrames = Infinity;
     return trace(processor, makeParameters(params), 3);
   }
 

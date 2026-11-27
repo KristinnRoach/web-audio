@@ -1,8 +1,8 @@
-// A voice's envelopes, one fixed slot per engine target, stepped on the processor
+// A voice's envelopes, one fixed slot per voice target, stepped on the processor
 // clock. Configs follow the sampler's EnvelopeConfig, `{ shape, depth = 1,
 // timeScale = 1, playbackRateSync, loopSync }`, plus `base = 0`, in the target's
 // units: gain, cents for 'detune' and 'filter', -1..1 for 'pan', seconds for 'loopEnd'.
-// A slot without a config is inactive and the engine falls back to the matching AudioParam.
+// A slot without a config is inactive and the voice falls back to the matching AudioParam.
 
 import { BreakpointEnvelope } from './breakpoint-envelope.js';
 import { glideCoefficient } from './loop-length.js';
@@ -19,7 +19,7 @@ class EnvelopeSlot {
     this.config = null;
     this.triggerPending = false;
     this.smoothed = 0;
-    // base + depth * smoothed envelope, in the target's units. Read by the engine.
+    // base + depth * smoothed envelope, in the target's units. Read by the voice.
     this.value = 0;
   }
 
@@ -29,15 +29,18 @@ class EnvelopeSlot {
 }
 
 export class VoiceEnvelopes {
+  #envelopeSlots;
+  #smoothingCoefficient;
+
   constructor(sampleRate) {
-    this.smoothingCoefficient = glideCoefficient(SMOOTHING_SECONDS, sampleRate);
+    this.#smoothingCoefficient = glideCoefficient(SMOOTHING_SECONDS, sampleRate);
     this.gain = new EnvelopeSlot(sampleRate);
     this.detune = new EnvelopeSlot(sampleRate);
     this.pan = new EnvelopeSlot(sampleRate);
-    // Not applied by the engine: rendered to a control output for the voice's filter.
+    // Not applied by the voice: rendered to a control output for the voice's filter.
     this.filter = new EnvelopeSlot(sampleRate);
     this.loopEnd = new EnvelopeSlot(sampleRate);
-    this.slots = [this.gain, this.detune, this.pan, this.filter, this.loopEnd];
+    this.#envelopeSlots = [this.gain, this.detune, this.pan, this.filter, this.loopEnd];
     this.pendingReleaseFrame = null;
     this.noteRate = 1;
   }
@@ -60,7 +63,7 @@ export class VoiceEnvelopes {
     this.noteRate = noteRate;
     this.pendingReleaseFrame = null;
     // Inactive slots keep the trigger pending, so one enabled later in the note starts fresh.
-    for (const slot of this.slots) slot.triggerPending = true;
+    for (const slot of this.#envelopeSlots) slot.triggerPending = true;
   }
 
   release(frame) {
@@ -85,7 +88,7 @@ export class VoiceEnvelopes {
     const released = this.pendingReleaseFrame !== null && frame >= this.pendingReleaseFrame;
     if (released) this.pendingReleaseFrame = null;
 
-    for (const slot of this.slots) {
+    for (const slot of this.#envelopeSlots) {
       if (!slot.active) continue;
       const { envelope, config } = slot;
       // Loop sync fits the full buffer to one sample loop, restarting at each wrap.
@@ -124,7 +127,7 @@ export class VoiceEnvelopes {
         }
         // A trigger clears release state, so an already-due note-off must follow it.
         if (released) envelope.release();
-        slot.smoothed += (envelope.next() - slot.smoothed) * this.smoothingCoefficient;
+        slot.smoothed += (envelope.next() - slot.smoothed) * this.#smoothingCoefficient;
       }
       slot.value = (config.base ?? 0) + (config.depth ?? 1) * slot.smoothed;
     }

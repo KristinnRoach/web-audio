@@ -11,7 +11,7 @@ setupProcessorGlobals();
 
 async function makeProcessor() {
   const processor = await startProcessor([], [0.002, 0.004, 0.008]);
-  Object.assign(processor.engine, { enableLoopCrossfade: false });
+  Object.assign(processor.voice, { enableLoopCrossfade: false });
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
@@ -40,7 +40,7 @@ describe('a-rate loop points and duration glide', () => {
   it('plays a moving pitch loop the same while trim moves around it', async () => {
     const render = async (movingTrim: boolean) => {
       const processor = await makeProcessor();
-      Object.assign(processor.engine, { enableLoopCrossfade: true });
+      Object.assign(processor.voice, { enableLoopCrossfade: true });
       const output = new Float32Array(128 * 40);
       for (let block = 0; block < 40; block++) {
         const params = makeParameters({ trimEnd: 1 });
@@ -72,7 +72,7 @@ describe('a-rate loop points and duration glide', () => {
     const params = makeParameters({ trimEnd: 0.9 });
     params.trimStart = step(0, 0.5);
     processor.process([], [[new Float32Array(128)]], params);
-    expect(processor.engine.playheadPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
+    expect(processor.voice.playheadPosition).toBe(0.5 * TEST_SAMPLE_RATE + 64);
   });
 
   it.each(
@@ -122,7 +122,7 @@ describe('a-rate loop points and duration glide', () => {
         }
         expect(output.some((value) => value !== 0)).toBe(true);
         expect(output).toEqual(expected);
-        expect(block.engine.playheadPosition).toBe(singles.engine.playheadPosition);
+        expect(block.voice.playheadPosition).toBe(singles.voice.playheadPosition);
       }
     },
   );
@@ -141,12 +141,12 @@ describe('a-rate loop points and duration glide', () => {
       });
       moving.process([], [[new Float32Array(1)]], movingParams);
       const actualStart = (
-        moving.engine as typeof moving.engine & {
+        moving.voice as typeof moving.voice & {
           loopWindow: { start: number };
         }
       ).loopWindow.start;
-      expect(moving.engine.playheadPosition - actualStart).toBeCloseTo(
-        fixed.engine.playheadPosition,
+      expect(moving.voice.playheadPosition - actualStart).toBeCloseTo(
+        fixed.voice.playheadPosition,
         5,
       );
     }
@@ -159,12 +159,12 @@ describe('a-rate loop points and duration glide', () => {
     } as MessageEvent);
     const params = makeParameters({ loopStart: 0.002, loopEnd: 0 });
     processor.process([], [[new Float32Array(98)]], params);
-    const position = processor.engine.playheadPosition;
+    const position = processor.voice.playheadPosition;
     expect(position).toBeCloseTo(94, 3);
     params.loopStart = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0.002 : 0));
     params.loopEnd = Float32Array.from({ length: 16 }, (_, i) => (i < 8 ? 0 : 0.002));
     processor.process([], [[new Float32Array(16)]], params);
-    expect(processor.engine.playheadPosition).toBeCloseTo(position - 16, 3);
+    expect(processor.voice.playheadPosition).toBeCloseTo(position - 16, 3);
   });
 
   it('generates drift once before the first edge, even with per-sample point changes', async () => {
@@ -172,8 +172,8 @@ describe('a-rate loop points and duration glide', () => {
     const params = makeParameters({ loopDurationDriftAmount: 0.01 });
     params.loopStart = Float32Array.from({ length: 32 }, (_, i) => i / 1e7);
     params.loopEnd = Float32Array.from(params.loopStart, (start) => start + 0.004);
-    const engine = processor.engine as typeof processor.engine & { random: () => number };
-    const random = vi.spyOn(engine, 'random');
+    const voice = processor.voice as typeof processor.voice & { random: () => number };
+    const random = vi.spyOn(voice, 'random');
     processor.process([], [[new Float32Array(32)]], params);
     // One pitch-loop roll draws twice: loop drift, then its own pan drift.
     expect(random).toHaveBeenCalledTimes(2);
@@ -182,8 +182,8 @@ describe('a-rate loop points and duration glide', () => {
   it('rolls fresh drift on the first pass of every note', async () => {
     const processor = await makeProcessor();
     const params = makeParameters({ loopDurationDriftAmount: 0.01 });
-    const engine = processor.engine as typeof processor.engine & { random: () => number };
-    const random = vi.spyOn(engine, 'random').mockReturnValue(0.75);
+    const voice = processor.voice as typeof processor.voice & { random: () => number };
+    const random = vi.spyOn(voice, 'random').mockReturnValue(0.75);
     processor.process([], [[new Float32Array(200)]], params);
     random.mockClear();
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
@@ -200,7 +200,7 @@ describe('a-rate loop points and duration glide', () => {
       } as MessageEvent);
       processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
       processor.process([], [[new Float32Array(37)]], makeParameters({ loopEnd: 0.0075 }));
-      const state = processor.engine as typeof processor.engine & {
+      const state = processor.voice as typeof processor.voice & {
         loopWindow: { length: number };
       };
       const expected =
@@ -227,7 +227,7 @@ describe('a-rate loop points and duration glide', () => {
       data: { type: 'voice:setLoopLengthGlide', value: 0.02 },
     } as MessageEvent);
     processor.process([], [[new Float32Array(19)]], target);
-    const state = processor.engine as typeof processor.engine & {
+    const state = processor.voice as typeof processor.voice & {
       loopWindow: { length: number };
     };
     const expected = Math.exp(
