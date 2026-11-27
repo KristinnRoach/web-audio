@@ -49,8 +49,9 @@ describe('grain timestretch', () => {
         makeParameters({ playbackRate }),
         TEST_SAMPLE_RATE * 2,
       );
-      // Half a second of source lasts half a second, plus the last fade.
-      expect(Math.abs(out.length - source.length)).toBeLessThan(0.04 * TEST_SAMPLE_RATE);
+      // Half a second of source lasts half a second, plus at most one hop and the end fade.
+      expect(out.length).toBeGreaterThanOrEqual(source.length);
+      expect(out.length - source.length).toBeLessThan(0.05 * TEST_SAMPLE_RATE);
     }
   });
 
@@ -72,5 +73,47 @@ describe('grain timestretch', () => {
     const span = out.slice(2000, 12_000);
     const crossings = span.filter((v, i) => i > 0 && span[i - 1] < 0 && v >= 0).length;
     expect(crossings / (span.length / (period / 2))).toBeCloseTo(1, 1);
+  });
+
+  it('follows the grain speed: half speed doubles the duration, 0 freezes', async () => {
+    const source = new Float32Array(TEST_SAMPLE_RATE / 4).fill(0.5);
+    const half = await startGrainNote(source);
+    half.port.onmessage?.({ data: { type: 'voice:setGrainSpeed', value: 0.5 } } as MessageEvent);
+    const out = renderUntilEnded(half, makeParameters(), TEST_SAMPLE_RATE * 2);
+    expect(out.length).toBeGreaterThanOrEqual(2 * source.length);
+    expect(out.length - 2 * source.length).toBeLessThan(0.04 * TEST_SAMPLE_RATE);
+
+    const frozen = await startGrainNote(source);
+    frozen.port.onmessage?.({ data: { type: 'voice:setGrainSpeed', value: 0 } } as MessageEvent);
+    renderUntilEnded(frozen, makeParameters(), TEST_SAMPLE_RATE);
+    const ended = frozen.port.postMessage.mock.calls.some(([m]) => m.type === 'voice:ended');
+    expect(ended).toBe(false);
+    expect(frozen.voice.playheadPosition).toBeLessThan(0.07 * TEST_SAMPLE_RATE);
+  });
+
+  it('scatters grain starts around the time position', async () => {
+    const processor = await startGrainNote(new Float32Array(TEST_SAMPLE_RATE).fill(0.5));
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    // Play a quarter second from 0.25 s, then freeze mid-buffer with scatter, so no
+    // start is clamped to the trim edges.
+    const parameters = makeParameters({ trimStart: 0.25 });
+    const block = new Float32Array(1);
+    for (let frame = 0; frame < TEST_SAMPLE_RATE / 4; frame++) {
+      processor.process([], [[block]], parameters);
+    }
+    send({ type: 'voice:setGrainSpeed', value: 0 });
+    send({ type: 'voice:setGrainScatter', value: 0.1 });
+    const center = 0.5 * TEST_SAMPLE_RATE;
+    const starts: number[] = [];
+    for (let frame = 0; frame < TEST_SAMPLE_RATE / 2; frame++) {
+      const before = processor.voice.playheadPosition;
+      processor.process([], [[block]], parameters);
+      const after = processor.voice.playheadPosition;
+      if (frame > 0 && Math.abs(after - before - 1) > 1e-9) starts.push(after);
+    }
+    expect(starts.length).toBeGreaterThan(10);
+    expect(new Set(starts).size).toBe(starts.length);
+    for (const start of starts)
+      expect(Math.abs(start - center)).toBeLessThanOrEqual(0.1 * TEST_SAMPLE_RATE + 1);
   });
 });

@@ -138,6 +138,9 @@ export class SamplePlayer {
   #glideTime: number = samplerParams.glide.defaultValue;
   #loopLengthGlide: number = samplerParams.loopLengthGlide.defaultValue;
   #loopPositionGlide: number = samplerParams.loopPositionGlide.defaultValue;
+  #grainSpeed: number = samplerParams.grainSpeed.defaultValue;
+  #grainScatter: number = samplerParams.grainScatter.defaultValue;
+  #grainSize: number = samplerParams.grainSize.defaultValue;
   #loopPitchPeriods = this.#getNotePeriodsInSeconds([0], 1, 5);
   #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
@@ -480,6 +483,9 @@ export class SamplePlayer {
     SAMPLE_ENVELOPE_IDS.forEach((id) => this.#postEnvelope(id, this.getEnvelope(id)));
     this.#post({ type: 'voice:setLoopLengthGlide', value: this.#loopLengthGlide });
     this.#post({ type: 'voice:setLoopPositionGlide', value: this.#loopPositionGlide });
+    this.#post({ type: 'voice:setGrainSpeed', value: this.#grainSpeed });
+    this.#post({ type: 'voice:setGrainScatter', value: this.#grainScatter });
+    this.#post({ type: 'voice:setGrainSize', value: this.#grainSize });
     this.#post({ type: 'voice:reportPlayheadPosition', value: this.#positionTracking });
     this.#sendUpstreamMessage('sample-player:initialized', {});
   }
@@ -1121,6 +1127,27 @@ export class SamplePlayer {
     this.#timestretchMode = mode;
     this.#sendPitchPeriods();
     this.#post({ type: 'voice:setTimestretchMode', value: mode });
+    return this;
+  };
+
+  /** `'grain'` timestretch: time position speed. 1 is original speed, 0 freezes. */
+  setGrainSpeed = (speed: number) => {
+    this.#grainSpeed = speed;
+    this.#post({ type: 'voice:setGrainSpeed', value: speed });
+    return this;
+  };
+
+  /** `'grain'` timestretch: largest random offset of each grain's start, in seconds. */
+  setGrainScatter = (seconds: number) => {
+    this.#grainScatter = seconds;
+    this.#post({ type: 'voice:setGrainScatter', value: seconds });
+    return this;
+  };
+
+  /** `'grain'` timestretch: grain length in seconds; grains start every half grain. */
+  setGrainSize = (seconds: number) => {
+    this.#grainSize = seconds;
+    this.#post({ type: 'voice:setGrainSize', value: seconds });
     return this;
   };
 
