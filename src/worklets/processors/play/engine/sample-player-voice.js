@@ -84,7 +84,9 @@ function isApproachingLoopWindow(position, approachDirection, loopWindow) {
 export class SamplePlayerVoice {
   #loopDriftPassCount = 0;
   #driftPending = true;
+  #random;
   #postMessage;
+  #panDriftEnabled;
   #panDriftCoefficient;
   #noteRateTarget;
   #noteRateCoefficient;
@@ -136,7 +138,7 @@ export class SamplePlayerVoice {
   constructor({ sampleRate, random, postMessage }) {
     this.sampleRate = sampleRate;
     this.loopMoveFadeFrames = Math.max(1, Math.round(LOOP_MOVE_FADE_SECONDS * sampleRate));
-    this.random = random;
+    this.#random = random;
     this.#postMessage = postMessage;
 
     // Only set properties that should persist across resets.
@@ -146,7 +148,7 @@ export class SamplePlayerVoice {
     this.playbackDirection = 'forward';
     // Note-on starts at the loop instead of trim while looping is on.
     this.startFromLoop = false;
-    this.panDriftEnabled = true;
+    this.#panDriftEnabled = true;
     this.#panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlayheadPosition = false;
@@ -315,8 +317,12 @@ export class SamplePlayerVoice {
     this.envelopes.release(frame);
   }
 
+  get panDriftEnabled() {
+    return this.#panDriftEnabled;
+  }
+
   setPanDriftEnabled(enabled) {
-    this.panDriftEnabled = enabled;
+    this.#panDriftEnabled = enabled;
     if (!enabled) this.#currentPanDrift = 0;
   }
 
@@ -851,13 +857,13 @@ export class SamplePlayerVoice {
     const updateInterval = driftRollInterval(baseDuration, this.pitchCutoff);
 
     if (this.#loopDriftPassCount % updateInterval === 0) {
-      this.#currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
+      this.#currentLoopDrift = loopDriftSamples(this.#random(), driftAmount, baseDuration);
       // Pitch loop drift is scaled down and rounded to whole samples, often to nothing,
       // so pan rolls its own value there.
       const panDrift = isPitchLoop
-        ? (this.random() - 0.5) * 2 * driftAmount
+        ? (this.#random() - 0.5) * 2 * driftAmount
         : this.#currentLoopDrift / baseDuration;
-      this.#currentPanDrift = this.panDriftEnabled && this.#loopDriftPassCount > 0 ? panDrift : 0;
+      this.#currentPanDrift = this.#panDriftEnabled && this.#loopDriftPassCount > 0 ? panDrift : 0;
     }
 
     this.#driftPending = false;
