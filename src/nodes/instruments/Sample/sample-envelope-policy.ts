@@ -26,6 +26,9 @@ const PITCH_ENVELOPE_SEMITONES = 12;
  */
 const FILTER_ENVELOPE_OCTAVES = 10;
 
+/** loopEnd shape value 1 moves the loop end this many seconds later. */
+const LOOP_END_ENVELOPE_SECONDS = 0.1;
+
 /** Flat at 0, so a bipolar envelope leaves its target unmodulated until edited. */
 function flatBipolarShape(durationSeconds: number): EnvelopeShape {
   return {
@@ -79,10 +82,10 @@ const SAMPLE_ENVELOPE_UNITS: Record<
   { scale: number; rest: number; linear: boolean }
 > = {
   amp: { scale: 1, rest: 1, linear: false },
-  pan: { scale: 1, rest: 0, linear: true },
   pitch: { scale: PITCH_ENVELOPE_SEMITONES * 100, rest: 0, linear: true },
   filter: { scale: FILTER_ENVELOPE_OCTAVES * 1200, rest: 0, linear: true },
-  loopEnd: { scale: 0.1, rest: 0, linear: true },
+  pan: { scale: 1, rest: 0, linear: true },
+  loopEnd: { scale: LOOP_END_ENVELOPE_SECONDS, rest: 0, linear: true },
 };
 
 /**
