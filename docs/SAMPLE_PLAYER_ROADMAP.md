@@ -101,4 +101,5 @@ Not needed until we reach them:
 - Anti-aliasing method and memory budget
 - Grain count and envelope
 - If `detectPitchPeriods` is kept and needs to support long recordings, consider moving to background analysis.
+- Split self-contained state machines out of `SamplePlayerVoice` (loop glides, loop/pan drift, throttled range reporting) if the class gets crowded or before porting.
 - Hardware board
