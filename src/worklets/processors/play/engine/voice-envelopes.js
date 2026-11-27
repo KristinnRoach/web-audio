@@ -30,9 +30,10 @@ class EnvelopeSlot {
 
 export class VoiceEnvelopes {
   #envelopeSlots;
+  #smoothingCoefficient;
 
   constructor(sampleRate) {
-    this.smoothingCoefficient = glideCoefficient(SMOOTHING_SECONDS, sampleRate);
+    this.#smoothingCoefficient = glideCoefficient(SMOOTHING_SECONDS, sampleRate);
     this.gain = new EnvelopeSlot(sampleRate);
     this.detune = new EnvelopeSlot(sampleRate);
     this.pan = new EnvelopeSlot(sampleRate);
@@ -126,7 +127,7 @@ export class VoiceEnvelopes {
         }
         // A trigger clears release state, so an already-due note-off must follow it.
         if (released) envelope.release();
-        slot.smoothed += (envelope.next() - slot.smoothed) * this.smoothingCoefficient;
+        slot.smoothed += (envelope.next() - slot.smoothed) * this.#smoothingCoefficient;
       }
       slot.value = (config.base ?? 0) + (config.depth ?? 1) * slot.smoothed;
     }
