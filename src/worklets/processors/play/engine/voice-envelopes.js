@@ -103,8 +103,9 @@ export class VoiceEnvelopes {
       const restart = slot.triggerPending || (loopWrapped && loopSync);
 
       // The loopEnd envelope starts when the playhead enters the loop; a note-off ends the wait.
+      // `inLoop` is from the previous sample, so a loop turned off since then still waits.
       const awaitingLoopEntry =
-        slot === this.loopEnd && slot.triggerPending && !inLoop && !released;
+        slot === this.loopEnd && slot.triggerPending && (!loopEnabled || !inLoop) && !released;
       // Loop sync needs the loop window's length, known one sample after the note starts.
       const awaitingLoopLength = restart && loopSync && !loopWindow;
 
