@@ -172,8 +172,8 @@ describe('a-rate loop points and duration glide', () => {
     const params = makeParameters({ loopDurationDriftAmount: 0.01 });
     params.loopStart = Float32Array.from({ length: 32 }, (_, i) => i / 1e7);
     params.loopEnd = Float32Array.from(params.loopStart, (start) => start + 0.004);
-    const engine = processor.voice as typeof processor.voice & { random: () => number };
-    const random = vi.spyOn(engine, 'random');
+    const voice = processor.voice as typeof processor.voice & { random: () => number };
+    const random = vi.spyOn(voice, 'random');
     processor.process([], [[new Float32Array(32)]], params);
     // One pitch-loop roll draws twice: loop drift, then its own pan drift.
     expect(random).toHaveBeenCalledTimes(2);
@@ -182,8 +182,8 @@ describe('a-rate loop points and duration glide', () => {
   it('rolls fresh drift on the first pass of every note', async () => {
     const processor = await makeProcessor();
     const params = makeParameters({ loopDurationDriftAmount: 0.01 });
-    const engine = processor.voice as typeof processor.voice & { random: () => number };
-    const random = vi.spyOn(engine, 'random').mockReturnValue(0.75);
+    const voice = processor.voice as typeof processor.voice & { random: () => number };
+    const random = vi.spyOn(voice, 'random').mockReturnValue(0.75);
     processor.process([], [[new Float32Array(200)]], params);
     random.mockClear();
     processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);

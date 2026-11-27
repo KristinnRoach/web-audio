@@ -85,25 +85,25 @@ it('loops the whole shape until release', () => {
   expect(env.done).toBe(false);
 });
 
-it('drives the engine output and ends the note when the release tail does', () => {
+it('drives the voice output and ends the note when the release tail does', () => {
   const posts: object[] = [];
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: (m: object) => void posts.push(m),
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.setEnvelope('gain', { shape: adsr('sustain') });
-  engine.start(1, 0);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.setEnvelope('gain', { shape: adsr('sustain') });
+  voice.start(1, 0);
 
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
   const output = new Float32Array(128);
-  engine.render([output], parameters, 0, 0);
+  voice.render([output], parameters, 0, 0);
   expect(output[64]).toBeGreaterThan(0);
 
-  engine.release(0);
+  voice.release(0);
   for (let block = 1; block < 4; block++)
-    engine.render([output.fill(0)], parameters, block * 128, 0);
+    voice.render([output.fill(0)], parameters, block * 128, 0);
   expect(posts.some((m) => 'type' in m && m.type === 'voice:ended')).toBe(true);
 });
 
@@ -111,23 +111,23 @@ it.each([0, 0.03, 0.064])(
   'cancels a pending note released at %s before or at its start',
   (releaseTime) => {
     const post = vi.fn();
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
-    engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-    engine.loopEnabled = true;
-    engine.setEnvelope('gain', { shape: adsr('sustain') });
-    engine.start(7, 0.064);
+    const voice = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
+    voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+    voice.loopEnabled = true;
+    voice.setEnvelope('gain', { shape: adsr('sustain') });
+    voice.start(7, 0.064);
 
-    engine.release(releaseTime);
+    voice.release(releaseTime);
     const output = new Float32Array(128);
     const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
     // The processor renders only while canRender is true.
     for (let block = 0; block < 2; block++) {
-      if (engine.canRender) engine.render([output], parameters, block * 128, (block * 128) / SR);
+      if (voice.canRender) voice.render([output], parameters, block * 128, (block * 128) / SR);
     }
 
     expect(output.every((sample) => sample === 0)).toBe(true);
-    expect(engine.isPlaying).toBe(false);
-    expect(engine.pendingStartFrame).toBe(0);
+    expect(voice.isPlaying).toBe(false);
+    expect(voice.pendingStartFrame).toBe(0);
     expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
       [{ type: 'voice:ended', triggerId: 7 }],
     ]);
@@ -136,23 +136,23 @@ it.each([0, 0.03, 0.064])(
 
 it('plays a pending note and its tail when release is scheduled after its start', () => {
   const post = vi.fn();
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.loopEnabled = true;
-  engine.setEnvelope('gain', { shape: adsr('sustain') });
-  engine.start(7, 0.064);
-  engine.release(0.09);
+  const voice = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.loopEnabled = true;
+  voice.setEnvelope('gain', { shape: adsr('sustain') });
+  voice.start(7, 0.064);
+  voice.release(0.09);
 
-  expect(engine.isPlaying).toBe(true);
+  expect(voice.isPlaying).toBe(true);
   const output = new Float32Array(128);
-  engine.render([output], makeParameters({ trimEnd: 1, loopEnd: 1 }), 0, 0);
+  voice.render([output], makeParameters({ trimEnd: 1, loopEnd: 1 }), 0, 0);
 
   expect(output.slice(0, 64).every((sample) => sample === 0)).toBe(true);
   expect(output[85]).toBeGreaterThan(0);
   expect(output[95]).toBeGreaterThan(0);
-  for (let block = 1; block < 4 && engine.canRender; block++)
-    engine.render([output.fill(0)], makeParameters({ trimEnd: 1, loopEnd: 1 }), block * 128, 0);
-  expect(engine.isPlaying).toBe(false);
+  for (let block = 1; block < 4 && voice.canRender; block++)
+    voice.render([output.fill(0)], makeParameters({ trimEnd: 1, loopEnd: 1 }), block * 128, 0);
+  expect(voice.isPlaying).toBe(false);
   expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
     [{ type: 'voice:ended', triggerId: 7 }],
   ]);
@@ -162,22 +162,22 @@ it.each(['sustain', 'loop'] as const)(
   'preserves an already-due release when the first render starts late in %s mode',
   (mode) => {
     const post = vi.fn();
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
-    engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-    engine.loopEnabled = true;
-    engine.setEnvelope('gain', { shape: adsr(mode), loopSync: true });
-    engine.start(7, 0.01);
-    engine.release(0.02);
+    const voice = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
+    voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+    voice.loopEnabled = true;
+    voice.setEnvelope('gain', { shape: adsr(mode), loopSync: true });
+    voice.start(7, 0.01);
+    voice.release(0.02);
 
-    for (let frame = 128; frame < 1024 && engine.canRender; frame += 128)
-      engine.render(
+    for (let frame = 128; frame < 1024 && voice.canRender; frame += 128)
+      voice.render(
         [new Float32Array(128)],
         makeParameters({ trimEnd: 1, loopEnd: 0.05 }),
         frame,
         frame / SR,
       );
 
-    expect(engine.isPlaying).toBe(false);
+    expect(voice.isPlaying).toBe(false);
     expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
       [{ type: 'voice:ended', triggerId: 7 }],
     ]);
@@ -185,87 +185,87 @@ it.each(['sustain', 'loop'] as const)(
 );
 
 it('starts gain from the beginning when first enabled during a note, preserving later toggles', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.loopEnabled = true;
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.loopEnabled = true;
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
   const render = (frame: number, length = 128) => {
     const output = new Float32Array(length);
-    engine.render([output], parameters, frame, frame / SR);
+    voice.render([output], parameters, frame, frame / SR);
     return output;
   };
-  engine.start(1, 0);
+  voice.start(1, 0);
   render(0);
 
   const config = { shape: adsr('sustain') };
-  const trigger = vi.spyOn(engine.envelopes.gain.envelope, 'trigger');
-  engine.setEnvelope('gain', config);
+  const trigger = vi.spyOn(voice.envelopes.gain.envelope, 'trigger');
+  voice.setEnvelope('gain', config);
   const attack = render(128, 5);
   expect(attack[0]).toBe(0);
   expect(attack[4]).toBeGreaterThan(0);
   expect(trigger).toHaveBeenCalledTimes(1);
 
   // An enabled edit and subsequent off/on keep the current segment's progress.
-  engine.setEnvelope('gain', config);
-  engine.setEnvelope('gain', null);
+  voice.setEnvelope('gain', config);
+  voice.setEnvelope('gain', null);
   render(133);
-  engine.setEnvelope('gain', config);
+  voice.setEnvelope('gain', config);
   const resumed = render(261);
   expect(resumed[0]).toBeGreaterThan(attack[4]);
   expect(trigger).toHaveBeenCalledTimes(1);
 });
 
 it('starts any envelope first enabled during a note', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
   const parameters = makeParameters({ trimEnd: 1 });
-  engine.start(1, 0);
-  engine.render([new Float32Array(128)], parameters, 0, 0);
+  voice.start(1, 0);
+  voice.render([new Float32Array(128)], parameters, 0, 0);
 
-  const trigger = vi.spyOn(engine.envelopes.detune.envelope, 'trigger');
-  engine.setEnvelope('detune', { shape: adsr('sustain') });
-  engine.render([new Float32Array(128)], parameters, 128, 128 / SR);
+  const trigger = vi.spyOn(voice.envelopes.detune.envelope, 'trigger');
+  voice.setEnvelope('detune', { shape: adsr('sustain') });
+  voice.render([new Float32Array(128)], parameters, 128, 128 / SR);
   expect(trigger).toHaveBeenCalledTimes(1);
 });
 
 it('keeps a scheduled stop when gain is first enabled after note-off', () => {
   const post = vi.fn();
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.loopEnabled = true;
-  engine.start(1, 0);
+  const voice = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.loopEnabled = true;
+  voice.start(1, 0);
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
-  engine.render([new Float32Array(128)], parameters, 0, 0);
-  engine.release(0.2);
-  engine.setEnvelope('gain', { shape: adsr('sustain') });
-  expect(engine.pendingStopFrame).toBe(200);
+  voice.render([new Float32Array(128)], parameters, 0, 0);
+  voice.release(0.2);
+  voice.setEnvelope('gain', { shape: adsr('sustain') });
+  expect(voice.pendingStopFrame).toBe(200);
 
-  for (let frame = 128; frame < 1024 && engine.canRender; frame += 128)
-    engine.render([new Float32Array(128)], parameters, frame, frame / SR);
-  expect(engine.isPlaying).toBe(false);
+  for (let frame = 128; frame < 1024 && voice.canRender; frame += 128)
+    voice.render([new Float32Array(128)], parameters, frame, frame / SR);
+  expect(voice.isPlaying).toBe(false);
   expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
     [{ type: 'voice:ended', triggerId: 1 }],
   ]);
 });
 
 it('a release without a gain envelope stops the note', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.start(1, 0);
-  engine.release(0.5);
-  expect(engine.pendingStopFrame).toBe(0.5 * SR);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.start(1, 0);
+  voice.release(0.5);
+  expect(voice.pendingStopFrame).toBe(0.5 * SR);
 });
 
 it.each(['once', 'loop'] as const)(
@@ -312,28 +312,28 @@ it('updates timing with playback sync and gives loop sync precedence', () => {
 it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)(
   'fits loop sync to the loop transport with %s',
   (source) => {
-    const engine = new SamplePlayerVoice({
+    const voice = new SamplePlayerVoice({
       sampleRate: SR,
       random: () => 0.5,
       postMessage: () => {},
     });
-    engine.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
-    engine.loopEnabled = true;
+    voice.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
+    voice.loopEnabled = true;
     if (source === 'detune envelope') {
       const shape = adsr('loop');
-      engine.setEnvelope('detune', {
+      voice.setEnvelope('detune', {
         shape: { ...shape, points: shape.points.map((point) => ({ ...point, value: 1 })) },
         depth: 1200,
         loopSync: true,
       });
     }
     if (source === 'period stretch') {
-      engine.setPitchPeriods(Float32Array.of(10), SR);
-      engine.setTimestretchMode('period');
+      voice.setPitchPeriods(Float32Array.of(10), SR);
+      voice.setTimestretchMode('period');
     }
-    engine.setEnvelope('gain', { shape: adsr('loop'), loopSync: true });
-    const trigger = vi.spyOn(engine.envelopes.gain.envelope, 'trigger');
-    engine.start(1, 0, { noteRate: source === 'period stretch' ? 2 : 1 });
+    voice.setEnvelope('gain', { shape: adsr('loop'), loopSync: true });
+    const trigger = vi.spyOn(voice.envelopes.gain.envelope, 'trigger');
+    voice.start(1, 0, { noteRate: source === 'period stretch' ? 2 : 1 });
 
     const loopLengthSeconds = 0.25;
     const loopRate = source === 'detune param' || source === 'detune envelope' ? 2 : 1;
@@ -343,27 +343,27 @@ it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)
       detune: source === 'detune param' ? 1200 : 0,
     });
     for (let block = 0; block < 8; block++) {
-      engine.render([new Float32Array(128)], parameters, block * 128, (block * 128) / SR);
+      voice.render([new Float32Array(128)], parameters, block * 128, (block * 128) / SR);
     }
     const periodFrames = (SR * loopLengthSeconds) / loopRate;
     expect(trigger).toHaveBeenCalledTimes(Math.ceil((8 * 128) / periodFrames));
-    expect(engine.envelopes.gain.envelope.timeScale).toBeCloseTo(loopRate / loopLengthSeconds);
+    expect(voice.envelopes.gain.envelope.timeScale).toBeCloseTo(loopRate / loopLengthSeconds);
     if (source === 'detune envelope')
-      expect(engine.envelopes.detune.envelope.timeScale).toBeCloseTo(
-        engine.envelopes.gain.envelope.timeScale,
+      expect(voice.envelopes.detune.envelope.timeScale).toBeCloseTo(
+        voice.envelopes.gain.envelope.timeScale,
       );
   },
 );
 
 it('smooths a vertical segment instead of stepping in one sample', () => {
   const rate = 48_000;
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: rate,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(rate).fill(0.5)]);
-  engine.setEnvelope('gain', {
+  voice.setBuffer([new Float32Array(rate).fill(0.5)]);
+  voice.setEnvelope('gain', {
     shape: {
       points: [
         { time: 0, value: 1 },
@@ -376,10 +376,10 @@ it('smooths a vertical segment instead of stepping in one sample', () => {
       releasePoint: 0,
     },
   });
-  engine.start(1, 0);
+  voice.start(1, 0);
 
   const output = new Float32Array(256);
-  engine.render([output], makeParameters({ trimEnd: 1 }), 0, 0);
+  voice.render([output], makeParameters({ trimEnd: 1 }), 0, 0);
   // After the start fade, unsmoothed the jump is 0.5 * 0.8 = 0.4 in one sample.
   let maxStep = 0;
   for (let i = 32; i < output.length; i++) {
@@ -389,13 +389,13 @@ it('smooths a vertical segment instead of stepping in one sample', () => {
 });
 
 it('a detune envelope bends the playback rate the loop and read step use', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR)]);
-  engine.setEnvelope('detune', {
+  voice.setBuffer([new Float32Array(SR)]);
+  voice.setEnvelope('detune', {
     shape: {
       points: [
         { time: 0, value: 1 },
@@ -407,20 +407,20 @@ it('a detune envelope bends the playback rate the loop and read step use', () =>
     },
     depth: 1200, // cents: one octave up
   });
-  engine.start(1, 0);
+  voice.start(1, 0);
 
-  engine.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
-  expect(engine.playheadPosition).toBeCloseTo(256, 0);
+  voice.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
+  expect(voice.playheadPosition).toBeCloseTo(256, 0);
 });
 
 it('a pan envelope adds to the pan param, clamped to hard right', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.setPanDriftEnabled(false);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.setPanDriftEnabled(false);
   const hardRight: EnvelopeShape = {
     points: [
       { time: 0, value: 1 },
@@ -430,139 +430,139 @@ it('a pan envelope adds to the pan param, clamped to hard right', () => {
     sustainPoint: 0,
     releasePoint: 0,
   };
-  engine.setEnvelope('pan', { shape: hardRight });
-  engine.start(1, 0);
+  voice.setEnvelope('pan', { shape: hardRight });
+  voice.start(1, 0);
 
   const left = new Float32Array(128);
   const right = new Float32Array(128);
-  engine.render([left, right], makeParameters({ pan: 0.5, trimEnd: 1 }), 0, 0);
+  voice.render([left, right], makeParameters({ pan: 0.5, trimEnd: 1 }), 0, 0);
   expect(right[64]).toBeGreaterThan(0);
   expect(left[64]).toBe(0);
 });
 
 it('a filter envelope renders cents to the control output and leaves the audio alone', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
   const parameters = makeParameters({ trimEnd: 1 });
   const render = () => {
     const audio = new Float32Array(128);
     const filter = new Float32Array(128);
-    engine.render([audio], parameters, 0, 0, filter);
+    voice.render([audio], parameters, 0, 0, filter);
     return { audio, filter };
   };
 
-  engine.start(1, 0);
+  voice.start(1, 0);
   const without = render();
   expect(without.filter.every((value) => value === 0)).toBe(true); // inactive slot: 0 cents
 
-  engine.setEnvelope('filter', { shape: adsr('sustain'), depth: 1200 });
-  engine.start(2, 0);
+  voice.setEnvelope('filter', { shape: adsr('sustain'), depth: 1200 });
+  voice.start(2, 0);
   const withFilter = render();
   expect(withFilter.filter[10]).toBeGreaterThan(1000); // near the attack peak, in cents
   expect(withFilter.audio).toEqual(without.audio);
 });
 
 it('takes rate and velocity from voice:start, so the first note is synced and scaled', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
   // The playbackRate param is a multiplier now; a stale 1 must not leak into the note.
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
-  engine.start(1, 0, { noteRate: 2, velocity: 127 });
-  engine.render([new Float32Array(128)], parameters, 0, 0);
-  expect(engine.envelopes.gain.envelope.timeScale).toBe(2);
-  expect(engine.noteRate).toBe(2);
+  voice.start(1, 0, { noteRate: 2, velocity: 127 });
+  voice.render([new Float32Array(128)], parameters, 0, 0);
+  expect(voice.envelopes.gain.envelope.timeScale).toBe(2);
+  expect(voice.noteRate).toBe(2);
 
-  engine.start(2, 0, { noteRate: 0.5, velocity: 0 });
+  voice.start(2, 0, { noteRate: 0.5, velocity: 0 });
   const output = new Float32Array(128);
-  engine.render([output], parameters, 128, 0);
-  expect(engine.envelopes.gain.envelope.timeScale).toBe(0.5);
+  voice.render([output], parameters, 128, 0);
+  expect(voice.envelopes.gain.envelope.timeScale).toBe(0.5);
   expect(output.every((v) => v === 0)).toBe(true); // velocity 0 from this note, not the last
 });
 
 it('renders queued retunes in timestamp order, keeping same-frame arrival order and glide', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.start(1, 0);
-  engine.setNoteRate(0.02, 3);
-  engine.setNoteRate(0.01, 2);
-  engine.setNoteRate(0.02, 4);
-  engine.setNoteRate(0.021, 8, 0.01);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.start(1, 0);
+  voice.setNoteRate(0.02, 3);
+  voice.setNoteRate(0.01, 2);
+  voice.setNoteRate(0.02, 4);
+  voice.setNoteRate(0.021, 8, 0.01);
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
-  engine.render([new Float32Array(10)], parameters, 0, 0);
-  expect(engine.playheadPosition).toBeCloseTo(10);
-  engine.render([new Float32Array(10)], parameters, 10, 0.01);
-  expect(engine.playheadPosition).toBeCloseTo(30);
-  engine.render([new Float32Array(1)], parameters, 20, 0.02);
-  expect(engine.playheadPosition).toBeCloseTo(34);
-  engine.render([new Float32Array(1)], parameters, 21, 0.021);
-  expect(engine.noteRate).toBeCloseTo(4 + 4 * (1 - Math.exp(-0.1)));
+  voice.render([new Float32Array(10)], parameters, 0, 0);
+  expect(voice.playheadPosition).toBeCloseTo(10);
+  voice.render([new Float32Array(10)], parameters, 10, 0.01);
+  expect(voice.playheadPosition).toBeCloseTo(30);
+  voice.render([new Float32Array(1)], parameters, 20, 0.02);
+  expect(voice.playheadPosition).toBeCloseTo(34);
+  voice.render([new Float32Array(1)], parameters, 21, 0.021);
+  expect(voice.noteRate).toBeCloseTo(4 + 4 * (1 - Math.exp(-0.1)));
 });
 
 it('uses a due retune target for subsequent playback-synced envelope segments', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
-  engine.start(1, 0);
-  engine.setNoteRate(0.005, 2, 0.05);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
+  voice.start(1, 0);
+  voice.setNoteRate(0.005, 2, 0.05);
   const parameters = makeParameters({ trimEnd: 1 });
-  engine.render([new Float32Array(5)], parameters, 0, 0);
-  expect(engine.envelopes.gain.envelope.timeScale).toBe(1);
-  engine.render([new Float32Array(5)], parameters, 5, 0.005);
-  expect(engine.envelopes.gain.envelope.remaining).toBe(5);
-  expect(engine.envelopes.gain.envelope.value).toBe(1);
-  expect(engine.envelopes.gain.envelope.timeScale).toBe(2);
-  expect(engine.noteRate).toBeLessThan(2); // timing follows the target, not the glide
+  voice.render([new Float32Array(5)], parameters, 0, 0);
+  expect(voice.envelopes.gain.envelope.timeScale).toBe(1);
+  voice.render([new Float32Array(5)], parameters, 5, 0.005);
+  expect(voice.envelopes.gain.envelope.remaining).toBe(5);
+  expect(voice.envelopes.gain.envelope.value).toBe(1);
+  expect(voice.envelopes.gain.envelope.timeScale).toBe(2);
+  expect(voice.noteRate).toBeLessThan(2); // timing follows the target, not the glide
 });
 
 it('discards the previous note’s queued retunes when a new note starts', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
-  engine.start(1, 0);
-  engine.setNoteRate(0.01, 4);
-  engine.start(2, 0, { noteRate: 2 });
-  engine.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
-  expect(engine.noteRate).toBe(2);
-  expect(engine.playheadPosition).toBeCloseTo(256);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.start(1, 0);
+  voice.setNoteRate(0.01, 4);
+  voice.start(2, 0, { noteRate: 2 });
+  voice.render([new Float32Array(128)], makeParameters({ trimEnd: 1 }), 0, 0);
+  expect(voice.noteRate).toBe(2);
+  expect(voice.playheadPosition).toBeCloseTo(256);
 });
 
 it('glides the note rate from glideFrom and retunes on voice:setRate', () => {
-  const engine = new SamplePlayerVoice({
+  const voice = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
     postMessage: () => {},
   });
-  engine.setBuffer([new Float32Array(SR).fill(0.5)]);
+  voice.setBuffer([new Float32Array(SR).fill(0.5)]);
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 
-  engine.start(1, 0, { noteRate: 2, glideFrom: 1, glideSeconds: 0.05 });
-  engine.render([new Float32Array(128)], parameters, 0, 0);
-  expect(engine.noteRate).toBeGreaterThan(1.9); // 128 ms at a 50 ms time constant
-  expect(engine.noteRate).toBeLessThan(2);
+  voice.start(1, 0, { noteRate: 2, glideFrom: 1, glideSeconds: 0.05 });
+  voice.render([new Float32Array(128)], parameters, 0, 0);
+  expect(voice.noteRate).toBeGreaterThan(1.9); // 128 ms at a 50 ms time constant
+  expect(voice.noteRate).toBeLessThan(2);
 
-  engine.setNoteRate(0, 4);
-  engine.render([new Float32Array(128)], parameters, 128, 0);
-  expect(engine.noteRate).toBe(4);
+  voice.setNoteRate(0, 4);
+  voice.render([new Float32Array(128)], parameters, 128, 0);
+  expect(voice.noteRate).toBe(4);
 });

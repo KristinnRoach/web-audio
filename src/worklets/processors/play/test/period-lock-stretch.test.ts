@@ -55,16 +55,16 @@ describe('PeriodLockStretcher', () => {
   });
 
   it('stretches only in period mode, so a removed mode name turns it off', () => {
-    const engine = new SamplePlayerVoice({
+    const voice = new SamplePlayerVoice({
       sampleRate: 1000,
       random: Math.random,
       postMessage: () => {},
     });
-    engine.setPitchPeriods(Float32Array.of(PERIOD), 1000);
-    engine.setTimestretchMode('period');
-    expect(engine.timestretch.canStretch).toBe(true);
-    engine.setTimestretchMode('splice');
-    expect(engine.timestretch.canStretch).toBe(false);
+    voice.setPitchPeriods(Float32Array.of(PERIOD), 1000);
+    voice.setTimestretchMode('period');
+    expect(voice.timestretch.canStretch).toBe(true);
+    voice.setTimestretchMode('splice');
+    expect(voice.timestretch.canStretch).toBe(false);
   });
 
   // At rate 8 jumps recur every 96 / 7 samples: half of that, not half a period.
@@ -91,7 +91,7 @@ describe('period timestretch through the processor', () => {
     loop = false,
     loopRange: { loopStart?: number; loopEnd?: number } = {},
     pingPong = false,
-    onFrame?: (engine: SamplePlayerVoice, frame: number) => void,
+    onFrame?: (voice: SamplePlayerVoice, frame: number) => void,
   ) {
     const processor = await startProcessor();
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
@@ -226,8 +226,8 @@ describe('period timestretch through the processor', () => {
         : { loopStart: 2000 / TEST_SAMPLE_RATE, loopEnd: 7000 / TEST_SAMPLE_RATE };
     async function edges(playbackRate: number) {
       const frames: number[] = [];
-      await renderSine(playbackRate, true, points, kind === 'ping-pong', (engine, frame) => {
-        if (engine.loopWrapped) frames.push(frame);
+      await renderSine(playbackRate, true, points, kind === 'ping-pong', (voice, frame) => {
+        if (voice.loopWrapped) frames.push(frame);
       });
       return frames;
     }

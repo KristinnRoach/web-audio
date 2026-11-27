@@ -12,6 +12,7 @@ Internal to the worklet (`src/worklets/processors/play/`). The public API is `Sa
   - _Not to confuse with_: **voice slot** (`VoiceSlot`), which tracks allocator state around a voice, or the **voice index** (the `voice` field on messages, which also picks output `2i` and `2i + 1`).
   - _Avoid_: "voice engine" or bare "engine" for one voice.
 - **Voice slot**: `VoiceSlot`. One seat in the pool (`this.voiceSlots` on the processor). Tracks allocator state (`AVAILABLE` / `PLAYING` / `RELEASING`, `midiNote`, `triggerTimestamp`) and holds its `voice` (`SamplePlayerVoice`) and `postMessage` callback.
+  - _Avoid_: bare "slot" outside `VoicePool` (use `voiceSlot` / `voiceSlots` for clarity).
 - **Pool**: `VoicePool`. Queues note events until they are due, asks the **allocator** which slot to use, and holds the pitch settings (pitch offset, pitch on/off) shared by every voice.
 - **Allocator**: `VoiceAllocator`. Picks which voice a note event starts, steals, retunes or releases. Default: a free voice, else the oldest releasing voice, else the oldest playing one.
 - **Pool command vs voice command**: `pool:*` messages are player-wide and go through the pool (`noteOn`, `noteOff`, legato, pitch). `voice:*` messages set up or control one voice, or all voices when no `voice` index is given.

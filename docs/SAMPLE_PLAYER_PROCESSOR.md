@@ -17,7 +17,7 @@ This is an internal protocol. The processor registration name, worklet AudioPara
 
 - Main → processor: a voice message with `voice: i` goes to voice `i`; one without `voice` goes to every voice. `pool:*` and `flush` are node-wide and ignore the tag.
 - Processor → main: every report except `initialized`, `flushed` and `voice:loaded` carries the `voice` index it came from. `SamplePlayer` applies it to its record `voices[voice]`.
-- `SamplePlayer` posts only untagged messages. Tagged messages remain for the engine tests in `src/worklets/processors/play/test/`, which drive voices directly.
+- `SamplePlayer` posts only untagged messages. Tagged messages remain for the voice tests in `src/worklets/processors/play/test/`, which drive voices directly.
 
 ## Main → processor
 
@@ -47,7 +47,7 @@ This is an internal protocol. The processor registration name, worklet AudioPara
 | `voice:setTimestretchMode`     | `value: 'off' \| 'period'`                                                                  | untagged | `init()`, `setTimestretchMode()`                                                    |
 | `voice:setInterpolation`       | `value: 'linear' \| 'hermite' \| 'sinc'`                                                    | untagged | `init()` if set before it, `setInterpolation()`                                     |
 
-The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, `velocity`, `glideTime`, `glideFromNote`) and `voice:stop` (`timestamp`), tagged or not. Nothing on the main thread sends them; they stay because the engine tests start and stop voices with them (and read the first voice through the processor's `engine`/`voice` fields). `voice:start` gets its rate from the pool like a `pool:noteOn`.
+The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, `velocity`, `glideTime`, `glideFromNote`) and `voice:stop` (`timestamp`), tagged or not. Nothing on the main thread sends them; they stay because the voice tests start and stop voices with them (and read the first voice through the processor's `voiceSlot`/`voice` fields). `voice:start` gets its rate from the pool like a `pool:noteOn`.
 
 ## Processor → main
 
@@ -56,7 +56,7 @@ The processor also handles `voice:start` (`triggerId`, `timestamp`, `midiNote`, 
 | `flushed`         | `id`                                                                                                      | untagged acknowledgement of `flush`; all preceding port messages have been handled.                                                                                            |
 | `initialized`     | none                                                                                                      | untagged, once, from the constructor. The player then posts the settings marked above.                                                                                         |
 | `voice:loaded`    | `durationSeconds`, `time`                                                                                 | untagged, one per `voice:setBuffer`, after every addressed voice has the buffer (all voices when untagged; only the tagged voice otherwise). The player emits `sample:loaded`. |
-| `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                            | allocator picked this voice; posted before the engine starts, so it precedes its reports.                                                                                      |
+| `voice:started`   | `triggerId`, `midiNote`, `velocity`, `timestamp`, `glideTime`, `glideFromNote`                            | allocator picked this voice; posted before the voice starts, so it precedes its reports.                                                                                       |
 | `voice:retuned`   | `midiNote`, `timestamp`, `glideTime`                                                                      | legato retune, rate already set; also when a note-off returns to an earlier held note.                                                                                         |
 | `voice:releasing` | none                                                                                                      |                                                                                                                                                                                |
 | `voice:ended`     | `triggerId`                                                                                               | the note finished, or a buffer swap dropped it. The player emits `voice:stopped`.                                                                                              |
