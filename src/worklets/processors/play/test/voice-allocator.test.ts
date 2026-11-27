@@ -13,7 +13,7 @@ describe('VoiceAllocator', () => {
   it('takes a free voice, then the oldest release tail, then the oldest held note', () => {
     const allocator = new VoiceAllocator();
     const [a, b, c] = [voice('PLAYING', 60, 1), voice('RELEASING', 62, 2), voice()];
-    allocator.voices = [a, b, c];
+    allocator.voiceSlots = [a, b, c];
 
     expect(allocator.noteOn(64)!.actions).toEqual([
       { type: 'start', voice: c, midiNote: 64, glideTime: 0 },
@@ -30,7 +30,7 @@ describe('VoiceAllocator', () => {
   it('releases other voices holding a retriggered note', () => {
     const allocator = new VoiceAllocator();
     const [a, b] = [voice('PLAYING', 60, 1), voice()];
-    allocator.voices = [a, b];
+    allocator.voiceSlots = [a, b];
     expect(types(allocator.noteOn(60)!.actions)).toEqual(['start', 'release']);
   });
 
@@ -38,7 +38,7 @@ describe('VoiceAllocator', () => {
     const allocator = new VoiceAllocator();
     allocator.legato = { mode: 'always' };
     const a = voice();
-    allocator.voices = [a, voice()];
+    allocator.voiceSlots = [a, voice()];
 
     allocator.noteOn(60, 0.1)!.commit();
     Object.assign(a, { state: 'PLAYING', midiNote: 60 });
@@ -59,7 +59,7 @@ describe('VoiceAllocator', () => {
     const allocator = new VoiceAllocator();
     allocator.legato = { mode: 'always', interval: [-2, 2] };
     const a = voice('PLAYING', 60, 1);
-    allocator.voices = [a, voice()];
+    allocator.voiceSlots = [a, voice()];
 
     expect(allocator.noteOn(62)!.retuned).toBe(true);
     expect(allocator.noteOn(58)!.retuned).toBe(true);
@@ -70,7 +70,7 @@ describe('VoiceAllocator', () => {
   it('glides only retuned notes in legato glide mode', () => {
     const allocator = new VoiceAllocator();
     allocator.legato = { mode: 'always', interval: [0, 2], glide: 'legato' };
-    allocator.voices = [voice('PLAYING', 60, 1), voice()];
+    allocator.voiceSlots = [voice('PLAYING', 60, 1), voice()];
 
     expect(allocator.noteOn(62, 0.1)!.glideTime).toBe(0.1);
     expect(allocator.noteOn(72, 0.1)!.actions[0]).toMatchObject({ type: 'start', glideTime: 0 });
@@ -80,7 +80,7 @@ describe('VoiceAllocator', () => {
     const allocator = new VoiceAllocator();
     allocator.legato = { mode: 'pitchLoop' };
     const a = voice('PLAYING', 60, 1);
-    allocator.voices = [a, voice()];
+    allocator.voiceSlots = [a, voice()];
 
     expect(allocator.noteOn(62)!.retuned).toBe(false);
     a.isInPitchLoop = true;
@@ -91,7 +91,7 @@ describe('VoiceAllocator', () => {
     const allocator = new VoiceAllocator();
     allocator.legato = { mode: 'always', interval: [0, 2] };
     const [a, b, c] = [voice(), voice(), voice()];
-    allocator.voices = [a, b, c];
+    allocator.voiceSlots = [a, b, c];
     const play = (midiNote: number) => {
       const decision = allocator.noteOn(midiNote)!;
       const { voice: target } = decision.actions.find(({ type }) => type !== 'release')!;
@@ -117,7 +117,7 @@ describe('VoiceAllocator', () => {
   it('uses a swapped selection policy', () => {
     const allocator = new VoiceAllocator((voices: unknown[]) => voices.at(-1));
     const last = voice();
-    allocator.voices = [voice(), last];
+    allocator.voiceSlots = [voice(), last];
     expect(allocator.noteOn(60)!.actions[0].voice).toBe(last);
   });
 });

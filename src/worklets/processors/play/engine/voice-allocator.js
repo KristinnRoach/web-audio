@@ -3,7 +3,7 @@
  * returns actions for the owner to apply in order. `VoicePool` runs it on the
  * audio thread.
  *
- * A voice is anything with `state` ('AVAILABLE' | 'PLAYING' | 'RELEASING'),
+ * A voice slot has `state` ('AVAILABLE' | 'PLAYING' | 'RELEASING'),
  * `midiNote`, `triggerTimestamp` and `isInPitchLoop`.
  *
  * Actions: `steal` (stop, then the voice is free), `start`, `retune` (pitch
@@ -27,7 +27,7 @@ export const firstFreeThenOldest = (voices) =>
   oldest(voices, 'PLAYING');
 
 export class VoiceAllocator {
-  voices = [];
+  voiceSlots = [];
   /** @type {{ mode: 'off' | 'always' | 'pitchLoop', interval?: readonly [number, number], glide?: 'always' | 'legato' }} */
   legato = { mode: 'off' };
   /** Swap to change which voice a new note takes, e.g. rotation. */
@@ -50,8 +50,8 @@ export class VoiceAllocator {
 
   /** Apply actions in order; commit after start/retune succeeds, before releases. Null if no voice can be selected. */
   noteOn(midiNote, glideTime = 0) {
-    const legatoVoice = this.voices.find((voice) => this.#canLegato(voice, midiNote));
-    const voice = legatoVoice ?? this.selectVoice(this.voices);
+    const legatoVoice = this.voiceSlots.find((voice) => this.#canLegato(voice, midiNote));
+    const voice = legatoVoice ?? this.selectVoice(this.voiceSlots);
     if (!voice) return null;
     if (!legatoVoice && this.legato.glide === 'legato') glideTime = 0;
 
@@ -62,7 +62,7 @@ export class VoiceAllocator {
       actions.push({ type: 'start', voice, midiNote, glideTime });
     }
 
-    for (const other of this.voices) {
+    for (const other of this.voiceSlots) {
       if (other !== voice && other.state === 'PLAYING' && other.midiNote === midiNote) {
         actions.push({ type: 'release', voice: other });
       }
@@ -79,7 +79,7 @@ export class VoiceAllocator {
           notes: [...notes.filter((note) => note !== midiNote), midiNote],
           glideTime,
         });
-        for (const other of this.voices) {
+        for (const other of this.voiceSlots) {
           if (other === voice) continue;
           const held = this.#held.get(other);
           if (held) held.notes = held.notes.filter((note) => note !== midiNote);
@@ -91,7 +91,7 @@ export class VoiceAllocator {
   /** A legato voice falls back to its earlier held note instead of releasing. */
   noteOff(midiNote) {
     const actions = [];
-    for (const voice of this.voices) {
+    for (const voice of this.voiceSlots) {
       if (voice.state !== 'PLAYING') continue;
       const held = this.#held.get(voice);
       if (held) held.notes = held.notes.filter((note) => note !== midiNote);

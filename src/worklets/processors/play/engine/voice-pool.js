@@ -64,7 +64,7 @@ export class VoicePool {
 
   addVoice(voice, { postMessage }) {
     const slot = new VoiceSlot(voice, postMessage);
-    this.allocator.voices.push(slot);
+    this.allocator.voiceSlots.push(slot);
     return slot;
   }
 
@@ -73,7 +73,7 @@ export class VoicePool {
     if (event.type === 'pool:allNotesOff') {
       // Takes notes that have not sounded yet with it.
       this.#queue.length = 0;
-      for (const slot of this.allocator.voices) {
+      for (const slot of this.allocator.voiceSlots) {
         if (slot.state === 'PLAYING') this.#release(slot, event.timestamp);
       }
       return;
@@ -122,11 +122,11 @@ export class VoicePool {
     this.pitchEnabled = enabled;
     // Time constants: about 95% there after 0.1 s (off) or 0.01 s (on).
     if (enabled) this.#retuneAll(time, 0.01 / 3);
-    else for (const slot of this.allocator.voices) slot.voice.setNoteRate(time, 1, 0.1 / 3);
+    else for (const slot of this.allocator.voiceSlots) slot.voice.setNoteRate(time, 1, 0.1 / 3);
   }
 
   #retuneAll(time, glideSeconds) {
-    for (const slot of this.allocator.voices) {
+    for (const slot of this.allocator.voiceSlots) {
       if (slot.midiNote !== null) {
         slot.voice.setNoteRate(time, this.rate(slot.midiNote), glideSeconds);
       }
