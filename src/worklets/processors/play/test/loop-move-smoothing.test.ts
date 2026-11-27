@@ -8,7 +8,7 @@ import {
 
 setupProcessorGlobals();
 
-describe('audio-rate loop movement smoothing', () => {
+describe('pitch loop moves', () => {
   it('matches the unmoved voice when a tiny move coincides with a wrap', async () => {
     const period = 187.5;
     const processors = await Promise.all(
@@ -76,7 +76,7 @@ describe('audio-rate loop movement smoothing', () => {
     expect(output.slice(1).every((sample, i) => Math.abs(sample - output[i]) < 0.02)).toBe(true);
   });
 
-  it('adds no crossfade heads while a pitch loop is dragged', async () => {
+  it('follows a dragged pitch loop, a pass behind at most', async () => {
     const period = 192;
     const processor = await startProcessor([], [period / TEST_SAMPLE_RATE]);
     const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
@@ -87,10 +87,7 @@ describe('audio-rate loop movement smoothing', () => {
     });
     send({ type: 'voice:setLoopEnabled', value: true });
     send({ type: 'voice:start' });
-    const fades = processor.voice.loopCrossfade;
-    let mostFades = 0;
     let start = 1000;
-    // One frame per call, so the fade count is seen every sample
     for (let frame = 0; frame < 4000; frame++) {
       if (frame >= 1000) start += 0.5;
       processor.process(
@@ -101,58 +98,10 @@ describe('audio-rate loop movement smoothing', () => {
           loopEnd: (start + period) / TEST_SAMPLE_RATE,
         }),
       );
-      if (frame >= 1000) mostFades = Math.max(mostFades, fades.count);
     }
-    // Moves fade between windows, not with crossfade heads: at most one wrap fade
-    // (a wrap every 192 samples, fades of 48)
-    expect(mostFades).toBeLessThanOrEqual(1);
-    // The playhead still follows the loop: it ends inside the moved window
     const position = processor.voice.playheadPosition;
-    expect(position).toBeGreaterThanOrEqual(start - 1);
-    expect(position).toBeLessThanOrEqual(start + period + 1);
-  });
-
-  it('fades a minimum-length loop move over the move fade time, between the two windows', async () => {
-    // Two regions of the same 24-sample sine, quiet then loud. Windows start on
-    // whole periods, so a same-phase fade only changes the level.
-    const period = 24;
-    const processor = await startProcessor([], [period / TEST_SAMPLE_RATE]);
-    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
-    send({
-      type: 'voice:setBuffer',
-      buffer: [
-        Float32Array.from(
-          { length: TEST_SAMPLE_RATE },
-          (_, i) => (i < 4800 ? 0.2 : 0.8) * Math.sin((2 * Math.PI * i) / period),
-        ),
-      ],
-      durationSeconds: 1,
-    });
-    send({ type: 'voice:setLoopEnabled', value: true });
-    send({ type: 'voice:start' });
-    const render = (start: number, frames: number) => {
-      const output = new Float32Array(frames);
-      processor.process(
-        [],
-        [[output]],
-        makeParameters({
-          loopStart: start / TEST_SAMPLE_RATE,
-          loopEnd: (start + period) / TEST_SAMPLE_RATE,
-          loopDurationDriftAmount: 0,
-        }),
-      );
-      return output;
-    };
-    render(2400, 3000);
-    const fadeFrames = (processor.voice as typeof processor.voice & { loopMoveFadeFrames: number })
-      .loopMoveFadeFrames;
-    const output = render(7200, 2 * fadeFrames);
-    const peak = (from: number) => Math.max(...output.subarray(from, from + period));
-    // Still the old level at the start, halfway mid-fade, the new level after it
-    expect(peak(0)).toBeCloseTo(0.2, 1);
-    expect(peak(fadeFrames / 2 - period / 2)).toBeCloseTo(0.5, 1);
-    expect(peak(2 * fadeFrames - period)).toBeCloseTo(0.8, 4);
-    expect(Math.max(...output.map(Math.abs))).toBeLessThanOrEqual(0.8 + 1e-6);
+    expect(position).toBeGreaterThanOrEqual(start - period);
+    expect(position).toBeLessThanOrEqual(start + period);
   });
 
   it.each([
@@ -215,65 +164,48 @@ describe('audio-rate loop movement smoothing', () => {
     },
   );
 
-  it.each([1, 2])(
-    'smooths repeated stereo moves without changing phase at rate %s',
-    async (rate) => {
-      const processor = await startProcessor([], [0.004, 0.008]);
-      const left = Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) =>
-        i < TEST_SAMPLE_RATE * 0.05 ? 0.4 : -0.4,
+  it.each([1, 2])('applies a stereo move at the next wrap at rate %s', async (rate) => {
+    const processor = await startProcessor([], [0.004, 0.008]);
+    const left = Float32Array.from({ length: TEST_SAMPLE_RATE }, (_, i) =>
+      i < TEST_SAMPLE_RATE * 0.05 ? 0.4 : -0.4,
+    );
+    const right = Float32Array.from(left, (value) => (value > 0 ? -0.2 : 0.3));
+    processor.port.onmessage?.({
+      data: { type: 'voice:setBuffer', buffer: [left, right], durationSeconds: 1 },
+    } as MessageEvent);
+    processor.port.onmessage?.({
+      data: { type: 'voice:setLoopEnabled', value: true },
+    } as MessageEvent);
+    processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
+
+    const render = (start: number, length: number) => {
+      const output = [new Float32Array(length), new Float32Array(length)];
+      processor.process(
+        [],
+        [output],
+        makeParameters({ loopStart: start, loopEnd: start + 0.004, playbackRate: rate }),
       );
-      const right = Float32Array.from(left, (value) => (value > 0 ? -0.2 : 0.3));
-      processor.port.onmessage?.({
-        data: { type: 'voice:setBuffer', buffer: [left, right], durationSeconds: 1 },
-      } as MessageEvent);
-      processor.port.onmessage?.({
-        data: { type: 'voice:setLoopEnabled', value: true },
-      } as MessageEvent);
-      processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
+      return output;
+    };
 
-      const render = (start: number, length: number) => {
-        const output = [new Float32Array(length), new Float32Array(length)];
-        processor.process(
-          [],
-          [output],
-          makeParameters({ loopStart: start, loopEnd: start + 0.004, playbackRate: rate }),
-        );
-        return output;
-      };
+    const before = render(0, 32);
+    // Mid-pass, the move waits for the edge
+    const moved = render(0.1, 2);
+    expect(moved[0][1]).toBe(before[0][31]);
+    expect(moved[1][1]).toBe(before[1][31]);
 
-      const before = render(0, 32);
-      const moved = render(0.1, 2);
-      expect(moved[0][0]).toBe(before[0][31]);
-      expect(moved[1][0]).toBe(before[1][31]);
-      // Each channel fades from its old level toward its new one
-      expect(moved[0][1]).toBeLessThan(0.4);
-      expect(moved[0][1]).toBeGreaterThan(-0.4);
-      expect(moved[1][1]).toBeGreaterThan(-0.2);
-      expect(moved[1][1]).toBeLessThan(0.3);
+    // From the next wrap on, each channel plays the new window
+    const settled = render(0.1, 2048);
+    expect(settled[0][2047]).toBeCloseTo(-0.4, 4);
+    expect(settled[1][2047]).toBeCloseTo(0.3, 4);
 
-      // A second move fades on from the moved output without a step
-      const movedAgain = render(0.2, 1);
-      expect(Math.abs(movedAgain[0][0] - moved[0][1])).toBeLessThan(0.1);
-      expect(Math.abs(movedAgain[1][0] - moved[1][1])).toBeLessThan(0.1);
-      const state = processor.voice as typeof processor.voice & {
-        loopWindow: { start: number; length: number };
-      };
-      expect(state.loopWindow.length).toBeCloseTo(192);
-      expect(processor.voice.playheadPosition - state.loopWindow.start).toBeCloseTo(35 * rate, 4);
-
-      // The held second move takes up after the first fade, then fades in turn
-      const settled = render(0.2, 2048);
-      expect(settled[0][2047]).toBeCloseTo(-0.4, 4);
-      expect(settled[1][2047]).toBeCloseTo(0.3, 4);
-
-      // Reusing the voice must not carry a previous note's correction into its attack.
-      render(0, 1);
-      processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
-      const restarted = render(0, 17);
-      expect(restarted[0][0]).toBe(0);
-      expect(restarted[1][0]).toBeCloseTo(0, 6);
-      expect(restarted[0][16]).toBeCloseTo(0.4);
-      expect(restarted[1][16]).toBeCloseTo(-0.2);
-    },
-  );
+    // Reusing the voice must not carry the previous note's loop into its attack.
+    render(0, 1);
+    processor.port.onmessage?.({ data: { type: 'voice:start' } } as MessageEvent);
+    const restarted = render(0, 17);
+    expect(restarted[0][0]).toBe(0);
+    expect(restarted[1][0]).toBeCloseTo(0, 6);
+    expect(restarted[0][16]).toBeCloseTo(0.4);
+    expect(restarted[1][16]).toBeCloseTo(-0.2);
+  });
 });
