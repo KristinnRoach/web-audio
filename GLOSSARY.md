@@ -57,4 +57,6 @@ How a voice reads the source (`engine/grain-pool.js`, `engine/pass-scheduler.js`
 - **Grain pool**: `GrainPool`. The playhead plus up to `MAX_OUTGOING_GRAINS` outgoing grains, mixed newest inside oldest.
 - **Pass**: One stretch of playback that ends at an edge in its direction of travel. A note's first pass runs from the note start toward the trim end; each **loop pass** plays the latched loop window.
 - **Pass scheduler**: `PassScheduler`. Decides what happens at each pass's edge: wrap or turn into the next loop pass, play on to the trim end (loop turned off), or stop at the note's last edge. Every edge that moves or stops the playhead uses the same grain fade.
+- **Hop scheduler**: Starts a grain every hop, at a **time position** that moves independently of the read rate. Grain timestretch (`GrainStretcher`, timestretch mode `'grain'`) is one: the time position moves at original speed.
+  - _Not to confuse with_: **pass scheduler**, which acts at pass edges.
 - **Shrink only**: An edit can pull the current pass's end in, never push it out. Trim pulls a first pass's end in; a shorter resolved loop shortens a loop pass. If the playhead is already past the new end, the pass ends now.

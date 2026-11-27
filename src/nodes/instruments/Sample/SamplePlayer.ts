@@ -52,7 +52,11 @@ import {
 
 const GLIDE_TEMP_SCALAR = 8; // for easy fine-tuning while prototyping the glide feature
 
-export type TimestretchMode = 'off' | 'period';
+/**
+ * `'period'` jumps whole pitch periods (needs pitched material). `'grain'` restarts
+ * the read every 30 ms at original speed, with overlapping fades (any material).
+ */
+export type TimestretchMode = 'off' | 'period' | 'grain';
 /** Experimental: for comparing source interpolation by ear, may be removed. */
 export type InterpolationMode = 'linear' | 'hermite' | 'sinc';
 

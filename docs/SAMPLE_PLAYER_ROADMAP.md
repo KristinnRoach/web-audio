@@ -39,7 +39,7 @@ After step 5. Prototype each on a branch. Order is a suggestion.
 
 - **A. Morphing:** for pitch loops, crossfade between window positions at the same phase. Reference: [#151](https://github.com/KristinnRoach/web-audio/pull/151) (conflicts with `main`). Keep position glide (`setLoopPositionGlide`, default 0) as an option: its tape-like pitch bend is intended.
 - **C. Anti-aliasing:** Hermite and band-limited sinc kernels landed in [#162](https://github.com/KristinnRoach/web-audio/pull/162). Remaining: loop-aware source reads (short loops can read past their edges) and handling rates above 8, where sinc stops widening; start from `prototype/rate-8-loop-prefilter`. After A, since moving between band-limited tables at audio rate [can add sidebands](https://www.kvraudio.com/forum/viewtopic.php?p=8105138) (forum source, verify).
-- **B. Granular:** more windows, for timestretch modes and simple effects such as detune and widening.
+- **B. Granular:** more grains, for timestretch modes and simple effects such as detune and widening. Started: grain timestretch (a hop scheduler).
 - **D. Audio-rate modulation:** move selected modulators to the audio thread when needed. Loop moves apply once per pass, so continuous position modulation needs its own path, such as a morph amount.
 
 ### 7. Port
