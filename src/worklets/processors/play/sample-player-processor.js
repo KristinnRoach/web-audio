@@ -188,6 +188,18 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         voice.setTimestretchMode(value);
         break;
 
+      case 'voice:setGrainSpeed':
+        voice.setGrainSpeed(value);
+        break;
+
+      case 'voice:setGrainScatter':
+        voice.setGrainScatter(value);
+        break;
+
+      case 'voice:setGrainSize':
+        voice.setGrainSize(value);
+        break;
+
       case 'voice:setInterpolation':
         voice.interpolation = value;
         break;

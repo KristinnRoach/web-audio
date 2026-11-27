@@ -1,28 +1,51 @@
 // Grain timestretch: a hop scheduler. A time position moves through the source at
-// original speed. Every hop the playhead hands off to a fading grain (see GrainPool)
-// and restarts at the time position, then reads on at the note rate. So pitch follows
-// the note while duration stays the source's, for any material.
+// `speed` times original speed (0 freezes it). Every hop the playhead hands off to a
+// fading grain (see GrainPool) and restarts at the time position, offset by up to
+// `scatter` at random, then reads on at the note rate. So pitch follows the note while
+// duration follows the time position, for any material.
 //
 // Each hand-off fades over one hop, so a grain rises over one hop and falls over the
 // next: 50% overlap with a triangle window. Same interface as PeriodLockStretcher, so
 // the voice and pass scheduler treat both alike.
 
-const HOP_SECONDS = 0.03; // 60 ms grains; reasonable: 0.01 - 0.1
+const DEFAULT_GRAIN_SECONDS = 0.06; // reasonable: 0.01 - 0.2
 
 export class GrainStretcher {
   #grains;
+  #random;
+  #sampleRate;
   #enabled = false;
-  #hopFrames;
+  #hopFrames = 1;
   #framesToHop = 0;
   #timePosition = 0;
+  #speed = 1;
+  #scatterSamples = 0;
 
   /**
    * @param {number} contextSampleRate Audio-context sample rate in Hz.
    * @param {import('./grain-pool.js').GrainPool} grains The voice's grain pool.
+   * @param {() => number} random Random values in [0, 1).
    */
-  constructor(contextSampleRate, grains) {
+  constructor(contextSampleRate, grains, random = Math.random) {
     this.#grains = grains;
-    this.#hopFrames = Math.max(1, Math.round(contextSampleRate * HOP_SECONDS));
+    this.#random = random;
+    this.#sampleRate = contextSampleRate;
+    this.setSize(DEFAULT_GRAIN_SECONDS);
+  }
+
+  /** Time position speed: 1 is original speed, 0 freezes, 2 is twice as fast. */
+  setSpeed(speed) {
+    this.#speed = Math.max(0, speed);
+  }
+
+  /** Largest random offset of a grain's start from the time position, in seconds. */
+  setScatter(seconds) {
+    this.#scatterSamples = Math.max(0, seconds) * this.#sampleRate;
+  }
+
+  /** Grain length in seconds; grains start every half grain. */
+  setSize(seconds) {
+    this.#hopFrames = Math.max(1, Math.round((Math.max(0, seconds) * this.#sampleRate) / 2));
   }
 
   get canStretch() {
@@ -62,20 +85,24 @@ export class GrainStretcher {
     if (!active || --this.#framesToHop > 0) return null;
     this.#framesToHop = this.#hopFrames;
     const direction = playbackRate < 0 ? -1 : 1;
-    const target = this.#timePosition + direction;
-    if (target < startSamples || target >= endSamples) return null;
+    const scatter = (this.#random() * 2 - 1) * this.#scatterSamples;
+    const target = Math.min(
+      Math.max(this.#timePosition + direction * this.#speed + scatter, startSamples),
+      endSamples - 1,
+    );
+    if (target < startSamples) return null;
     this.#grains.fadeOut(direction, this.#hopFrames * Math.abs(playbackRate));
     return target;
   }
 
-  /** Moves the time position on by one sample; returns the next playhead position. */
+  /** Moves the time position on by `speed` samples; returns the next playhead position. */
   advance(active, playheadPosition, playbackRate, jumpTarget) {
     const nextPosition = jumpTarget ?? playheadPosition + playbackRate;
     if (!active) {
       this.reset(nextPosition);
       return nextPosition;
     }
-    this.#timePosition += playbackRate < 0 ? -1 : 1;
+    this.#timePosition += (playbackRate < 0 ? -1 : 1) * this.#speed;
     return nextPosition;
   }
 }

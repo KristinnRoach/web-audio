@@ -336,6 +336,35 @@ export const samplerParams = defineSamplerParams({
     format: (v) => secondsOrMilliseconds(v, 1),
     apply: (p, v) => p.setLoopPositionGlide(v),
   },
+  grainSpeed: {
+    label: 'Grain Speed',
+    min: 0,
+    max: 2,
+    defaultValue: 1, // Keep equal to the processor's initial grain speed.
+    step: 0.01,
+    format: (v) => `${(v * 100).toFixed(0)}%`,
+    apply: (p, v) => p.setGrainSpeed(v),
+  },
+  grainScatter: {
+    label: 'Grain Scatter',
+    min: 0,
+    max: 0.5,
+    defaultValue: 0, // Keep equal to the processor's initial grain scatter.
+    step: 0.001,
+    curve: 2,
+    format: (v) => secondsOrMilliseconds(v, 1),
+    apply: (p, v) => p.setGrainScatter(v),
+  },
+  grainSize: {
+    label: 'Grain Size',
+    min: 0.01,
+    max: 0.2,
+    defaultValue: 0.06, // Keep equal to the processor's initial grain size.
+    step: 0.001,
+    curve: 2,
+    format: (v) => secondsOrMilliseconds(v, 1),
+    apply: (p, v) => p.setGrainSize(v),
+  },
   loopDurationDrift: {
     label: 'Loop Drift',
     min: 0,

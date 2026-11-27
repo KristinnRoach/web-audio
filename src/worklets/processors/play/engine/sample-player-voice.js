@@ -175,7 +175,7 @@ export class SamplePlayerVoice {
     this.#loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
 
     this.#periodStretcher = new PeriodLockStretcher(sampleRate);
-    this.#grainStretcher = new GrainStretcher(sampleRate, this.grains);
+    this.#grainStretcher = new GrainStretcher(sampleRate, this.grains, random);
     // The stretcher for the current timestretch mode; off when not enabled.
     this.timestretch = this.#periodStretcher;
 
@@ -340,6 +340,19 @@ export class SamplePlayerVoice {
 
   setKeytrackLoopAmount(amount) {
     this.#keytrackLoopAmount = Math.max(0, Math.min(1, amount));
+  }
+
+  /** Grain timestretch controls; see GrainStretcher. */
+  setGrainSpeed(speed) {
+    this.#grainStretcher.setSpeed(speed);
+  }
+
+  setGrainScatter(seconds) {
+    this.#grainStretcher.setScatter(seconds);
+  }
+
+  setGrainSize(seconds) {
+    this.#grainStretcher.setSize(seconds);
   }
 
   /** @param {string} mode 'period' or 'grain'; anything else turns timestretch off. */
