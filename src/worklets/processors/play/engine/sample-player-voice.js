@@ -26,8 +26,8 @@ const DEFAULT_PITCH_CUTOFF_SECONDS = 1 / 32.703;
 const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
 // Crossfade at the edge where a pitch loop moves to a new start, in output seconds, so
 // it sounds the same at every note. Longer than a plain wrap to smooth scanning between
-// different waveforms. Short loops start more fades than MAX_OUTGOING_HEADS holds; the
-// oldest drop early, inaudibly, since heads a whole period apart read near-identical audio.
+// different waveforms. Short loops can exceed MAX_OUTGOING_HEADS while moving, dropping
+// the oldest head early; more heads made no audible difference in listening tests.
 const LOOP_MOVE_CROSSFADE_SECONDS = 0.02; // reasonable: 0.005 - 0.05
 // U-turn crossfade: a ping-pong or reverse-loop turn has no step, but its slope
 // reverses in one frame (a corner, audible at zero crossings). The crossfade
@@ -1101,8 +1101,7 @@ export class SamplePlayerVoice {
         Math.min(1, basePan + this.#smoothedPanDrift + envelopePan),
       );
 
-      this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
-      const timestretchActive = !this.isInPitchLoop && canStretch;
+      const timestretchActive = !(inLoop && playWindow.isPitchLoop) && canStretch;
       // Only a keytracked time loop runs past trimEnd, into silence.
       const tailEnd =
         !playWindow.isPitchLoop && playWindow.end > trimRange.endSamples
@@ -1112,6 +1111,8 @@ export class SamplePlayerVoice {
       if (inLoop) {
         this.#passLoopEdge(approachDirection, loopWindow, tailEnd, timestretchActive);
       }
+      // After #passLoopEdge so voice/range reports match a window latched at this edge.
+      this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
       const direction = this.#loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(playbackRate);
       // Next sample's envelope timing uses the transport rate that produced its loop state.

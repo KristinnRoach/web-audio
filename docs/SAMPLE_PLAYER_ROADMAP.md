@@ -102,4 +102,5 @@ Not needed until we reach them:
 - Grain count and envelope
 - If `detectPitchPeriods` is kept and needs to support long recordings, consider moving to background analysis.
 - Split self-contained state machines out of `SamplePlayerVoice` (loop glides, loop/pan drift, throttled range reporting) if the class gets crowded or before porting.
+- Mid-pass edits for time loops: decide after `Window`/`Phasor` whether to keep latch-everywhere or allow mid-pass time-loop moves/resizes (reference: `prototype/time-loop-mid-pass-edits`).
 - Hardware board
