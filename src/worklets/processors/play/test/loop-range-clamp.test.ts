@@ -364,7 +364,7 @@ describe('loop range clamping', () => {
     'plays on without clicks when dragging %s pushes a sounding pitch loop',
     async (edge) => {
       const processor = await startProcessor([], [0.005, 0.0081, 0.012]);
-      Object.assign(processor.voice, { enableLoopCrossfade: true });
+      Object.assign(processor.voice, { enableEdgeFades: true });
       const wave = (_: unknown, i: number) => Math.sin(i / 20) * 0.2;
       send(processor, {
         type: 'voice:setBuffer',
@@ -415,7 +415,7 @@ describe('loop range clamping', () => {
       [395.5, 1000, 1200].map((period) => period / TEST_SAMPLE_RATE),
     );
     send(processor, { type: 'voice:setLoopLengthGlide', value: 0 });
-    Object.assign(processor.voice, { enableLoopCrossfade: true });
+    Object.assign(processor.voice, { enableEdgeFades: true });
     send(processor, { type: 'voice:setStartFromLoop', value: true });
     send(processor, { type: 'voice:start' });
     const points = (loopStart: number, loopEnd: number, trimStart = 0, trimEnd = 48000) =>
@@ -436,7 +436,7 @@ describe('loop range clamping', () => {
 
   it('crossfades when trim pushes a gliding pitch loop', async () => {
     const processor = await startProcessor([], [200 / TEST_SAMPLE_RATE, 1000 / TEST_SAMPLE_RATE]);
-    Object.assign(processor.voice, { enableLoopCrossfade: true });
+    Object.assign(processor.voice, { enableEdgeFades: true });
     const source = (_: unknown, i: number) => (i < 5000 ? 0.5 : -0.5);
     send(processor, {
       type: 'voice:setBuffer',
@@ -495,6 +495,7 @@ describe('loop range clamping', () => {
 
   it('fades out when trim moves past the playhead', async () => {
     const processor = await startProcessor();
+    Object.assign(processor.voice, { enableEdgeFades: true });
     send(processor, {
       type: 'voice:setBuffer',
       buffer: [new Float32Array(TEST_SAMPLE_RATE).fill(0.5)],
@@ -509,7 +510,8 @@ describe('loop range clamping', () => {
     parameters.trimStart[0] = 0;
     parameters.trimEnd[0] = 0.1;
     const out: number[] = [0.5];
-    for (let frame = 0; frame < 128; frame++) {
+    // The last edge's grain fade: at most 256 source samples.
+    for (let frame = 0; frame < 300; frame++) {
       const block = new Float32Array(1);
       processor.process([], [[block]], parameters);
       out.push(block[0]);

@@ -11,7 +11,7 @@ setupProcessorGlobals();
 
 async function makeProcessor() {
   const processor = await startProcessor([], [0.002, 0.004, 0.008]);
-  Object.assign(processor.voice, { enableLoopCrossfade: false });
+  Object.assign(processor.voice, { enableEdgeFades: false });
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
@@ -40,7 +40,7 @@ describe('a-rate loop points and duration glide', () => {
   it('plays a moving pitch loop the same while trim moves around it', async () => {
     const render = async (movingTrim: boolean) => {
       const processor = await makeProcessor();
-      Object.assign(processor.voice, { enableLoopCrossfade: true });
+      Object.assign(processor.voice, { enableEdgeFades: true });
       const output = new Float32Array(128 * 40);
       for (let block = 0; block < 40; block++) {
         const params = makeParameters({ trimEnd: 1 });

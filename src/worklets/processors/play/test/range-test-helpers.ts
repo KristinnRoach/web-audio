@@ -19,9 +19,9 @@ export type TestProcessor = {
     readonly pitchCutoff: number;
     playheadPosition: number;
     minRangeSamples: number;
-    readonly loopCrossfade: {
+    readonly grains: {
       readonly count: number;
-      head(i: number): { position: number };
+      outgoing(i: number): { position: number };
     };
     readonly loopWindow: { start: number };
   };

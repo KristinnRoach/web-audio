@@ -58,7 +58,7 @@ it('keeps a moved pitch loop eligible for legato with timestretch off', () => {
   const voice = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage() {} });
   voice.setBuffer([new Float32Array(SR)]);
   voice.loopEnabled = true;
-  voice.enableLoopCrossfade = false;
+  voice.enableEdgeFades = false;
   voice.start(1, 0);
   voice.render([new Float32Array(QUANTUM)], makeParameters({ loopEnd: 0.004 }), 0, 0);
   expect(voice.isInPitchLoop).toBe(true);
