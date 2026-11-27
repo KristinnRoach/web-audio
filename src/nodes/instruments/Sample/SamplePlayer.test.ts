@@ -842,8 +842,7 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
       },
     );
     const { SamplePlayer } = await import('./SamplePlayer');
-    const { VoicePool, VoiceSlot } =
-      await import('../../../worklets/processors/play/engine/voice-pool.js');
+    const { VoicePool } = await import('../../../worklets/processors/play/engine/voice-pool.js');
     const context = Object.assign(new EventTarget(), {
       currentTime: 0,
       sampleRate: 48000,
@@ -858,11 +857,9 @@ describe('SamplePlayer with the real audio-thread voice pool', () => {
         release() {},
         setNoteRate() {},
       };
-      const slot = new VoiceSlot(voice, (message: object) =>
-        test.report({ ...message, voice: index }),
-      );
-      pool.addSlot(slot);
-      return slot;
+      return pool.addVoice(voice, {
+        postMessage: (message: object) => test.report({ ...message, voice: index }),
+      });
     });
     player = new SamplePlayer({ context, polyphony: slots.length });
     beforeInit?.(player);

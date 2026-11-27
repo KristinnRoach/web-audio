@@ -55,7 +55,11 @@ describe('PeriodLockStretcher', () => {
   });
 
   it('stretches only in period mode, so a removed mode name turns it off', () => {
-    const engine = new SamplePlayerVoice({ sampleRate: 1000, random: Math.random, post: () => {} });
+    const engine = new SamplePlayerVoice({
+      sampleRate: 1000,
+      random: Math.random,
+      postMessage: () => {},
+    });
     engine.setPitchPeriods(Float32Array.of(PERIOD), 1000);
     engine.setTimestretchMode('period');
     expect(engine.timestretch.canStretch).toBe(true);

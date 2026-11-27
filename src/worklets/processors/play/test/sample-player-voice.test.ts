@@ -7,17 +7,17 @@ const QUANTUM = 128;
 
 // Deliberately without setupProcessorGlobals: any AudioWorklet global read throws here.
 it('renders from injected time, randomness and message sink', () => {
-  const post = vi.fn();
+  const postMessage = vi.fn();
   const random = vi.fn(() => 0.75);
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random, post });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random, postMessage });
   const parameters = makeParameters({ loopEnd: 1024 / SR, loopDurationDriftAmount: 0.01 });
 
   engine.reportIdle(parameters, 0); // no source yet
-  expect(post).not.toHaveBeenCalled();
+  expect(postMessage).not.toHaveBeenCalled();
 
   engine.setBuffer([Float32Array.from({ length: SR }, (_, i) => Math.sin(i / 10))]);
   engine.reportIdle(parameters, 0);
-  expect(post).toHaveBeenLastCalledWith(
+  expect(postMessage).toHaveBeenLastCalledWith(
     expect.objectContaining({ type: 'loop:range', idle: true }),
   );
 
@@ -41,7 +41,7 @@ it('renders from injected time, randomness and message sink', () => {
 it.each([null, [new Float32Array(256)]])(
   'releases all reader samples on buffer change',
   (replacement) => {
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage() {} });
     const samples = new Float32Array(256);
     engine.setBuffer([samples]);
     engine.start(1, 0);
@@ -55,7 +55,7 @@ it.each([null, [new Float32Array(256)]])(
 );
 
 it('keeps a moved pitch loop eligible for legato with timestretch off', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage() {} });
   engine.setBuffer([new Float32Array(SR)]);
   engine.loopEnabled = true;
   engine.enableLoopCrossfade = false;
@@ -73,7 +73,7 @@ describe('host stop', () => {
   const FADE = 64;
 
   function playing() {
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage() {} });
     engine.setBuffer([new Float32Array(SR).fill(0.5)]);
     engine.start(1, 0);
     return engine;
@@ -120,8 +120,8 @@ describe('host stop', () => {
   });
 
   it('keeps fade progress when stopped again during the opening ramp', () => {
-    const post = vi.fn();
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post });
+    const postMessage = vi.fn();
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage });
     engine.setBuffer([new Float32Array(SR).fill(0.5)]);
     engine.start(3, 0);
     const output = new Float32Array(96);
@@ -138,14 +138,14 @@ describe('host stop', () => {
     }
     expect(output.subarray(8 + FADE - 1).every((value) => value === 0)).toBe(true);
     expect(engine.canRender).toBe(false);
-    expect(post.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
+    expect(postMessage.mock.calls.filter(([message]) => message.type === 'voice:ended')).toEqual([
       [{ type: 'voice:ended', triggerId: 3 }],
     ]);
   });
 });
 
 it.each([0.5, 1, 2])('fades a scheduled stereo start across blocks at playback rate %s', (rate) => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post() {} });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage() {} });
   engine.setBuffer([new Float32Array(SR).fill(0.5), new Float32Array(SR).fill(-0.25)]);
   engine.playbackDirection = 'reverse';
   const start = QUANTUM - 8;

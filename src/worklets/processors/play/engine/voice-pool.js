@@ -6,15 +6,15 @@ import { VoiceAllocator } from './voice-allocator.js';
  * through here, from the pool or straight from the voice's node, so `state`
  * is true on the audio thread at the moment a note event is decided.
  */
-export class VoiceSlot {
+class VoiceSlot {
   state = 'AVAILABLE';
   midiNote = null;
   triggerTimestamp = -1;
 
-  /** `post` reaches this voice's node. */
-  constructor(voice, post) {
+  /** `postMessage` reaches this voice's node. */
+  constructor(voice, postMessage) {
     this.voice = voice;
-    this.post = post;
+    this.postMessage = postMessage;
   }
 
   get isInPitchLoop() {
@@ -62,8 +62,10 @@ export class VoicePool {
   // The played note a new note glides from, updated as events are applied.
   #glideOrigin = 60;
 
-  addSlot(slot) {
+  addVoice(voice, { postMessage }) {
+    const slot = new VoiceSlot(voice, postMessage);
     this.allocator.voices.push(slot);
+    return slot;
   }
 
   /** `pool:noteOn`, `pool:noteOff` or `pool:allNotesOff`, each with a `timestamp` in seconds. */
@@ -177,7 +179,7 @@ export class VoicePool {
     const { triggerId, timestamp, midiNote, velocity } = event;
     if (glideTime <= 0) glideFromNote = null;
     // Posted before the voice starts, so the node knows the note before its first report.
-    slot.post({
+    slot.postMessage({
       type: 'voice:started',
       triggerId,
       midiNote,
@@ -196,7 +198,7 @@ export class VoicePool {
     // With pitch off a legato note keeps its glide, so it does not cut the ramp to rate 1 short.
     const glides = this.pitchEnabled || !fallback;
     slot.voice.setNoteRate(timestamp, this.rate(midiNote), glides ? glideTime : 0);
-    slot.post({
+    slot.postMessage({
       type: 'voice:retuned',
       midiNote,
       timestamp,
@@ -205,7 +207,7 @@ export class VoicePool {
   }
 
   #release(slot, timestamp) {
-    slot.post({ type: 'voice:releasing' });
+    slot.postMessage({ type: 'voice:releasing' });
     slot.release(timestamp);
   }
 }

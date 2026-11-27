@@ -90,7 +90,7 @@ it('drives the engine output and ends the note when the release tail does', () =
   const engine = new SamplePlayerVoice({
     sampleRate: SR,
     random: () => 0.5,
-    post: (m: object) => void posts.push(m),
+    postMessage: (m: object) => void posts.push(m),
   });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.setEnvelope('gain', { shape: adsr('sustain') });
@@ -111,7 +111,7 @@ it.each([0, 0.03, 0.064])(
   'cancels a pending note released at %s before or at its start',
   (releaseTime) => {
     const post = vi.fn();
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post });
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
     engine.setBuffer([new Float32Array(SR).fill(0.5)]);
     engine.loopEnabled = true;
     engine.setEnvelope('gain', { shape: adsr('sustain') });
@@ -136,7 +136,7 @@ it.each([0, 0.03, 0.064])(
 
 it('plays a pending note and its tail when release is scheduled after its start', () => {
   const post = vi.fn();
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.loopEnabled = true;
   engine.setEnvelope('gain', { shape: adsr('sustain') });
@@ -162,7 +162,7 @@ it.each(['sustain', 'loop'] as const)(
   'preserves an already-due release when the first render starts late in %s mode',
   (mode) => {
     const post = vi.fn();
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post });
+    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
     engine.setBuffer([new Float32Array(SR).fill(0.5)]);
     engine.loopEnabled = true;
     engine.setEnvelope('gain', { shape: adsr(mode), loopSync: true });
@@ -185,7 +185,11 @@ it.each(['sustain', 'loop'] as const)(
 );
 
 it('starts gain from the beginning when first enabled during a note, preserving later toggles', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.loopEnabled = true;
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
@@ -216,7 +220,11 @@ it('starts gain from the beginning when first enabled during a note, preserving 
 });
 
 it('starts any envelope first enabled during a note', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   const parameters = makeParameters({ trimEnd: 1 });
   engine.start(1, 0);
@@ -230,7 +238,7 @@ it('starts any envelope first enabled during a note', () => {
 
 it('keeps a scheduled stop when gain is first enabled after note-off', () => {
   const post = vi.fn();
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post });
+  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, postMessage: post });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.loopEnabled = true;
   engine.start(1, 0);
@@ -249,7 +257,11 @@ it('keeps a scheduled stop when gain is first enabled after note-off', () => {
 });
 
 it('a release without a gain envelope stops the note', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.start(1, 0);
   engine.release(0.5);
@@ -300,7 +312,11 @@ it('updates timing with playback sync and gives loop sync precedence', () => {
 it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)(
   'fits loop sync to the loop transport with %s',
   (source) => {
-    const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+    const engine = new SamplePlayerVoice({
+      sampleRate: SR,
+      random: () => 0.5,
+      postMessage: () => {},
+    });
     engine.setBuffer([new Float32Array(SR).fill(0.5)]); // 1 s buffer
     engine.loopEnabled = true;
     if (source === 'detune envelope') {
@@ -341,7 +357,11 @@ it.each(['plain', 'detune param', 'detune envelope', 'period stretch'] as const)
 
 it('smooths a vertical segment instead of stepping in one sample', () => {
   const rate = 48_000;
-  const engine = new SamplePlayerVoice({ sampleRate: rate, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: rate,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(rate).fill(0.5)]);
   engine.setEnvelope('gain', {
     shape: {
@@ -369,7 +389,11 @@ it('smooths a vertical segment instead of stepping in one sample', () => {
 });
 
 it('a detune envelope bends the playback rate the loop and read step use', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR)]);
   engine.setEnvelope('detune', {
     shape: {
@@ -390,7 +414,11 @@ it('a detune envelope bends the playback rate the loop and read step use', () =>
 });
 
 it('a pan envelope adds to the pan param, clamped to hard right', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.setPanDriftEnabled(false);
   const hardRight: EnvelopeShape = {
@@ -413,7 +441,11 @@ it('a pan envelope adds to the pan param, clamped to hard right', () => {
 });
 
 it('a filter envelope renders cents to the control output and leaves the audio alone', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   const parameters = makeParameters({ trimEnd: 1 });
   const render = () => {
@@ -435,7 +467,11 @@ it('a filter envelope renders cents to the control output and leaves the audio a
 });
 
 it('takes rate and velocity from voice:start, so the first note is synced and scaled', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
   // The playbackRate param is a multiplier now; a stale 1 must not leak into the note.
@@ -454,7 +490,11 @@ it('takes rate and velocity from voice:start, so the first note is synced and sc
 });
 
 it('renders queued retunes in timestamp order, keeping same-frame arrival order and glide', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.start(1, 0);
   engine.setNoteRate(0.02, 3);
@@ -474,7 +514,11 @@ it('renders queued retunes in timestamp order, keeping same-frame arrival order 
 });
 
 it('uses a due retune target for subsequent playback-synced envelope segments', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.setEnvelope('gain', { shape: adsr('sustain'), playbackRateSync: true });
   engine.start(1, 0);
@@ -490,7 +534,11 @@ it('uses a due retune target for subsequent playback-synced envelope segments', 
 });
 
 it('discards the previous note’s queued retunes when a new note starts', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   engine.start(1, 0);
   engine.setNoteRate(0.01, 4);
@@ -501,7 +549,11 @@ it('discards the previous note’s queued retunes when a new note starts', () =>
 });
 
 it('glides the note rate from glideFrom and retunes on voice:setRate', () => {
-  const engine = new SamplePlayerVoice({ sampleRate: SR, random: () => 0.5, post: () => {} });
+  const engine = new SamplePlayerVoice({
+    sampleRate: SR,
+    random: () => 0.5,
+    postMessage: () => {},
+  });
   engine.setBuffer([new Float32Array(SR).fill(0.5)]);
   const parameters = makeParameters({ trimEnd: 1, loopEnd: 1 });
 

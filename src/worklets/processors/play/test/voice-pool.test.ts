@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { VoicePool, VoiceSlot } from '../engine/voice-pool.js';
+import { VoicePool } from '../engine/voice-pool.js';
 import { makeParameters, setupProcessorGlobals, TEST_SAMPLE_RATE } from './range-test-helpers';
 
 function setup(voiceCount = 2) {
@@ -14,8 +14,7 @@ function setup(voiceCount = 2) {
       setNoteRate: vi.fn(),
     };
     const post = vi.fn();
-    const slot = new VoiceSlot(voice, post);
-    pool.addSlot(slot);
+    const slot = pool.addVoice(voice, { postMessage: post });
     return { slot, voice, post };
   });
   const noteOn = (midiNote: number, timestamp: number, glideTime = 0) =>
@@ -195,11 +194,11 @@ describe('sample-player processor voices', () => {
     send({ type: 'pool:noteOn', triggerId: 1, midiNote: 60, timestamp: 0.5 });
     send({ type: 'flush', id: 42 });
     expect(processor.port.postMessage).toHaveBeenLastCalledWith({ type: 'flushed', id: 42 });
-    expect(processor.slot.state).toBe('AVAILABLE');
+    expect(processor.voiceSlot.state).toBe('AVAILABLE');
     processor.pool.advance(0.5);
-    expect(processor.slot.state).toBe('AVAILABLE');
+    expect(processor.voiceSlot.state).toBe('AVAILABLE');
     processor.pool.advance(0.51);
-    expect(processor.slot.state).toBe('PLAYING');
+    expect(processor.voiceSlot.state).toBe('PLAYING');
   });
 
   it('starts a tagged voice:start at the rate the pool works out', async () => {
@@ -227,7 +226,7 @@ describe('sample-player processor voices', () => {
     load();
     send({ type: 'voice:start', triggerId: 42, timestamp: 0 });
     send({ type: 'voice:stop', timestamp: 1 });
-    expect(processor.slot.state).toBe('AVAILABLE');
+    expect(processor.voiceSlot.state).toBe('AVAILABLE');
     expect(processor.voice.isPlaying).toBe(true);
     expect(ended()).toEqual([]);
 
@@ -273,7 +272,7 @@ describe('sample-player processor voices', () => {
 
     // A message with an index reaches only that voice.
     send({ type: 'voice:stop', voice: 1, timestamp: 0 });
-    expect(processor.slots.map((slot: any) => slot.state)).toEqual(['PLAYING', 'AVAILABLE']);
+    expect(processor.voiceSlots.map((slot: any) => slot.state)).toEqual(['PLAYING', 'AVAILABLE']);
   });
 
   it('uses the latest rendered pitch-loop state while range reports are throttled', async ({

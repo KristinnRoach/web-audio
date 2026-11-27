@@ -1,6 +1,6 @@
 // One voice's playback state and rendering, free of AudioWorklet globals. The caller
 // passes in the sample rate, block position and random source; messages go out through
-// `post`, synchronously, in the order they occur.
+// `postMessage`, synchronously, in the order they occur.
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { PeriodLockStretcher } from './period-lock-stretch.js';
@@ -89,13 +89,13 @@ export class SamplePlayerVoice {
    * @param {Object} options
    * @param {number} options.sampleRate - Context sample rate
    * @param {() => number} options.random - Random values in [0, 1)
-   * @param {(message: Object) => void} options.post - Receives outgoing messages
+   * @param {(message: Object) => void} options.postMessage - Receives outgoing messages
    */
-  constructor({ sampleRate, random, post }) {
+  constructor({ sampleRate, random, postMessage }) {
     this.sampleRate = sampleRate;
     this.loopMoveFadeFrames = Math.max(1, Math.round(LOOP_MOVE_FADE_SECONDS * sampleRate));
     this.random = random;
-    this.post = post;
+    this.postMessage = postMessage;
 
     // Only set properties that should persist across resets.
     this.buffer = null;
@@ -363,7 +363,7 @@ export class SamplePlayerVoice {
 
   // Every note that ends, by stop or at the playback boundary, reports it once.
   #halt() {
-    this.post({ type: 'voice:ended', triggerId: this.triggerId });
+    this.postMessage({ type: 'voice:ended', triggerId: this.triggerId });
     this.isPlaying = false;
     this.pendingRates.length = 0;
     this.pendingStartFrame = 0;
@@ -834,7 +834,7 @@ export class SamplePlayerVoice {
     if (blockTime - (posted?.time ?? -1) < interval) return;
     const message = { ...fields, triggerId: this.triggerId };
     this.postedRanges[fields.type] = { message, time: blockTime };
-    this.post(message);
+    this.postMessage(message);
   }
 
   /**
@@ -877,7 +877,7 @@ export class SamplePlayerVoice {
     // Posted directly, not through #postRange: its dedup compares against ranges
     // posted before a buffer reload, while the voice has cleared its copy. The key
     // check already limits this to real changes.
-    this.post({
+    this.postMessage({
       type: 'loop:range',
       loopStart: loopWindow.start / this.sampleRate,
       loopEnd: loopWindow.end / this.sampleRate,

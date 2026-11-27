@@ -1,6 +1,6 @@
 import { SAMPLE_PLAYER_WORKLET_AUDIOPARAM_DESCRIPTORS } from './sample-player-paramdescriptors.ts';
 import { SamplePlayerVoice } from './engine/sample-player-voice.js';
-import { VoicePool, VoiceSlot } from './engine/voice-pool.js';
+import { VoicePool } from './engine/voice-pool.js';
 
 /**
  * One processor per player. It owns every voice: `processorOptions.voiceCount`
@@ -25,24 +25,26 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     super();
 
     this.pool = new VoicePool();
-    // One slot per voice: tracks allocator state and owns its SamplePlayerVoice and post.
-    this.slots = Array.from({ length: options?.processorOptions?.voiceCount ?? 1 }, (_, index) => {
-      const post = (message) => this.port.postMessage({ ...message, voice: index });
-      const voice = new SamplePlayerVoice({
-        sampleRate,
-        random: () => Math.random(),
-        post: (message) => {
-          if (message.type === 'voice:ended') slot.markAvailable();
-          post(message);
-        },
-      });
-      const slot = new VoiceSlot(voice, post);
-      this.pool.addSlot(slot);
-      return slot;
-    });
+    // One voice slot per voice: tracks allocator state and owns its SamplePlayerVoice and postMessage.
+    this.voiceSlots = Array.from(
+      { length: options?.processorOptions?.voiceCount ?? 1 },
+      (_, index) => {
+        const postMessage = (message) => this.port.postMessage({ ...message, voice: index });
+        const voice = new SamplePlayerVoice({
+          sampleRate,
+          random: () => Math.random(),
+          postMessage: (message) => {
+            if (message.type === 'voice:ended') voiceSlot.markAvailable();
+            postMessage(message);
+          },
+        });
+        const voiceSlot = this.pool.addVoice(voice, { postMessage });
+        return voiceSlot;
+      },
+    );
     // The first voice: the voice tests drive a one-voice processor through it.
-    this.slot = this.slots[0];
-    this.voice = this.slot.voice;
+    this.voiceSlot = this.voiceSlots[0];
+    this.voice = this.voiceSlot.voice;
 
     this.port.onmessage = this.#handleMessage.bind(this);
 
@@ -81,7 +83,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
 
     const index = event.data.voice;
-    for (const target of index === undefined ? this.slots : [this.slots[index]]) {
+    for (const target of index === undefined ? this.voiceSlots : [this.voiceSlots[index]]) {
       this.#handleVoiceMessage(target, event.data);
     }
     // Once per buffer, after every voice it addressed has it.
@@ -91,8 +93,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
     }
   }
 
-  #handleVoiceMessage(slot, data) {
-    const { voice, post } = slot;
+  #handleVoiceMessage(voiceSlot, data) {
+    const { voice, postMessage } = voiceSlot;
     const {
       type,
       value,
@@ -116,8 +118,8 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
         // own first, but a note the pool started meanwhile is news to it.
         // Allocation can already be available while a scheduled stop is still pending.
         if (voice.isPlaying) {
-          slot.markAvailable();
-          post({ type: 'voice:ended', triggerId: voice.triggerId });
+          voiceSlot.markAvailable();
+          postMessage({ type: 'voice:ended', triggerId: voice.triggerId });
         }
         voice.setBuffer(buffer);
         break;
@@ -133,11 +135,11 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
 
       // Voice tests start and stop a voice directly; SamplePlayer goes through the pool.
       case 'voice:start':
-        slot.start(triggerId, timestamp, this.pool.note(data));
+        voiceSlot.start(triggerId, timestamp, this.pool.note(data));
         break;
 
       case 'voice:stop':
-        slot.stop(timestamp);
+        voiceSlot.stop(timestamp);
         break;
 
       case 'voice:setEnvelope':
@@ -197,7 +199,7 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     this.pool.advance(currentTime + (outputs[0]?.[0]?.length ?? 128) / sampleRate);
 
-    this.slots.forEach(({ voice }, index) => {
+    this.voiceSlots.forEach(({ voice }, index) => {
       const output = outputs[index * 2];
       if (!output) return;
       if (!voice.canRender) return voice.reportIdle(parameters, currentTime);
