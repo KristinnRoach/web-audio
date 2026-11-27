@@ -84,6 +84,50 @@ function isApproachingLoopWindow(position, approachDirection, loopWindow) {
 export class SamplePlayerVoice {
   #loopDriftPassCount = 0;
   #driftPending = true;
+  #random;
+  #postMessage;
+  #panDriftEnabled;
+  #panDriftCoefficient;
+  #noteRateTarget;
+  #noteRateCoefficient;
+  #velocityGain;
+  #pendingRates;
+  #loopWindowSlots;
+  #heldLoopWindow;
+  #loopMoveOffset;
+  #keytrackLoopAmount;
+  #loopKeytrackOptions;
+  #loopLengthGlideCoefficient;
+  #loopPositionGlideCoefficient;
+  #positionParams;
+  #trimRange;
+  #previousRequestedLoop;
+  #trimMessage;
+  #loopMessage;
+  #positionMessage;
+  #readHeadCount;
+  #idleLoopInputs;
+  #idleLoopKey;
+  #idleLoopPostTime;
+  #loopQuantizePeriods;
+  #zeroCrossings;
+  #postedRanges;
+  #previousPlayheadPosition;
+  #needsStartPosition;
+  #previousApproachDirection;
+  #loopTurned;
+  #inLoop;
+  #loopRate;
+  #currentLoopDrift;
+  #currentPanDrift;
+  #smoothedPanDrift;
+  #isLoopLengthGliding;
+  #glidedLoopLogLength;
+  #isLoopPositionGliding;
+  #isLoopStartClamped;
+  #glidedLoopStart;
+  #stopFadeFrames;
+  #constantFlags;
 
   /**
    * @param {Object} options
@@ -94,8 +138,8 @@ export class SamplePlayerVoice {
   constructor({ sampleRate, random, postMessage }) {
     this.sampleRate = sampleRate;
     this.loopMoveFadeFrames = Math.max(1, Math.round(LOOP_MOVE_FADE_SECONDS * sampleRate));
-    this.random = random;
-    this.postMessage = postMessage;
+    this.#random = random;
+    this.#postMessage = postMessage;
 
     // Only set properties that should persist across resets.
     this.buffer = null;
@@ -104,18 +148,18 @@ export class SamplePlayerVoice {
     this.playbackDirection = 'forward';
     // Note-on starts at the loop instead of trim while looping is on.
     this.startFromLoop = false;
-    this.panDriftEnabled = true;
-    this.panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
+    this.#panDriftEnabled = true;
+    this.#panDriftCoefficient = glideCoefficient(PAN_DRIFT_SMOOTHING_SECONDS, sampleRate);
 
     this.reportPlayheadPosition = false;
 
     // Per-note values from voice:start. The playbackRate param multiplies noteRate.
     this.noteRate = 1;
-    this.noteRateTarget = 1;
-    this.noteRateCoefficient = 1;
-    this.velocityGain = 1;
+    this.#noteRateTarget = 1;
+    this.#noteRateCoefficient = 1;
+    this.#velocityGain = 1;
     // Retunes waiting for their frames (voice:setRate), in timestamp order.
-    this.pendingRates = [];
+    this.#pendingRates = [];
 
     // Gain is unity unless its slot is active; detune adds to the param (see voice-envelopes.js).
     this.envelopes = new VoiceEnvelopes(sampleRate);
@@ -123,40 +167,40 @@ export class SamplePlayerVoice {
     this.interpolation = 'hermite';
     this.enableLoopCrossfade = true; // Crossfade between loop edges
     this.loopCrossfade = new LoopCrossfade();
-    this.loopWindowSlots = [new LoopWindow(), new LoopWindow()];
+    this.#loopWindowSlots = [new LoopWindow(), new LoopWindow()];
     // The window a pitch loop's playhead follows while a move waits for the running move fade.
-    this.heldLoopWindow = new LoopWindow();
+    this.#heldLoopWindow = new LoopWindow();
     // Where the window a pitch loop move fades from reads, relative to the playhead
     // (old start - new start).
-    this.loopMoveOffset = 0;
+    this.#loopMoveOffset = 0;
     // Ping-pong turns around at both loop edges and overrides loop edge order.
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
     // play higher), 1 = real-time loop duration constant across notes. Period stretch loops on
     // the original-speed position and mirrors that: 0 = constant loop time, 1 = loop time / playbackRate.
-    this.keytrackLoopAmount = 0;
+    this.#keytrackLoopAmount = 0;
     // Reused during rendering to avoid allocating options per sample.
-    this.loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
+    this.#loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
 
     this.timestretch = new PeriodLockStretcher(sampleRate);
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
-    this.loopLengthGlideCoefficient = glideCoefficient(0.125, sampleRate);
-    this.loopPositionGlideCoefficient = glideCoefficient(0, sampleRate);
+    this.#loopLengthGlideCoefficient = glideCoefficient(0.125, sampleRate);
+    this.#loopPositionGlideCoefficient = glideCoefficient(0, sampleRate);
 
     // Reused per block and per sample, so rendering doesn't allocate.
-    this.positionParams = {
+    this.#positionParams = {
       trimStartSamples: 0,
       trimEndSamples: 0,
       loopStartSamples: 0,
       loopEndSamples: 0,
     };
-    this.trimRange = { startSamples: 0, endSamples: 0, inverted: false };
-    this.previousRequestedLoop = { start: null, end: null };
-    this.trimMessage = { type: 'trim:range', trimStart: 0, trimEnd: 0, inverted: false };
-    this.loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
-    this.positionMessage = { type: 'voice:position', position: 0 };
+    this.#trimRange = { startSamples: 0, endSamples: 0, inverted: false };
+    this.#previousRequestedLoop = { start: null, end: null };
+    this.#trimMessage = { type: 'trim:range', trimStart: 0, trimEnd: 0, inverted: false };
+    this.#loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
+    this.#positionMessage = { type: 'voice:position', position: 0 };
     // Everything sounding this sample: the playhead, the stretcher's fade-out head
     // and the crossfade heads.
     this.readHeads = Array.from({ length: MAX_OUTGOING_HEADS + 2 }, () => ({
@@ -166,9 +210,9 @@ export class SamplePlayerVoice {
       source: new ClampedSourceReader(),
       sincKernel: new SincKernel(),
     }));
-    this.readHeadCount = 0;
-    this.idleLoopInputs = [];
-    this.idleLoopKey = [];
+    this.#readHeadCount = 0;
+    this.#idleLoopInputs = [];
+    this.#idleLoopKey = [];
 
     // Initialize all playback state
     this.reset();
@@ -176,13 +220,14 @@ export class SamplePlayerVoice {
 
   // C5's wavelength, lowered to the shortest loop quantize period so periods above C5 keep their pitch.
   get minRangeSamples() {
-    return Math.min(this.sampleRate / 523.25, this.loopQuantizePeriods?.[0] ?? Infinity);
+    return Math.min(this.sampleRate / 523.25, this.#loopQuantizePeriods?.[0] ?? Infinity);
   }
 
   // Pitch cutoff in source samples: the longest loop that counts as a pitch loop.
   get pitchCutoff() {
     return (
-      this.loopQuantizePeriods?.at(-1) ?? Math.floor(this.sampleRate * DEFAULT_PITCH_CUTOFF_SECONDS)
+      this.#loopQuantizePeriods?.at(-1) ??
+      Math.floor(this.sampleRate * DEFAULT_PITCH_CUTOFF_SECONDS)
     );
   }
 
@@ -195,7 +240,7 @@ export class SamplePlayerVoice {
 
   setLoopQuantizePeriods(seconds) {
     // Seconds to samples, ascending: [0] is the shortest, at(-1) the longest.
-    this.loopQuantizePeriods = seconds
+    this.#loopQuantizePeriods = seconds
       .map((value) => value * this.sampleRate)
       .sort((a, b) => a - b);
   }
@@ -203,13 +248,13 @@ export class SamplePlayerVoice {
   setBuffer(buffer) {
     this.reset();
     for (const head of this.readHeads) head.source.samples = null;
-    this.zeroCrossings = [];
+    this.#zeroCrossings = [];
     this.timestretch.setPeriods(null, 1);
     this.buffer = buffer ?? null;
   }
 
   setZeroCrossings(zeroCrossings) {
-    this.zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * this.sampleRate);
+    this.#zeroCrossings = (zeroCrossings || []).map((timeSec) => timeSec * this.sampleRate);
   }
 
   setPitchPeriods(periods, hopSamples) {
@@ -222,20 +267,20 @@ export class SamplePlayerVoice {
    */
   start(triggerId, timestamp, note = {}) {
     const { noteRate = 1, velocity = 127, glideFrom, glideSeconds = 0 } = note;
-    this.noteRateTarget = noteRate;
+    this.#noteRateTarget = noteRate;
     this.noteRate = glideSeconds > 0 && glideFrom !== undefined ? glideFrom : noteRate;
-    this.noteRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
-    this.pendingRates.length = 0;
-    this.velocityGain = Math.max(0, Math.min(1, velocity / 127));
+    this.#noteRateCoefficient = glideCoefficient(glideSeconds, this.sampleRate);
+    this.#pendingRates.length = 0;
+    this.#velocityGain = Math.max(0, Math.min(1, velocity / 127));
 
     this.isPlaying = true;
     this.triggerId = triggerId;
     this.#resetNoteLoop();
-    this.postedRanges = {}; // each note posts its first resolved range
+    this.#postedRanges = {}; // each note posts its first resolved range
 
     // Set from the trim range on the first audible block
     this.playheadPosition = 0;
-    this.needsStartPosition = true;
+    this.#needsStartPosition = true;
 
     // Frame this note should sound at. A timestamp that has already passed
     // by the time the message arrives starts the note now.
@@ -248,12 +293,12 @@ export class SamplePlayerVoice {
 
   /** Retunes the sounding note at `timestamp`, gliding with a `glideSeconds` time constant. */
   setNoteRate(timestamp, noteRate, glideSeconds = 0) {
-    this.pendingRates.push({
+    this.#pendingRates.push({
       frame: timestamp ? Math.round(timestamp * this.sampleRate) : 0,
       rate: noteRate,
       coefficient: glideCoefficient(glideSeconds, this.sampleRate),
     });
-    this.pendingRates.sort((a, b) => a.frame - b.frame);
+    this.#pendingRates.sort((a, b) => a.frame - b.frame);
   }
 
   /** Routes an envelope config to its target, or clears it with null. */
@@ -272,21 +317,25 @@ export class SamplePlayerVoice {
     this.envelopes.release(frame);
   }
 
+  get panDriftEnabled() {
+    return this.#panDriftEnabled;
+  }
+
   setPanDriftEnabled(enabled) {
-    this.panDriftEnabled = enabled;
-    if (!enabled) this.currentPanDrift = 0;
+    this.#panDriftEnabled = enabled;
+    if (!enabled) this.#currentPanDrift = 0;
   }
 
   setLoopLengthGlide(seconds) {
-    this.loopLengthGlideCoefficient = glideCoefficient(seconds, this.sampleRate);
+    this.#loopLengthGlideCoefficient = glideCoefficient(seconds, this.sampleRate);
   }
 
   setLoopPositionGlide(seconds) {
-    this.loopPositionGlideCoefficient = glideCoefficient(seconds, this.sampleRate);
+    this.#loopPositionGlideCoefficient = glideCoefficient(seconds, this.sampleRate);
   }
 
   setKeytrackLoopAmount(amount) {
-    this.keytrackLoopAmount = Math.max(0, Math.min(1, amount));
+    this.#keytrackLoopAmount = Math.max(0, Math.min(1, amount));
   }
 
   setTimestretchMode(mode) {
@@ -297,16 +346,16 @@ export class SamplePlayerVoice {
 
   reset() {
     this.isPlaying = false;
-    this.pendingRates.length = 0;
+    this.#pendingRates.length = 0;
     this.pendingStartFrame = 0;
     this.startFadeFrames = 0;
     this.#clearStop();
     this.triggerId = 0;
 
-    this.previousApproachDirection = null;
+    this.#previousApproachDirection = null;
     this.playheadPosition = 0;
-    this.previousPlayheadPosition = 0;
-    this.needsStartPosition = false;
+    this.#previousPlayheadPosition = 0;
+    this.#needsStartPosition = false;
     this.#resetNoteLoop();
     this.timestretch.reset();
   }
@@ -315,32 +364,32 @@ export class SamplePlayerVoice {
   #resetNoteLoop() {
     // True while cycling a loop against the approach direction (reverse loops,
     // or the return half of a ping-pong). Direction = approach, negated when turned.
-    this.loopTurned = false;
+    this.#loopTurned = false;
     this.loopWrapped = false;
-    this.inLoop = false; // as of the previous sample
+    this.#inLoop = false; // as of the previous sample
     this.isInPitchLoop = false;
     this.loopWindow = null;
-    this.loopRate = 1;
+    this.#loopRate = 1;
     this.loopCrossfade.reset();
     this.loopMoveFadeLeft = 0; // output frames left in the pitch loop move fade
     this.#resetLoopGlides(); // new notes start on the target range
 
     this.#loopDriftPassCount = 0;
     this.#driftPending = true;
-    this.currentLoopDrift = 0;
-    this.currentPanDrift = 0;
-    this.smoothedPanDrift = 0;
+    this.#currentLoopDrift = 0;
+    this.#currentPanDrift = 0;
+    this.#smoothedPanDrift = 0;
   }
 
   #resetLoopGlides() {
-    this.isLoopLengthGliding = false;
-    this.glidedLoopLogLength = null;
-    this.isLoopPositionGliding = false;
-    this.isLoopStartClamped = false;
-    this.glidedLoopStart = null;
+    this.#isLoopLengthGliding = false;
+    this.#glidedLoopLogLength = null;
+    this.#isLoopPositionGliding = false;
+    this.#isLoopStartClamped = false;
+    this.#glidedLoopStart = null;
     // Raw loop edges in samples (start may pass end), from the last range calculation.
-    this.previousRequestedLoop.start = null;
-    this.previousRequestedLoop.end = null;
+    this.#previousRequestedLoop.start = null;
+    this.#previousRequestedLoop.end = null;
   }
 
   /**
@@ -358,18 +407,18 @@ export class SamplePlayerVoice {
   #clearStop() {
     this.envelopes.pendingReleaseFrame = null;
     this.pendingStopFrame = null;
-    this.stopFadeFrames = 0;
+    this.#stopFadeFrames = 0;
   }
 
   // Every note that ends, by stop or at the playback boundary, reports it once.
   #halt() {
-    this.postMessage({ type: 'voice:ended', triggerId: this.triggerId });
+    this.#postMessage({ type: 'voice:ended', triggerId: this.triggerId });
     this.isPlaying = false;
-    this.pendingRates.length = 0;
+    this.#pendingRates.length = 0;
     this.pendingStartFrame = 0;
     this.#clearStop();
     this.playheadPosition = 0;
-    this.needsStartPosition = false;
+    this.#needsStartPosition = false;
   }
 
   // Capped to a fraction of the loop, so short loops get short fades
@@ -384,9 +433,9 @@ export class SamplePlayerVoice {
    * change takes effect at the next edge, so direction never flips mid-loop.
    */
   #passLoopEdge(approachDirection, loopWindow, tailEnd, timestretchActive) {
-    const direction = this.loopTurned ? -approachDirection : approachDirection;
+    const direction = this.#loopTurned ? -approachDirection : approachDirection;
     const { start: loopStart, end: loopEnd } = loopWindow;
-    const turns = this.loopPingPong || this.loopTurned !== loopWindow.direction < 0;
+    const turns = this.loopPingPong || this.#loopTurned !== loopWindow.direction < 0;
     const position = timestretchActive
       ? this.timestretch.originalSpeedPosition
       : this.playheadPosition;
@@ -395,7 +444,7 @@ export class SamplePlayerVoice {
       : wrapLoopPosition(position, direction, loopStart, loopEnd);
     if (nextPosition === null) return;
 
-    if (turns) this.loopTurned = !this.loopTurned;
+    if (turns) this.#loopTurned = !this.#loopTurned;
     if (this.enableLoopCrossfade && (!turns || LOOP_TURN_CROSSFADE)) {
       // The outgoing head carries on past the edge in the pre-turn direction
       const length = this.#crossfadeLength(loopWindow);
@@ -429,20 +478,20 @@ export class SamplePlayerVoice {
       window.start === previous.start ||
       !this.loopEnabled ||
       !window.isPitchLoop ||
-      this.previousPlayheadPosition < previous.start ||
-      this.previousPlayheadPosition > previous.end
+      this.#previousPlayheadPosition < previous.start ||
+      this.#previousPlayheadPosition > previous.end
     ) {
       return window;
     }
     const fades =
-      this.enableLoopCrossfade && (!this.isLoopPositionGliding || this.isLoopStartClamped);
+      this.enableLoopCrossfade && (!this.#isLoopPositionGliding || this.#isLoopStartClamped);
     if (fades && this.loopMoveFadeLeft > 0) {
       const heldStart = previous.start; // read first: previous may be the held window
       // Bounded by the buffer, not trim: a trim drag pushes the loop too, and its moves
       // wait like any other. A move can't wait when the new length pushes the held window
       // past the buffer, or leaves the playhead traveling toward it from past the trim end
       // (the note would end).
-      const held = this.heldLoopWindow;
+      const held = this.#heldLoopWindow;
       held.start = heldStart;
       held.length = window.length;
       held.direction = window.direction;
@@ -463,11 +512,11 @@ export class SamplePlayerVoice {
       // ponytail: a move that can't wait drops a running fade's older window, a small
       // step if it was still audible.
       this.loopMoveFadeLeft = this.loopMoveFadeFrames;
-      this.loopMoveOffset = 0;
+      this.#loopMoveOffset = 0;
     }
     // Running wrap and turn fades move with the playhead, and the offset reads all
     // of them back in the window a running move fade started from.
-    this.loopMoveOffset -= delta;
+    this.#loopMoveOffset -= delta;
     this.loopCrossfade.shift(delta);
     this.playheadPosition += delta;
     return window;
@@ -478,7 +527,7 @@ export class SamplePlayerVoice {
   }
 
   #addReadHead(position, gain, mix) {
-    const head = this.readHeads[this.readHeadCount++];
+    const head = this.readHeads[this.#readHeadCount++];
     head.position = position;
     head.gain = gain;
     head.mix = mix;
@@ -489,7 +538,7 @@ export class SamplePlayerVoice {
   // what was audible when it started. They keep their own tail gain, so the silent
   // tail can't mute the outgoing side of a reverse wrap.
   #collectReadHeads(tailGain) {
-    this.readHeadCount = 0;
+    this.#readHeadCount = 0;
     this.#addReadHead(this.playheadPosition, tailGain, 0);
     if (this.timestretch.fadeOutPosition !== null) {
       this.#addReadHead(this.timestretch.fadeOutPosition, tailGain, this.timestretch.crossfadeMix);
@@ -506,7 +555,7 @@ export class SamplePlayerVoice {
   // `offset` reads every head in the window a move fades from.
   #mixReadHeads(channel, rate, offset = 0) {
     let mixed = 0;
-    for (let i = 0; i < this.readHeadCount; i++) {
+    for (let i = 0; i < this.#readHeadCount; i++) {
       const { source, sincKernel, position, gain, mix } = this.readHeads[i];
       // Mono sources feed every output channel.
       source.samples = this.buffer[Math.min(channel, this.buffer.length - 1)];
@@ -518,7 +567,7 @@ export class SamplePlayerVoice {
   }
 
   #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
-    return findNearestZeroCrossing(this.zeroCrossings, position, direction, maxDistance);
+    return findNearestZeroCrossing(this.#zeroCrossings, position, direction, maxDistance);
   }
 
   // ===== CONVERSION UTILITIES =====
@@ -540,7 +589,7 @@ export class SamplePlayerVoice {
    * @returns {Object} - Converted parameters in samples, a reused object
    */
   #extractPositionParams(parameters, sample = 0) {
-    const samples = this.positionParams;
+    const samples = this.#positionParams;
     const { trimStart, trimEnd, loopStart, loopEnd } = parameters;
     // Keep edges fractional: a short range's length is its pitch, and flooring
     // rounded it to whole source samples (~5 cents at a C5-length loop). Playback
@@ -584,7 +633,7 @@ export class SamplePlayerVoice {
     const start = this.#snapStart(resolved[0], resolved[1]);
     const end = this.#snapEnd(start, resolved[1]);
 
-    const range = this.trimRange;
+    const range = this.#trimRange;
     range.startSamples = start;
     range.endSamples = end;
     range.inverted = params.trimStartSamples > params.trimEndSamples;
@@ -594,60 +643,60 @@ export class SamplePlayerVoice {
   // One-pole glide in the log domain (even pitch glide), once per audible sample.
   // Only inside the quantization range; outside it, or entering it, the length jumps.
   #glideLoopLength(target) {
-    this.isLoopLengthGliding = false;
-    if (!isInQuantizationRange(target, this.loopQuantizePeriods)) {
-      this.glidedLoopLogLength = null;
+    this.#isLoopLengthGliding = false;
+    if (!isInQuantizationRange(target, this.#loopQuantizePeriods)) {
+      this.#glidedLoopLogLength = null;
       return target;
     }
     const logTarget = Math.log(target);
-    if (this.glidedLoopLogLength === null) {
-      this.glidedLoopLogLength = logTarget;
+    if (this.#glidedLoopLogLength === null) {
+      this.#glidedLoopLogLength = logTarget;
     } else {
-      this.glidedLoopLogLength = glideToward(
-        this.glidedLoopLogLength,
+      this.#glidedLoopLogLength = glideToward(
+        this.#glidedLoopLogLength,
         logTarget,
-        this.loopLengthGlideCoefficient,
+        this.#loopLengthGlideCoefficient,
         1e-12,
       );
-      this.isLoopLengthGliding = this.glidedLoopLogLength !== logTarget;
+      this.#isLoopLengthGliding = this.#glidedLoopLogLength !== logTarget;
     }
     // The log round trip can exceed the longest period by an ULP and bypass quantization.
-    return Math.min(Math.exp(this.glidedLoopLogLength), this.loopQuantizePeriods.at(-1));
+    return Math.min(Math.exp(this.#glidedLoopLogLength), this.#loopQuantizePeriods.at(-1));
   }
 
   // Move the source window gradually; the playhead carry follows it.
   #glideLoopPosition(targetStart, params, length) {
     const requestedSpan = params.loopEndSamples - params.loopStartSamples;
-    const previous = this.previousRequestedLoop;
+    const previous = this.#previousRequestedLoop;
     // Paired Float32 AudioParams lose precision when translated far into the buffer.
     const tolerance =
       Math.max(
         Math.abs(targetStart),
-        Math.abs(this.glidedLoopStart ?? 0),
+        Math.abs(this.#glidedLoopStart ?? 0),
         Math.abs(requestedSpan),
         1,
       ) *
       2 ** -22;
     const lengthUnchanged = Math.abs(requestedSpan - (previous.end - previous.start)) <= tolerance;
-    this.isLoopPositionGliding = false;
+    this.#isLoopPositionGliding = false;
     if (
       !this.loopEnabled ||
       !lengthUnchanged ||
-      !isInQuantizationRange(length, this.loopQuantizePeriods) ||
-      this.glidedLoopStart === null ||
-      this.loopPositionGlideCoefficient === 1
+      !isInQuantizationRange(length, this.#loopQuantizePeriods) ||
+      this.#glidedLoopStart === null ||
+      this.#loopPositionGlideCoefficient === 1
     ) {
-      this.glidedLoopStart = targetStart;
+      this.#glidedLoopStart = targetStart;
       return targetStart;
     }
-    this.glidedLoopStart = glideToward(
-      this.glidedLoopStart,
+    this.#glidedLoopStart = glideToward(
+      this.#glidedLoopStart,
       targetStart,
-      this.loopPositionGlideCoefficient,
+      this.#loopPositionGlideCoefficient,
       1e-6,
     );
-    this.isLoopPositionGliding = this.glidedLoopStart !== targetStart;
-    return this.glidedLoopStart;
+    this.#isLoopPositionGliding = this.#glidedLoopStart !== targetStart;
+    return this.#glidedLoopStart;
   }
 
   /**
@@ -679,17 +728,17 @@ export class SamplePlayerVoice {
       // which quantization lifts to the shortest loop quantize period, if any.
       const targetLength = quantizeLoopLength(
         Math.max(this.minRangeSamples, calcLoopEnd - calcLoopStart),
-        this.loopQuantizePeriods,
+        this.#loopQuantizePeriods,
       );
       const glidedLength = this.#glideLoopLength(targetLength);
       const fittedLength = Math.min(glidedLength, trimLength);
       const maxStart = trimEnd - fittedLength;
-      this.isLoopStartClamped = false;
-      if (this.glidedLoopStart !== null) {
-        const clamped = Math.min(Math.max(this.glidedLoopStart, trimStart), maxStart);
+      this.#isLoopStartClamped = false;
+      if (this.#glidedLoopStart !== null) {
+        const clamped = Math.min(Math.max(this.#glidedLoopStart, trimStart), maxStart);
         // Trim pushed the glide: over a sample is a jump to crossfade.
-        this.isLoopStartClamped = Math.abs(clamped - this.glidedLoopStart) > 1;
-        this.glidedLoopStart = clamped;
+        this.#isLoopStartClamped = Math.abs(clamped - this.#glidedLoopStart) > 1;
+        this.#glidedLoopStart = clamped;
       }
       calcLoopStart = this.#glideLoopPosition(
         Math.min(Math.max(calcLoopStart, trimStart), maxStart),
@@ -706,20 +755,20 @@ export class SamplePlayerVoice {
         calcLoopEnd = trimEnd;
       }
       // No glides; a loop that becomes a pitch loop glides its position from here.
-      this.isLoopLengthGliding = false;
-      this.glidedLoopLogLength = null;
-      this.isLoopPositionGliding = false;
-      this.glidedLoopStart = calcLoopStart;
+      this.#isLoopLengthGliding = false;
+      this.#glidedLoopLogLength = null;
+      this.#isLoopPositionGliding = false;
+      this.#glidedLoopStart = calcLoopStart;
     }
-    this.previousRequestedLoop.start = params.loopStartSamples;
-    this.previousRequestedLoop.end = params.loopEndSamples;
+    this.#previousRequestedLoop.start = params.loopStartSamples;
+    this.#previousRequestedLoop.end = params.loopEndSamples;
 
     let baseDuration = calcLoopEnd - calcLoopStart;
 
-    const keytrackAmount = isPitchLoop ? 0 : this.keytrackLoopAmount;
+    const keytrackAmount = isPitchLoop ? 0 : this.#keytrackLoopAmount;
     if (keytrackAmount > 0) {
       // Only time loops get here, so stretch applies whenever it is on.
-      const keytrackOptions = this.loopKeytrackOptions;
+      const keytrackOptions = this.#loopKeytrackOptions;
       keytrackOptions.depth = this.timestretch.canStretch ? -keytrackAmount : keytrackAmount;
       // Sounding note from the rate, detune included; temporary, see docs/modulation/MIGRATION.md.
       const midiNote = keytrackOptions.rootNote + 12 * Math.log2(Math.abs(playbackRate));
@@ -762,9 +811,9 @@ export class SamplePlayerVoice {
     // Two reused slots instead of a new object per sample: render() compares
     // against loopWindow, so write into whichever slot that isn't.
     const window =
-      this.loopWindowSlots[0] === this.loopWindow
-        ? this.loopWindowSlots[1]
-        : this.loopWindowSlots[0];
+      this.#loopWindowSlots[0] === this.loopWindow
+        ? this.#loopWindowSlots[1]
+        : this.#loopWindowSlots[0];
     window.start = calcLoopStart;
     window.length = calcLoopEnd - calcLoopStart;
     window.isPitchLoop = isPitchLoop;
@@ -776,15 +825,15 @@ export class SamplePlayerVoice {
   }
 
   #getConstantFlags(parameters) {
-    this.constantFlags ??= {
+    this.#constantFlags ??= {
       playbackRate: true,
       detune: true,
     };
 
-    this.constantFlags.playbackRate = parameters.playbackRate.length === 1;
-    this.constantFlags.detune = parameters.detune.length === 1;
+    this.#constantFlags.playbackRate = parameters.playbackRate.length === 1;
+    this.#constantFlags.detune = parameters.detune.length === 1;
 
-    return this.constantFlags;
+    return this.#constantFlags;
   }
 
   /**
@@ -794,13 +843,13 @@ export class SamplePlayerVoice {
    */
   #applyLoopDrift(loopStart, loopEnd, baseDuration, isPitchLoop, driftAmount, playbackEnd) {
     if (driftAmount <= 0 || !this.loopEnabled) {
-      this.currentPanDrift = 0;
+      this.#currentPanDrift = 0;
       return loopEnd;
     }
 
     if (this.#driftPending) this.#updateLoopDrift(driftAmount, baseDuration, isPitchLoop);
 
-    return driftLoopEnd(loopStart, loopEnd, baseDuration, this.currentLoopDrift, playbackEnd);
+    return driftLoopEnd(loopStart, loopEnd, baseDuration, this.#currentLoopDrift, playbackEnd);
   }
 
   /** Checks once per loop pass whether drift is due for a new roll. */
@@ -808,13 +857,13 @@ export class SamplePlayerVoice {
     const updateInterval = driftRollInterval(baseDuration, this.pitchCutoff);
 
     if (this.#loopDriftPassCount % updateInterval === 0) {
-      this.currentLoopDrift = loopDriftSamples(this.random(), driftAmount, baseDuration);
+      this.#currentLoopDrift = loopDriftSamples(this.#random(), driftAmount, baseDuration);
       // Pitch loop drift is scaled down and rounded to whole samples, often to nothing,
       // so pan rolls its own value there.
       const panDrift = isPitchLoop
-        ? (this.random() - 0.5) * 2 * driftAmount
-        : this.currentLoopDrift / baseDuration;
-      this.currentPanDrift = this.panDriftEnabled && this.#loopDriftPassCount > 0 ? panDrift : 0;
+        ? (this.#random() - 0.5) * 2 * driftAmount
+        : this.#currentLoopDrift / baseDuration;
+      this.#currentPanDrift = this.#panDriftEnabled && this.#loopDriftPassCount > 0 ? panDrift : 0;
     }
 
     this.#driftPending = false;
@@ -828,13 +877,13 @@ export class SamplePlayerVoice {
    * posted allocates; `fields` is reused by the caller.
    */
   #postRange(fields, blockTime, interval = 1 / 30) {
-    this.postedRanges ??= {};
-    const posted = this.postedRanges[fields.type];
+    this.#postedRanges ??= {};
+    const posted = this.#postedRanges[fields.type];
     if (posted && hasSameValues(fields, posted.message)) return;
     if (blockTime - (posted?.time ?? -1) < interval) return;
     const message = { ...fields, triggerId: this.triggerId };
-    this.postedRanges[fields.type] = { message, time: blockTime };
-    this.postMessage(message);
+    this.#postedRanges[fields.type] = { message, time: blockTime };
+    this.#postMessage(message);
   }
 
   /**
@@ -846,26 +895,26 @@ export class SamplePlayerVoice {
    */
   reportIdle(parameters, blockTime, interval = 1 / 30) {
     if (!this.buffer?.[0]?.length) return;
-    if (blockTime - (this.idleLoopPostTime ?? -1) < interval) return;
-    const key = this.idleLoopKey;
-    const inputs = this.idleLoopInputs;
+    if (blockTime - (this.#idleLoopPostTime ?? -1) < interval) return;
+    const key = this.#idleLoopKey;
+    const inputs = this.#idleLoopInputs;
     inputs[0] = parameters.loopStart[0];
     inputs[1] = parameters.loopEnd[0];
     inputs[2] = parameters.trimStart[0];
     inputs[3] = parameters.trimEnd[0];
     inputs[4] = this.buffer;
-    inputs[5] = this.zeroCrossings;
-    inputs[6] = this.loopQuantizePeriods;
-    inputs[7] = this.keytrackLoopAmount;
+    inputs[5] = this.#zeroCrossings;
+    inputs[6] = this.#loopQuantizePeriods;
+    inputs[7] = this.#keytrackLoopAmount;
     let changed = false;
     for (let i = 0; i < inputs.length; i++) {
       if (inputs[i] !== key[i]) changed = true;
     }
     if (!changed) return;
     // The inputs become the key; the old key is the next call's scratch.
-    this.idleLoopKey = inputs;
-    this.idleLoopInputs = key;
-    this.idleLoopPostTime = blockTime;
+    this.#idleLoopKey = inputs;
+    this.#idleLoopInputs = key;
+    this.#idleLoopPostTime = blockTime;
 
     const positionParams = this.#extractPositionParams(parameters);
     // A stopped note's glide must not leak in: the next note starts on the target length.
@@ -877,12 +926,12 @@ export class SamplePlayerVoice {
     // Posted directly, not through #postRange: its dedup compares against ranges
     // posted before a buffer reload, while the voice has cleared its copy. The key
     // check already limits this to real changes.
-    this.postMessage({
+    this.#postMessage({
       type: 'loop:range',
       loopStart: loopWindow.start / this.sampleRate,
       loopEnd: loopWindow.end / this.sampleRate,
       // Resolved at playback rate 1: the voice rescales the length by the note's playback rate.
-      keytrackAmount: loopWindow.isPitchLoop ? 0 : this.keytrackLoopAmount,
+      keytrackAmount: loopWindow.isPitchLoop ? 0 : this.#keytrackLoopAmount,
       idle: true,
       triggerId: this.triggerId,
     });
@@ -911,7 +960,7 @@ export class SamplePlayerVoice {
     }
     this.pendingStartFrame = 0;
     // Loop enablement changes between blocks. When off, play in the approach direction.
-    if (!this.loopEnabled) this.loopTurned = false;
+    if (!this.loopEnabled) this.#loopTurned = false;
 
     // ===== GET PARAM VALUES =====
 
@@ -930,7 +979,7 @@ export class SamplePlayerVoice {
     let loopWindow;
     let previousPlaybackRate;
 
-    const velocityGain = this.velocityGain;
+    const velocityGain = this.#velocityGain;
 
     const basePan = parameters.pan[0];
     const numChannels = outputChannels.length; // Always process all output channels
@@ -944,8 +993,8 @@ export class SamplePlayerVoice {
 
     // A turn can happen after the preceding block advanced past a trim edge.
     if (
-      this.previousApproachDirection !== null &&
-      this.previousApproachDirection !== approachDirection &&
+      this.#previousApproachDirection !== null &&
+      this.#previousApproachDirection !== approachDirection &&
       // A pitch loop a trim move just pushed can still sound outside trim.
       !(this.loopEnabled && this.loopWindow?.isPitchLoop && this.#isWithin(this.loopWindow))
     ) {
@@ -957,12 +1006,12 @@ export class SamplePlayerVoice {
         this.timestretch.reset(this.playheadPosition);
       }
     }
-    this.previousApproachDirection = approachDirection;
+    this.#previousApproachDirection = approachDirection;
 
-    this.trimMessage.trimStart = trimRange.startSamples / sampleRate;
-    this.trimMessage.trimEnd = trimRange.endSamples / sampleRate;
-    this.trimMessage.inverted = trimRange.inverted;
-    this.#postRange(this.trimMessage, blockTime);
+    this.#trimMessage.trimStart = trimRange.startSamples / sampleRate;
+    this.#trimMessage.trimEnd = trimRange.endSamples / sampleRate;
+    this.#trimMessage.inverted = trimRange.inverted;
+    this.#postRange(this.#trimMessage, blockTime);
 
     // ===== AUDIO PROCESSING =====
 
@@ -971,18 +1020,18 @@ export class SamplePlayerVoice {
         this.startFadeFrames < START_FADE_FRAMES ? this.startFadeFrames++ / START_FADE_FRAMES : 1;
       let stopGain = 1;
       if (this.pendingStopFrame !== null && blockFrame + sample >= this.pendingStopFrame) {
-        stopGain = 1 - ++this.stopFadeFrames / STOP_FADE_FRAMES;
+        stopGain = 1 - ++this.#stopFadeFrames / STOP_FADE_FRAMES;
         if (stopGain <= 0) return this.#halt();
       }
 
       const frame = blockFrame + sample;
-      while (this.pendingRates.length > 0 && frame >= this.pendingRates[0].frame) {
-        const retune = this.pendingRates.shift();
-        this.noteRateTarget = retune.rate;
+      while (this.#pendingRates.length > 0 && frame >= this.#pendingRates[0].frame) {
+        const retune = this.#pendingRates.shift();
+        this.#noteRateTarget = retune.rate;
         this.envelopes.noteRate = retune.rate;
-        this.noteRateCoefficient = retune.coefficient;
+        this.#noteRateCoefficient = retune.coefficient;
       }
-      this.noteRate += (this.noteRateTarget - this.noteRate) * this.noteRateCoefficient;
+      this.noteRate += (this.#noteRateTarget - this.noteRate) * this.#noteRateCoefficient;
       const basePlaybackRate =
         this.noteRate *
         this.#getSafeParam(parameters.playbackRate, sample, isConstant.playbackRate);
@@ -992,12 +1041,12 @@ export class SamplePlayerVoice {
       const envelopes = this.envelopes;
       envelopes.advance(
         blockFrame + sample,
-        this.loopRate,
+        this.#loopRate,
         this.loopEnabled,
         this.loopWrapped,
         this.loopWindow,
         this.buffer[0].length,
-        this.inLoop,
+        this.#inLoop,
       );
       if (envelopes.gainDone && this.pendingStopFrame === null) {
         // The stop fade covers a tail that doesn't end at zero.
@@ -1025,16 +1074,16 @@ export class SamplePlayerVoice {
       // 16 voices overran the audio thread. The 2x margin keeps loops near the
       // audio-rate boundary (Float32 noise can lift them over it) per sample.
       const rangeInputsChanged =
-        positionParams.loopStartSamples !== this.previousRequestedLoop.start ||
-        positionParams.loopEndSamples !== this.previousRequestedLoop.end ||
+        positionParams.loopStartSamples !== this.#previousRequestedLoop.start ||
+        positionParams.loopEndSamples !== this.#previousRequestedLoop.end ||
         playbackRate !== previousPlaybackRate;
       const followsPointsPerSample = loopWindow?.length < 2 * this.pitchCutoff;
       const driftPending = driftAmount > 0 && this.loopEnabled && this.#driftPending;
       if (
         !loopWindow ||
         (rangeInputsChanged && followsPointsPerSample) ||
-        this.isLoopLengthGliding ||
-        this.isLoopPositionGliding ||
+        this.#isLoopLengthGliding ||
+        this.#isLoopPositionGliding ||
         driftPending
       ) {
         loopWindow = this.#calculateLoopWindow(
@@ -1047,8 +1096,8 @@ export class SamplePlayerVoice {
       }
 
       // Both directions play the source samples [startSamples, endSamples).
-      if (this.needsStartPosition) {
-        this.needsStartPosition = false;
+      if (this.#needsStartPosition) {
+        this.#needsStartPosition = false;
         const fromLoop = this.startFromLoop && this.loopEnabled;
         const first = fromLoop ? loopWindow.start : trimRange.startSamples;
         const last = fromLoop ? Math.min(loopWindow.end - 1, lastPosition) : lastPosition;
@@ -1067,14 +1116,17 @@ export class SamplePlayerVoice {
       // The rest of this sample plays the window the playhead follows.
       const playWindow = this.#carryPlayhead(
         loopWindow,
-        this.loopTurned ? -approachDirection : approachDirection,
+        this.#loopTurned ? -approachDirection : approachDirection,
         trimRange,
       );
 
-      this.smoothedPanDrift +=
-        (this.currentPanDrift - this.smoothedPanDrift) * this.panDriftCoefficient;
+      this.#smoothedPanDrift +=
+        (this.#currentPanDrift - this.#smoothedPanDrift) * this.#panDriftCoefficient;
       const envelopePan = envelopes.pan.active ? envelopes.pan.value : 0;
-      const effectivePan = Math.max(-1, Math.min(1, basePan + this.smoothedPanDrift + envelopePan));
+      const effectivePan = Math.max(
+        -1,
+        Math.min(1, basePan + this.#smoothedPanDrift + envelopePan),
+      );
 
       const canStretch = this.timestretch.canStretch;
       // Loop rules apply once the playhead, and the original-speed position if stretch
@@ -1089,8 +1141,8 @@ export class SamplePlayerVoice {
             playWindow,
           )
         );
-      const inLoop = this.loopEnabled && (this.loopTurned || reachedLoop);
-      this.inLoop = inLoop;
+      const inLoop = this.loopEnabled && (this.#loopTurned || reachedLoop);
+      this.#inLoop = inLoop;
 
       this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
       const timestretchActive = !this.isInPitchLoop && canStretch;
@@ -1103,10 +1155,10 @@ export class SamplePlayerVoice {
       if (this.loopEnabled) {
         this.#passLoopEdge(approachDirection, playWindow, tailEnd, timestretchActive);
       }
-      const direction = this.loopTurned ? -approachDirection : approachDirection;
+      const direction = this.#loopTurned ? -approachDirection : approachDirection;
       const playbackStep = direction * Math.abs(playbackRate);
       // Next sample's envelope timing uses the transport rate that produced its loop state.
-      this.loopRate = timestretchActive ? 1 : Math.abs(playbackStep);
+      this.#loopRate = timestretchActive ? 1 : Math.abs(playbackStep);
 
       const timestretchJumpTarget = this.timestretch.prepareJump(
         timestretchActive,
@@ -1144,7 +1196,7 @@ export class SamplePlayerVoice {
 
         let mixed = this.#mixReadHeads(channel, Math.abs(playbackStep));
         if (this.loopMoveFadeLeft > 0) {
-          const old = this.#mixReadHeads(channel, Math.abs(playbackStep), this.loopMoveOffset);
+          const old = this.#mixReadHeads(channel, Math.abs(playbackStep), this.#loopMoveOffset);
           mixed = old + (1 - this.loopMoveFadeLeft / this.loopMoveFadeFrames) * (mixed - old);
         }
         const finalSample = mixed * velocityGain * envelopeGain * masterGain * startGain * stopGain;
@@ -1172,7 +1224,7 @@ export class SamplePlayerVoice {
 
       // Remember the rendered position, before a fractional step can overshoot
       // the edge. The next sample must carry that overshoot with a moving loop.
-      this.previousPlayheadPosition = this.playheadPosition;
+      this.#previousPlayheadPosition = this.playheadPosition;
       this.playheadPosition = this.timestretch.advance(
         timestretchActive,
         this.playheadPosition,
@@ -1182,21 +1234,24 @@ export class SamplePlayerVoice {
     }
 
     // Effective range at the last audible sample, still throttled per voice.
-    this.loopMessage.loopStart = loopWindow.start / sampleRate;
-    this.loopMessage.loopEnd = loopWindow.end / sampleRate;
-    this.loopMessage.isInPitchLoop = this.isInPitchLoop;
-    this.loopMessage.loopMode = this.loopPingPong
+    this.#loopMessage.loopStart = loopWindow.start / sampleRate;
+    this.#loopMessage.loopEnd = loopWindow.end / sampleRate;
+    this.#loopMessage.isInPitchLoop = this.isInPitchLoop;
+    this.#loopMessage.loopMode = this.loopPingPong
       ? 'pingPong'
       : loopWindow.direction < 0
         ? 'reverse'
         : 'forward';
-    this.#postRange(this.loopMessage, blockTime);
+    this.#postRange(this.#loopMessage, blockTime);
 
     // Playhead for display, ~60 Hz to match screen refresh.
     if (this.reportPlayheadPosition) {
       // Not clamped to 1: a keytracked loop can play silent padding past the buffer end.
-      this.positionMessage.position = Math.max(0, this.#samplesToNormalized(this.playheadPosition));
-      this.#postRange(this.positionMessage, blockTime, 1 / 60);
+      this.#positionMessage.position = Math.max(
+        0,
+        this.#samplesToNormalized(this.playheadPosition),
+      );
+      this.#postRange(this.#positionMessage, blockTime, 1 / 60);
     }
   }
 }

@@ -8,8 +8,17 @@
 const MIN_EXP_VALUE = 1e-4;
 
 export class BreakpointEnvelope {
+  #sampleRate;
+  #curve = 'linear';
+  #step = 0;
+  #target = 0;
+  // A held sustain follows its point's value in the current shape, so edits apply live.
+  #holding = false;
+  // ponytail: fixed ~10 ms glide, so sustain edits don't click
+  #holdGlide;
+
   constructor(sampleRate) {
-    this.sampleRate = sampleRate;
+    this.#sampleRate = sampleRate;
     // Read at every segment start, so a new shape takes effect at the next point.
     this.shape = null;
     // Playback speed, read at every segment start like the shape. 2 plays twice as fast.
@@ -19,13 +28,7 @@ export class BreakpointEnvelope {
     this.done = false;
     this.index = 0;
     this.remaining = 0;
-    this.curve = 'linear';
-    this.step = 0;
-    this.target = 0;
-    // A held sustain follows its point's value in the current shape, so edits apply live.
-    this.holding = false;
-    // ponytail: fixed ~10 ms glide, so sustain edits don't click
-    this.holdGlide = 1 - Math.exp(-1 / (0.01 * sampleRate));
+    this.#holdGlide = 1 - Math.exp(-1 / (0.01 * sampleRate));
   }
 
   trigger() {
@@ -50,9 +53,9 @@ export class BreakpointEnvelope {
   retarget() {
     const to = this.remaining > 0 && this.shape?.points[this.index + 1];
     if (!to) return;
-    this.target = to.value;
-    this.step =
-      this.curve === 'exponential'
+    this.#target = to.value;
+    this.#step =
+      this.#curve === 'exponential'
         ? (Math.max(to.value, MIN_EXP_VALUE) / this.value) ** (1 / this.remaining)
         : (to.value - this.value) / this.remaining;
   }
@@ -60,13 +63,13 @@ export class BreakpointEnvelope {
   /** Value for the current sample, then advances one sample. */
   next() {
     const value = this.value;
-    const held = this.holding && this.shape?.points[this.index];
-    if (held) this.value += (held.value - this.value) * this.holdGlide;
+    const held = this.#holding && this.shape?.points[this.index];
+    if (held) this.value += (held.value - this.value) * this.#holdGlide;
     if (this.remaining > 0) {
-      if (this.curve === 'exponential') this.value *= this.step;
-      else if (this.curve === 'linear') this.value += this.step;
+      if (this.#curve === 'exponential') this.value *= this.#step;
+      else if (this.#curve === 'linear') this.value += this.#step;
       if (--this.remaining === 0) {
-        this.value = this.target;
+        this.value = this.#target;
         this.#beginSegment(this.index + 1);
       }
     }
@@ -78,7 +81,7 @@ export class BreakpointEnvelope {
     const last = points.length - 1;
     this.index = index;
     this.remaining = 0;
-    this.holding = false;
+    this.#holding = false;
 
     if (index >= last) {
       if (mode.type === 'loop' && !this.released) {
@@ -90,7 +93,7 @@ export class BreakpointEnvelope {
     }
     // Hold until release.
     if (mode.type === 'sustain' && !this.released && index === sustainPoint) {
-      this.holding = true;
+      this.#holding = true;
       return;
     }
 
@@ -98,17 +101,17 @@ export class BreakpointEnvelope {
     const to = points[index + 1];
     const frames = Math.max(
       1,
-      Math.round(((to.time - from.time) * this.sampleRate) / this.timeScale),
+      Math.round(((to.time - from.time) * this.#sampleRate) / this.timeScale),
     );
-    this.curve = from.curve ?? 'linear';
-    this.target = to.value;
+    this.#curve = from.curve ?? 'linear';
+    this.#target = to.value;
     this.remaining = frames;
 
-    if (this.curve === 'exponential') {
+    if (this.#curve === 'exponential') {
       this.value = Math.max(this.value, MIN_EXP_VALUE);
-      this.step = (Math.max(to.value, MIN_EXP_VALUE) / this.value) ** (1 / frames);
+      this.#step = (Math.max(to.value, MIN_EXP_VALUE) / this.value) ** (1 / frames);
     } else {
-      this.step = (to.value - this.value) / frames;
+      this.#step = (to.value - this.value) / frames;
     }
   }
 }
