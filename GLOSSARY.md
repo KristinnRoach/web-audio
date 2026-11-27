@@ -30,7 +30,7 @@ Internal to the worklet (`src/worklets/processors/play/`). The public API is `Sa
 
 How `SamplePlayerVoice` turns `loopStart`/`loopEnd` into what it plays (`engine/loop-*.js`, `sample-player-voice.js`).
 
-- **Requested loop vs loop window**: The **requested loop** is the `loopStart`/`loopEnd` params as sent. The **loop window** (`LoopWindow`) is what actually plays, in source samples, after trim, quantize, glide, keytrack and drift. The `loop:range` report carries the loop window.
+- **Requested loop vs loop window**: The **requested loop** is the `loopStart`/`loopEnd` params as sent. The **loop window** (`LoopWindow`) is what actually plays, in source samples, after trim, quantize, glide, keytrack and drift. The `loop:range` report carries the window playing now (the latched loop window once in the loop).
   - _Avoid_: "resolved range" or "loop range"; `loop:range` is only the report's name.
 - **Pitch loop vs time loop**: Decided once from the requested loop's length. A **pitch loop** is at or below the pitch cutoff, so it repeats fast enough to sound as a tone; it can be quantized and glided. A **time loop** is longer and repeats a passage; it can be keytracked.
   - _Avoid_: "audio-rate loop" or "short loop" for a pitch loop.
@@ -45,5 +45,5 @@ How `SamplePlayerVoice` turns `loopStart`/`loopEnd` into what it plays (`engine/
 - **Loop mode**: How the playhead passes a loop edge. **Forward** jumps to the other edge (**wrap**). **Reverse** (loop start after loop end) turns around once, then wraps. **Ping-pong** turns around at every edge (**turn**). Reported as `loopMode`; set by loop point order and `voice:setLoopPingPong`.
   - _Not to confuse with_: **playback direction**, which sets which way the playhead approaches the loop. Both can be `'reverse'` and they combine, so say "reverse loop" or "reverse playback", never bare "reverse".
   - _Avoid_: "backward" for the loop mode.
-- **Loop crossfade vs move fade**: A **loop crossfade** smooths a wrap or turn by fading out an extra read head that keeps reading past the edge. A **move fade** smooths a pitch loop jumping to a new start; moves that arrive during it wait, and the playhead follows the **held loop window** (`heldLoopWindow`).
-- **Playhead carry**: When a pitch loop's window moves, the playhead moves with it so the tone keeps going. Time loops don't carry; the playhead stays put.
+- **Latched loop window**: The loop window one pass plays (`#latchedLoopWindow`). Copied from the resolved window when the playhead reaches the loop and at every wrap or turn, so loop changes (move, resize, loop mode, drift) are heard at the next edge, never mid-pass.
+- **Loop crossfade**: Smooths a wrap or turn by fading out an extra read head that keeps reading past the edge. Lasts a fraction of the loop, or `LOOP_MOVE_CROSSFADE_SECONDS` of output time when a pitch loop moves to a new start.

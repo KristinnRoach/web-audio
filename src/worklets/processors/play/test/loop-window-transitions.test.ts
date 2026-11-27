@@ -30,7 +30,7 @@ async function setup() {
     return output[0];
   };
   render(0.125, 0.004, 32);
-  render(0.25); // establish a nonzero window origin
+  render(0.25); // a move mid-pass: the playhead stays in the latched window
   return { render, send };
 }
 
@@ -38,15 +38,15 @@ describe('loop window coordinate transitions', () => {
   it('continues from the audible source position when looping is disabled', async () => {
     const { render, send } = await setup();
     send({ type: 'voice:setLoopEnabled', value: false });
-    expect(render(0.5)).toBeCloseTo((0.25 + 33 / TEST_SAMPLE_RATE) / 2, 7);
-    expect(render(0.75)).toBeCloseTo((0.25 + 34 / TEST_SAMPLE_RATE) / 2, 7);
+    expect(render(0.5)).toBeCloseTo((0.125 + 33 / TEST_SAMPLE_RATE) / 2, 7);
+    expect(render(0.75)).toBeCloseTo((0.125 + 34 / TEST_SAMPLE_RATE) / 2, 7);
   });
 
-  it('keeps source position on entering a time loop and offset on returning to pitch', async () => {
+  it('plays out the latched pass, then lands on the moved loop at the wrap', async () => {
     const { render } = await setup();
-    expect(render(0.25, 0.1)).toBeCloseTo((0.25 + 33 / TEST_SAMPLE_RATE) / 2, 7);
-    // Returning to pitch preserves the offset within the preceding time window.
-    expect(render(0.5)).toBeCloseTo((0.5 + 34 / TEST_SAMPLE_RATE) / 2, 7);
+    expect(render(0.25, 0.1)).toBeCloseTo((0.125 + 33 / TEST_SAMPLE_RATE) / 2, 7);
+    render(0.5, 0.004, 158); // to the end of the 0.004 s pass
+    expect(render(0.5)).toBeCloseTo(0.5 / 2, 7);
   });
 
   it('starts a reused voice at trim rather than the preceding window origin', async () => {

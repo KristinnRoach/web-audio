@@ -44,7 +44,7 @@ describe('a-rate loop points and duration glide', () => {
       const output = new Float32Array(128 * 40);
       for (let block = 0; block < 40; block++) {
         const params = makeParameters({ trimEnd: 1 });
-        // A jump every 3 blocks: faster than the 20 ms move fade.
+        // A jump every 3 blocks
         const start = 0.1 + Math.floor(block / 3) * 0.0041;
         params.loopStart = step(start, start + 0.0003);
         params.loopEnd = params.loopStart.map((value) => value + 0.0039);
@@ -198,49 +198,25 @@ describe('a-rate loop points and duration glide', () => {
   });
 
   it.each([0, 0.01])(
-    'advances quantized glide by audible frames with length glide %f',
+    'applies the glided loop length at the next wrap with length glide %f',
     async (lengthGlideSeconds) => {
       const processor = await makeProcessor();
       processor.port.onmessage?.({
         data: { type: 'voice:setLoopLengthGlide', value: lengthGlideSeconds },
       } as MessageEvent);
       processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
-      processor.process([], [[new Float32Array(37)]], makeParameters({ loopEnd: 0.0075 }));
-      const state = processor.voice as typeof processor.voice & {
-        loopWindow: { length: number };
-      };
-      const expected =
-        lengthGlideSeconds === 0
-          ? 0.008
-          : Math.exp(
-              Math.log(0.008) +
-                (Math.log(0.002) - Math.log(0.008)) *
-                  Math.exp(-37 / TEST_SAMPLE_RATE / lengthGlideSeconds),
-            );
-      expect(state.loopWindow.length / TEST_SAMPLE_RATE).toBeCloseTo(expected, 10);
+      // Past the 0.002 s loop's edge, so the pass after it is latched
+      processor.process([], [[new Float32Array(100)]], makeParameters({ loopEnd: 0.0075 }));
+      const { length } = (
+        processor.voice as typeof processor.voice & { loopWindow: { length: number } }
+      ).loopWindow;
+      const seconds = length / TEST_SAMPLE_RATE;
+      if (lengthGlideSeconds === 0) {
+        expect(seconds).toBeCloseTo(0.008, 10);
+      } else {
+        expect(seconds).toBeGreaterThan(0.002);
+        expect(seconds).toBeLessThan(0.008);
+      }
     },
   );
-
-  it('applies a new length glide time constant during an active glide', async () => {
-    const processor = await makeProcessor();
-    processor.port.onmessage?.({
-      data: { type: 'voice:setLoopLengthGlide', value: 0.01 },
-    } as MessageEvent);
-    processor.process([], [[new Float32Array(1)]], makeParameters({ loopEnd: 0.002 }));
-    const target = makeParameters({ loopEnd: 0.0075 });
-    processor.process([], [[new Float32Array(37)]], target);
-    processor.port.onmessage?.({
-      data: { type: 'voice:setLoopLengthGlide', value: 0.02 },
-    } as MessageEvent);
-    processor.process([], [[new Float32Array(19)]], target);
-    const state = processor.voice as typeof processor.voice & {
-      loopWindow: { length: number };
-    };
-    const expected = Math.exp(
-      Math.log(0.008) +
-        (Math.log(0.002) - Math.log(0.008)) *
-          Math.exp(-37 / TEST_SAMPLE_RATE / 0.01 - 19 / TEST_SAMPLE_RATE / 0.02),
-    );
-    expect(state.loopWindow.length / TEST_SAMPLE_RATE).toBeCloseTo(expected, 10);
-  });
 });

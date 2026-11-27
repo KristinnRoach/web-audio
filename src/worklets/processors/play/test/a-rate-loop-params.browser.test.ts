@@ -45,10 +45,11 @@ it('applies a loop-end step within a real render quantum', async () => {
   node.connect(context.destination);
   const audio = await context.startRendering();
   const samples = audio.getChannelData(0);
-  expect(samples[95]).toBeCloseTo(95 / 100_000, 6);
-  // The wrap lands at frame 96. Check half a loop later, past any loop-jump
-  // crossfade (at most a quarter loop), where the playhead reads loopStart + 48.5.
-  expect(samples[144]).toBeCloseTo(48.5 / 100_000, 6);
+  // The step lands mid-pass, so the latched 192-sample pass plays on past it.
+  expect(samples[150]).toBeCloseTo(150 / 100_000, 6);
+  // The wrap at frame 192 lands in the shortened loop. Check past the wrap
+  // crossfade (at most a quarter loop), before the new loop's own wrap.
+  expect(samples[250]).toBeCloseTo(58 / 100_000, 6);
   expect(samples.every(Number.isFinite)).toBe(true);
   node.disconnect();
   node.port.close();

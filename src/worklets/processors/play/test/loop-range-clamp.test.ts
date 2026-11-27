@@ -25,8 +25,11 @@ describe('loop range clamping', () => {
     vi.stubGlobal('currentTime', 0.2);
     render(processor, parameters, TEST_SAMPLE_RATE / 5);
     expect(reports().at(-1).isInPitchLoop).toBe(true);
+    // The pitch loop plays out its pass, then the time loop takes over at the wrap.
     vi.stubGlobal('currentTime', 0.4);
     render(processor, makeParameters({ loopStart: 0.1, loopEnd: 0.5 }), 128);
+    vi.stubGlobal('currentTime', 0.5);
+    render(processor, makeParameters({ loopStart: 0.1, loopEnd: 0.5 }), 1);
     expect(reports().at(-1).isInPitchLoop).toBe(false);
   });
 
@@ -356,8 +359,7 @@ describe('loop range clamping', () => {
     expect(loop.loopEnd).toBeCloseTo(0.405, 5);
   });
 
-  // Pointer events arrive faster than the move fade; after 22 of them trim start passes
-  // trim end and reverses playback.
+  // After 22 pointer events, trim start passes trim end and reverses playback.
   it.each(['trimStart', 'trimEnd'] as const)(
     'plays on without clicks when dragging %s pushes a sounding pitch loop',
     async (edge) => {
@@ -455,7 +457,7 @@ describe('loop range clamping', () => {
     const output = new Float32Array(1);
     processor.process([], [[output]], at(10000, 6000));
     expect(output[0]).toBeGreaterThan(0.4);
-    // Past the 20 ms move fade it plays only the new place.
+    // Past the move's crossfade it plays only the new place.
     render(processor, at(10000, 6000), 2000);
     processor.process([], [[output]], at(10000, 6000));
     expect(output[0]).toBeCloseTo(-0.5, 5);

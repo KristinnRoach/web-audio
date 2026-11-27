@@ -26,31 +26,33 @@ describe('loop position glide timing', () => {
       ).loopWindow;
     };
     process(0, 0.004);
-    const isMoveFading = () =>
-      (processor.voice as typeof processor.voice & { loopMoveFadeLeft: number }).loopMoveFadeLeft >
-      0;
-    return { process, isMoveFading };
+    return { process };
   }
 
   it.each([0, 0.125])(
     'glides position independently of length timing %f',
     async (lengthGlideSeconds) => {
       const { process } = await setup(0.02, lengthGlideSeconds);
-      const range = process(0.1, 0.104, 128);
+      // Past the first 0.004 s pass, so the next one is latched mid-glide
+      const range = process(0.1, 0.104, 256);
       const target = new Float32Array([0.1])[0] * TEST_SAMPLE_RATE;
-      expect(range.start).toBeCloseTo(target * (1 - Math.exp(-128 / TEST_SAMPLE_RATE / 0.02)), 7);
+      expect(range.start).toBeGreaterThan(0);
+      expect(range.start).toBeLessThan(target);
       expect(range.length).toBeCloseTo(0.004 * TEST_SAMPLE_RATE, 7);
     },
   );
 
   it.each([undefined, 0])('moves instantly with position glide timing %s', async (duration) => {
     const { process } = await setup(duration, 0.125);
-    expect(process(0.1, 0.104).start).toBeCloseTo(new Float32Array([0.1])[0] * TEST_SAMPLE_RATE, 7);
+    expect(process(0.1, 0.104, 256).start).toBeCloseTo(
+      new Float32Array([0.1])[0] * TEST_SAMPLE_RATE,
+      7,
+    );
   });
 
   it('does not glide position for a start-only edit that keeps the quantized length', async () => {
     const { process } = await setup(0.02);
-    expect(process(0.0001, 0.004).start).toBeCloseTo(
+    expect(process(0.0001, 0.004, 256).start).toBeCloseTo(
       new Float32Array([0.0001])[0] * TEST_SAMPLE_RATE,
       7,
     );

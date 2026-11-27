@@ -75,11 +75,9 @@ function render(processor: TestProcessor, parameters: Parameters, frames: number
   }
 }
 
-// loopRange is recomputed once per block, so a loop point can move behind the playhead
-// between blocks. The wrap carries the fractional overshoot to keep the loop period
-// exact; when the overshoot exceeds the whole loop it has to fall back to a plain snap
-// or the playhead lands outside the loop entirely.
-describe('loop wrap with an overshoot larger than the loop', () => {
+// A loop point can move behind the playhead mid-pass. The pass plays out to the latched
+// window's edge, and the wrap lands inside the new loop, however far it moved.
+describe('loop points moving behind the playhead', () => {
   beforeAll(() => {
     vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
     vi.stubGlobal('sampleRate', TEST_SAMPLE_RATE);
@@ -92,21 +90,23 @@ describe('loop wrap with an overshoot larger than the loop', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the playhead inside the loop when loopEnd moves behind it', async () => {
+  it('wraps into the narrowed loop when loopEnd moves behind the playhead', async () => {
     const processor = await startProcessor('forward');
 
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES);
     render(processor, wide, WIDE_LOOP_SAMPLES - 99);
     expect(processor.voice.playheadPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
 
-    // loopEnd jumps back behind the playhead: overshoot is ~18x the new loop length.
     const narrow = makeParameters(0, NARROW_LOOP_SAMPLES);
     render(processor, narrow, 1);
+    expect(processor.voice.playheadPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
 
-    expect(processor.voice.playheadPosition).toBeCloseTo(1);
+    render(processor, narrow, 100);
+    expect(processor.voice.playheadPosition).toBeGreaterThanOrEqual(0);
+    expect(processor.voice.playheadPosition).toBeLessThan(NARROW_LOOP_SAMPLES);
   });
 
-  it('keeps the playhead inside the loop when loopStart moves past it in reverse', async () => {
+  it('wraps into the narrowed loop when loopStart moves past the playhead in reverse', async () => {
     const processor = await startProcessor('reverse');
 
     // End trim at the loop end so reverse starts inside the loop
@@ -122,10 +122,7 @@ describe('loop wrap with an overshoot larger than the loop', () => {
       WIDE_LOOP_SAMPLES,
       trimEnd,
     );
-    render(processor, narrow, 1);
-
-    // The playhead travels with the loop start, so it lands near the top of the
-    // narrow loop rather than exactly one sample below its end.
+    render(processor, narrow, 101);
     expect(processor.voice.playheadPosition).toBeGreaterThanOrEqual(
       WIDE_LOOP_SAMPLES - NARROW_LOOP_SAMPLES,
     );
