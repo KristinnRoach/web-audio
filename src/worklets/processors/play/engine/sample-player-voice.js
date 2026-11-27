@@ -3,6 +3,7 @@
 // `postMessage`, synchronously, in the order they occur.
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
+import { GrainStretcher } from './grain-stretch.js';
 import { PeriodLockStretcher } from './period-lock-stretch.js';
 import { GrainPool, MAX_OUTGOING_GRAINS } from './grain-pool.js';
 import { EDGE_END, EDGE_LOOP, EDGE_NONE, isApproaching, PassScheduler } from './pass-scheduler.js';
@@ -89,6 +90,8 @@ export class SamplePlayerVoice {
   #pendingRates;
   #resolvedLoopWindow;
   #passes;
+  #periodStretcher;
+  #grainStretcher;
   #keytrackLoopAmount;
   #loopKeytrackOptions;
   #loopLengthGlideCoefficient;
@@ -171,7 +174,10 @@ export class SamplePlayerVoice {
     // Reused during rendering to avoid allocating options per sample.
     this.#loopKeytrackOptions = { rootNote: 60, depth: 0, mapping: 'exponential' };
 
-    this.timestretch = new PeriodLockStretcher(sampleRate);
+    this.#periodStretcher = new PeriodLockStretcher(sampleRate);
+    this.#grainStretcher = new GrainStretcher(sampleRate, this.grains);
+    // The stretcher for the current timestretch mode; off when not enabled.
+    this.timestretch = this.#periodStretcher;
 
     // Glide time constant between quantized loop periods, not an arrival time
     // (~95% after 3x). 0 = stepped. Initial value matches samplerParams.loopLengthGlide.
@@ -247,7 +253,7 @@ export class SamplePlayerVoice {
     this.reset();
     for (const head of this.readHeads) head.source.samples = null;
     this.#zeroCrossings = [];
-    this.timestretch.setPeriods(null, 1);
+    this.#periodStretcher.setPeriods(null, 1);
     this.buffer = buffer ?? null;
   }
 
@@ -256,7 +262,7 @@ export class SamplePlayerVoice {
   }
 
   setPitchPeriods(periods, hopSamples) {
-    this.timestretch.setPeriods(periods, hopSamples);
+    this.#periodStretcher.setPeriods(periods, hopSamples);
   }
 
   /**
@@ -336,8 +342,11 @@ export class SamplePlayerVoice {
     this.#keytrackLoopAmount = Math.max(0, Math.min(1, amount));
   }
 
+  /** @param {string} mode 'period' or 'grain'; anything else turns timestretch off. */
   setTimestretchMode(mode) {
-    this.timestretch.setEnabled(mode === 'period', this.playheadPosition);
+    this.#periodStretcher.setEnabled(mode === 'period', this.playheadPosition);
+    this.#grainStretcher.setEnabled(mode === 'grain', this.playheadPosition);
+    this.timestretch = mode === 'grain' ? this.#grainStretcher : this.#periodStretcher;
   }
 
   // ===== METHODS =====
