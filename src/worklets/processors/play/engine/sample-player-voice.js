@@ -4,8 +4,8 @@
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { PeriodLockStretcher } from './period-lock-stretch.js';
-import { reflectLoopPosition, wrapLoopPosition } from './loop-edges.js';
-import { LoopCrossfade, MAX_OUTGOING_HEADS } from './loop-crossfade.js';
+import { GrainPool, MAX_OUTGOING_GRAINS } from './grain-pool.js';
+import { EDGE_END, EDGE_LOOP, EDGE_NONE, isApproaching, PassScheduler } from './pass-scheduler.js';
 import { LoopWindow } from './loop-window.js';
 import { getKeytrackedValue } from './keytrack.js';
 import { ClampedSourceReader } from './source-reader.js';
@@ -24,10 +24,10 @@ import {
 const DEFAULT_PITCH_CUTOFF_SECONDS = 1 / 32.703;
 // Loop jump and turn crossfade length in source samples (~5 ms at 48 kHz).
 const LOOP_CROSSFADE_SAMPLES = 256; // reasonable: 32 - 1024
-// Crossfade at the edge where a pitch loop moves to a new start, in output seconds, so
-// it sounds the same at every note. Longer than a plain wrap to smooth scanning between
-// different waveforms. Short loops can exceed MAX_OUTGOING_HEADS while moving, dropping
-// the oldest head early; more heads made no audible difference in listening tests.
+// Crossfade at the edge where a loop moves to a new start, in output seconds, so it
+// sounds the same at every note. Longer than a plain wrap to smooth scanning between
+// different waveforms. Short loops can exceed MAX_OUTGOING_GRAINS while moving, dropping
+// the oldest grain early; more grains made no audible difference in listening tests.
 const LOOP_MOVE_CROSSFADE_SECONDS = 0.02; // reasonable: 0.005 - 0.05
 // U-turn crossfade: a ping-pong or reverse-loop turn has no step, but its slope
 // reverses in one frame (a corner, audible at zero crossings). The crossfade
@@ -37,7 +37,7 @@ const LOOP_TURN_CROSSFADE = true;
 // Source-domain fade into a loop's silence padding; not a note release.
 const TAIL_FADE_SAMPLES = 64;
 // Note-boundary de-click ramps, independent of pitch, direction and the musical
-// amp envelope. Keep these in output frames; loop fades follow source position.
+// amp envelope. Keep these in output frames; grain fades follow source position.
 // Host stop: ~1.3 ms at 48 kHz.
 const STOP_FADE_FRAMES = 64;
 // Tiny opening ramp in output frames (~0.33 ms at 48 kHz).
@@ -76,10 +76,6 @@ function hasSameValues(fields, other) {
   return true;
 }
 
-function isApproachingLoopWindow(position, approachDirection, loopWindow) {
-  return approachDirection > 0 ? position < loopWindow.start : position >= loopWindow.end;
-}
-
 export class SamplePlayerVoice {
   #loopDriftPassCount = 0;
   #driftPending = true;
@@ -92,8 +88,7 @@ export class SamplePlayerVoice {
   #velocityGain;
   #pendingRates;
   #resolvedLoopWindow;
-  #latchedLoopWindow;
-  #isLatched;
+  #passes;
   #keytrackLoopAmount;
   #loopKeytrackOptions;
   #loopLengthGlideCoefficient;
@@ -112,8 +107,6 @@ export class SamplePlayerVoice {
   #zeroCrossings;
   #postedRanges;
   #needsStartPosition;
-  #previousApproachDirection;
-  #loopTurned;
   #inLoop;
   #loopRate;
   #currentLoopDrift;
@@ -161,13 +154,14 @@ export class SamplePlayerVoice {
     this.envelopes = new VoiceEnvelopes(sampleRate);
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
-    this.enableLoopCrossfade = true; // Crossfade between loop edges
-    this.loopCrossfade = new LoopCrossfade();
+    this.enableEdgeFades = true; // Fade a grain out at every edge
+    // The playhead and the grains fading out behind it.
+    this.grains = new GrainPool();
     // The loop window as the params ask for it now, reused per resolve.
     this.#resolvedLoopWindow = new LoopWindow();
-    // The loop window this pass plays. Loop changes apply at the next wrap or turn,
-    // when the resolved window is copied in here.
-    this.#latchedLoopWindow = new LoopWindow();
+    // The note's passes. A loop pass plays the latched loop window: loop changes are
+    // heard at the next wrap or turn, or sooner when they pull its end in.
+    this.#passes = new PassScheduler();
     // Ping-pong turns around at both loop edges and overrides loop edge order.
     this.loopPingPong = false;
     // Keytrack loop. Resampling: 0 = loop length fixed in samples (loop time shortens as you
@@ -197,8 +191,8 @@ export class SamplePlayerVoice {
     this.#loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
     this.#positionMessage = { type: 'voice:position', position: 0 };
     // Everything sounding this sample: the playhead, the stretcher's fade-out head
-    // and the crossfade heads.
-    this.readHeads = Array.from({ length: MAX_OUTGOING_HEADS + 2 }, () => ({
+    // and the outgoing grains.
+    this.readHeads = Array.from({ length: MAX_OUTGOING_GRAINS + 2 }, () => ({
       position: 0,
       gain: 1,
       mix: 0,
@@ -211,6 +205,15 @@ export class SamplePlayerVoice {
 
     // Initialize all playback state
     this.reset();
+  }
+
+  /** The current grain's position in source samples. */
+  get playheadPosition() {
+    return this.grains.current.position;
+  }
+
+  set playheadPosition(position) {
+    this.grains.current.position = position;
   }
 
   // C5's wavelength, lowered to the shortest loop quantize period so periods above C5 keep their pitch.
@@ -347,7 +350,6 @@ export class SamplePlayerVoice {
     this.#clearStop();
     this.triggerId = 0;
 
-    this.#previousApproachDirection = null;
     this.playheadPosition = 0;
     this.#needsStartPosition = false;
     this.#resetNoteLoop();
@@ -356,16 +358,13 @@ export class SamplePlayerVoice {
 
   // Loop state each note starts from.
   #resetNoteLoop() {
-    // True while cycling a loop against the approach direction (reverse loops,
-    // or the return half of a ping-pong). Direction = approach, negated when turned.
-    this.#loopTurned = false;
+    this.#passes.reset();
     this.loopWrapped = false;
     this.#inLoop = false; // as of the previous sample
     this.isInPitchLoop = false;
     this.loopWindow = null;
-    this.#isLatched = false; // no loop window latched until the playhead reaches the loop
     this.#loopRate = 1;
-    this.loopCrossfade.reset();
+    this.grains.reset();
     this.#resetLoopGlides(); // new notes start on the target range
 
     this.#loopDriftPassCount = 0;
@@ -414,70 +413,48 @@ export class SamplePlayerVoice {
     this.#needsStartPosition = false;
   }
 
-  // Capped to a fraction of the loop, so short loops get short fades. A pitch loop
-  // moving to a new start gets its own, longer fade.
-  #crossfadeLength(loopWindow, moves) {
-    // Source samples per output second: the previous sample's rate (a pitch loop never stretches).
-    if (moves && loopWindow.isPitchLoop)
-      return LOOP_MOVE_CROSSFADE_SECONDS * this.sampleRate * this.#loopRate;
-    return Math.min(LOOP_CROSSFADE_SAMPLES, loopWindow.length / 4);
-  }
-
-  // Copies the resolved window into the latched one, which plays until the next edge.
-  #latch(window) {
-    const latched = this.#latchedLoopWindow;
-    latched.start = window.start;
-    latched.length = window.length;
-    latched.direction = window.direction;
-    latched.isPitchLoop = window.isPitchLoop;
-    this.#isLatched = true;
+  // Capped to a fraction of the pass, so short loops get short fades. A loop moving
+  // to a new start gets its own, longer fade.
+  #crossfadeLength(passLength, moves, speed) {
+    // Source samples per output second: matches the rate that advances outgoing grains.
+    if (moves) return LOOP_MOVE_CROSSFADE_SECONDS * this.sampleRate * speed;
+    return Math.min(LOOP_CROSSFADE_SAMPLES, passLength / 4);
   }
 
   /**
-   * Moves the playhead past the latched window's edge once it reaches it: jumps
-   * to the other edge, or turns around. Turning is what makes a reverse loop
-   * (turn once on arrival, then jump) or ping-pong (turn at every edge).
-   *
-   * Loop changes apply here and nowhere else: the playhead lands on the resolved
-   * window, which is latched for the next pass. Moves, resizes and loop mode
-   * changes are all heard at the next edge, under the edge's crossfade.
+   * Ends the current pass once the playhead reaches its edge, through the pass
+   * scheduler. Every edge that moves or stops the playhead fades a grain out from
+   * where it was: a wrap, a turn, or the note's last edge.
    */
-  #passLoopEdge(approachDirection, resolved, tailEnd, timestretchActive) {
-    const latched = this.#latchedLoopWindow;
-    const direction = this.#loopTurned ? -approachDirection : approachDirection;
-    const position = timestretchActive
-      ? this.timestretch.originalSpeedPosition
-      : this.playheadPosition;
-    const reachedEdge = direction > 0 ? position >= latched.end : position < latched.start;
-    if (!reachedEdge) return;
+  #passEdge(approachDirection, resolved, trimRange, timestretchActive, speed) {
+    const passes = this.#passes;
+    const direction = passes.direction(approachDirection);
+    const tailEnd = passes.pass.tailEnd;
+    const edge = passes.passEdge(
+      timestretchActive ? this.timestretch.originalSpeedPosition : this.grains.current.position,
+      approachDirection,
+      timestretchActive ? 1 : speed,
+      this.loopEnabled,
+      this.loopPingPong,
+      resolved,
+      trimRange,
+    );
+    if (edge === EDGE_NONE) return;
 
-    const turns = this.loopPingPong || this.#loopTurned !== resolved.direction < 0;
-    // Same overshoot past the same edge, measured from the resolved window's edge.
-    const edgeShift = direction > 0 ? resolved.end - latched.end : resolved.start - latched.start;
-    const shifted = position + edgeShift;
-    const nextPosition = turns
-      ? reflectLoopPosition(shifted, direction, resolved.start, resolved.end)
-      : wrapLoopPosition(shifted, direction, resolved.start, resolved.end);
-    if (nextPosition === null) return;
-
-    if (turns) this.#loopTurned = !this.#loopTurned;
-    if (this.enableLoopCrossfade && (!turns || LOOP_TURN_CROSSFADE)) {
-      // The outgoing head carries on past the edge in the pre-turn direction
-      const length = this.#crossfadeLength(latched, resolved.start !== latched.start);
-      this.loopCrossfade.start(this.playheadPosition, direction, length, tailEnd);
+    if (this.enableEdgeFades && (!passes.turnedAtEdge || LOOP_TURN_CROSSFADE)) {
+      // The outgoing grain carries on past the edge in the pre-turn direction.
+      const length = this.#crossfadeLength(passes.endedLength, passes.moved, speed);
+      this.grains.fadeOut(direction, length, tailEnd);
     }
-    this.playheadPosition = nextPosition;
-    if (timestretchActive) this.timestretch.reset(nextPosition);
-    this.loopWrapped = true;
-    this.#latch(resolved);
+    if (edge === EDGE_END) return this.grains.endCurrent();
 
+    this.grains.current.position = passes.landing;
+    if (timestretchActive) this.timestretch.reset(passes.landing);
+    if (edge !== EDGE_LOOP) return;
+    this.loopWrapped = true;
     // Wraps and turns both advance the drift cadence.
     this.#loopDriftPassCount++;
     this.#driftPending = true;
-  }
-
-  #isWithin(window) {
-    return this.playheadPosition >= window.start && this.playheadPosition <= window.end;
   }
 
   #addReadHead(position, gain, mix) {
@@ -487,19 +464,21 @@ export class SamplePlayerVoice {
     head.mix = mix;
   }
 
-  // Innermost first. The stretcher's head stays inside the crossfade heads even when
+  // Innermost first. The stretcher's head stays inside the outgoing grains even when
   // it started later; among those, the newest is innermost, since each fades from
   // what was audible when it started. They keep their own tail gain, so the silent
   // tail can't mute the outgoing side of a reverse wrap.
   #collectReadHeads(tailGain) {
     this.#readHeadCount = 0;
-    this.#addReadHead(this.playheadPosition, tailGain, 0);
+    // Once the playhead stops, the grains fade out from silence.
+    const { current } = this.grains;
+    if (current.active) this.#addReadHead(current.position, tailGain, 0);
     if (this.timestretch.fadeOutPosition !== null) {
       this.#addReadHead(this.timestretch.fadeOutPosition, tailGain, this.timestretch.crossfadeMix);
     }
-    const crossfade = this.loopCrossfade;
-    for (let i = crossfade.count - 1; i >= 0; i--) {
-      const { position, tailEnd, mix } = crossfade.head(i);
+    const grains = this.grains;
+    for (let i = grains.count - 1; i >= 0; i--) {
+      const { position, tailEnd, mix } = grains.outgoing(i);
       this.#addReadHead(position, tailGainAt(position, tailEnd), mix);
     }
   }
@@ -694,7 +673,7 @@ export class SamplePlayerVoice {
         params,
         glidedLength,
       );
-      calcLoopEnd = calcLoopStart + fittedLength;
+      calcLoopEnd = Math.min(calcLoopStart + fittedLength, trimEnd);
     } else {
       calcLoopStart = Math.min(Math.max(calcLoopStart, trimStart), trimEnd);
       calcLoopEnd = Math.min(Math.max(calcLoopEnd, trimStart), trimEnd);
@@ -762,6 +741,8 @@ export class SamplePlayerVoice {
     window.start = calcLoopStart;
     window.length = calcLoopEnd - calcLoopStart;
     window.isPitchLoop = isPitchLoop;
+    // A window resolved past trimEnd plays silence past it.
+    window.tailEnd = calcLoopEnd > trimEnd ? trimEnd : Infinity;
     return window;
   }
 
@@ -904,12 +885,6 @@ export class SamplePlayerVoice {
       if (startOffset >= outputChannels[0].length) return;
     }
     this.pendingStartFrame = 0;
-    // Loop enablement changes between blocks. When off, play in the approach direction,
-    // and latch afresh when the loop comes back on.
-    if (!this.loopEnabled) {
-      this.#loopTurned = false;
-      this.#isLatched = false;
-    }
 
     // ===== GET PARAM VALUES =====
 
@@ -935,32 +910,10 @@ export class SamplePlayerVoice {
 
     const isConstant = this.#getConstantFlags(parameters);
 
-    // ===== Init playhead position =====
-
     // Where reverse playback starts.
     const lastPosition = trimRange.endSamples - 1;
-
-    // A turn can happen after the preceding block advanced past a trim edge.
-    if (
-      this.#previousApproachDirection !== null &&
-      this.#previousApproachDirection !== approachDirection &&
-      // A latched pitch loop plays out its pass even when trim moved off it.
-      !(
-        this.loopEnabled &&
-        this.#isLatched &&
-        this.#latchedLoopWindow.isPitchLoop &&
-        this.#isWithin(this.#latchedLoopWindow)
-      )
-    ) {
-      if (this.playheadPosition >= trimRange.endSamples) {
-        this.playheadPosition = lastPosition;
-        this.timestretch.reset(this.playheadPosition);
-      } else if (this.playheadPosition < trimRange.startSamples) {
-        this.playheadPosition = trimRange.startSamples;
-        this.timestretch.reset(this.playheadPosition);
-      }
-    }
-    this.#previousApproachDirection = approachDirection;
+    const passes = this.#passes;
+    const current = this.grains.current;
 
     this.#trimMessage.trimStart = trimRange.startSamples / sampleRate;
     this.#trimMessage.trimEnd = trimRange.endSamples / sampleRate;
@@ -1055,8 +1008,9 @@ export class SamplePlayerVoice {
         const fromLoop = this.startFromLoop && this.loopEnabled;
         const first = fromLoop ? loopWindow.start : trimRange.startSamples;
         const last = fromLoop ? Math.min(loopWindow.end - 1, lastPosition) : lastPosition;
-        this.playheadPosition = approachDirection < 0 ? last : first;
-        this.timestretch.reset(this.playheadPosition);
+        current.position = approachDirection < 0 ? last : first;
+        this.timestretch.reset(current.position);
+        passes.startNote(trimRange.startSamples, trimRange.endSamples);
       }
 
       this.loopWrapped = false;
@@ -1069,28 +1023,24 @@ export class SamplePlayerVoice {
         positionParams.loopStartSamples > positionParams.loopEndSamples ? -1 : 1;
 
       const canStretch = this.timestretch.canStretch;
+      const playing = current.active;
       // The loop starts once the playhead, and the original-speed position if stretch
-      // is available, have reached the resolved window. From then on the voice stays
-      // in the loop and plays the latched window, whatever the params do mid-pass.
+      // is available, have reached the resolved window. From then on each pass plays
+      // the latched window.
       if (
+        playing &&
         this.loopEnabled &&
-        !this.#isLatched &&
-        !isApproachingLoopWindow(this.playheadPosition, approachDirection, loopWindow) &&
         !(
           canStretch &&
-          isApproachingLoopWindow(
-            this.timestretch.originalSpeedPosition,
-            approachDirection,
-            loopWindow,
-          )
+          isApproaching(this.timestretch.originalSpeedPosition, approachDirection, loopWindow)
         )
       ) {
-        this.#latch(loopWindow);
+        passes.enterLoop(current.position, approachDirection, loopWindow);
       }
-      const inLoop = this.loopEnabled && this.#isLatched;
+      const inLoop = this.loopEnabled && passes.isLoopPass;
       this.#inLoop = inLoop;
       // The rest of this sample plays the latched window, or the resolved one on the way in.
-      const playWindow = inLoop ? this.#latchedLoopWindow : loopWindow;
+      const playWindow = inLoop ? passes.pass : loopWindow;
       this.loopWindow = playWindow;
 
       this.#smoothedPanDrift +=
@@ -1102,51 +1052,42 @@ export class SamplePlayerVoice {
       );
 
       const timestretchActive = !(inLoop && playWindow.isPitchLoop) && canStretch;
-      // Only a keytracked time loop runs past trimEnd, into silence.
-      const tailEnd =
-        !playWindow.isPitchLoop && playWindow.end > trimRange.endSamples
-          ? trimRange.endSamples
-          : Infinity;
 
-      if (inLoop) {
-        this.#passLoopEdge(approachDirection, loopWindow, tailEnd, timestretchActive);
+      if (playing) {
+        passes.pullEndIn(
+          passes.direction(approachDirection),
+          this.loopEnabled,
+          trimRange,
+          loopWindow,
+        );
+        this.#passEdge(
+          approachDirection,
+          loopWindow,
+          trimRange,
+          timestretchActive,
+          Math.abs(playbackRate),
+        );
+        if (this.grains.isSilent) return this.#halt();
+      } else if (this.grains.isSilent) {
+        return this.#halt();
       }
-      // After #passLoopEdge so voice/range reports match a window latched at this edge.
+      // After #passEdge so voice/range reports match a window latched at this edge.
       this.isInPitchLoop = inLoop && playWindow.isPitchLoop;
-      const direction = this.#loopTurned ? -approachDirection : approachDirection;
+      const direction = passes.direction(approachDirection);
       const playbackStep = direction * Math.abs(playbackRate);
       // Next sample's envelope timing uses the transport rate that produced its loop state.
       this.#loopRate = timestretchActive ? 1 : Math.abs(playbackStep);
 
       const timestretchJumpTarget = this.timestretch.prepareJump(
         timestretchActive,
-        this.playheadPosition,
+        current.position,
         playbackStep,
         inLoop ? playWindow.start : trimRange.startSamples,
         inLoop ? Math.min(trimRange.endSamples, playWindow.end) : trimRange.endSamples,
       );
 
-      // End playback when the playhead, or the original-speed position while stretching,
-      // leaves [startSamples, endSamples) in its direction of travel.
-      // Don't stop in a keytracked loop's silent tail past trimEnd, or in a latched pass
-      // that trim moved off.
-      const transportPosition = timestretchActive
-        ? this.timestretch.originalSpeedPosition
-        : this.playheadPosition;
-      const overshoot =
-        direction > 0
-          ? transportPosition - trimRange.endSamples
-          : trimRange.startSamples - transportPosition;
-      const leftTrimRange = direction > 0 ? overshoot >= 0 : overshoot > 0;
-
-      if (leftTrimRange && !(this.loopEnabled && this.#isWithin(playWindow))) {
-        // More than one step past the end: trim moved past the playhead. Fade instead of cutting.
-        if (overshoot <= Math.max(1, Math.abs(playbackStep))) return this.#halt();
-        this.pendingStopFrame = Math.min(this.pendingStopFrame ?? Infinity, frame);
-      }
-
       // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail
-      this.#collectReadHeads(tailGainAt(this.playheadPosition, tailEnd));
+      this.#collectReadHeads(tailGainAt(current.position, passes.pass.tailEnd));
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
@@ -1173,11 +1114,11 @@ export class SamplePlayerVoice {
           Math.min(1, isFinite(panAdjustedSample) ? panAdjustedSample : 0),
         );
       }
-      this.loopCrossfade.advance(Math.abs(playbackStep));
+      this.grains.advance(Math.abs(playbackStep));
 
-      this.playheadPosition = this.timestretch.advance(
+      current.position = this.timestretch.advance(
         timestretchActive,
-        this.playheadPosition,
+        current.position,
         playbackStep,
         timestretchJumpTarget,
       );

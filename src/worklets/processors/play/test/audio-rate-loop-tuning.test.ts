@@ -22,7 +22,7 @@ async function measureLoopPeriod(
   driftAmount = 0,
 ): Promise<number> {
   const processor = await startProcessor();
-  Object.assign(processor.voice, { enableLoopCrossfade: false });
+  Object.assign(processor.voice, { enableEdgeFades: false });
   if (playbackDirection === 'reverse') {
     processor.port.onmessage?.({
       data: { type: 'voice:setPlaybackDirection', playbackDirection },

@@ -6,11 +6,11 @@ Goal: a small, stable sampler core that morphing, granular and anti-aliasing can
 
 How the voice works today:
 
-1. **Loop window:** a resolved `LoopWindow` (`start`, `length`, requested `direction`). The voice latches it when the playhead reaches the loop and at every wrap or turn, so loop changes are heard at the next edge.
+1. **Passes:** a note is a sequence of passes: from the note start toward the trim end, then one per loop cycle. Each loop pass plays the latched `LoopWindow` (`start`, `length`, requested `direction`), latched when the playhead reaches the loop and at every wrap or turn. Pass ends are shrink only.
 2. **Pitch loop vs time loop,** decided once per window:
    - **Pitch loop:** quantize, length and position glide. Morphing goes here.
    - **Time loop:** keytrack, zero-crossing snap, tempo sync later.
-3. **Read heads:** the playhead, crossfade heads and the stretcher's outgoing head mix in one list. Every head reads the source through a `SourceReader` and an interpolation kernel.
+3. **Grains:** the playhead is the current grain; every edge (wrap, turn, trim end) fades an outgoing grain. Grains and the stretcher's fade head mix in one list of read heads, each reading the source through a `SourceReader` and an interpolation kernel.
 
 Features that need the source buffer or playhead live in the voice; audio-in, audio-out effects can be separate processors. Add engine files when a feature arrives, and move code to `shared/` only once it is clearly generic.
 
@@ -23,14 +23,14 @@ Each step is one or more small PRs with no audible change, unless noted.
 3. **Research — moved** to step 7.
 4. **Split, then simplify — complete:** the voice has no AudioWorklet globals, pure loop stages, one read-head list and a `LoopWindow` ([#145](https://github.com/KristinnRoach/web-audio/pull/145)–[#149](https://github.com/KristinnRoach/web-audio/pull/149)). Loop changes latch at the next wrap or turn ([#214](https://github.com/KristinnRoach/web-audio/pull/214)).
 
-### 5. Loop phase and read windows — under discussion
+### 5. Loop phase and grains — in progress
 
 Engine only; the `SamplePlayer` API stays as it is. Modelled on [Spotykach](https://github.com/Synthux-Academy/Spotykach) (MIT, C++ on the Daisy Seed).
 
 - Replace the absolute playhead with a loop anchor plus a phase within the latched loop window.
-- Make every read head one `Window` type, so granular becomes more windows.
+- Make every read head a grain, so granular becomes more grains.
 - Play normal playback and loops as one system: a note is a sequence of passes (from the note start, then each loop pass), with the same edge fade and one direction model.
-- Pass ends are shrink only: an edit can pull the current pass's end in (fading out if the read head is already past it), not push it out. Keep the end editable mid-pass, so a live end can be added later.
+- Pass ends are shrink only: an edit can pull the current pass's end in (fading out if the playhead is already past it), not push it out. Keep the end editable mid-pass, so a live end can be added later.
 - Open: the boundary between time loops and pitch loops should need no special case to cross smoothly.
 
 ### 6. Features

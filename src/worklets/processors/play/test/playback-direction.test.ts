@@ -7,7 +7,7 @@ const RAMP = Float32Array.from({ length: 2000 }, (_, i) => i / TEST_SAMPLE_RATE)
 const toSeconds = (samples: number) => samples / TEST_SAMPLE_RATE;
 
 type DirectionProcessor = {
-  voice: { enableLoopCrossfade: boolean; isPlaying: boolean; startFadeFrames: number };
+  voice: { enableEdgeFades: boolean; isPlaying: boolean; startFadeFrames: number };
   port: { onmessage: ((event: MessageEvent) => void) | null };
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: unknown): boolean;
 };
@@ -15,7 +15,7 @@ type DirectionProcessor = {
 async function startRamp(direction: 'forward' | 'reverse', loop = false, pingPong = false) {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as DirectionProcessor;
-  processor.voice.enableLoopCrossfade = false;
+  processor.voice.enableEdgeFades = false;
   const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
 
   send({
@@ -62,7 +62,8 @@ describe('playback direction', () => {
     expect(reverse).toEqual([...forward].reverse());
   });
 
-  it.each([1, 0.75])('turns safely at both trim boundaries at rate %s', async (playbackRate) => {
+  // The playhead turns where it is, one step past the trim edge it had just reached.
+  it.each([1, 0.75])('turns in place at both trim boundaries at rate %s', async (playbackRate) => {
     const params = makeParameters({ ...trim, playbackRate });
     for (const direction of ['forward', 'reverse'] as const) {
       const { processor, send } = await startRamp(direction);
@@ -76,11 +77,10 @@ describe('playback direction', () => {
         playbackDirection: direction === 'forward' ? 'reverse' : 'forward',
       });
       const after = trace(processor, params, 3);
-      expect(after).toEqual(
-        direction === 'forward'
-          ? [749, 749 - playbackRate, 749 - 2 * playbackRate]
-          : [375, 375 + playbackRate, 375 + 2 * playbackRate],
-      );
+      const from =
+        direction === 'forward' ? 375 + frames * playbackRate : 749 - frames * playbackRate;
+      const step = direction === 'forward' ? -playbackRate : playbackRate;
+      expect(after).toEqual([from, from + step, from + 2 * step]);
     }
   });
 
@@ -179,19 +179,36 @@ describe('loop types', () => {
     expect(cycle[1] - cycle[0]).toBe(1);
   });
 
-  it('switching off a reverse loop restores the approach direction and plays out the tail', async () => {
+  it('switching off a reverse loop finishes the pass, turns back and plays out the tail', async () => {
     const { processor, send } = await startRamp('forward', true);
     const before = trace(processor, reverseLoop, 900);
     expect(before.slice(-2)).toEqual([602, 601]);
 
     send({ type: 'voice:setLoopEnabled', value: false });
     const positions = trace(processor, reverseLoop, 1000);
-    expect(positions.slice(0, 3)).toEqual([600, 601, 602]);
+    expect(positions.slice(0, 3)).toEqual([600, 599, 598]);
+    expect(indexOfRun(positions, [376, 375, 376, 377])).toBe(224);
     expect(positions.at(-1)).toBe(1124);
     expect(processor.voice.isPlaying).toBe(false);
   });
 
-  it('clears a ping-pong turn only after rendering with looping off', async () => {
+  it('shortening the loop after turning looping off does not cut the finishing pass short', async () => {
+    const { processor, send } = await startRamp('forward', true);
+    trace(processor, reverseLoop, 900); // descending inside [375, 750), at 600
+
+    send({ type: 'voice:setLoopEnabled', value: false });
+    const shortened = makeParameters({
+      ...trim,
+      loopStart: toSeconds(600),
+      loopEnd: toSeconds(450),
+    });
+    const positions = trace(processor, shortened, 1000);
+    expect(indexOfRun(positions, [376, 375, 376, 377])).toBe(224);
+    expect(positions.at(-1)).toBe(1124);
+    expect(processor.voice.isPlaying).toBe(false);
+  });
+
+  it('toggling looping within a pass keeps the ping-pong turn', async () => {
     const { processor, send } = await startRamp('reverse', true, true);
     trace(processor, forwardLoop, 850); // turned at 375, now moving forward
 
@@ -202,7 +219,7 @@ describe('loop types', () => {
     send({ type: 'voice:setLoopEnabled', value: false });
     expect(trace(processor, forwardLoop, 1)).toEqual([478]);
     send({ type: 'voice:setLoopEnabled', value: true });
-    expect(trace(processor, forwardLoop, 2)).toEqual([477, 476]);
+    expect(trace(processor, forwardLoop, 2)).toEqual([479, 480]);
   });
 
   it('a loop type change takes effect at the next loop edge', async () => {

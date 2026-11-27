@@ -45,5 +45,16 @@ How `SamplePlayerVoice` turns `loopStart`/`loopEnd` into what it plays (`engine/
 - **Loop mode**: How the playhead passes a loop edge. **Forward** jumps to the other edge (**wrap**). **Reverse** (loop start after loop end) turns around once, then wraps. **Ping-pong** turns around at every edge (**turn**). Reported as `loopMode`; set by loop point order and `voice:setLoopPingPong`.
   - _Not to confuse with_: **playback direction**, which sets which way the playhead approaches the loop. Both can be `'reverse'` and they combine, so say "reverse loop" or "reverse playback", never bare "reverse".
   - _Avoid_: "backward" for the loop mode.
-- **Latched loop window**: The loop window one pass plays (`#latchedLoopWindow`). Copied from the resolved window when the playhead reaches the loop and at every wrap or turn, so loop changes (move, resize, loop mode, drift) are heard at the next edge, never mid-pass.
-- **Loop crossfade**: Smooths a wrap or turn by fading out an extra read head that keeps reading past the edge. Lasts a fraction of the loop, or `LOOP_MOVE_CROSSFADE_SECONDS` of output time when a pitch loop moves to a new start.
+- **Latched loop window**: The loop window a loop pass plays (the pass scheduler's `pass` while `isLoopPass`). Copied from the resolved window when the playhead reaches the loop and at every wrap or turn. Moves, loop mode and longer loops are heard at the next edge; a shorter loop is heard at once (shrink only).
+- **Loop crossfade**: The grain fade at a wrap or turn. Lasts a fraction of the pass, or `LOOP_MOVE_CROSSFADE_SECONDS` of output time when the loop moves to a new start.
+
+## Playback
+
+How a voice reads the source (`engine/grain-pool.js`, `engine/pass-scheduler.js`).
+
+- **Grain**: One read of the source: a position, a direction and a fade. The **playhead** is the current grain; at an edge it hands off to an outgoing grain that reads on past the edge and fades out.
+  - _Avoid_: "read window" or "`Window`" for a grain. A **read head** is any grain (or the stretcher's fade head) mixed in one sample.
+- **Grain pool**: `GrainPool`. The playhead plus up to `MAX_OUTGOING_GRAINS` outgoing grains, mixed newest inside oldest.
+- **Pass**: One stretch of playback that ends at an edge in its direction of travel. A note's first pass runs from the note start toward the trim end; each **loop pass** plays the latched loop window.
+- **Pass scheduler**: `PassScheduler`. Decides what happens at each pass's edge: wrap or turn into the next loop pass, play on to the trim end (loop turned off), or stop at the note's last edge. Every edge that moves or stops the playhead uses the same grain fade.
+- **Shrink only**: An edit can pull the current pass's end in, never push it out. Trim pulls a first pass's end in; a shorter resolved loop shortens a loop pass. If the playhead is already past the new end, the pass ends now.

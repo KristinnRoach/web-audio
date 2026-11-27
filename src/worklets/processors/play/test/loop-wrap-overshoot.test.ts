@@ -19,7 +19,7 @@ class MockAudioWorkletProcessor {
 }
 
 type TestProcessor = {
-  voice: { enableLoopCrossfade: boolean; playheadPosition: number };
+  voice: { enableEdgeFades: boolean; playheadPosition: number };
   port: WorkletPort;
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Parameters): boolean;
 };
@@ -48,7 +48,7 @@ async function startProcessor(playbackDirection: 'forward' | 'reverse') {
   const { SamplePlayerProcessor } = await import('../sample-player-processor.js');
   const processor = new SamplePlayerProcessor() as unknown as TestProcessor;
 
-  processor.voice.enableLoopCrossfade = false;
+  processor.voice.enableEdgeFades = false;
   processor.port.onmessage?.({
     data: {
       type: 'voice:setBuffer',
@@ -75,8 +75,8 @@ function render(processor: TestProcessor, parameters: Parameters, frames: number
   }
 }
 
-// A loop point can move behind the playhead mid-pass. The pass plays out to the latched
-// window's edge, and the wrap lands inside the new loop, however far it moved.
+// A loop point can move behind the playhead mid-pass. A shorter loop ends the pass at
+// once (shrink only), and the wrap lands inside the new loop, however far it moved.
 describe('loop points moving behind the playhead', () => {
   beforeAll(() => {
     vi.stubGlobal('AudioWorkletProcessor', MockAudioWorkletProcessor);
@@ -90,7 +90,7 @@ describe('loop points moving behind the playhead', () => {
     vi.unstubAllGlobals();
   });
 
-  it('wraps into the narrowed loop when loopEnd moves behind the playhead', async () => {
+  it('wraps at once into the narrowed loop when loopEnd moves behind the playhead', async () => {
     const processor = await startProcessor('forward');
 
     const wide = makeParameters(0, WIDE_LOOP_SAMPLES);
@@ -99,9 +99,6 @@ describe('loop points moving behind the playhead', () => {
 
     const narrow = makeParameters(0, NARROW_LOOP_SAMPLES);
     render(processor, narrow, 1);
-    expect(processor.voice.playheadPosition).toBeGreaterThan(NARROW_LOOP_SAMPLES);
-
-    render(processor, narrow, 100);
     expect(processor.voice.playheadPosition).toBeGreaterThanOrEqual(0);
     expect(processor.voice.playheadPosition).toBeLessThan(NARROW_LOOP_SAMPLES);
   });

@@ -7,8 +7,26 @@ export class LoopWindow {
   length = 0;
   direction = 1;
   isPitchLoop = false;
+  // Where a window runs into silence past the audio, or Infinity.
+  tailEnd = Infinity;
 
   get end() {
     return this.start + this.length;
+  }
+
+  copy(other) {
+    this.start = other.start;
+    this.length = other.length;
+    this.direction = other.direction;
+    this.isPitchLoop = other.isPitchLoop;
+    this.tailEnd = other.tailEnd;
+  }
+
+  reset() {
+    this.start = 0;
+    this.length = 0;
+    this.direction = 1;
+    this.isPitchLoop = false;
+    this.tailEnd = Infinity;
   }
 }

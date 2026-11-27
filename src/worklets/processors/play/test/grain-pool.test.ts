@@ -1,36 +1,40 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { LoopCrossfade } from '../engine/loop-crossfade.js';
+import { GrainPool } from '../engine/grain-pool.js';
 import { makeParameters, setupProcessorGlobals, startProcessor } from './range-test-helpers';
 
 setupProcessorGlobals();
 
-describe('LoopCrossfade', () => {
-  it('fades each head over its length in source samples at any rate', () => {
-    const fade = new LoopCrossfade();
-    fade.start(100, -1, 8);
-    expect(fade.head(0).mix).toBe(0);
+describe('GrainPool', () => {
+  it('fades each grain over its length in source samples at any rate', () => {
+    const fade = new GrainPool();
+    fade.current.position = 100;
+    fade.fadeOut(-1, 8);
+    expect(fade.outgoing(0).mix).toBe(0);
     fade.advance(2);
-    expect(fade.head(0).position).toBe(98);
-    expect(fade.head(0).mix).toBe(0.25);
+    expect(fade.outgoing(0).position).toBe(98);
+    expect(fade.outgoing(0).mix).toBe(0.25);
     fade.advance(6);
     expect(fade.count).toBe(0);
   });
 
-  it('keeps overlapping heads oldest first and drops finished ones', () => {
-    const fade = new LoopCrossfade();
-    fade.start(100, 1, 4);
+  it('keeps overlapping grains oldest first and drops finished ones', () => {
+    const fade = new GrainPool();
+    fade.current.position = 100;
+    fade.fadeOut(1, 4);
     fade.advance(1);
-    fade.start(200, 1, 8, 1000);
+    fade.current.position = 200;
+    fade.fadeOut(1, 8, 1000);
     expect(fade.count).toBe(2);
-    expect(fade.head(1).position).toBe(200);
+    expect(fade.outgoing(1).position).toBe(200);
     fade.advance(3);
     expect(fade.count).toBe(1);
-    expect(fade.head(0)).toMatchObject({ position: 203, tailEnd: 1000, mix: 3 / 8 });
+    expect(fade.outgoing(0)).toMatchObject({ position: 203, tailEnd: 1000, mix: 3 / 8 });
   });
 
   it('ignores fades shorter than a sample', () => {
-    const fade = new LoopCrossfade();
-    fade.start(100, 1, 0.5);
+    const fade = new GrainPool();
+    fade.current.position = 100;
+    fade.fadeOut(1, 0.5);
     expect(fade.count).toBe(0);
   });
 });
@@ -75,6 +79,39 @@ describe('loop jump crossfade', () => {
 
     // A constant source stays constant through the crossfade
     expect(Math.min(...output.subarray(16))).toBeCloseTo(1, 4);
+  });
+
+  it('sizes a stretched loop-move fade from the grain rate, not the stretch transport rate', async () => {
+    const processor = await startProcessor();
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({
+      type: 'voice:setBuffer',
+      buffer: [new Float32Array(48_000).fill(0.5)],
+      durationSeconds: 1,
+    });
+    send({
+      type: 'voice:setPitchPeriods',
+      periods: new Float32Array(101).fill(96),
+      hopSamples: 480,
+    });
+    send({ type: 'voice:setTimestretchMode', value: 'period' });
+    send({ type: 'voice:start', triggerId: 1 });
+
+    // Enter a 6000-sample (0.125 s) time loop, then move it at playback rate 2.
+    const initial = makeParameters({ playbackRate: 2, loopStart: 0, loopEnd: 0.125 });
+    processor.process([], [[new Float32Array(100)]], initial);
+
+    // Same length (0.125 s), moved start: wraps when originalSpeedPosition reaches 6000.
+    const moved = makeParameters({ playbackRate: 2, loopStart: 0.25, loopEnd: 0.375 });
+    processor.process([], [[new Float32Array(5901)]], moved);
+    expect(processor.voice.grains.count).toBe(1);
+
+    // 20 ms at 48 kHz = 960 output frames (1920 source samples at rate 2): still active halfway.
+    processor.process([], [[new Float32Array(480)]], moved);
+    expect(processor.voice.grains.count).toBe(1);
+
+    processor.process([], [[new Float32Array(480)]], moved);
+    expect(processor.voice.grains.count).toBe(0);
   });
 });
 
