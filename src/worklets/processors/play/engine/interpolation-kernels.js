@@ -45,23 +45,23 @@ export function readHermite(source, position) {
 // Each head caches only its weights, never source samples or output. The first
 // channel computes weights while reading; later channels reuse them.
 export class SincKernel {
-  constructor() {
-    // Float64 preserves the original JS weight precision. Size for the rate cap.
-    this.weights = new Float64Array(
-      Math.floor((2 * SINC_ZERO_CROSSINGS * SINC_MAX_RATE) / SINC_CUTOFF) + 1,
-    );
-    this.position = NaN;
-    this.rate = NaN;
-    this.firstIndex = 0;
-    this.tapCount = 0;
-    this.weightSum = 0;
-  }
+  // Float64 preserves the original JS weight precision. Size for the rate cap.
+  #weights = new Float64Array(
+    Math.floor((2 * SINC_ZERO_CROSSINGS * SINC_MAX_RATE) / SINC_CUTOFF) + 1,
+  );
+  #position = NaN;
+  #rate = NaN;
+  #firstIndex = 0;
+  #tapCount = 0;
+  #weightSum = 0;
 
   /** @param {import('./source-reader.js').SourceReader} source */
   read(source, position, rate) {
-    const weights = this.weights;
-    if (position === this.position && rate === this.rate) {
-      const { firstIndex, tapCount, weightSum } = this;
+    const weights = this.#weights;
+    if (position === this.#position && rate === this.#rate) {
+      const firstIndex = this.#firstIndex;
+      const tapCount = this.#tapCount;
+      const weightSum = this.#weightSum;
       let sum = 0;
       for (let tap = 0; tap < tapCount; tap++) {
         sum += weights[tap] * source.readTap(firstIndex + tap);
@@ -87,11 +87,11 @@ export class SincKernel {
       sum += weight * source.readTap(index);
       weightSum += weight;
     }
-    this.position = position;
-    this.rate = rate;
-    this.firstIndex = firstIndex;
-    this.tapCount = tapCount;
-    this.weightSum = weightSum;
+    this.#position = position;
+    this.#rate = rate;
+    this.#firstIndex = firstIndex;
+    this.#tapCount = tapCount;
+    this.#weightSum = weightSum;
     // Normalizing keeps unity gain at DC wherever the kernel lands between samples.
     return weightSum === 0 ? 0 : sum / weightSum;
   }

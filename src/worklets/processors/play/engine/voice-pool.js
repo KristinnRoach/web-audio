@@ -55,9 +55,9 @@ class VoiceSlot {
 export class VoicePool {
   allocator = new VoiceAllocator();
   /** Semitones added to every played note. */
-  pitchOffset = 0;
+  #pitchOffset = 0;
   /** Off plays every note at rate 1. */
-  pitchEnabled = true;
+  #pitchEnabled = true;
   #queue = [];
   // The played note a new note glides from, updated as events are applied.
   #glideOrigin = 60;
@@ -96,12 +96,12 @@ export class VoicePool {
 
   /** A played note's rate under the current pitch settings. */
   rate(midiNote) {
-    return this.pitchEnabled ? midiToPlaybackRate(midiNote + this.pitchOffset) : 1;
+    return this.#pitchEnabled ? midiToPlaybackRate(midiNote + this.#pitchOffset) : 1;
   }
 
   /** What a voice starts a note with. `glideFromNote` is a played note, or null. */
   note({ midiNote, velocity, glideTime, glideFromNote }) {
-    const glides = this.pitchEnabled && glideTime > 0 && glideFromNote != null;
+    const glides = this.#pitchEnabled && glideTime > 0 && glideFromNote != null;
     return {
       midiNote,
       velocity,
@@ -113,13 +113,13 @@ export class VoicePool {
 
   /** Retunes every slot that has a note, at `time`. */
   setPitchOffset(semitones, time) {
-    if (this.pitchOffset === semitones) return;
-    this.pitchOffset = semitones;
-    this.#retuneAll(time, this.pitchEnabled ? 0.01 : 0);
+    if (this.#pitchOffset === semitones) return;
+    this.#pitchOffset = semitones;
+    this.#retuneAll(time, this.#pitchEnabled ? 0.01 : 0);
   }
 
   setPitchEnabled(enabled, time) {
-    this.pitchEnabled = enabled;
+    this.#pitchEnabled = enabled;
     // Time constants: about 95% there after 0.1 s (off) or 0.01 s (on).
     if (enabled) this.#retuneAll(time, 0.01 / 3);
     else for (const slot of this.allocator.voiceSlots) slot.voice.setNoteRate(time, 1, 0.1 / 3);
@@ -196,7 +196,7 @@ export class VoicePool {
     slot.midiNote = midiNote;
     if (fallback) this.#glideOrigin = midiNote;
     // With pitch off a legato note keeps its glide, so it does not cut the ramp to rate 1 short.
-    const glides = this.pitchEnabled || !fallback;
+    const glides = this.#pitchEnabled || !fallback;
     slot.voice.setNoteRate(timestamp, this.rate(midiNote), glides ? glideTime : 0);
     slot.postMessage({
       type: 'voice:retuned',
