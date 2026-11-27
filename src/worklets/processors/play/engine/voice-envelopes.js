@@ -80,9 +80,11 @@ export class VoiceEnvelopes {
   }
 
   /**
-   * Steps every active envelope one sample. `loopWindow` is the last resolved loop
+   * Steps every active envelope one sample. `loopWindow` is the last loop window
    * (null before the note's first), `loopWrapped` true on the sample after a wrap.
    * `loopRate` is the transport's source samples per output sample (1 under period stretch).
+   * `inLoop` is the voice's previous-sample state: loop on and the playhead in or past the
+   * loop. Only the loopEnd envelope waits for it.
    */
   advance(frame, loopRate, loopEnabled, loopWrapped, loopWindow, bufferLength, inLoop) {
     const released = this.pendingReleaseFrame !== null && frame >= this.pendingReleaseFrame;
@@ -101,11 +103,14 @@ export class VoiceEnvelopes {
       const restart = slot.triggerPending || (loopWrapped && loopSync);
 
       // The loopEnd envelope starts when the playhead enters the loop; a note-off ends the wait.
-      const waitsForLoop =
+      // `inLoop` is from the previous sample, so a loop turned off since then still waits.
+      const awaitingLoopEntry =
         slot === this.loopEnd && slot.triggerPending && (!loopEnabled || !inLoop) && !released;
+      // Loop sync needs the loop window's length, known one sample after the note starts.
+      const awaitingLoopLength = restart && loopSync && !loopWindow;
 
-      if (waitsForLoop || (restart && loopSync && !loopWindow)) {
-        // Hold the opening value until the loop is entered, or one sample for its length.
+      if (awaitingLoopEntry || awaitingLoopLength) {
+        // Hold the opening value meanwhile.
         slot.smoothed = config.shape.points[0].value;
       } else {
         // Each new segment uses current timing. Loop sync follows the loop transport;

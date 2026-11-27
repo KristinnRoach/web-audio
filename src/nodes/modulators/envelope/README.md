@@ -213,7 +213,8 @@ Depth and base must be finite.
 
 Sampler envelope configs instead expose a unitless depth that mixes from the
 unmodulated value (0) to the full shape (1). Shape value 1 maps to unity gain,
-1200 cents for pitch, or 12000 cents for filter detune.
+1200 cents for pitch, 12000 cents for filter detune, full right for pan, or
+0.1 seconds for loopEnd.
 
 LFO depth also uses destination units, but its signal adds to the AudioParam's
 existing value; Envelope writes the parameter's automation directly. Sampler AM
