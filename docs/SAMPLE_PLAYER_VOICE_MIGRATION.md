@@ -1,6 +1,6 @@
 # Voice migration plan
 
-Goal: one audio-thread processor per `SamplePlayer` owns voices, allocation and lifecycle. `SampleVoice` (now `VoiceEffects`) and `SampleVoicePool` go away. Part of [the roadmap](SAMPLE_PLAYER_ROADMAP.md), "The processor owns its voices".
+Goal: one audio-thread processor per `SamplePlayer` owns voices, allocation and lifecycle. `SampleVoice` (now `VoiceEffects`) and `SampleVoicePool` go away. Part of [the roadmap](SAMPLE_PLAYER_ROADMAP.md), "Voice ownership".
 
 ## Target
 
