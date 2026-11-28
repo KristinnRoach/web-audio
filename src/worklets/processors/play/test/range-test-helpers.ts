@@ -20,7 +20,9 @@ export type TestProcessor = {
     playheadPosition: number;
     minRangeSamples: number;
     readonly grains: {
+      readonly current: { position: number; active: boolean };
       readonly count: number;
+      readonly spawnedCount: number;
       outgoing(i: number): { position: number };
     };
     readonly loopWindow: { start: number };

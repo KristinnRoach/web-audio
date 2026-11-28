@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { GrainPool } from '../engine/grain-pool.js';
+import { GrainPool, MAX_SPAWNED_GRAINS } from '../engine/grain-pool.js';
 import { makeParameters, setupProcessorGlobals, startProcessor } from './range-test-helpers';
 
 setupProcessorGlobals();
@@ -36,6 +36,123 @@ describe('GrainPool', () => {
     fade.current.position = 100;
     fade.fadeOut(1, 0.5);
     expect(fade.count).toBe(0);
+  });
+
+  it('spawns finite windowed grains with independent rate and pan until they expire', () => {
+    const pool = new GrainPool();
+    expect(pool.spawn(50, 1, 1.5, -0.5, 8, 2)).toBe(true);
+    expect(pool.spawnedCount).toBe(1);
+    expect(pool.spawned(0)).toMatchObject({ position: 50, rateRatio: 1.5, pan: -0.5, gain: 0 });
+
+    // Halfway into fade-in (age 1 of 2): Hann ramp is 0.5; position advances by speed * rateRatio.
+    pool.advance(2);
+    expect(pool.spawned(0).position).toBeCloseTo(53, 6);
+    expect(pool.spawned(0).gain).toBeCloseTo(0.5, 6);
+
+    // Flat top (age 2..6): gain is 1.
+    pool.advance(2);
+    expect(pool.spawned(0).gain).toBeCloseTo(1, 6);
+
+    // Advance to fade-out (age 7 of 8, remaining 1 of 2): gain is 0.5.
+    for (let i = 0; i < 5; i++) pool.advance(2);
+    expect(pool.spawned(0).gain).toBeCloseTo(0.5, 6);
+
+    // One more frame expires and removes the grain.
+    pool.advance(2);
+    expect(pool.spawnedCount).toBe(0);
+  });
+
+  it('caps spawned grains at MAX_SPAWNED_GRAINS and keeps the pool non-silent while active', () => {
+    const pool = new GrainPool();
+    for (let i = 0; i < MAX_SPAWNED_GRAINS; i++) {
+      expect(pool.spawn(i * 10, 1, 1, 0, 4, 1)).toBe(true);
+    }
+    expect(pool.spawn(999, 1, 1, 0, 4, 1)).toBe(false);
+    expect(pool.spawnedCount).toBe(MAX_SPAWNED_GRAINS);
+
+    pool.endCurrent();
+    expect(pool.isSilent).toBe(false);
+    for (let i = 0; i < 4; i++) pool.advance(1);
+    expect(pool.isSilent).toBe(true);
+  });
+});
+
+describe('spawned grains (numGrains)', () => {
+  it('spawns staggered grains with independent stereo pan when numGrains > 1', async () => {
+    const sine = Float32Array.from({ length: 48_000 }, (_, i) =>
+      Math.sin((2 * Math.PI * 220 * i) / 48_000),
+    );
+    const processor = await startProcessor();
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({ type: 'voice:setBuffer', buffer: [sine], durationSeconds: 1 });
+    send({ type: 'voice:setLoopEnabled', value: true });
+    send({ type: 'voice:setPanDriftEnabled', value: false });
+    send({ type: 'voice:setNumGrains', value: 3 });
+    send({ type: 'voice:start', triggerId: 1 });
+
+    const left = new Float32Array(6000);
+    const right = new Float32Array(6000);
+    processor.process(
+      [],
+      [[left, right]],
+      makeParameters({ loopStart: 0, loopEnd: 0.5, loopDurationDriftAmount: 0 }),
+    );
+
+    // Playhead + 2 spawned grains active.
+    expect(processor.voice.grains.spawnedCount).toBe(2);
+    // Mono source with centered voice pan becomes stereo from per-grain pan offsets.
+    let maxStereoDiff = 0;
+    for (let i = 0; i < left.length; i++) {
+      maxStereoDiff = Math.max(maxStereoDiff, Math.abs(left[i] - right[i]));
+    }
+    expect(maxStereoDiff).toBeGreaterThan(0.01);
+  });
+
+  it('lets existing spawned grains finish when numGrains drops back to 1', async () => {
+    const source = new Float32Array(48_000).fill(0.5);
+    const processor = await startProcessor();
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
+    send({ type: 'voice:setLoopEnabled', value: true });
+    send({ type: 'voice:setNumGrains', value: 4 });
+    send({ type: 'voice:start', triggerId: 1 });
+
+    const params = makeParameters({ loopStart: 0, loopEnd: 0.5, loopDurationDriftAmount: 0 });
+    processor.process([], [[new Float32Array(4000), new Float32Array(4000)]], params);
+    expect(processor.voice.grains.spawnedCount).toBeGreaterThan(0);
+
+    send({ type: 'voice:setNumGrains', value: 1 });
+    // After one grain duration (100 ms = 4800 frames), all spawned grains have faded out.
+    processor.process([], [[new Float32Array(5000), new Float32Array(5000)]], params);
+    expect(processor.voice.grains.spawnedCount).toBe(0);
+  });
+
+  it('waits for spawned grains to finish fading before ending a one-shot note', async () => {
+    const source = new Float32Array(48_000).fill(0.5);
+    const processor = await startProcessor();
+    const send = (data: object) => processor.port.onmessage?.({ data } as MessageEvent);
+    send({ type: 'voice:setBuffer', buffer: [source], durationSeconds: 1 });
+    send({ type: 'voice:setLoopEnabled', value: false });
+    send({ type: 'voice:setNumGrains', value: 2 });
+    processor.port.postMessage.mockClear();
+    send({ type: 'voice:start', triggerId: 7 });
+
+    const endedIds = () =>
+      processor.port.postMessage.mock.calls
+        .map((call) => call[0] as { type: string; triggerId?: number })
+        .filter((msg) => msg.type === 'voice:ended')
+        .map((msg) => msg.triggerId);
+
+    // Short 10 ms one-shot: playhead reaches trimEnd while the 100 ms spawned grain is still active.
+    const params = makeParameters({ trimStart: 0, trimEnd: 0.01 });
+    processor.process([], [[new Float32Array(1000), new Float32Array(1000)]], params);
+    expect(processor.voice.grains.current.active).toBe(false);
+    expect(processor.voice.grains.spawnedCount).toBe(1);
+    expect(endedIds()).toEqual([]);
+
+    // Once the spawned grain finishes its 100 ms window, the voice ends cleanly.
+    processor.process([], [[new Float32Array(5000), new Float32Array(5000)]], params);
+    expect(endedIds()).toEqual([7]);
   });
 });
 

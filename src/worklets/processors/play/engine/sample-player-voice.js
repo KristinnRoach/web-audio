@@ -4,7 +4,7 @@
 
 import { findNearestZeroCrossing } from '@/worklets/shared/utils/findNearestZeroCrossing.js';
 import { PeriodLockStretcher } from './period-lock-stretch.js';
-import { GrainPool, MAX_OUTGOING_GRAINS } from './grain-pool.js';
+import { GrainPool, MAX_GRAINS, MAX_OUTGOING_GRAINS, MAX_SPAWNED_GRAINS } from './grain-pool.js';
 import { EDGE_END, EDGE_LOOP, EDGE_NONE, isApproaching, PassScheduler } from './pass-scheduler.js';
 import { LoopWindow } from './loop-window.js';
 import { getKeytrackedValue } from './keytrack.js';
@@ -44,8 +44,20 @@ const STOP_FADE_FRAMES = 64;
 const START_FADE_FRAMES = 16;
 // Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
+// Finite spawned grains (numGrains > 1): default window size, Hann taper and spread.
+const SPAWNED_GRAIN_SECONDS = 0.1;
+const SPAWNED_GRAIN_FADE_FRACTION = 0.25;
+const SPAWNED_GRAIN_MAX_OFFSET_SECONDS = 0.05;
+const SPAWNED_GRAIN_DETUNE_CENTS = 12;
+const SPAWNED_GRAIN_PAN_SPREAD = 0.7;
+
 function tailGainAt(position, audioEndSamples) {
   return Math.max(0, Math.min(1, (audioEndSamples - position) / TAIL_FADE_SAMPLES));
+}
+
+function panGain(channel, numChannels, pan) {
+  if (numChannels !== 2) return 1;
+  return channel === 0 ? 1 - Math.max(0, pan) : 1 - Math.max(0, -pan);
 }
 
 /**
@@ -118,6 +130,8 @@ export class SamplePlayerVoice {
   #glidedLoopStart;
   #stopFadeFrames;
   #constantFlags;
+  #numGrains;
+  #spawnCountdown;
 
   /**
    * @param {Object} options
@@ -155,8 +169,10 @@ export class SamplePlayerVoice {
     /** @type {import('./interpolation-kernels.js').InterpolationMode} */
     this.interpolation = 'hermite';
     this.enableEdgeFades = true; // Fade a grain out at every edge
-    // The playhead and the grains fading out behind it.
+    // The playhead, outgoing crossfade grains, and finite spawned grains.
     this.grains = new GrainPool();
+    this.#numGrains = 1;
+    this.#spawnCountdown = 0;
     // The loop window as the params ask for it now, reused per resolve.
     this.#resolvedLoopWindow = new LoopWindow();
     // The note's passes. A loop pass plays the latched loop window: loop changes are
@@ -190,12 +206,13 @@ export class SamplePlayerVoice {
     this.#trimMessage = { type: 'trim:range', trimStart: 0, trimEnd: 0, inverted: false };
     this.#loopMessage = { type: 'loop:range', loopStart: 0, loopEnd: 0, loopMode: 'forward' };
     this.#positionMessage = { type: 'voice:position', position: 0 };
-    // Everything sounding this sample: the playhead, the stretcher's fade-out head
-    // and the outgoing grains.
-    this.readHeads = Array.from({ length: MAX_OUTGOING_GRAINS + 2 }, () => ({
+    // Everything sounding this sample: the playhead, the stretcher's fade-out head,
+    // outgoing grains, and finite spawned grains.
+    this.readHeads = Array.from({ length: MAX_OUTGOING_GRAINS + MAX_SPAWNED_GRAINS + 2 }, () => ({
       position: 0,
       gain: 1,
-      mix: 0,
+      rateRatio: 1,
+      pan: 0,
       source: new ClampedSourceReader(),
       sincKernel: new SincKernel(),
     }));
@@ -340,6 +357,16 @@ export class SamplePlayerVoice {
     this.timestretch.setEnabled(mode === 'period', this.playheadPosition);
   }
 
+  get numGrains() {
+    return this.#numGrains;
+  }
+
+  /** Number of simultaneous grains per voice (1 = playhead only; >1 spawns finite grains). */
+  setNumGrains(count) {
+    const next = Math.max(1, Math.min(MAX_GRAINS, Math.round(count)));
+    this.#numGrains = Number.isFinite(next) ? next : 1;
+  }
+
   // ===== METHODS =====
 
   reset() {
@@ -365,6 +392,7 @@ export class SamplePlayerVoice {
     this.loopWindow = null;
     this.#loopRate = 1;
     this.grains.reset();
+    this.#spawnCountdown = 0;
     this.#resetLoopGlides(); // new notes start on the target range
 
     this.#loopDriftPassCount = 0;
@@ -457,44 +485,83 @@ export class SamplePlayerVoice {
     this.#driftPending = true;
   }
 
-  #addReadHead(position, gain, mix) {
+  // Spotykach-style grain spawner: keeps up to (numGrains - 1) finite windowed grains
+  // active alongside the playhead, staggered in time with random offset, detune and pan.
+  #maybeSpawnGrain(direction, regionStart, regionEnd, tailEnd) {
+    const targetExtras = this.#numGrains - 1;
+    if (targetExtras <= 0) return;
+    if (this.#spawnCountdown > 0) this.#spawnCountdown--;
+    if (this.grains.spawnedCount >= targetExtras || this.#spawnCountdown > 0) return;
+
+    const length = Math.max(1, Math.round(SPAWNED_GRAIN_SECONDS * this.sampleRate));
+    const fadeLength = length * SPAWNED_GRAIN_FADE_FRACTION;
+    const regionLength = Math.max(0, regionEnd - regionStart);
+    const maxOffset = Math.min(
+      SPAWNED_GRAIN_MAX_OFFSET_SECONDS * this.sampleRate,
+      regionLength * 0.5,
+    );
+    const offset = (this.#random() * 2 - 1) * maxOffset;
+    const maxPos = Math.max(regionStart, regionEnd - 1);
+    const position = Math.min(Math.max(this.grains.current.position + offset, regionStart), maxPos);
+    const detuneCents = (this.#random() * 2 - 1) * SPAWNED_GRAIN_DETUNE_CENTS;
+    const rateRatio = detuneCents === 0 ? 1 : 2 ** (detuneCents / 1200);
+    const pan = (this.#random() * 2 - 1) * SPAWNED_GRAIN_PAN_SPREAD;
+
+    this.grains.spawn(position, direction, rateRatio, pan, length, fadeLength, tailEnd);
+    // Stagger the next spawn so overlapping grains don't pulse in unison.
+    const interval = (length / targetExtras) * (0.5 + this.#random() * 0.5);
+    this.#spawnCountdown = Math.max(1, Math.round(interval));
+  }
+
+  #addReadHead(position, gain, rateRatio = 1, pan = 0) {
     const head = this.readHeads[this.#readHeadCount++];
     head.position = position;
     head.gain = gain;
-    head.mix = mix;
+    head.rateRatio = rateRatio;
+    head.pan = pan;
   }
 
-  // Innermost first. The stretcher's head stays inside the outgoing grains even when
-  // it started later; among those, the newest is innermost, since each fades from
-  // what was audible when it started. They keep their own tail gain, so the silent
-  // tail can't mute the outgoing side of a reverse wrap.
+  // Collects every active read head with its additive weight. The playhead, stretcher
+  // fade head and outgoing grains resolve their nested crossfade into plain weights
+  // (outermost to innermost, summing to 1); spawned grains add on top with their own
+  // envelope gain, rate ratio and pan.
   #collectReadHeads(tailGain) {
     this.#readHeadCount = 0;
-    // Once the playhead stops, the grains fade out from silence.
-    const { current } = this.grains;
-    if (current.active) this.#addReadHead(current.position, tailGain, 0);
-    if (this.timestretch.fadeOutPosition !== null) {
-      this.#addReadHead(this.timestretch.fadeOutPosition, tailGain, this.timestretch.crossfadeMix);
-    }
     const grains = this.grains;
-    for (let i = grains.count - 1; i >= 0; i--) {
+    let remaining = 1;
+    for (let i = 0; i < grains.count; i++) {
       const { position, tailEnd, mix } = grains.outgoing(i);
-      this.#addReadHead(position, tailGainAt(position, tailEnd), mix);
+      this.#addReadHead(position, tailGainAt(position, tailEnd) * remaining * (1 - mix));
+      remaining *= mix;
+    }
+    if (this.timestretch.fadeOutPosition !== null) {
+      const mix = this.timestretch.crossfadeMix;
+      this.#addReadHead(this.timestretch.fadeOutPosition, tailGain * remaining * (1 - mix));
+      remaining *= mix;
+    }
+    // Once the playhead stops, outgoing grains fade out to silence.
+    if (grains.current.active) {
+      this.#addReadHead(grains.current.position, tailGain * remaining);
+    }
+    for (let i = 0; i < grains.spawnedCount; i++) {
+      const { position, tailEnd, gain, rateRatio, pan } = grains.spawned(i);
+      if (gain <= 0) continue;
+      this.#addReadHead(position, tailGainAt(position, tailEnd) * gain, rateRatio, pan);
     }
   }
 
-  // Each head's `mix` is the weight of the heads inside it. The innermost has
-  // nothing inside it, so its 0 leaves it at full level. All heads move at `rate`.
-  #mixReadHeads(channel, rate) {
-    let mixed = 0;
+  // Sums every read head with its own playback rate and pan offset.
+  #mixReadHeads(channel, numChannels, rate, effectivePan) {
+    let sum = 0;
     for (let i = 0; i < this.#readHeadCount; i++) {
-      const { source, sincKernel, position, gain, mix } = this.readHeads[i];
+      const { source, sincKernel, position, gain, rateRatio, pan } = this.readHeads[i];
       // Mono sources feed every output channel.
       source.samples = this.buffer[Math.min(channel, this.buffer.length - 1)];
-      const value = readSource(this.interpolation, source, position, rate, sincKernel) * gain;
-      mixed = value + mix * (mixed - value);
+      const value = readSource(this.interpolation, source, position, rate * rateRatio, sincKernel);
+      const headPan = pan === 0 ? effectivePan : Math.max(-1, Math.min(1, effectivePan + pan));
+      sum += value * gain * panGain(channel, numChannels, headPan);
     }
-    return mixed;
+    return sum;
   }
 
   #findNearestZeroCrossing(position, direction = 'any', maxDistance = null) {
@@ -1086,32 +1153,35 @@ export class SamplePlayerVoice {
         inLoop ? Math.min(trimRange.endSamples, playWindow.end) : trimRange.endSamples,
       );
 
+      if (current.active && this.#numGrains > 1) {
+        const regionStart = inLoop ? playWindow.start : trimRange.startSamples;
+        const regionEnd = inLoop
+          ? Math.min(trimRange.endSamples, playWindow.end)
+          : trimRange.endSamples;
+        this.#maybeSpawnGrain(direction, regionStart, regionEnd, trimRange.endSamples);
+      }
+
       // 1 inside the audio, ramping to 0 at the audio end, 0 through the silent tail
       this.#collectReadHeads(tailGainAt(current.position, passes.pass.tailEnd));
+      const grainNorm = this.#numGrains > 1 ? 1 / Math.sqrt(this.#numGrains) : 1;
       // Generate output for each channel
       for (let channel = 0; channel < numChannels; channel++) {
         // Safety check: ensure output channel exists
         if (!outputChannels[channel]) continue;
 
-        const mixed = this.#mixReadHeads(channel, Math.abs(playbackStep));
-        const finalSample = mixed * velocityGain * envelopeGain * masterGain * startGain * stopGain;
-
-        // Apply pan (only affects stereo output)
-        let panAdjustedSample = finalSample;
-        if (outputChannels.length === 2) {
-          if (channel === 0) {
-            // Left channel: reduce gain when panned right (positive pan)
-            panAdjustedSample = finalSample * (1 - Math.max(0, effectivePan));
-          } else if (channel === 1) {
-            // Right channel: reduce gain when panned left (negative pan)
-            panAdjustedSample = finalSample * (1 - Math.max(0, -effectivePan));
-          }
-        }
+        const mixed = this.#mixReadHeads(
+          channel,
+          numChannels,
+          Math.abs(playbackStep),
+          effectivePan,
+        );
+        const finalSample =
+          mixed * grainNorm * velocityGain * envelopeGain * masterGain * startGain * stopGain;
 
         // Basic hard limiting
         outputChannels[channel][sample] = Math.max(
           -1,
-          Math.min(1, isFinite(panAdjustedSample) ? panAdjustedSample : 0),
+          Math.min(1, isFinite(finalSample) ? finalSample : 0),
         );
       }
       this.grains.advance(Math.abs(playbackStep));

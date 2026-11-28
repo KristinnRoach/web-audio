@@ -373,6 +373,15 @@ export const samplerParams = defineSamplerParams({
     format: (v) => `${v.toFixed(0)} cents`,
     apply: (p, v) => p.fineTune(v),
   },
+  numGrains: {
+    label: 'Grains',
+    min: 1,
+    max: 8,
+    defaultValue: 1,
+    step: 1,
+    format: (v) => `${Math.round(v)}`,
+    apply: (p, v) => p.setNumGrains(v),
+  },
 });
 
 export type SamplerParamKey = keyof typeof samplerParams;
