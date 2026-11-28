@@ -137,6 +137,9 @@ export class SamplePlayer {
   #loopPitchPeriods = this.#getNotePeriodsInSeconds([0], 1, 5);
   #positionTracking = false;
   #keytrackLoopAmount: number = samplerParams.keytrackLoop.defaultValue;
+  #numGrains: number = samplerParams.numGrains.defaultValue;
+  #grainSize: number = samplerParams.grainSize.defaultValue;
+  #grainOffset: number = samplerParams.grainOffset.defaultValue;
   #hpfCutoff: number = samplerParams.highpassFilter.defaultValue;
   #lpfCutoff: number = samplerParams.lowpassFilter.defaultValue;
 
@@ -235,6 +238,9 @@ export class SamplePlayer {
         this.#post({ type: 'voice:setStartFromLoop', value: this.#startFromLoop });
         this.#post({ type: 'voice:setKeytrackLoopAmount', value: this.#keytrackLoopAmount });
         this.#post({ type: 'voice:setTimestretchMode', value: this.#timestretchMode });
+        this.#post({ type: 'voice:setNumGrains', value: this.#numGrains });
+        this.#post({ type: 'voice:setGrainSize', value: this.#grainSize });
+        this.#post({ type: 'voice:setGrainOffset', value: this.#grainOffset });
 
         // Connect audio chain
         this.#connectAudioChain();
@@ -1162,6 +1168,41 @@ export class SamplePlayer {
   }
 
   getKeytrackLoopAmount = () => this.#keytrackLoopAmount;
+
+  /** Number of simultaneous grains per voice (1 = playhead only; >1 spawns finite grains). */
+  setNumGrains(count: number): this {
+    const clamped = Math.max(
+      samplerParams.numGrains.min,
+      Math.min(samplerParams.numGrains.max, Math.round(count)),
+    );
+    this.#numGrains = Number.isFinite(clamped) ? clamped : samplerParams.numGrains.defaultValue;
+    this.#post({ type: 'voice:setNumGrains', value: this.#numGrains });
+    return this;
+  }
+
+  getNumGrains = () => this.#numGrains;
+
+  /** Spawned grain length in seconds. */
+  setGrainSize(seconds: number): this {
+    const { min, max, defaultValue } = samplerParams.grainSize;
+    this.#grainSize = Number.isFinite(seconds)
+      ? Math.max(min, Math.min(max, seconds))
+      : defaultValue;
+    this.#post({ type: 'voice:setGrainSize', value: this.#grainSize });
+    return this;
+  }
+
+  getGrainSize = () => this.#grainSize;
+
+  /** Spawned grain start offset depth in [0, 1]: 1 = up to ±500 ms from the playhead. */
+  setGrainOffset(depth: number): this {
+    const { defaultValue } = samplerParams.grainOffset;
+    this.#grainOffset = Number.isFinite(depth) ? Math.max(0, Math.min(1, depth)) : defaultValue;
+    this.#post({ type: 'voice:setGrainOffset', value: this.#grainOffset });
+    return this;
+  }
+
+  getGrainOffset = () => this.#grainOffset;
 
   #setLoopEdge(loopEdge: 'start' | 'end', loopStartSeconds: number, loopEndSeconds: number) {
     // Each point is stored as given so the result doesn't depend on set order.

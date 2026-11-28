@@ -191,6 +191,18 @@ export class SamplePlayerProcessor extends AudioWorkletProcessor {
       case 'voice:setInterpolation':
         voice.interpolation = value;
         break;
+
+      case 'voice:setNumGrains':
+        voice.setNumGrains(value);
+        break;
+
+      case 'voice:setGrainSize':
+        voice.setGrainSize(value);
+        break;
+
+      case 'voice:setGrainOffset':
+        voice.setGrainOffset(value);
+        break;
     }
   }
 

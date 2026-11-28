@@ -5,8 +5,22 @@
 // fades from what was audible when it started, older ones included, so overlapping
 // edges stay continuous. Fade length and progress are in source samples, so a fade
 // covers the same stretch of audio at any playback rate.
+//
+// Spawned grains are finite windowed reads (Hann fade-in, sustain, Hann fade-out)
+// with their own rate ratio and stereo pan, summed alongside the playhead.
 
 export const MAX_OUTGOING_GRAINS = 4; // reasonable: 2-16
+export const MAX_SPAWNED_GRAINS = 7;
+export const MAX_GRAINS = MAX_SPAWNED_GRAINS + 1;
+
+// Symmetric Hann-tapered window: raised-cosine fade-in and fade-out, flat top in between.
+function windowGain(age, length, fadeLength) {
+  if (fadeLength <= 0) return 1;
+  if (age < fadeLength) return 0.5 - 0.5 * Math.cos((Math.PI * age) / fadeLength);
+  const remaining = length - age;
+  if (remaining < fadeLength) return 0.5 - 0.5 * Math.cos((Math.PI * remaining) / fadeLength);
+  return 1;
+}
 
 export class GrainPool {
   /**
@@ -24,15 +38,33 @@ export class GrainPool {
     progress: 0,
   }));
   #count = 0;
+  // Active finite spawned grains. Unordered; preallocated and reused.
+  #spawned = Array.from({ length: MAX_SPAWNED_GRAINS }, () => ({
+    position: 0,
+    direction: 1,
+    rateRatio: 1,
+    pan: 0,
+    tailEnd: Infinity,
+    length: 0,
+    fadeLength: 0,
+    age: 0,
+    gain: 0,
+  }));
+  #spawnedCount = 0;
 
   /** Number of outgoing grains still fading. */
   get count() {
     return this.#count;
   }
 
-  /** Nothing left to hear: the playhead has stopped and every outgoing grain has faded. */
+  /** Number of finite spawned grains currently active. */
+  get spawnedCount() {
+    return this.#spawnedCount;
+  }
+
+  /** Nothing left to hear: the playhead has stopped and every grain has finished. */
   get isSilent() {
-    return !this.current.active && this.#count === 0;
+    return !this.current.active && this.#count === 0 && this.#spawnedCount === 0;
   }
 
   /**
@@ -41,6 +73,11 @@ export class GrainPool {
    */
   outgoing(i) {
     return this.#outgoing[i];
+  }
+
+  /** Active spawned grain `i`: `position`, `rateRatio`, `pan`, `tailEnd`, and window `gain`. */
+  spawned(i) {
+    return this.#spawned[i];
   }
 
   /**
@@ -65,12 +102,37 @@ export class GrainPool {
     grain.progress = 0;
   }
 
-  /** Stops the playhead at the note's last edge; outgoing grains fade on. */
+  /**
+   * Starts a finite windowed grain in the pool (Hann fade-in, sustain, Hann fade-out).
+   * @param {number} position Starting source position in samples.
+   * @param {1 | -1} direction Direction of travel.
+   * @param {number} rateRatio Speed multiplier relative to the voice's rate.
+   * @param {number} pan Pan offset in [-1, 1], added to the voice's pan.
+   * @param {number} length Total duration in output frames.
+   * @param {number} fadeLength Fade-in / fade-out length in output frames.
+   * @param {number} [tailEnd=Infinity] Where the grain runs into silence, or Infinity.
+   */
+  spawn(position, direction, rateRatio, pan, length, fadeLength, tailEnd = Infinity) {
+    if (length < 1 || this.#spawnedCount >= MAX_SPAWNED_GRAINS) return false;
+    const grain = this.#spawned[this.#spawnedCount++];
+    grain.position = position;
+    grain.direction = direction;
+    grain.rateRatio = rateRatio;
+    grain.pan = pan;
+    grain.tailEnd = tailEnd;
+    grain.length = length;
+    grain.fadeLength = Math.min(Math.max(0, fadeLength), length / 2);
+    grain.age = 0;
+    grain.gain = grain.fadeLength > 0 ? 0 : 1;
+    return true;
+  }
+
+  /** Stops the playhead at the note's last edge; remaining grains finish fading. */
   endCurrent() {
     this.current.active = false;
   }
 
-  /** Moves every outgoing grain on by the playhead's speed, each in its own direction. */
+  /** Advances outgoing and spawned grains by one output frame at the voice's `speed`. */
   advance(speed) {
     for (let i = this.#count - 1; i >= 0; i--) {
       const grain = this.#outgoing[i];
@@ -79,10 +141,18 @@ export class GrainPool {
       if (grain.progress >= grain.length) this.#remove(i);
       else grain.mix = grain.progress / grain.length;
     }
+    for (let i = this.#spawnedCount - 1; i >= 0; i--) {
+      const grain = this.#spawned[i];
+      grain.position += grain.direction * speed * grain.rateRatio;
+      grain.age += 1;
+      if (grain.age >= grain.length) this.#removeSpawned(i);
+      else grain.gain = windowGain(grain.age, grain.length, grain.fadeLength);
+    }
   }
 
   reset() {
     this.#count = 0;
+    this.#spawnedCount = 0;
     this.current.active = true;
   }
 
@@ -92,5 +162,16 @@ export class GrainPool {
     for (let j = i; j < this.#count - 1; j++) this.#outgoing[j] = this.#outgoing[j + 1];
     this.#outgoing[this.#count - 1] = grain;
     this.#count--;
+  }
+
+  // Order does not matter for additive grains; swap with last for reuse.
+  #removeSpawned(i) {
+    const last = this.#spawnedCount - 1;
+    if (i !== last) {
+      const grain = this.#spawned[i];
+      this.#spawned[i] = this.#spawned[last];
+      this.#spawned[last] = grain;
+    }
+    this.#spawnedCount--;
   }
 }
