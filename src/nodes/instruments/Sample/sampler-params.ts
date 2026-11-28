@@ -382,6 +382,24 @@ export const samplerParams = defineSamplerParams({
     format: (v) => `${Math.round(v)}`,
     apply: (p, v) => p.setNumGrains(v),
   },
+  grainSize: {
+    label: 'Grain Size',
+    min: 0.01,
+    max: 0.5,
+    defaultValue: 0.1,
+    curve: 2,
+    format: (v) => `${Math.round(v * 1000)}ms`,
+    apply: (p, v) => p.setGrainSize(v),
+  },
+  grainOffset: {
+    label: 'Grain Offset',
+    min: 0,
+    max: 1,
+    defaultValue: 0.1,
+    curve: 2,
+    format: (v) => `±${Math.round(v * 500)}ms`,
+    apply: (p, v) => p.setGrainOffset(v),
+  },
 });
 
 export type SamplerParamKey = keyof typeof samplerParams;

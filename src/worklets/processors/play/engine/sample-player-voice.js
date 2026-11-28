@@ -45,9 +45,11 @@ const START_FADE_FRAMES = 16;
 // Pan drift glide, so a new roll doesn't step the channel gains and click. Tune by ear.
 const PAN_DRIFT_SMOOTHING_SECONDS = 0.02;
 // Finite spawned grains (numGrains > 1): default window size, Hann taper and spread.
+// Grain size and offset depth are set per voice; offset depth scales the max offset.
 const SPAWNED_GRAIN_SECONDS = 0.1;
 const SPAWNED_GRAIN_FADE_FRACTION = 0.25;
-const SPAWNED_GRAIN_MAX_OFFSET_SECONDS = 0.05;
+const SPAWNED_GRAIN_MAX_OFFSET_SECONDS = 0.5;
+const SPAWNED_GRAIN_OFFSET_DEPTH = 0.1; // 50 ms
 const SPAWNED_GRAIN_DETUNE_CENTS = 12;
 const SPAWNED_GRAIN_PAN_SPREAD = 0.7;
 
@@ -131,6 +133,8 @@ export class SamplePlayerVoice {
   #stopFadeFrames;
   #constantFlags;
   #numGrains;
+  #grainSeconds;
+  #grainOffsetDepth;
   #spawnCountdown;
 
   /**
@@ -172,6 +176,8 @@ export class SamplePlayerVoice {
     // The playhead, outgoing crossfade grains, and finite spawned grains.
     this.grains = new GrainPool();
     this.#numGrains = 1;
+    this.#grainSeconds = SPAWNED_GRAIN_SECONDS;
+    this.#grainOffsetDepth = SPAWNED_GRAIN_OFFSET_DEPTH;
     this.#spawnCountdown = 0;
     // The loop window as the params ask for it now, reused per resolve.
     this.#resolvedLoopWindow = new LoopWindow();
@@ -367,6 +373,18 @@ export class SamplePlayerVoice {
     this.#numGrains = Number.isFinite(next) ? next : 1;
   }
 
+  /** Spawned grain length in seconds. */
+  setGrainSize(seconds) {
+    this.#grainSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : SPAWNED_GRAIN_SECONDS;
+  }
+
+  /** Spawned grain start offset depth in [0, 1], scaling the max offset from the playhead. */
+  setGrainOffset(depth) {
+    this.#grainOffsetDepth = Number.isFinite(depth)
+      ? Math.max(0, Math.min(1, depth))
+      : SPAWNED_GRAIN_OFFSET_DEPTH;
+  }
+
   // ===== METHODS =====
 
   reset() {
@@ -493,11 +511,11 @@ export class SamplePlayerVoice {
     if (this.#spawnCountdown > 0) this.#spawnCountdown--;
     if (this.grains.spawnedCount >= targetExtras || this.#spawnCountdown > 0) return;
 
-    const length = Math.max(1, Math.round(SPAWNED_GRAIN_SECONDS * this.sampleRate));
+    const length = Math.max(1, Math.round(this.#grainSeconds * this.sampleRate));
     const fadeLength = length * SPAWNED_GRAIN_FADE_FRACTION;
     const regionLength = Math.max(0, regionEnd - regionStart);
     const maxOffset = Math.min(
-      SPAWNED_GRAIN_MAX_OFFSET_SECONDS * this.sampleRate,
+      this.#grainOffsetDepth * SPAWNED_GRAIN_MAX_OFFSET_SECONDS * this.sampleRate,
       regionLength * 0.5,
     );
     const offset = (this.#random() * 2 - 1) * maxOffset;
